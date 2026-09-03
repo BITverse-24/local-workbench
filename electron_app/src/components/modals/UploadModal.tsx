@@ -1,4 +1,6 @@
-import { useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
+
+const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
 type Props = {
   open: boolean;
@@ -11,6 +13,23 @@ type Props = {
 
 export default function UploadModal({ open, dragOver, setDragOver, files, setFiles, onClose }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFiles = (incoming: File[]) => {
+    const tooBig = incoming.filter((f) => f.size > MAX_SIZE);
+    const valid = incoming.filter((f) => f.size <= MAX_SIZE);
+    if (tooBig.length) {
+      const names = tooBig.map((f) => `${f.name} (${(f.size / (1024 * 1024)).toFixed(1)}MB)`).join(', ');
+      setError(`File too big: ${names} — limit is 10MB`);
+      setTimeout(() => setError(null), 4000);
+    } else {
+      setError(null);
+    }
+    if (valid.length) setFiles((prev) => [...prev, ...valid]);
+  };
+
+  useEffect(() => { if (!open) setError(null); }, [open]);
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -23,7 +42,7 @@ export default function UploadModal({ open, dragOver, setDragOver, files, setFil
         <div
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = Array.from(e.dataTransfer.files); if (f.length) setFiles((prev) => [...prev, ...f]); }}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(Array.from(e.dataTransfer.files)); }}
           onClick={() => fileInputRef.current?.click()}
           className={`w-full rounded-2xl border-2 border-dashed p-8 flex flex-col items-center justify-center gap-3 cursor-pointer transition ${dragOver ? 'neu-pressed' : 'neu-card hover:brightness-110'}`}
           style={{ borderColor: dragOver ? 'rgba(255,255,255,0.18)' : '#2A2A2A', transition: 'all 0.3s cubic-bezier(0.16,1,0.3,1)' }}
@@ -39,8 +58,14 @@ export default function UploadModal({ open, dragOver, setDragOver, files, setFil
             <p className="text-sm font-medium">Drop files here</p>
             <p className="text-xs opacity-50 mt-1">or click to browse • PDF, image, doc up to 10MB</p>
           </div>
-          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => { if (e.target.files) setFiles((prev) => [...prev, ...Array.from(e.target.files!)]); }} />
+          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => { if (e.target.files) handleFiles(Array.from(e.target.files)); }} />
         </div>
+        {error && (
+          <div className="mt-3 p-2.5 rounded-xl neu-card border border-red-500/30 text-xs text-red-400 flex items-center gap-2 animate-apple-message">
+            <span className="flex-1 leading-tight">{error}</span>
+            <button onClick={() => setError(null)} className="w-6 h-6 rounded-full neu-button grid place-items-center text-xs shrink-0">✕</button>
+          </div>
+        )}
         {files.length > 0 && (
           <div className="mt-4 space-y-2 max-h-32 overflow-y-auto">
             {files.map((f, i) => (
