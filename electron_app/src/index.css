@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+@layer base {
+  html, body, #root {
+    @apply h-screen w-screen overflow-hidden m-0 p-0;
+  }
+  body {
+    color: #E8E8E8;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: #181818;
+    background-color: #181818;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #2A2A2A transparent;
+  }
+  *::-webkit-scrollbar { width: 6px; height: 6px; }
+  *::-webkit-scrollbar-thumb { background: #2A2A2A; border-radius: 999px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+}
+
+:root {
+  --apple-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --bg-primary: #181818;
+  --bg-panel: #1F1F1F;
+  --bg-pressed: #1A1A1A;
+  --bg-input: #1A1A1A;
+  --border: #2A2A2A;
+  --border-strong: #333333;
+  --text-primary: #F5F5F5;
+  --text-secondary: #9CA3AF;
+}
+
+@layer utilities {
+  /* Minimal dark - palette built around #181818 */
+  .neu-flat {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+  }
+  .neu-panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+  }
+  .neu-raised {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .neu-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .neu-pressed {
+    background: var(--bg-pressed);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .neu-input {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .neu-input:focus-within {
+    border-color: var(--border-strong);
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.04);
+  }
+  .neu-button {
+    background: var(--bg-panel);
+    color: #E8E8E8;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    transition: background 0.2s var(--apple-ease), border-color 0.2s var(--apple-ease), transform 0.2s var(--apple-ease);
+  }
+  .neu-button:hover {
+    background: #252525;
+    border-color: var(--border-strong);
+  }
+  .neu-button:active {
+    background: var(--bg-pressed);
+    transform: scale(0.98);
+  }
+  .neu-button-sm {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .neu-button-primary {
+    background: #FFFFFF;
+    color: #181818;
+    border: 1px solid #FFFFFF;
+    border-radius: 999px;
+    transition: background 0.2s var(--apple-ease), transform 0.2s var(--apple-ease);
+  }
+  .neu-button-primary:hover {
+    background: #F3F4F6;
+  }
+  .neu-button-primary:active {
+    background: #E5E7EB;
+    transform: scale(0.98);
+  }
+  .neu-titlebar {
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border);
+  }
+  .neu-header {
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .neu-dropdown {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.35);
+    animation: appleDropdown 0.25s var(--apple-ease) both;
+    transform-origin: top center;
+  }
+  .neu-divider {
+    height: 1px;
+    background: var(--border);
+  }
+
+  @keyframes appleFadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes appleSlideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes appleSlideLeft { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes appleSlideRight { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes appleScaleIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+  @keyframes appleTitleIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes appleDropdown { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes appleMessage { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  .animate-apple-fade { animation: appleFadeIn 0.35s var(--apple-ease) both; }
+  .animate-apple-title { animation: appleTitleIn 0.35s var(--apple-ease) both; }
+  .animate-apple-left { animation: appleSlideLeft 0.4s var(--apple-ease) both; }
+  .animate-apple-center { animation: appleScaleIn 0.4s var(--apple-ease) both; }
+  .animate-apple-right { animation: appleSlideRight 0.4s var(--apple-ease) both; }
+  .animate-apple-up { animation: appleSlideUp 0.35s var(--apple-ease) both; }
+  .animate-apple-message { animation: appleMessage 0.3s var(--apple-ease) both; }
+
+  .delay-100 { animation-delay: 60ms; }
+  .delay-200 { animation-delay: 120ms; }
+  .delay-300 { animation-delay: 180ms; }
+
+  .page-apple-enter { animation: appleFadeIn 0.3s var(--apple-ease) both; }
+
+  .liquid-glass, .liquid-glass-strong, .glass-card, .glass-button, .glass-input, .glass-button-primary, .glass-effect, .titlebar-glass, .shimmer {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
