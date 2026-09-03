@@ -13,8 +13,9 @@ Tasks with the same number can be done in parallel. The number shows the deliver
 ## Product boundaries to keep throughout
 
 - Build the two demo flows only: scanned inspection report → cited approval note, and CSV/data task → verified Python result.
-- Keep all models, retrieval, files, artifacts, and execution on the approved private LAN.
+- Keep all models, retrieval, files, artifacts, and execution on the approved private LAN, with one development exception: until packaging, the three model routes point at OpenRouter through the same registry and gateway contract, and the switch back to the LAN models is a config-only change made in task 11a.
 - Use three dedicated models: vision/OCR, drafting, and coding. The app chooses the model automatically.
+- Demonstrate the zero-external-request sovereignty proof only in sessions against the local models; while OpenRouter is configured, the panel shows the true external count for OpenRouter calls.
 - Keep the agent bounded: it plans, calls tools, observes results, and streams each step to the UI.
 - Preserve the visible sovereignty proof: approved LAN allowlist, zero external requests, and one independently blocked outbound attempt.
 - Keep DOCX/XLSX creation and Python execution behind explicit user confirmation.
@@ -68,7 +69,7 @@ iii. Decide how success, cancellation, and failure appear in both flows.
 
 **Success criteria:** The team has a simple screen plan that lets a presenter explain the route, agent steps, confirmation, result, and zero-egress state without hidden UI.
 
-## 2. Create the basic application and local AI services
+## 2. Create the basic application and model access
 
 ### 2a) Create the application foundation
 
@@ -86,23 +87,23 @@ iv. Create `config/models.json` and the local `data/` directories.
 
 **Success criteria:** The project starts locally and has the agreed places for the main process, UI, agent logic, model connections, tools, run data, and generated files.
 
-### 2b) Install the models and embedding service
+### 2b) Connect OpenRouter for development and the local embedding service
 
 **Owner:** Sid
 
 **Do:**
 
-i. Install Qwen2.5-VL on the M4 for scanned documents.
+i. Add development registry entries in `config/models.json` for vision, drafting, and coding that point at OpenRouter's OpenAI-compatible endpoint, one capable stand-in model per task type.
 
-ii. Install Qwen3 on i7 #1 for drafting.
+ii. Read the OpenRouter key from an environment variable or untracked local config; never commit it or expose it to the renderer.
 
-iii. Install Qwen2.5-Coder on i7 #2 for coding.
+iii. Confirm each of the three task types answers a simple request through the model gateway with no other code changes.
 
-iv. Install the local embedding service and Chroma on the designated hosts.
+iv. Install the local embedding service and Chroma on the development host now, so the corpus, section IDs, and citations stay stable across the later model switch.
 
-v. Start each service from local files and confirm the application host can reach it over the LAN.
+v. Record which OpenRouter model stands in for each finals model and where prompt behaviour is expected to differ.
 
-**Success criteria:** The three model services and embedding service answer a simple local request, with no download or cloud service needed at runtime.
+**Success criteria:** All three task types answer through the gateway via OpenRouter with no local model setup, the embedding service and Chroma answer locally, and no API key exists in the repository.
 
 ### 2c) Build the Electron shell and restricted bridge
 
@@ -136,7 +137,7 @@ iii. Add startup checks for the vision, drafting, coding, and embedding services
 
 iv. Show unavailable services in the UI before a run can start.
 
-v. Make a failed service stop the run with a clear message; never fall back to the internet or to the wrong model.
+v. Make a failed service stop the run with a clear message; never fall back to an endpoint outside `config/models.json` or to the wrong model. During development the registry contains only the team's OpenRouter entries; no other external endpoint is ever permitted.
 
 **Success criteria:** The app knows which local model handles each task, shows whether services are ready, and cannot call an unapproved endpoint.
 
@@ -262,6 +263,8 @@ iii. Adjust the prompt until the known findings in the fixed report are consiste
 
 iv. Keep the UI wording limited to clean typed scans; do not promise general handwriting recognition.
 
+v. After the switch to the local vision model in task 11a, re-run this check against Qwen2.5-VL and re-freeze the prompt.
+
 **Success criteria:** The vision step returns the findings needed for the approval note, with page references, from the fixed scan.
 
 ### 5c) Make knowledge search return usable citations
@@ -314,7 +317,7 @@ ii. Include the extracted findings, the relevant SOP sections, and the required 
 
 iii. Make the prompt avoid unsupported facts and leave missing information visible.
 
-iv. Freeze the prompt once the fixed report produces an acceptable note.
+iv. Freeze the prompt once the fixed report produces an acceptable note; after the switch to the local drafting model in task 11a, re-validate it against Qwen3 and re-freeze.
 
 **Success criteria:** The draft contains the expected approval-note sections, uses the retrieved SOP citation, and is ready for document generation.
 
@@ -403,6 +406,8 @@ ii. Create the coding prompt that asks for a Python script and describes the exp
 iii. Make the model return only the script and the expected result description needed by the backend.
 
 iv. Adjust the prompt until the script handles the fixed CSV correctly.
+
+v. After the switch to the local coding model in task 11a, re-run the fixed CSV against Qwen2.5-Coder and re-freeze the prompt.
 
 **Success criteria:** The coding model produces usable Python for the fixed CSV task and the expected result is known in advance.
 
@@ -530,7 +535,7 @@ i. Keep the five approved LAN hosts visible in the panel.
 
 ii. Show local service connection status and the application’s external-request count.
 
-iii. Keep the zero-external-request state visible during both flows, confirmations, and artifact preview.
+iii. Keep the zero-external-request state visible during both flows, confirmations, and artifact preview in rehearsal sessions against the local models; during OpenRouter development the panel shows the true external count instead.
 
 iv. Show whether the independent monitor is active.
 
@@ -556,21 +561,27 @@ iv. Save the monitor record showing the attempt was blocked.
 
 ## 11. Package, rehearse, and hand off
 
-### 11a) Package the offline demo
+### 11a) Switch to the local models and package the offline demo
 
 **Owner:** Supreet
 
 **Do:**
 
-i. Package the Electron app, local dependencies, model startup instructions, embedding service, Chroma corpus, LibreOffice, Bubblewrap, configuration, fixtures, and run data setup.
+i. Install the local models on their task 1b hosts (Qwen2.5-VL on the M4, Qwen3 on i7 #1, Qwen2.5-Coder on i7 #2), start each from local files, and confirm the application host reaches each over the LAN.
 
-ii. Write the operator runbook in startup order: boot hosts, start services, launch the app, check health, and run the two flows.
+ii. Repoint `config/models.json` from the OpenRouter development entries to those local endpoints, strip the OpenRouter entries and any key material from the demo bundle, and re-run all health checks.
 
-iii. Include the fixed IPs, ports, model aliases, fixture locations, and recovery steps for a failed health check.
+iii. Re-validate the frozen prompts from tasks 5b, 6b, and 8a against the local models; record any adjustment in the change log of `docs/demo-requirements.md`.
 
-iv. Install or start the bundle once with external networking disconnected.
+iv. Package the Electron app, local dependencies, model startup instructions, embedding service, Chroma corpus, LibreOffice, Bubblewrap, configuration, fixtures, and run data setup.
 
-**Success criteria:** Another team member can start the demo from local assets without downloading anything, and both fixed input files are available on the application host.
+v. Write the operator runbook in startup order: boot hosts, start services, launch the app, check health, and run the two flows.
+
+vi. Include the fixed IPs, ports, model aliases, fixture locations, and recovery steps for a failed health check.
+
+vii. Install or start the bundle once with external networking disconnected.
+
+**Success criteria:** Another team member can start the demo from local assets without downloading anything, both fixed input files are available on the application host, and both flows pass against the local models before rehearsal.
 
 ### 11b) Do the final Flow A and Flow B rehearsal
 
