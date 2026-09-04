@@ -34,6 +34,12 @@ export default function App() {
   const camera = useCamera();
   const voice = useVoice();
 
+  const handleSend = () => {
+    if (!input.trim()) return;
+    // TODO: wire to chat / API – for now just clear input
+    setInput('');
+  };
+
   return (
     <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none page-apple-enter" style={{ background: '#181818' }}>
       <TitleBar />
@@ -52,6 +58,7 @@ export default function App() {
             searchActive={searchActive}
             setSearchActive={setSearchActive}
             onVoice={() => voice.setShow(true)}
+            onSend={handleSend}
           />
         </ChatPanel>
 

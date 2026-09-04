@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useEffect } from 'react';
 
 type Props = {
   input: string;
@@ -9,13 +9,38 @@ type Props = {
   searchActive: boolean;
   setSearchActive: (v: boolean) => void;
   onVoice: () => void;
+  onSend?: () => void;
 };
 
-export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusBtnRef, searchActive, setSearchActive, onVoice }: Props) {
+export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusBtnRef, searchActive, setSearchActive, onVoice, onSend }: Props) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (input.trim() && onSend) onSend();
+    }
+    // Shift+Enter: allow default newline insertion (cursor goes to next line)
+  };
+
+  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    // auto-resize up to max-height
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  };
+
+  useEffect(() => {
+    if (input === '' && textareaRef.current) {
+      textareaRef.current.style.height = '36px';
+    }
+  }, [input]);
+
   return (
     <div className="p-3 md:p-4 flex-shrink-0 animate-apple-up delay-300" style={{ background: '#1F1F1F' }}>
       <div className="max-w-3xl mx-auto">
-        <div className="relative flex items-center gap-1.5 rounded-[20px] p-2 neu-pressed">
+        <div className="relative flex items-end gap-1.5 rounded-[20px] p-2 neu-pressed">
           <button
             ref={plusBtnRef}
             onClick={() => setPlusOpen((o: boolean) => !o)}
@@ -46,12 +71,15 @@ export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusB
               </button>
             </span>
           )}
-          <input
-            type="text"
+          <textarea
+            ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={searchActive ? "Search the web…" : "Ask, drop a scanned report, or request a calculation…"}
-            className="flex-1 bg-transparent border-none outline-none px-2 md:px-3 py-2 min-w-0 text-sm placeholder:text-white/30"
+            onChange={handleInput}
+            onKeyDown={handleKeyDown}
+            placeholder={searchActive ? "Search the web…" : "Ask anything"}
+            rows={1}
+            className="flex-1 bg-transparent border-none outline-none px-2 md:px-3 py-2 min-w-0 text-sm placeholder:text-white/30 resize-none overflow-y-auto leading-5 max-h-[120px]"
+            style={{ height: '36px' }}
           />
           <button onClick={onVoice} className="w-9 h-9 rounded-full neu-button grid place-items-center shrink-0" title="Voice">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-80">
@@ -61,7 +89,7 @@ export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusB
               <line x1="8" y1="22" x2="16" y2="22" />
             </svg>
           </button>
-          <button className="px-5 py-2.5 neu-button-primary font-semibold text-sm shrink-0">Send</button>
+          <button onClick={onSend} className="px-5 py-2.5 neu-button-primary font-semibold text-sm shrink-0">Send</button>
         </div>
       </div>
     </div>
