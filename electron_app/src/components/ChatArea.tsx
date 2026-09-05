@@ -235,7 +235,7 @@ export default function ChatArea({ messages = [], onEditMessage }: Props) {
                 </div>
                 {/* Icons at bottom of text box - outside bubble, bottom-aligned */}
                 {isUser && !isEditing && (
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto pr-1">
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
                     <button
                       onClick={() => handleCopy(msg)}
                       className="w-7 h-7 grid place-items-center rounded-full neu-pressed hover:brightness-125 border border-transparent hover:border-[#2A2A2A] text-white/70 hover:text-white transition-colors"
