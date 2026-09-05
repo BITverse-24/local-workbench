@@ -72,6 +72,16 @@ export default function App() {
     setMessages((prev) => [...prev, newMsg]);
     setInput('');
     setAttachedFiles([]);
+    // auto-reply with "Chat response" for every sent text
+    const reply: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      role: 'assistant',
+      text: 'chat response',
+    };
+    // slight delay to preserve message order and allow auto-scroll animation
+    window.setTimeout(() => {
+      setMessages((prev) => [...prev, reply]);
+    }, 300);
   };
 
   const handleEditMessage = useCallback((id: string, newText: string) => {

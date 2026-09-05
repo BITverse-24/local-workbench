@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 export type ChatMessage = {
   id: string;
@@ -26,6 +26,211 @@ function fileLabel(name: string): string {
   if (['ppt', 'pptx'].includes(ext)) return 'SLIDES';
   if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'heic'].includes(ext)) return 'IMAGE';
   return ext ? ext.toUpperCase() : 'FILE';
+}
+
+const HIGHLIGHT_KEYWORDS = new Set([
+  'if','else','for','while','return','function','class','const','let','var','import','export','from','as','async','await','try','catch','finally','throw','new','this','super','extends','implements','interface','enum','type','public','private','protected','static','yield','break','continue','switch','case','default','do','in','of','instanceof','typeof','void','delete','true','false','null','undefined','def','elif','except','lambda','with','pass','raise','global','nonlocal','assert','and','or','not','is','print','int','float','str','list','dict','bool','package','struct','func','select','chan','map','defer','goto','include','define','using','namespace','template','typename','virtual','override','final','abstract','throws','synchronized','transient','volatile','native','strictfp','where','order','by','group','having','union','insert','update','create','alter','drop','join','inner','left','right','outer','on','double','char','long','short','byte','boolean','select',
+]);
+
+function highlightCode(code: string): React.ReactNode[] {
+  const keywords = HIGHLIGHT_KEYWORDS;
+  // strings, comments, numbers, keywords
+  const pattern = new RegExp(
+    '("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|`(?:\\\\.|[^`\\\\])*`|//.*|#.*|/\\*[\\s\\S]*?\\*/|<!--[\\s\\S]*?-->|\\b(?:' + Array.from(keywords).join('|') + ')\\b|\\b\\d+\\.?\\d*\\b)',
+    'g'
+  );
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
+  let idx = 0;
+  while ((m = pattern.exec(code)) !== null) {
+    if (m.index > lastIndex) nodes.push(code.slice(lastIndex, m.index));
+    const token = m[0];
+    if (!token) { lastIndex = pattern.lastIndex; continue; }
+    if (token.startsWith('"') || token.startsWith("'") || token.startsWith('`')) {
+      nodes.push(<span key={`hl-s-${idx++}`} className="text-emerald-300">{token}</span>);
+    } else if (token.startsWith('//') || token.startsWith('#') || token.startsWith('/*') || token.startsWith('<!--')) {
+      nodes.push(<span key={`hl-c-${idx++}`} className="text-zinc-500 italic">{token}</span>);
+    } else if (/^\d/.test(token)) {
+      nodes.push(<span key={`hl-n-${idx++}`} className="text-amber-300">{token}</span>);
+    } else if (keywords.has(token)) {
+      nodes.push(<span key={`hl-k-${idx++}`} className="text-sky-300 font-medium">{token}</span>);
+    } else {
+      nodes.push(token);
+    }
+    lastIndex = pattern.lastIndex;
+  }
+  if (lastIndex < code.length) nodes.push(code.slice(lastIndex));
+  if (nodes.length === 0) return [code];
+  return nodes;
+}
+
+function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  const pattern = /\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|`([^`]+?)`|\[(.+?)\]\((.+?)\)/g;
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
+  let idx = 0;
+  while ((m = pattern.exec(text)) !== null) {
+    if (m.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, m.index));
+    }
+    if (m[1]) {
+      nodes.push(<strong key={`${keyPrefix}-b-${idx++}`} className="font-semibold text-white">{m[1]}</strong>);
+    } else if (m[2]) {
+      nodes.push(<strong key={`${keyPrefix}-b2-${idx++}`} className="font-semibold text-white">{m[2]}</strong>);
+    } else if (m[3]) {
+      nodes.push(<em key={`${keyPrefix}-i-${idx++}`} className="italic">{m[3]}</em>);
+    } else if (m[4]) {
+      nodes.push(<em key={`${keyPrefix}-i2-${idx++}`} className="italic">{m[4]}</em>);
+    } else if (m[5]) {
+      nodes.push(<code key={`${keyPrefix}-c-${idx++}`} className="px-1 py-0.5 rounded bg-white/10 border border-white/10 text-xs font-mono">{m[5]}</code>);
+    } else if (m[6] && m[7]) {
+      nodes.push(<a key={`${keyPrefix}-a-${idx++}`} href={m[7]} target="_blank" rel="noreferrer" className="underline underline-offset-2 decoration-white/30 hover:decoration-white/60 text-white/90">{m[6]}</a>);
+    }
+    lastIndex = pattern.lastIndex;
+  }
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  // handle case with no matches
+  if (nodes.length === 0) return [text];
+  return nodes;
+}
+
+function CodeBlock({ code, lang }: { code: string; lang?: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async () => {
+    try {
+      const text = code;
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore
+    }
+  }, [code]);
+  return (
+    <div className="relative group/code">
+      <pre className="p-3 pr-12 rounded-xl bg-[#0F0F0F] border border-[#2A2A2A] overflow-x-auto text-xs font-mono whitespace-pre-wrap break-words">
+        <code>{highlightCode(code)}</code>
+      </pre>
+      <button
+        onClick={handleCopy}
+        className="absolute top-2 right-2 w-7 h-7 grid place-items-center rounded-full bg-[#1F1F1F] border border-[#2A2A2A] text-white/60 hover:text-white hover:brightness-125 transition-colors opacity-0 group-hover/code:opacity-100 group-focus-within/code:opacity-100 focus:opacity-100 transition-opacity duration-150 pointer-events-none group-hover/code:pointer-events-auto group-focus-within/code:pointer-events-auto"
+        title={copied ? 'Copied!' : 'Copy code'}
+        aria-label={copied ? 'Copied' : 'Copy code'}
+      >
+        {copied ? (
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-400">
+            <path d="M20 6L9 17l-5-5" />
+          </svg>
+        ) : (
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <rect x="9" y="9" width="13" height="13" rx="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3.5" />
+          </svg>
+        )}
+      </button>
+      {lang ? <span className="absolute bottom-1.5 right-2 text-[9px] tracking-wide uppercase opacity-30 pointer-events-none">{lang}</span> : null}
+    </div>
+  );
+}
+
+function BasicMarkdown({ text }: { text: string }) {
+  if (!text) return null;
+  const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
+  const segments: Array<{ type: 'text' | 'code'; content: string; lang?: string }> = [];
+  let lastIdx = 0;
+  let match: RegExpExecArray | null;
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    if (match.index > lastIdx) segments.push({ type: 'text', content: text.slice(lastIdx, match.index) });
+    segments.push({ type: 'code', content: match[2], lang: match[1] });
+    lastIdx = codeBlockRegex.lastIndex;
+  }
+  if (lastIdx < text.length) segments.push({ type: 'text', content: text.slice(lastIdx) });
+  if (segments.length === 0) segments.push({ type: 'text', content: text });
+
+  return (
+    <div className="space-y-2.5">
+      {segments.map((seg, si) => {
+        if (seg.type === 'code') {
+          return <CodeBlock key={`code-${si}`} code={seg.content.replace(/^\n/, '').replace(/\n$/, '')} lang={seg.lang} />;
+        }
+        const blocks = seg.content.split(/\n{2,}/);
+        return blocks.map((block, bi) => {
+          const trimmed = block.trim();
+          if (!trimmed) return null;
+          // heading: single line starting with #
+          if (/^#{1,6}\s/.test(trimmed) && !trimmed.includes('\n') ) {
+            const level = trimmed.match(/^#+/)![0].length;
+            const content = trimmed.replace(/^#+\s+/, '');
+            const sizeMap: Record<number, string> = {
+              1: 'text-base font-bold',
+              2: 'text-[15px] font-bold',
+              3: 'text-sm font-semibold',
+              4: 'text-sm font-semibold',
+              5: 'text-xs font-semibold uppercase tracking-wide opacity-80',
+              6: 'text-xs font-semibold uppercase tracking-wide opacity-60',
+            };
+            const Tag = `h${Math.min(level, 6)}` as keyof React.JSX.IntrinsicElements;
+            return React.createElement(Tag, { key: `h-${si}-${bi}`, className: `${sizeMap[level] || 'text-sm font-bold'} leading-tight` }, ...renderInline(content, `h-${si}-${bi}`));
+          }
+          // unordered list
+          if (/^(\s*[-*]\s+.+(\n\s*[-*]\s+.+)*)$/.test(trimmed)) {
+            const items = trimmed.split('\n').map((l) => l.replace(/^\s*[-*]\s+/, '').trim()).filter(Boolean);
+            return (
+              <ul key={`ul-${si}-${bi}`} className="list-disc pl-5 space-y-1 marker:text-white/40">
+                {items.map((it, i) => (
+                  <li key={i} className="leading-relaxed break-words">{renderInline(it, `li-${si}-${bi}-${i}`)}</li>
+                ))}
+              </ul>
+            );
+          }
+          // ordered list
+          if (/^(\s*\d+\.\s+.+(\n\s*\d+\.\s+.+)*)$/.test(trimmed)) {
+            const items = trimmed.split('\n').map((l) => l.replace(/^\s*\d+\.\s+/, '').trim()).filter(Boolean);
+            return (
+              <ol key={`ol-${si}-${bi}`} className="list-decimal pl-5 space-y-1 marker:text-white/40">
+                {items.map((it, i) => (
+                  <li key={i} className="leading-relaxed break-words">{renderInline(it, `oli-${si}-${bi}-${i}`)}</li>
+                ))}
+              </ol>
+            );
+          }
+          // blockquote
+          if (/^>\s?/.test(trimmed)) {
+            const quote = trimmed.replace(/^>\s?/gm, '');
+            return (
+              <blockquote key={`q-${si}-${bi}`} className="border-l-2 border-white/20 pl-3 italic opacity-80 leading-relaxed">
+                {renderInline(quote, `q-${si}-${bi}`)}
+              </blockquote>
+            );
+          }
+          // paragraph with line breaks
+          const lines = trimmed.split('\n');
+          return (
+            <p key={`p-${si}-${bi}`} className="leading-relaxed whitespace-pre-wrap break-words text-sm">
+              {lines.map((line, li) => (
+                <span key={li}>
+                  {renderInline(line, `p-${si}-${bi}-${li}`)}
+                  {li < lines.length - 1 ? <br /> : null}
+                </span>
+              ))}
+            </p>
+          );
+        });
+      })}
+    </div>
+  );
 }
 
 export default function ChatArea({ messages = [], onEditMessage }: Props) {
@@ -134,7 +339,7 @@ export default function ChatArea({ messages = [], onEditMessage }: Props) {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5"
+        className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2"
       >
         {!hasMessages ? (
           <>
@@ -174,7 +379,7 @@ export default function ChatArea({ messages = [], onEditMessage }: Props) {
             >
               <div className={`flex flex-col gap-1 ${isUser ? 'items-end max-w-[88%] md:max-w-[72%]' : 'max-w-[88%] md:max-w-[72%] items-start'}`}>
                 <div
-                  className={`px-5 py-3.5 rounded-[18px] w-full ${isUser ? 'rounded-br-[6px] neu-raised' : 'rounded-bl-[6px] neu-card'}`}
+                  className={`w-full ${isUser ? 'px-5 py-3.5 rounded-[18px] rounded-br-[6px] neu-raised' : 'px-2 py-2 bg-transparent border-0'}`}
                 >
                   {isEditing ? (
                     <div className="flex flex-col gap-2 min-w-[220px]">
@@ -215,7 +420,11 @@ export default function ChatArea({ messages = [], onEditMessage }: Props) {
                     </div>
                   ) : (
                     <>
-                      {msg.text && <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>}
+                      {isUser ? (
+                        msg.text && <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>
+                      ) : (
+                        msg.text && <BasicMarkdown text={msg.text} />
+                      )}
                       {msg.files && msg.files.length > 0 && (
                         <div className={`flex flex-wrap gap-2 ${msg.text ? 'mt-3' : ''}`}>
                           {msg.files.map((f, i) => (
