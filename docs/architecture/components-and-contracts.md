@@ -39,19 +39,28 @@ does not construct arbitrary URLs.
 
 ```ts
 type TaskType = 'vision' | 'draft' | 'code';
-type ModelRuntime = 'mlx-lm' | 'llama-server';
+type ModelRuntime = 'mlx-lm' | 'llama-server' | 'openrouter';
 
 interface ModelRegistryEntry {
   id: 'vision-qwen25vl' | 'draft-qwen3' | 'code-qwen25coder';
   taskTypes: TaskType[];
   runtime: ModelRuntime;
-  baseUrl: string;                 // approved http://LAN_IP:PORT/v1
-  model: string;                   // local server alias
+  baseUrl: string;                 // approved http://LAN_IP:PORT/v1; OpenRouter URL in development
+  model: string;                   // local server alias, or OpenRouter model slug in development
   requestTimeoutMs: number;
   healthPath: '/models';
+  apiKeyEnv?: string;              // env var NAME holding the key; never the key value
   enabled: boolean;
 }
 ```
+
+During development the working registry may contain OpenRouter entries — one
+stand-in model per task type — marked with `runtime: 'openrouter'` and an
+`apiKeyEnv` naming the environment variable that holds the key. The key value
+never enters the repository, the committed registry, or the renderer. The
+registry shipped in the demo bundle is LAN-only: task 11a removes the
+OpenRouter entries and re-runs every health check against the local endpoints
+before rehearsal.
 
 | Route | Model/runtime | Host | Purpose |
 | --- | --- | --- | --- |

@@ -4,10 +4,10 @@
 
 | Days | Ayush — frontend | Supreet — backend | Sid — AI/ML | Exit criteria |
 | --- | --- | --- | --- | --- |
-| 1–2 | Electron shell, preload bridge, transcript and artifact-pane scaffolding | Electron-main root, IPC types, SQLite run repository, run workspace | provision local models; benchmark latency; build initial Chroma corpus | all hosts reachable only on LAN; registry health checks pass |
+| 1–2 | Electron shell, preload bridge, transcript and artifact-pane scaffolding | Electron-main root, IPC types, SQLite run repository, run workspace | connect OpenRouter stand-ins for the three routes; build initial Chroma corpus; begin background downloads of the local model weights | all hosts reachable only on LAN; registry health checks pass |
 | 3–5 | file drop, routing badge, confirmation modal, PDF pane | Flow A orchestrator and tool contracts; DOCX/PDF artifact worker | tune vision extraction and drafting prompts against fixed scans; verify citations | scanned report produces a cited DOCX and PDF after confirmation |
 | 6–7 | Flow B result/log views and error states | code route, source validation, Bubblewrap runner, output artifacts | validate coder prompts against fixed CSV fixture and expected output | approved Python job runs with network unavailable and results displayed |
-| 8–9 | polish transcript and failure UI | retries, cancellation, model health errors, audit/event completeness | model/service stability test; external-monitor preflight with operator | both flows visibly show routes and graceful known failures |
+| 8–9 | polish transcript and failure UI | retries, cancellation, model health errors, audit/event completeness | model/service stability test; registry switch to the local models and re-validation of frozen prompts; external-monitor preflight with operator | both flows visibly show routes and graceful known failures |
 | 10–12 | final UX pass and rehearsal script | fixture E2E tests, packaging, final defect fixes | full offline rehearsal, model fallback validation, operator evidence pack | two flawless offline runs plus a blocked-egress infrastructure demonstration |
 
 ## Test fixtures

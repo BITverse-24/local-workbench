@@ -96,7 +96,10 @@ only LAN services required by the MVP.
 
 1. All model weights, application dependencies, embeddings, and demo files
    are installed before the air-gapped rehearsal.
-2. The model registry contains only approved LAN IP addresses and ports.
+2. The registry shipped in the demo bundle contains only approved LAN IP
+   addresses and ports. A development registry may point at the team's
+   approved OpenRouter account; it is never used in rehearsals or the finals
+   bundle.
 3. Each run has an isolated local workspace; input is preserved read-only and
    outputs are written only below that run directory.
 4. DOCX/XLSX writes and Python execution require an explicit renderer
