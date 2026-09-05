@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import './App.css';
 import TitleBar from './components/TitleBar';
 import LeftSidebar from './components/LeftSidebar';
@@ -76,7 +76,7 @@ export default function App() {
     const reply: ChatMessage = {
       id: (Date.now() + 1).toString(),
       role: 'assistant',
-      text: 'chat response',
+      text: '**Akakakakaa** ```java System.out.println("Hello, World"); class Sky { public Sky(){int k = 69;} }  ```\n Add stuffs to it',
     };
     // slight delay to preserve message order and allow auto-scroll animation
     window.setTimeout(() => {
@@ -87,6 +87,33 @@ export default function App() {
   const handleEditMessage = useCallback((id: string, newText: string) => {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, text: newText } : m)));
   }, []);
+
+  const handleVoiceUseTranscript = useCallback(() => {
+    const text = `${voice.transcript}${voice.interimTranscript ? ' ' + voice.interimTranscript : ''}`.trim();
+    if (text) {
+      setInput((prev) => (prev ? (prev.endsWith(' ') ? prev : prev + ' ') + text : text));
+      // auto-focus input after paste
+      window.setTimeout(() => {
+        const el = document.querySelector('textarea[placeholder*="Write your prompt"]') as HTMLTextAreaElement | null;
+        el?.focus();
+      }, 50);
+    }
+    voice.close();
+    window.setTimeout(() => voice.clearTranscript(), 200);
+  }, [voice]);
+
+  // auto paste transcript when recording stops (so input is filled without extra click)
+  useEffect(() => {
+    if (!voice.isRecording && voice.recordedBlob && (voice.transcript || voice.interimTranscript)) {
+      const text = `${voice.transcript}${voice.interimTranscript ? ' ' + voice.interimTranscript : ''}`.trim();
+      if (text) {
+        setInput((prev) => {
+          if (prev.includes(text)) return prev;
+          return prev ? (prev.endsWith(' ') ? prev : prev + ' ') + text : text;
+        });
+      }
+    }
+  }, [voice.isRecording, voice.recordedBlob, voice.transcript, voice.interimTranscript]);
 
   const handleUploadConfirm = useCallback(() => {
     if (upload.files.length) {
@@ -104,7 +131,7 @@ export default function App() {
         <LeftSidebar collapsed={leftCollapsed} onCollapse={() => setLeftCollapsed(true)} />
 
         <ChatPanel leftCollapsed={leftCollapsed} rightCollapsed={rightCollapsed} onToggleLeft={() => setLeftCollapsed(!leftCollapsed)} onToggleRight={() => setRightCollapsed(!rightCollapsed)}>
-          <ChatArea messages={messages} onEditMessage={handleEditMessage} />
+          <ChatArea messages={messages} onEditMessage={handleEditMessage} onAttachFiles={addFiles} />
           <InputBar
             input={input}
             setInput={setInput}
@@ -158,10 +185,13 @@ export default function App() {
         recTime={voice.recTime}
         recordedBlob={voice.recordedBlob}
         setRecordedBlob={voice.setRecordedBlob}
+        transcript={voice.transcript}
+        interimTranscript={voice.interimTranscript}
         error={voice.error}
         onClose={voice.close}
         onStart={voice.start}
         onStop={voice.stop}
+        onUseTranscript={handleVoiceUseTranscript}
       />
     </div>
   );

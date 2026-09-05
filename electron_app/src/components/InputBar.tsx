@@ -257,8 +257,8 @@ export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusB
             onPaste={handlePaste}
             placeholder={searchActive ? 'Search the web…' : attachedFiles.length ? 'Add a message…' : 'Write your prompt...'}
             rows={1}
-            className="flex-1 bg-transparent border-none outline-none px-2 md:px-3 py-2 min-w-0 text-sm placeholder:text-white/30 resize-none overflow-y-auto leading-5 max-h-[120px]"
-            style={{ height: '36px' }}
+            className="flex-1 bg-transparent border-none outline-none px-2 md:px-3 py-2 min-w-0 text-sm placeholder:text-white/30 resize-none overflow-y-auto leading-5 max-h-[120px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            style={{ height: '36px', scrollbarWidth: 'none' } as React.CSSProperties}
           />
 
           <button onClick={onVoice} className="w-9 h-9 rounded-full neu-button grid place-items-center shrink-0" title="Voice">
@@ -273,15 +273,12 @@ export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusB
           <button
             onClick={onSend}
             disabled={!canSend}
-            className={`px-5 py-2.5 font-semibold text-sm shrink-0 rounded-full transition ${canSend ? 'neu-button-primary' : 'neu-button opacity-40 cursor-not-allowed'}`}
+            className={`px-5 py-2 font-semibold text-sm shrink-0 rounded-full transition ${canSend ? 'neu-button-primary' : 'neu-button opacity-40 cursor-not-allowed'}`}
           >
             Send
           </button>
         </div>
 
-        {isDragOver && (
-          <div className="text-[11px] text-center opacity-60 animate-apple-fade">Drop files to attach • PDF, image, doc up to 10MB</div>
-        )}
       </div>
     </div>
   );

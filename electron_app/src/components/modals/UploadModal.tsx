@@ -85,3 +85,4 @@ export default function UploadModal({ open, dragOver, setDragOver, files, setFil
     </div>
   );
 }
+ 

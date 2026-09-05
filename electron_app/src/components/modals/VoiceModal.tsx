@@ -7,13 +7,16 @@ type Props = {
   recTime: number;
   recordedBlob: Blob | null;
   setRecordedBlob: (b: Blob | null) => void;
+  transcript: string;
+  interimTranscript: string;
   error: string | null;
   onClose: () => void;
   onStart: () => void;
   onStop: () => void;
+  onUseTranscript: () => void;
 };
 
-export default function VoiceModal({ open, devices, selectedMicId, setSelectedMicId, isRecording, recTime, recordedBlob, setRecordedBlob, error, onClose, onStart, onStop }: Props) {
+export default function VoiceModal({ open, devices, selectedMicId, setSelectedMicId, isRecording, recTime, recordedBlob, setRecordedBlob, transcript, interimTranscript, error, onClose, onStart, onStop, onUseTranscript }: Props) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -52,9 +55,16 @@ export default function VoiceModal({ open, devices, selectedMicId, setSelectedMi
               <line x1="8" y1="22" x2="16" y2="22" />
             </svg>
           </div>
-          <span className="text-xs opacity-50">{isRecording ? 'Listening…' : recordedBlob ? 'Recording ready' : 'Tap record to start'}</span>
+          <span className="text-xs opacity-50">{isRecording ? (transcript || interimTranscript ? (transcript + (interimTranscript ? ' ' + interimTranscript : '')) : 'Listening…') : recordedBlob ? 'Recording ready' : 'Tap record to start'}</span>
           {isRecording && <span className="text-xs font-mono opacity-60">{String(Math.floor(recTime / 60)).padStart(2, '0')}:{String(recTime % 60).padStart(2, '0')}</span>}
         </div>
+
+        {(transcript || interimTranscript) && (
+          <div className="mt-3 neu-card p-3 text-xs leading-relaxed max-h-[120px] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="opacity-50 text-[10px] uppercase tracking-wide mb-1">Transcript {isRecording ? '• listening' : ''}</div>
+            <p className="whitespace-pre-wrap break-words">{transcript}{interimTranscript ? <span className="opacity-50">{transcript ? ' ' : ''}{interimTranscript}</span> : null}</p>
+          </div>
+        )}
 
         {recordedBlob && !isRecording && (
           <div className="mt-3 neu-card p-2.5 flex items-center gap-3">
@@ -80,7 +90,11 @@ export default function VoiceModal({ open, devices, selectedMicId, setSelectedMi
             </>
           )}
         </div>
-        {recordedBlob && !isRecording && <button onClick={onClose} className="w-full mt-2 py-2.5 neu-button-primary text-sm">Use recording</button>}
+        {recordedBlob && !isRecording && (
+          <button onClick={onUseTranscript} disabled={!transcript && !interimTranscript} className="w-full mt-2 py-2.5 neu-button-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+            {transcript || interimTranscript ? 'Insert transcript into chat' : 'No transcript — close to discard'}
+          </button>
+        )}
       </div>
     </div>
   );
