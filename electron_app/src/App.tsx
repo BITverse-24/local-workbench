@@ -74,6 +74,10 @@ export default function App() {
     setAttachedFiles([]);
   };
 
+  const handleEditMessage = useCallback((id: string, newText: string) => {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, text: newText } : m)));
+  }, []);
+
   const handleUploadConfirm = useCallback(() => {
     if (upload.files.length) {
       addFiles(upload.files);
@@ -90,7 +94,7 @@ export default function App() {
         <LeftSidebar collapsed={leftCollapsed} onCollapse={() => setLeftCollapsed(true)} />
 
         <ChatPanel leftCollapsed={leftCollapsed} rightCollapsed={rightCollapsed} onToggleLeft={() => setLeftCollapsed(!leftCollapsed)} onToggleRight={() => setRightCollapsed(!rightCollapsed)}>
-          <ChatArea messages={messages} />
+          <ChatArea messages={messages} onEditMessage={handleEditMessage} />
           <InputBar
             input={input}
             setInput={setInput}
