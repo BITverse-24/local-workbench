@@ -9,9 +9,10 @@ type Props = {
   files: File[];
   setFiles: (fn: (prev: File[]) => File[]) => void;
   onClose: () => void;
+  onConfirm?: () => void;
 };
 
-export default function UploadModal({ open, dragOver, setDragOver, files, setFiles, onClose }: Props) {
+export default function UploadModal({ open, dragOver, setDragOver, files, setFiles, onClose, onConfirm }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,7 +79,7 @@ export default function UploadModal({ open, dragOver, setDragOver, files, setFil
         )}
         <div className="flex gap-2 mt-6">
           <button onClick={() => { setFiles(() => []); onClose(); }} className="flex-1 py-2.5 neu-button text-sm">Cancel</button>
-          <button onClick={onClose} disabled={files.length === 0} className="flex-1 py-2.5 neu-button-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed">Upload {files.length > 0 ? `(${files.length})` : ''}</button>
+          <button onClick={() => (onConfirm ? onConfirm() : onClose())} disabled={files.length === 0} className="flex-1 py-2.5 neu-button-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed">Attach {files.length > 0 ? `(${files.length})` : ''}</button>
         </div>
       </div>
     </div>

@@ -29,23 +29,19 @@ export default function LeftSidebar({ collapsed, onCollapse }: Props) {
         </div>
       </div>
 
-      <button className="w-full text-left p-3.5 rounded-2xl text-sm flex flex-col gap-1 neu-pressed animate-apple-message">
+      <button className="w-full text-left p-3.5 rounded-2xl text-sm neu-pressed animate-apple-message">
         <span className="font-medium leading-tight">What is the capital of France?</span>
-        <span className="text-xs opacity-50">vision → draft</span>
       </button>
 
       <div className="flex-1 overflow-y-auto space-y-3 mt-3 pr-1">
         <button className="w-full text-left p-3 rounded-2xl neu-card hover:brightness-110 text-sm animate-apple-message delay-100" style={{ transition: 'all 0.5s var(--apple-ease)' }}>
           <div className="truncate opacity-80">Write a Python script for CSV parsing…</div>
-          <div className="text-xs opacity-40 mt-1">code</div>
         </button>
         <button className="w-full text-left p-3 rounded-2xl neu-card hover:brightness-110 text-sm animate-apple-message delay-200" style={{ transition: 'all 0.5s var(--apple-ease)' }}>
           <div className="truncate opacity-80">Explain quantum computing</div>
-          <div className="text-xs opacity-40 mt-1">draft</div>
         </button>
         <button className="w-full text-left p-3 rounded-2xl neu-card hover:brightness-110 text-sm animate-apple-message delay-300" style={{ transition: 'all 0.5s var(--apple-ease)' }}>
           <div className="truncate opacity-80">Inspection report → approval note</div>
-          <div className="text-xs opacity-40 mt-1">Flow A ✓</div>
         </button>
       </div>
     </aside>
