@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import './App.css';
 import TitleBar from './components/TitleBar';
 import LeftSidebar from './components/LeftSidebar';
 import ChatPanel from './components/ChatPanel';
-import ChatArea from './components/ChatArea';
+import ChatArea, { type ChatMessage } from './components/ChatArea';
 import InputBar from './components/InputBar';
 import RightSidebar from './components/RightSidebar';
 import ModelDropdown from './components/ModelDropdown';
@@ -26,6 +26,8 @@ export default function App() {
   const [searchActive, setSearchActive] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   const { btnRef: modelBtnRef, pos: dropdownPos } = useDropdownPosition(modelOpen);
   const { btnRef: plusBtnRef, pos: plusPos } = usePlusPosition(plusOpen);
@@ -34,11 +36,51 @@ export default function App() {
   const camera = useCamera();
   const voice = useVoice();
 
+  const MAX_SIZE = 10 * 1024 * 1024;
+
+  const addFiles = useCallback((incoming: File[]) => {
+    const valid: File[] = [];
+    const tooBig: File[] = [];
+    for (const f of incoming) {
+      if (f.size > MAX_SIZE) tooBig.push(f);
+      else valid.push(f);
+    }
+    if (valid.length) {
+      setAttachedFiles((prev) => {
+        const existing = new Set(prev.map((p) => `${p.name}-${p.size}-${p.lastModified}`));
+        const deduped = valid.filter((f) => !existing.has(`${f.name}-${f.size}-${f.lastModified}`));
+        return [...prev, ...deduped];
+      });
+    }
+    return { added: valid.length, rejected: tooBig };
+  }, []);
+
+  const removeAttached = useCallback((index: number) => {
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   const handleSend = () => {
-    if (!input.trim()) return;
-    // TODO: wire to chat / API – for now just clear input
+    const hasText = input.trim().length > 0;
+    const hasFiles = attachedFiles.length > 0;
+    if (!hasText && !hasFiles) return;
+    const newMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      text: input,
+      files: attachedFiles.length ? [...attachedFiles] : undefined,
+    };
+    setMessages((prev) => [...prev, newMsg]);
     setInput('');
+    setAttachedFiles([]);
   };
+
+  const handleUploadConfirm = useCallback(() => {
+    if (upload.files.length) {
+      addFiles(upload.files);
+      upload.setFiles(() => []);
+    }
+    upload.setShow(false);
+  }, [upload, addFiles]);
 
   return (
     <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none page-apple-enter" style={{ background: '#181818' }}>
@@ -48,7 +90,7 @@ export default function App() {
         <LeftSidebar collapsed={leftCollapsed} onCollapse={() => setLeftCollapsed(true)} />
 
         <ChatPanel leftCollapsed={leftCollapsed} rightCollapsed={rightCollapsed} onToggleLeft={() => setLeftCollapsed(!leftCollapsed)} onToggleRight={() => setRightCollapsed(!rightCollapsed)}>
-          <ChatArea />
+          <ChatArea messages={messages} />
           <InputBar
             input={input}
             setInput={setInput}
@@ -59,6 +101,9 @@ export default function App() {
             setSearchActive={setSearchActive}
             onVoice={() => voice.setShow(true)}
             onSend={handleSend}
+            attachedFiles={attachedFiles}
+            onAttachFiles={addFiles}
+            onRemoveFile={removeAttached}
           />
         </ChatPanel>
 
@@ -86,7 +131,7 @@ export default function App() {
         onSearch={() => { setPlusOpen(false); setSearchActive(true); }}
       />
 
-      <UploadModal open={upload.show} dragOver={upload.dragOver} setDragOver={upload.setDragOver} files={upload.files} setFiles={upload.setFiles} onClose={() => upload.setShow(false)} />
+      <UploadModal open={upload.show} dragOver={upload.dragOver} setDragOver={upload.setDragOver} files={upload.files} setFiles={upload.setFiles} onClose={() => upload.setShow(false)} onConfirm={handleUploadConfirm} />
 
       <CameraModal open={camera.show} error={camera.error} capturedImage={camera.capturedImage} videoRef={camera.videoRef} canvasRef={camera.canvasRef} onClose={camera.close} onCapture={camera.capturePhoto} onRetake={() => camera.setCapturedImage(null)} />
 
