@@ -1,7 +1,24 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import path from 'node:path'
+import { cpSync, mkdirSync } from 'node:fs'
 import electron from 'vite-plugin-electron/simple'
 import react from '@vitejs/plugin-react'
+
+const BACKEND_SCHEMA = path.join(__dirname, '..', 'backend', 'src', 'main', 'persistence', 'schema.sql')
+const DIST_ELECTRON = path.join(__dirname, 'dist-electron')
+
+// backend's db.ts (findSchemaPath) looks for schema.sql next to the running main
+// bundle first. The backend tree is read-only from here, so copy that one file into
+// dist-electron on every main build / dev start. Output stays inside electron_app/.
+function copyBackendSchema(): Plugin {
+  return {
+    name: 'copy-backend-schema-sql',
+    buildStart() {
+      mkdirSync(DIST_ELECTRON, { recursive: true })
+      cpSync(BACKEND_SCHEMA, path.join(DIST_ELECTRON, 'schema.sql'))
+    },
+  }
+}
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -11,6 +28,17 @@ export default defineConfig({
       main: {
         // Shortcut of build.lib.entry.
         entry: 'electron/main.ts',
+        vite: {
+          plugins: [copyBackendSchema()],
+          build: {
+            rollupOptions: {
+              // Native module: must stay external (it resolves at runtime from
+              // electron_app/node_modules, rebuilt for Electron via postinstall).
+              // Everything else from backend/ (zod, pure TS) bundles inline.
+              external: ['better-sqlite3'],
+            },
+          },
+        },
       },
       preload: {
         // Shortcut of build.rollupOptions.input.

@@ -1,8 +1,10 @@
 export type Model = { id: string; name: string; desc: string };
 
+// Task models from ai/model-registry.ts (developmentModelRegistry). The
+// BAAI/bge-small-en-v1.5 embedding service is not a chat model — not listed.
+// Ids match the backend ModelId so the selection can route directly in Phase 3/14.
 export const MODELS: Model[] = [
-  { id: 'gemini-pro', name: 'Gemini 1.5 Pro', desc: 'general drafting • 4B Q4' },
-  { id: 'gemini-flash', name: 'Gemini 1.5 Flash', desc: 'fast • 2B Q4' },
-  { id: 'qwen-coder', name: 'Qwen2.5-Coder 7B', desc: 'code • 7B Q4' },
-  { id: 'qwen-vl', name: 'Qwen2.5-VL 3B', desc: 'vision • 3B' },
+  { id: 'draft-qwen3', name: 'Qwen3 4B', desc: 'drafting • approval notes' },
+  { id: 'vision-qwen25vl', name: 'Qwen2.5-VL 3B', desc: 'vision • scanned reports' },
+  { id: 'code-qwen25coder', name: 'Qwen2.5-Coder 7B', desc: 'code • CSV & scripts' },
 ];

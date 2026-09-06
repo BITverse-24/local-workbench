@@ -1,23 +1,24 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
+export type SidebarChat = {
+  id: string;
+  title: string;
+};
+
 type Props = {
   collapsed: boolean;
   onCollapse: () => void;
+  /** Persisted history (backend `getChatHistory`, newest first). Empty when unreachable. */
+  chats: SidebarChat[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  onNewChat: () => void;
+  /** Rename is local-only until the backend adds a rename channel (see backend/PROPOSALS.md P-B1). */
+  onRename: (id: string, title: string) => void;
+  /** Archive in backend (soft-delete); parent drops it from the list. */
+  onDeleteChat: (id: string) => void;
 };
-
-type Chat = {
-  id: string;
-  title: string;
-  pinned?: boolean;
-};
-
-const DEFAULT_CHATS: Chat[] = [
-  { id: '1', title: 'What is the capital of France?' },
-  { id: '2', title: 'Write a Python script for CSV parsing…' },
-  { id: '3', title: 'Explain quantum computing' },
-  { id: '4', title: 'Inspection report → approval note' },
-];
 
 function DotsIcon({ size = 14 }: { size?: number }) {
   return (
@@ -29,9 +30,10 @@ function DotsIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-export default function LeftSidebar({ collapsed, onCollapse }: Props) {
-  const [chats, setChats] = useState<Chat[]>(DEFAULT_CHATS);
-  const [selectedId, setSelectedId] = useState<string>('1');
+export default function LeftSidebar({ collapsed, onCollapse, chats, activeId, onSelect, onNewChat, onDeleteChat, onRename }: Props) {
+  // Local-only UI state: pin has no backend column. Rename edits flow up via onRename
+  // (persisted through workbench:renameChat) so the chat-box header updates too.
+  const [pinned, setPinned] = useState<Record<string, boolean>>({});
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -98,31 +100,17 @@ export default function LeftSidebar({ collapsed, onCollapse }: Props) {
   const commitRename = () => {
     if (!editingId) return;
     const v = editValue.trim();
-    if (v) setChats((prev) => prev.map((c) => (c.id === editingId ? { ...c, title: v } : c)));
+    if (v) onRename(editingId, v);
     setEditingId(null);
   };
 
   const handleDelete = (id: string) => {
-    setChats((prev) => prev.filter((c) => c.id !== id));
     setOpenMenuId(null);
-    if (selectedId === id) setSelectedId(chats.find((c) => c.id !== id)?.id ?? '');
+    onDeleteChat(id);
   };
 
   const handlePinToggle = (id: string) => {
-    setChats((prev) => prev.map((c) => (c.id === id ? { ...c, pinned: !c.pinned } : c)));
-    setOpenMenuId(null);
-  };
-
-  const handleNewChat = () => {
-    const id = Date.now().toString();
-    const base = 'New chat';
-    const count = chats.filter((c) => c.title.startsWith(base)).length;
-    const title = count === 0 ? base : `${base} ${count + 1}`;
-    const newChat: Chat = { id, title };
-    setChats((prev) => [newChat, ...prev]);
-    setSelectedId(id);
-    setEditingId(id);
-    setEditValue(title);
+    setPinned((prev) => ({ ...prev, [id]: !prev[id] }));
     setOpenMenuId(null);
   };
 
@@ -147,17 +135,18 @@ export default function LeftSidebar({ collapsed, onCollapse }: Props) {
           <button onClick={onCollapse} className="w-7 h-7 rounded-full neu-button grid place-items-center text-xs shrink-0" title="Collapse">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
-          <button onClick={handleNewChat} className="w-7 h-7 rounded-full neu-button grid place-items-center text-sm shrink-0" title="New chat" aria-label="New chat">＋</button>
+          <button onClick={onNewChat} className="w-7 h-7 rounded-full neu-button grid place-items-center text-sm shrink-0" title="New chat" aria-label="New chat">＋</button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-2 mt-1 pr-1">
         {(() => {
-          const sortedChats = [...chats].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
+          const sortedChats = [...chats].sort((a, b) => Number(!!pinned[b.id]) - Number(!!pinned[a.id]));
           return sortedChats.map((chat, idx) => {
-          const isSelected = selectedId === chat.id;
+          const isSelected = activeId === chat.id;
           const isEditing = editingId === chat.id;
           const isMenuOpen = openMenuId === chat.id;
+          const isPinned = !!pinned[chat.id];
           return (
             <div
               key={chat.id}
@@ -178,13 +167,13 @@ export default function LeftSidebar({ collapsed, onCollapse }: Props) {
                 />
               ) : (
                 <button
-                  onClick={() => setSelectedId(chat.id)}
+                  onClick={() => onSelect(chat.id)}
                   className="flex-1 min-w-0 text-left px-3 py-3 truncate flex items-center gap-1.5"
                   title={chat.title}
                 >
-                  {chat.pinned && (
+                  {isPinned && (
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-60" aria-hidden="true"><path d="M12 17v5" /><path d="M9 20h6" /><path d="M12 3a4 4 0 0 0-4 4v5.5a1 1 0 0 0 .3.7l1.7 1.7a1 1 0 0 0 .7.3h2.6a1 1 0 0 0 .7-.3l1.7-1.7a1 1 0 0 0 .3-.7V7a4 4 0 0 0-4-4z" /></svg>
-                  )}
+                    )}
                   <span className={`${isSelected ? 'font-medium leading-tight' : 'opacity-80'} block truncate`}>{chat.title}</span>
                 </button>
               )}
@@ -220,8 +209,7 @@ export default function LeftSidebar({ collapsed, onCollapse }: Props) {
         )}
       </div>
       {openMenuId && menuPos && (() => {
-        const activeChat = chats.find((c) => c.id === openMenuId);
-        const isPinned = !!activeChat?.pinned;
+        const isPinned = !!pinned[openMenuId];
         return createPortal(
         <div
           ref={menuRef}
