@@ -30,6 +30,12 @@ The AI layer provides or defines:
 - Python execution-result shape for use by the backend after sandbox execution.
 - AI errors and validation-failure shapes.
 - Prompt-level expectations for OCR, drafting, and code generation.
+- Development registry entries in `ai/model-registry.ts`:
+  - `vision-qwen25vl` → `qwen/qwen2.5-vl-3b-instruct`, 60-second timeout.
+  - `draft-qwen3` → `qwen/qwen3-4b`, 45-second timeout.
+  - `code-qwen25coder` → `qwen/qwen2.5-coder-7b-instruct`, 60-second timeout.
+- Separate local embedding configuration for `BAAI/bge-small-en-v1.5`, using
+  384-dimensional cosine vectors for Chroma.
 
 The AI layer does not:
 
@@ -51,6 +57,13 @@ The backend owns all of those responsibilities.
 ## 2. Required model-gateway boundary
 
 The backend should wrap all model calls behind one internal gateway. The orchestrator should not call OpenRouter, mlx-lm, or llama-server directly.
+
+For development, all three generation entries use
+`https://openrouter.ai/api/v1` and resolve credentials through the
+`OPENROUTER_API_KEY` environment variable. The key value must never appear in
+source, logs, SQLite, fixtures, or committed environment files. The embedding
+service is not an OpenRouter task route; it is a separate local service and
+must use the same model/dimension configuration as the Chroma index.
 
 An appropriate internal interface is:
 
@@ -515,6 +528,9 @@ For the application:
 
 - Development OpenRouter access must be explicit and visible in configuration.
 - Final demo configuration must use LAN-only model and embedding endpoints.
+- The final local model services may differ in model ID, quantization, latency,
+  context length, image handling, or structured-output behavior; the stable
+  internal IDs and contracts must not change.
 - The backend must not create arbitrary network clients from model output.
 - The Chroma/embedding service must use the approved local endpoint.
 - Python execution must have networking disabled.
@@ -674,4 +690,3 @@ The backend portion is complete when:
 - Cancellation, rejection, expiry, timeout, malformed output, and unavailable-model paths behave safely.
 - The final local configuration produces zero external application requests.
 - No model output can escape the run directory, choose a shell command, bypass confirmation, or select an arbitrary endpoint.
-

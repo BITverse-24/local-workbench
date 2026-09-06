@@ -29,6 +29,12 @@ There are three task types:
 | `draft` | `draft-qwen3` | Write the approval note using retrieved SOP text |
 | `code` | `code-qwen25coder` | Write the Python script for the CSV task |
 
+The development provider mapping is kept in
+[`model-registry.ts`](./model-registry.ts). The registry uses the following
+OpenRouter models: Qwen2.5-VL 3B for vision, Qwen3 4B for drafting, and
+Qwen2.5-Coder 7B for code generation. Embeddings are a separate local service,
+`BAAI/bge-small-en-v1.5`, with 384-dimensional cosine vectors for Chroma.
+
 ## Important rules
 
 - A file is represented by an `AttachmentReference`, not by an unrestricted
