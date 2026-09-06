@@ -39,21 +39,40 @@ type DraftResult = {
 
 This allows Supreet to integrate your code later without guessing the formats.
 
-### 2. Prepare the development model registry
+### 2. [COMPLETE] Prepare the development model registry
 
-You can decide and document:
+The concrete development registry is in [`model-registry.ts`](./model-registry.ts).
+The stable application-facing IDs remain separate from provider model IDs:
 
-- Which OpenRouter model represents `vision`
-- Which model represents `draft`
-- Which model represents `code`
-- Model IDs
-- Request timeouts
-- Required capabilities
-- Expected differences between OpenRouter models and final local models
+| Task | Stable ID | OpenRouter model | Capabilities | Timeout |
+| --- | --- | --- | --- | ---: |
+| `vision` | `vision-qwen25vl` | `qwen/qwen2.5-vl-3b-instruct` | text, image input, structured result | 60s |
+| `draft` | `draft-qwen3` | `qwen/qwen3-4b` | text, structured result | 45s |
+| `code` | `code-qwen25coder` | `qwen/qwen2.5-coder-7b-instruct` | text, code generation | 60s |
 
-You can prepare the registry structure, but the actual gateway/API integration depends on Supreet’s backend.
+The coding route uses the 7B coder as the smallest selected baseline with a
+stronger reliability margin for the fixed Python task. The draft route uses
+Qwen3 4B because it is smaller than the original 8B choice while retaining
+reasoning and structured-output support. Model responses still need to be
+treated as untrusted text by the backend; this task does not add a separate
+runtime typecheck system.
 
-Do not place the API key in code or commit it.
+The RAG embedding service is separate from the three task routes:
+
+| Service | Model | Dimensions | Metric | Final location |
+| --- | --- | ---: | --- | --- |
+| embeddings | `BAAI/bge-small-en-v1.5` | 384 | cosine | local i5 embedding host |
+
+OpenRouter is development-only. The final deployment replaces each provider
+model and endpoint with a LAN-local service while preserving the stable IDs and
+request/response contracts. Expected differences include model IDs, runtime,
+quantization, latency, context limits, image handling, and structured-output
+behavior. If the embedding model or dimension changes, the Chroma index must be
+rebuilt.
+
+The registry contains only `OPENROUTER_API_KEY` as an environment-variable
+name. No API key may be placed in source, fixtures, logs, or committed `.env`
+files. Gateway/API integration remains Supreet's backend responsibility.
 
 ### 3. Create the OCR/vision prompt
 
