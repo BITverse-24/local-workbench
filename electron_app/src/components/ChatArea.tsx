@@ -10,6 +10,7 @@ export type ChatMessage = {
 type Props = {
   messages?: ChatMessage[];
   onEditMessage?: (id: string, newText: string) => void;
+  onAttachFiles?: (files: File[]) => { added: number; rejected: File[] };
 };
 
 function formatSize(bytes: number): string {
@@ -233,7 +234,7 @@ function BasicMarkdown({ text }: { text: string }) {
   );
 }
 
-export default function ChatArea({ messages = [], onEditMessage }: Props) {
+export default function ChatArea({ messages = [], onEditMessage, onAttachFiles }: Props) {
   const hasMessages = messages.length > 0;
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -242,6 +243,8 @@ export default function ChatArea({ messages = [], onEditMessage }: Props) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [dropError, setDropError] = useState<string | null>(null);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const anchor = bottomRef.current;
@@ -334,12 +337,53 @@ export default function ChatArea({ messages = [], onEditMessage }: Props) {
     setEditDraft('');
   }, [editingId, editDraft, onEditMessage]);
 
+  const showDropError = useCallback((msg: string) => {
+    setDropError(msg);
+    window.setTimeout(() => setDropError(null), 4000);
+  }, []);
+
+  const handleFiles = useCallback((incoming: File[] | FileList) => {
+    const arr = Array.from(incoming as File[]);
+    if (!arr.length || !onAttachFiles) {
+      if (!onAttachFiles && arr.length) showDropError('File drop not enabled');
+      return;
+    }
+    const { rejected } = onAttachFiles(arr);
+    if (rejected.length) {
+      const names = rejected.map((f) => `${f.name} (${formatSize(f.size)})`).join(', ');
+      showDropError(`File too big: ${names} — limit is 10MB`);
+    }
+  }, [onAttachFiles, showDropError]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.types.includes('Files')) setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length) handleFiles(files);
+  }, [handleFiles]);
+
   return (
-    <div className="flex-1 flex flex-col overflow-hidden relative" style={{ background: '#1A1A1A' }}>
+    <div
+      className="flex-1 flex flex-col overflow-hidden relative"
+      style={{ background: '#1A1A1A' }}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2"
+        className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-2 transition-colors ${isDragOver ? 'bg-[#252525]/60' : ''}`}
       >
         {!hasMessages ? (
           <>
@@ -481,6 +525,26 @@ export default function ChatArea({ messages = [], onEditMessage }: Props) {
         })}
         <div ref={bottomRef} aria-hidden />
       </div>
+
+      {isDragOver && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#1A1A1A]/75 backdrop-blur-[1px] border-2 border-dashed border-white/20 rounded-xl m-2 pointer-events-none animate-apple-fade">
+          <div className="flex flex-col items-center gap-2 neu-card px-6 py-4">
+            <div className="w-10 h-10 rounded-full neu-pressed grid place-items-center">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-80">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dropError && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 p-2.5 rounded-xl neu-card border border-red-500/30 text-xs text-red-400 flex items-center gap-2 animate-apple-message max-w-[90%]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+          <span className="flex-1 leading-tight">{dropError}</span>
+          <button onClick={() => setDropError(null)} className="w-6 h-6 rounded-full neu-button grid place-items-center text-xs shrink-0 pointer-events-auto">✕</button>
+        </div>
+      )}
 
       {showJump && (
         <button
