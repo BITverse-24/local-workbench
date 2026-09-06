@@ -1,6 +1,6 @@
 ## Work you can do independently now
 
-### 1. Define the AI/backend contract
+### 1.[COMPLETE] Define the AI/backend contract
 
 Create the shapes that Supreet’s backend will eventually call.
 
