@@ -58,7 +58,7 @@ export default function App() {
         const chats = await wb.getChatHistory(50);
         if (cancelled) return;
         setPersistent(true);
-        setHistory(chats.map((c) => ({ id: c.id, title: c.title })));
+        setHistory(chats.map((c) => ({ id: c.id, title: c.title, updated_at: c.updated_at })));
         const temp = await wb.getSetting<number>('temperature');
         if (!cancelled && typeof temp === 'number') setTemperature(temp);
         const last = await wb.getSetting<string>('lastChatId');
@@ -108,7 +108,7 @@ export default function App() {
     if (persistent) {
       try {
         const id = await wb.createChat('New chat');
-        setHistory((prev) => [{ id, title: 'New chat' }, ...prev]);
+        setHistory((prev) => [{ id, title: 'New chat', updated_at: new Date().toISOString() }, ...prev]);
         setChatId(id);
         setMessages([]);
         await wb.setSetting('lastChatId', id);
@@ -118,7 +118,7 @@ export default function App() {
       }
     }
     const id = `local-${Date.now()}`;
-    setHistory((prev) => [{ id, title: 'New chat' }, ...prev]);
+    setHistory((prev) => [{ id, title: 'New chat', updated_at: new Date().toISOString() }, ...prev]);
     setChatId(id);
     setMessages([]);
   }, [persistent]);
@@ -148,7 +148,7 @@ export default function App() {
   // first so sidebar + header change instantly; a failed persist drops to fallback mode.
   const handleRenameChat = useCallback(
     async (id: string, title: string) => {
-      setHistory((prev) => prev.map((c) => (c.id === id ? { ...c, title } : c)));
+      setHistory((prev) => prev.map((c) => (c.id === id ? { ...c, title, updated_at: new Date().toISOString() } : c)));
       if (persistent && !id.startsWith('local-')) {
         try {
           await wb.renameChat(id, title);
@@ -171,7 +171,7 @@ export default function App() {
         const title = firstText.trim().slice(0, 40) || 'New chat';
         const id = await wb.createChat(title);
         setChatId(id);
-        setHistory((prev) => [{ id, title }, ...prev]);
+        setHistory((prev) => [{ id, title, updated_at: new Date().toISOString() }, ...prev]);
         await wb.setSetting('lastChatId', id);
         return id;
       } catch {
@@ -234,6 +234,9 @@ export default function App() {
         try {
           const { messageId } = await wb.sendMessage(id, 'user', text);
           setMessages((prev) => [...prev, { id: messageId, role: 'user', text, files }]);
+          setHistory((prev) =>
+            prev.map((c) => (c.id === id ? { ...c, updated_at: new Date().toISOString() } : c)),
+          );
         } catch {
           setPersistent(false);
           setMessages((prev) => [...prev, { id: `local-${Date.now()}`, role: 'user', text, files }]);
@@ -249,6 +252,10 @@ export default function App() {
       files,
     };
     setMessages((prev) => [...prev, newMsg]);
+    if (chatId) {
+      const now = new Date().toISOString();
+      setHistory((prev) => prev.map((c) => (c.id === chatId ? { ...c, updated_at: now } : c)));
+    }
     // auto-reply with "Chat response" for every sent text
     const reply: ChatMessage = {
       id: (Date.now() + 1).toString(),
