@@ -126,6 +126,7 @@ export type ModelResponse =
 export type Confidence = "high" | "medium" | "low";
 
 export interface PageReference {
+  id: string;
   page: number;
   text: string;
   location?: string;
