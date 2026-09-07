@@ -74,9 +74,61 @@
       "sha256": "ce5f481ca6fab159f4d649fb1041196facff6f17c76e429153161b344ed6a238",
       "bytes": 7236
     },
+    "rag-corpus/build_corpus_manifest.py": {
+      "sha256": "207e910e31699949d3f25539b8e79a1b6b12d64988bf78e3e19653d1bcb9e09b",
+      "bytes": 4895
+    },
+    "rag-corpus/corpus-manifest.json": {
+      "sha256": "b905549077326d880a34f8f61ed39b0c929531b5d6300157b75617b028738d57",
+      "bytes": 60143
+    },
+    "rag-corpus/docs/REF-044-equipment-identifiers.md": {
+      "sha256": "7ba9f6ffc8aeecbb2feb73df16e8376359cbf9c873b3be3aa7626acefba0d349",
+      "bytes": 1038
+    },
+    "rag-corpus/docs/SOP-201-lockout-isolation.md": {
+      "sha256": "5233d1e1ec279478221eac4f2491c19c41227c9e8b6128423058d23466b2a424",
+      "bytes": 1655
+    },
+    "rag-corpus/docs/SOP-305-heat-exchanger-cleaning.md": {
+      "sha256": "0caf5a6630784d15c8b46023d773456ccc5283b8285c044393dfe7fe53dfa12d",
+      "bytes": 1509
+    },
+    "rag-corpus/docs/SOP-411-relief-valve-testing.md": {
+      "sha256": "ccd8906b087b8bfaba0632e45a93b59cbcb3460f5e2da7f11ff91c69517924d7",
+      "bytes": 1443
+    },
+    "rag-corpus/docs/SOP-520-inspection-records.md": {
+      "sha256": "bd7825ef482b722317fb793de04b64b42f55972d503575d4d687afc4ff239439",
+      "bytes": 1602
+    },
+    "rag-corpus/docs/SOP-610-instrument-calibration.md": {
+      "sha256": "70f323d66f49c9becff1ddaa0fecf2e9a3bd522e4e50d0d3eb7ee650b8926700",
+      "bytes": 1496
+    },
+    "rag-corpus/docs/TPL-021-maintenance-deviation-note.md": {
+      "sha256": "6ead522b21dfc55b285a33a633ca7d8b15e521bdad9e9d74b45f7a4a16ddcbc2",
+      "bytes": 1014
+    },
+    "rag-corpus/docs/WI-008-tube-retubing.md": {
+      "sha256": "1dc66bfe91ff86de376600b8e099504a5105ac6f7255bcb36fbf803577bf7b6c",
+      "bytes": 1319
+    },
+    "rag-corpus/queries.json": {
+      "sha256": "7f9e8d680132542535636c75c18075f64f0fe489691196bf99689826b8934097",
+      "bytes": 1351
+    },
+    "rag-corpus/README.md": {
+      "sha256": "995486e344e271bbbf9a54e06433aa16fa6054a6c4bcd8618bf47675d63db476",
+      "bytes": 1783
+    },
+    "rag-corpus/validate_corpus.py": {
+      "sha256": "fa10a86cab2d593f8010b1dd60d98025f71db4ce0fd18d6a0bc53a9d4e125d6b",
+      "bytes": 4434
+    },
     "README.md": {
-      "sha256": "fa88570f79a810779b6c326e423311fc45888845b1eac38f0e0992178e433bb7",
-      "bytes": 1743
+      "sha256": "b7534b731bae13076c71f95be9e5f2b67afa213e18adbf38069882e9bec19a02",
+      "bytes": 2300
     },
     "validate_fixtures.py": {
       "sha256": "9d15349539f2fd38287d9470bb635f1de41993053d7921dd2328e449cc7b5c23",
