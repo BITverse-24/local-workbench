@@ -69,6 +69,7 @@ const result: VisionResult = {
   ],
   pageReferences: [
     {
+      id: "page-ref-1",
       page: 1,
       text: "Rows 12–15: 3.8–4.2 mm; minimum allowable: 4.6 mm",
       location: "tube-wall-thickness table",
