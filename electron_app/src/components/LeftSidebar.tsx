@@ -1,23 +1,27 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { formatRelativeTime } from '../lib/time';
+
+export type SidebarChat = {
+  id: string;
+  title: string;
+  /** Backend ISO-8601 updated_at; local entries use creation time. */
+  updated_at: string;
+};
 
 type Props = {
   collapsed: boolean;
   onCollapse: () => void;
+  /** Persisted history (backend `getChatHistory`, newest first). Empty when unreachable. */
+  chats: SidebarChat[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  onNewChat: () => void;
+  /** Rename is local-only until the backend adds a rename channel (see backend/PROPOSALS.md P-B1). */
+  onRename: (id: string, title: string) => void;
+  /** Archive in backend (soft-delete); parent drops it from the list. */
+  onDeleteChat: (id: string) => void;
 };
-
-type Chat = {
-  id: string;
-  title: string;
-  pinned?: boolean;
-};
-
-const DEFAULT_CHATS: Chat[] = [
-  { id: '1', title: 'What is the capital of France?' },
-  { id: '2', title: 'Write a Python script for CSV parsing…' },
-  { id: '3', title: 'Explain quantum computing' },
-  { id: '4', title: 'Inspection report → approval note' },
-];
 
 function DotsIcon({ size = 14 }: { size?: number }) {
   return (
@@ -29,10 +33,12 @@ function DotsIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-export default function LeftSidebar({ collapsed, onCollapse }: Props) {
-  const [chats, setChats] = useState<Chat[]>(DEFAULT_CHATS);
-  const [selectedId, setSelectedId] = useState<string>('1');
+export default function LeftSidebar({ collapsed, onCollapse, chats, activeId, onSelect, onNewChat, onDeleteChat, onRename }: Props) {
+  // Local-only UI state: pin has no backend column. Rename edits flow up via onRename
+  // (persisted through workbench:renameChat) so the chat-box header updates too.
+  const [pinned, setPinned] = useState<Record<string, boolean>>({});
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -87,6 +93,16 @@ export default function LeftSidebar({ collapsed, onCollapse }: Props) {
     return () => document.removeEventListener('mousedown', onDown);
   }, [openMenuId]);
 
+  // Escape dismisses the delete confirmation.
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setConfirmDeleteId(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [confirmDeleteId]);
+
   const handleRename = (id: string) => {
     const chat = chats.find((c) => c.id === id);
     if (!chat) return;
@@ -98,31 +114,22 @@ export default function LeftSidebar({ collapsed, onCollapse }: Props) {
   const commitRename = () => {
     if (!editingId) return;
     const v = editValue.trim();
-    if (v) setChats((prev) => prev.map((c) => (c.id === editingId ? { ...c, title: v } : c)));
+    if (v) onRename(editingId, v);
     setEditingId(null);
   };
 
   const handleDelete = (id: string) => {
-    setChats((prev) => prev.filter((c) => c.id !== id));
     setOpenMenuId(null);
-    if (selectedId === id) setSelectedId(chats.find((c) => c.id !== id)?.id ?? '');
+    setConfirmDeleteId(id);
+  };
+
+  const confirmDelete = () => {
+    if (confirmDeleteId) onDeleteChat(confirmDeleteId);
+    setConfirmDeleteId(null);
   };
 
   const handlePinToggle = (id: string) => {
-    setChats((prev) => prev.map((c) => (c.id === id ? { ...c, pinned: !c.pinned } : c)));
-    setOpenMenuId(null);
-  };
-
-  const handleNewChat = () => {
-    const id = Date.now().toString();
-    const base = 'New chat';
-    const count = chats.filter((c) => c.title.startsWith(base)).length;
-    const title = count === 0 ? base : `${base} ${count + 1}`;
-    const newChat: Chat = { id, title };
-    setChats((prev) => [newChat, ...prev]);
-    setSelectedId(id);
-    setEditingId(id);
-    setEditValue(title);
+    setPinned((prev) => ({ ...prev, [id]: !prev[id] }));
     setOpenMenuId(null);
   };
 
@@ -147,17 +154,18 @@ export default function LeftSidebar({ collapsed, onCollapse }: Props) {
           <button onClick={onCollapse} className="w-7 h-7 rounded-full neu-button grid place-items-center text-xs shrink-0" title="Collapse">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
-          <button onClick={handleNewChat} className="w-7 h-7 rounded-full neu-button grid place-items-center text-sm shrink-0" title="New chat" aria-label="New chat">＋</button>
+          <button onClick={onNewChat} className="w-7 h-7 rounded-full neu-button grid place-items-center text-sm shrink-0" title="New chat" aria-label="New chat">＋</button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-2 mt-1 pr-1">
         {(() => {
-          const sortedChats = [...chats].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
+          const sortedChats = [...chats].sort((a, b) => Number(!!pinned[b.id]) - Number(!!pinned[a.id]));
           return sortedChats.map((chat, idx) => {
-          const isSelected = selectedId === chat.id;
+          const isSelected = activeId === chat.id;
           const isEditing = editingId === chat.id;
           const isMenuOpen = openMenuId === chat.id;
+          const isPinned = !!pinned[chat.id];
           return (
             <div
               key={chat.id}
@@ -178,14 +186,17 @@ export default function LeftSidebar({ collapsed, onCollapse }: Props) {
                 />
               ) : (
                 <button
-                  onClick={() => setSelectedId(chat.id)}
-                  className="flex-1 min-w-0 text-left px-3 py-3 truncate flex items-center gap-1.5"
+                  onClick={() => onSelect(chat.id)}
+                  className="flex-1 min-w-0 text-left px-3 py-2.5 truncate flex flex-col items-start gap-0.5"
                   title={chat.title}
                 >
-                  {chat.pinned && (
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-60" aria-hidden="true"><path d="M12 17v5" /><path d="M9 20h6" /><path d="M12 3a4 4 0 0 0-4 4v5.5a1 1 0 0 0 .3.7l1.7 1.7a1 1 0 0 0 .7.3h2.6a1 1 0 0 0 .7-.3l1.7-1.7a1 1 0 0 0 .3-.7V7a4 4 0 0 0-4-4z" /></svg>
-                  )}
-                  <span className={`${isSelected ? 'font-medium leading-tight' : 'opacity-80'} block truncate`}>{chat.title}</span>
+                  <span className="flex items-center gap-1.5 min-w-0 w-full">
+                    {isPinned && (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-60" aria-hidden="true"><path d="M12 17v5" /><path d="M9 20h6" /><path d="M12 3a4 4 0 0 0-4 4v5.5a1 1 0 0 0 .3.7l1.7 1.7a1 1 0 0 0 .7.3h2.6a1 1 0 0 0 .7-.3l1.7-1.7a1 1 0 0 0 .3-.7V7a4 4 0 0 0-4-4z" /></svg>
+                      )}
+                    <span className={`${isSelected ? 'font-medium leading-tight' : 'opacity-80'} block truncate`}>{chat.title}</span>
+                  </span>
+                  <span className="text-[10px] leading-tight opacity-40">{formatRelativeTime(chat.updated_at)}</span>
                 </button>
               )}
 
@@ -220,8 +231,7 @@ export default function LeftSidebar({ collapsed, onCollapse }: Props) {
         )}
       </div>
       {openMenuId && menuPos && (() => {
-        const activeChat = chats.find((c) => c.id === openMenuId);
-        const isPinned = !!activeChat?.pinned;
+        const isPinned = !!pinned[openMenuId];
         return createPortal(
         <div
           ref={menuRef}
@@ -258,6 +268,40 @@ export default function LeftSidebar({ collapsed, onCollapse }: Props) {
         document.body
       );
       })()}
+      {confirmDeleteId && createPortal(
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-[1px] p-4 animate-apple-fade"
+          onClick={() => setConfirmDeleteId(null)}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="Delete chat"
+            className="w-72 max-w-full neu-dropdown p-5 animate-apple-scaleIn"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-semibold">Delete chat?</h3>
+            <p className="text-xs opacity-60 mt-1.5 leading-relaxed truncate">
+              &ldquo;{chats.find((c) => c.id === confirmDeleteId)?.title ?? 'this chat'}&rdquo; will be archived.
+            </p>
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="px-4 py-1.5 rounded-full neu-button text-xs font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-1.5 rounded-full text-xs font-semibold bg-red-500/20 border border-red-500/40 text-red-200 hover:bg-red-500/30 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </aside>
   );
 }

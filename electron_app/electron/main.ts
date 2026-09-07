@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { initBackend } from '../../backend/src/main/index.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -69,7 +70,24 @@ app.on('activate', () => {
   }
 })
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  // Backend SQLite location (contract: backend/data/workbench.db in dev, per
+  // backend/DATABASE.md). backend's resolveDbPath() honors WORKBENCH_DB_PATH, so set
+  // it here — the backend's own BACKEND_ROOT derivation is only valid inside its tree.
+  // Packaged apps (Phase 15) keep user data under userData instead.
+  try {
+    if (!process.env.WORKBENCH_DB_PATH) {
+      process.env.WORKBENCH_DB_PATH = app.isPackaged
+        ? path.join(app.getPath('userData'), 'workbench.db')
+        : path.join(process.env.APP_ROOT, '..', 'backend', 'data', 'workbench.db')
+    }
+    initBackend(ipcMain)
+  } catch (err) {
+    // The renderer degrades to in-memory mode when the bridge is unreachable.
+    console.error('[backend] initBackend failed:', err)
+  }
+  createWindow()
+})
 
 // --------- Window Control IPC Handlers ---------
 ipcMain.on('window-minimize', () => {

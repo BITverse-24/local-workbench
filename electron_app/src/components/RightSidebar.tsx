@@ -1,5 +1,3 @@
-import { useRef } from 'react';
-
 type Model = { id: string; name: string; desc: string };
 
 type Props = {
@@ -43,7 +41,7 @@ export default function RightSidebar({ collapsed, onCollapse, models: _models, s
         <div className="space-y-2 animate-apple-message">
           <label className="text-xs font-medium opacity-60">Model</label>
           <button
-            ref={modelBtnRef}
+            ref={modelBtnRef as React.RefObject<HTMLButtonElement>}
             onClick={() => setModelOpen(!modelOpen)}
             className="w-full rounded-2xl p-3 neu-raised flex items-center justify-between text-left"
           >

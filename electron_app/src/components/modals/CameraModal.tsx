@@ -28,9 +28,9 @@ export default function CameraModal({ open, error, capturedImage, videoRef, canv
           ) : capturedImage ? (
             <img src={capturedImage} alt="captured" className="w-full h-full object-contain" />
           ) : (
-            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            <video ref={videoRef as React.RefObject<HTMLVideoElement>} autoPlay playsInline muted className="w-full h-full object-cover" />
           )}
-          <canvas ref={canvasRef} className="hidden" />
+          <canvas ref={canvasRef as React.RefObject<HTMLCanvasElement>} className="hidden" />
         </div>
         <div className="flex gap-2 mt-4">
           {capturedImage ? (

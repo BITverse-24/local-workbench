@@ -194,7 +194,7 @@ export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusB
           style={{ borderColor: isDragOver ? 'rgba(255,255,255,0.18)' : undefined }}
         >
           <button
-            ref={plusBtnRef}
+            ref={plusBtnRef as React.RefObject<HTMLButtonElement>}
             onClick={() => setPlusOpen((o: boolean) => !o)}
             className={`w-9 h-9 rounded-full neu-button grid place-items-center shrink-0 transition-transform duration-300 ${plusOpen ? 'neu-pressed rotate-45' : ''}`}
             title="More options"
