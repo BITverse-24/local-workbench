@@ -1,0 +1,12 @@
+{
+  "exitCode": 0,
+  "stdout": "OUT_OF_RANGE 7/240 (high=5, low=2)\n",
+  "stderr": "",
+  "timedOut": false,
+  "outputFiles": ["out-of-range-rows.csv"],
+  "durationMs": null,
+  "inputRowCount": 240,
+  "flaggedRowCount": 7,
+  "highCount": 5,
+  "lowCount": 2
+}

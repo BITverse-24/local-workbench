@@ -1,0 +1,86 @@
+{
+  "fixtureVersion": "1.0.0",
+  "generatedAt": "2026-08-20T00:00:00Z",
+  "flows": {
+    "flowA": {
+      "reportReference": "IR-E201-2026-08-20",
+      "inspectionDate": "2026-08-20",
+      "equipment": "E-201",
+      "unit": "R-100",
+      "expectedFindingCount": 3,
+      "requiredCitation": "SOP-114 §3.2",
+      "requiredTemplate": "TPL-012"
+    },
+    "flowB": {
+      "inputRows": 240,
+      "reactorId": "R-101",
+      "limitsCelsius": {
+        "lowExclusive": 250.0,
+        "highExclusive": 350.0
+      },
+      "outOfRangeRows": 7,
+      "highRows": 5,
+      "lowRows": 2,
+      "expectedStdout": "OUT_OF_RANGE 7/240 (high=5, low=2)",
+      "expectedExitCode": 0
+    }
+  },
+  "files": {
+    "build_fixtures.py": {
+      "sha256": "325fd1a7f57da6b13d6a1a6cfc3e216635035cea3d1f27375d4dd801bbcaf964",
+      "bytes": 5843
+    },
+    "flow-a/approval-note-template-TPL-012.md": {
+      "sha256": "1559f0e177b35a5accc87132bb0ee7dc78988d482f348bb8aee3d9229d32be92",
+      "bytes": 681
+    },
+    "flow-a/expected-approval-note.json": {
+      "sha256": "d7c9b8bd6f9d1d25a32f3d72311b4c58a370c6259411887fd289732fc0d27f1e",
+      "bytes": 2230
+    },
+    "flow-a/expected-ocr.json": {
+      "sha256": "950501b123d2899fa49628e943ddaf4fa8721d43843b4fc1c88d5a25b085851d",
+      "bytes": 2160
+    },
+    "flow-a/expected-retrieval.json": {
+      "sha256": "077e298af2c9b6304181dd4da3aac06e38490dfd0256980e0f43a54305748bf2",
+      "bytes": 2347
+    },
+    "flow-a/inspection-report-E201.pdf": {
+      "sha256": "653587b417bdbe79d6a7488b641d40bb6d7fd079d4844cc84464292b54e853a0",
+      "bytes": 1882
+    },
+    "flow-a/sop-114-pressure-equipment-inspection.md": {
+      "sha256": "67d904eba5994e00a0689e9f3b9389969f593be66364202c7ee91c2577ca05f2",
+      "bytes": 1432
+    },
+    "flow-b/expected-out-of-range-summary.csv": {
+      "sha256": "57c31bb6004654d6302a5def55e7827ab5ab5801d85060218ad616c8b22495bd",
+      "bytes": 281
+    },
+    "flow-b/expected-out-of-range-summary.json": {
+      "sha256": "9caa380411a1ab35b4fc09a60bc061eb648dcf7ebf399c43d17a19e83b9cca7b",
+      "bytes": 923
+    },
+    "flow-b/expected-python-execution.json": {
+      "sha256": "f02adba3178b643ad1214125f71bc06a61b65193cf0575cbf3bc0df6e1aa446c",
+      "bytes": 258
+    },
+    "flow-b/expected-task.py": {
+      "sha256": "6554f0b7e40dc4916a6ea7ab4697b23dea0e8042d97d629e474442c38d07b5c1",
+      "bytes": 1377
+    },
+    "flow-b/reactor-temperature-log.csv": {
+      "sha256": "ce5f481ca6fab159f4d649fb1041196facff6f17c76e429153161b344ed6a238",
+      "bytes": 7236
+    },
+    "README.md": {
+      "sha256": "fa88570f79a810779b6c326e423311fc45888845b1eac38f0e0992178e433bb7",
+      "bytes": 1743
+    },
+    "validate_fixtures.py": {
+      "sha256": "9d15349539f2fd38287d9470bb635f1de41993053d7921dd2328e449cc7b5c23",
+      "bytes": 7547
+    }
+  }
+}

@@ -1,0 +1,62 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 6 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 7 0 R >>
+endobj
+6 0 obj
+<< /Length 609 >>
+stream
+BT
+/F1 16 Tf 72 740 Td (Heat Exchanger E-201 Tube Bundle Inspection Report) Tj
+/F1 10 Tf 72 712 Td (Report ID: IR-E201-2026-08-20) Tj
+/F1 10 Tf 72 692 Td (Inspection date: 2026-08-20) Tj
+/F1 10 Tf 72 672 Td (Unit: R-100) Tj
+/F1 10 Tf 72 652 Td (Inspection scope: Tube bundle and shell inlet nozzle) Tj
+/F1 12 Tf 72 632 Td (Tube wall thickness) Tj
+/F1 10 Tf 72 604 Td (Rows 12ñ15 measured 3.8ñ4.2 mm; minimum allowable tube wall thickness: 4.6 mm.) Tj
+/F1 12 Tf 72 584 Td (Corrosion findings) Tj
+/F1 10 Tf 72 556 Td (Localised pitting corrosion at the shell inlet nozzle; maximum pitting depth: 1.8 mm.) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Length 473 >>
+stream
+BT
+/F1 16 Tf 72 740 Td (Heat Exchanger E-201 Tube Bundle Inspection Report) Tj
+/F1 12 Tf 72 712 Td (Channel-head inspection) Tj
+/F1 10 Tf 72 684 Td (Channel-head gasket shows degradation; replacement recommended before return to service.) Tj
+/F1 10 Tf 72 664 Td (No approval status is stated in this report.) Tj
+/F1 12 Tf 72 644 Td (Inspection record) Tj
+/F1 10 Tf 72 616 Td (Report reference: IR-E201-2026-08-20) Tj
+/F1 10 Tf 72 596 Td (Inspection date: 2026-08-20) Tj
+ET
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000127 00000 n 
+0000000253 00000 n 
+0000000350 00000 n 
+0000000476 00000 n 
+0000001135 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1658
+%%EOF
