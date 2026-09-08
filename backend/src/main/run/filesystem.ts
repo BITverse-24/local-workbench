@@ -6,7 +6,15 @@ import type { ArtifactRef, AttachmentReference } from "../../shared/contracts.js
 
 const MAX_ATTACHMENT = 25 * 1024 * 1024;
 const allowed = (mediaType: string) => mediaType === "application/pdf" || mediaType === "text/csv" || mediaType.startsWith("image/");
-function dataRoot(): string { return process.env.WORKBENCH_DATA_ROOT ?? (existsSync(path.join(process.cwd(), "backend")) ? path.join(process.cwd(), "backend", "data") : path.join(process.cwd(), "data")); }
+function dataRoot(): string {
+  if (process.env.WORKBENCH_DATA_ROOT) return process.env.WORKBENCH_DATA_ROOT;
+  // APP_ROOT is set by electron_app/electron/main.ts to electron_app/
+  const appRoot = process.env.APP_ROOT;
+  if (appRoot && existsSync(path.join(appRoot, "..", "backend", "data"))) return path.join(appRoot, "..", "backend", "data");
+  if (existsSync(path.join(process.cwd(), "backend", "data"))) return path.join(process.cwd(), "backend", "data");
+  if (existsSync(path.join(process.cwd(), "..", "backend", "data"))) return path.join(process.cwd(), "..", "backend", "data");
+  return existsSync(path.join(process.cwd(), "backend")) ? path.join(process.cwd(), "backend", "data") : path.join(process.cwd(), "data");
+}
 export function absoluteDataPath(relativePath: string): string { assertSafeRelativePath(relativePath); const root = path.resolve(dataRoot()); const target = path.resolve(root, relativePath); if (!target.startsWith(`${root}${path.sep}`)) throw new Error("data path escapes root"); return target; }
 export function runRoot(runId: string): string { if (!/^[0-9a-f-]{36}$/i.test(runId)) throw new Error("invalid run id"); return path.join(dataRoot(), "runs", runId); }
 export function createRunDirectories(runId: string): string { const root = runRoot(runId); for (const name of ["input", "intermediate", "output", "logs"]) mkdirSync(path.join(root, name), { recursive: true }); return root; }

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { initBackend } from "../../backend/src/main/index.js";
 import { IPC_RUN } from "../../backend/src/main/ipc/channels.js";
 
@@ -79,6 +80,71 @@ app.whenReady().then(() => {
     }
     manager = initBackend(ipcMain, (event) => {
       if (win && !win.isDestroyed()) win.webContents.send("workbench:runEvent", event);
+    });
+    // Model trace logs — expose full gateway traces to renderer for debugging.
+    // Reads per-run logs written by backend/src/main/gateway/model-gateway.ts
+    // (model-gateway.log JSONL + model-<taskType>-<requestId>.json). Renderer
+    // gets structured-clone safe JSON; never leaks absolute paths or keys.
+    ipcMain.handle("workbench:getRunLogs", async (_event, input) => {
+      const raw = input as { runId?: string; limit?: number };
+      const runId = raw?.runId;
+      if (!runId || !/^[0-9a-f-]{36}$/i.test(runId)) throw new Error("runId required");
+      const limit = Math.min(Math.max(raw.limit ?? 100, 1), 500);
+      const { runRoot } = await import("../../backend/src/main/run/filesystem.js");
+      // Verify run exists via runRoot guard (throws on bad id) and data dir
+      const logsDir = path.join(runRoot(runId), "logs");
+      if (!existsSync(logsDir)) return { runId, entries: [], files: [] as string[] };
+      // List per-request json files
+      let files: string[] = [];
+      try {
+        files = readdirSync(logsDir).filter((f) => f.startsWith("model-") && f.endsWith(".json")).slice(0, 50);
+      } catch {
+        files = [];
+      }
+      // Read JSONL audit trail
+      const auditPath = path.join(logsDir, "model-gateway.log");
+      let entries: unknown[] = [];
+      try {
+        if (existsSync(auditPath)) {
+          const text = readFileSync(auditPath, "utf8");
+          const lines = text.split("\n").filter(Boolean);
+          const slice = lines.slice(-limit);
+          entries = slice.map((line, idx) => {
+            try { return JSON.parse(line); } catch { return { raw: line.slice(0, 4000), parseError: true, idx }; }
+          });
+        }
+      } catch {
+        entries = [];
+      }
+      // Also try to surface the most recent per-request full trace inline (largest payload)
+      let recentFull: unknown = null;
+      if (files.length) {
+        const sorted = [...files].sort().reverse();
+        const mostRecent = sorted[0];
+        try {
+          const fullText = readFileSync(path.join(logsDir, mostRecent), "utf8");
+          recentFull = JSON.parse(fullText);
+        } catch {
+          recentFull = null;
+        }
+      }
+      return { runId, entries, files, recentFull };
+    });
+    ipcMain.handle("workbench:getRunLogFile", async (_event, input) => {
+      const raw = input as { runId?: string; filename?: string };
+      if (!raw?.runId || !raw?.filename) throw new Error("runId and filename required");
+      if (!/^[0-9a-f-]{36}$/i.test(raw.runId)) throw new Error("invalid runId");
+      if (raw.filename.includes("/") || raw.filename.includes("\\") || raw.filename.includes("..")) throw new Error("invalid filename");
+      if (!raw.filename.startsWith("model-") || !raw.filename.endsWith(".json")) throw new Error("invalid log filename");
+      const { runRoot } = await import("../../backend/src/main/run/filesystem.js");
+      const target = path.resolve(path.join(runRoot(raw.runId), "logs", raw.filename));
+      const root = path.resolve(runRoot(raw.runId));
+      if (!target.startsWith(root + path.sep)) throw new Error("path escapes run");
+      if (!existsSync(target)) throw new Error("log file not found");
+      const text = readFileSync(target, "utf8");
+      // Cap at 1MB JSON for IPC
+      const capped = text.length > 1024 * 1024 ? text.slice(0, 1024 * 1024) : text;
+      return { runId: raw.runId, filename: raw.filename, content: JSON.parse(capped) };
     });
     // Artifact open — main-process shell integration with run-scope guard.
     // The renderer never receives absolute paths; main resolves via the backend

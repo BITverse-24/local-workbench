@@ -2,12 +2,12 @@ export type TaskType = "vision" | "draft" | "code";
 export type ModelRuntime = "mlx-lm" | "llama-server" | "openrouter";
 export type ModelId = "vision-qwen25vl" | "draft-qwen3" | "code-qwen25coder";
 export type ModelCapability = "text" | "image-input" | "structured-output" | "code-generation";
-export interface ModelRegistryEntry { id: ModelId; taskTypes: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; }
+export interface ModelRegistryEntry { id: ModelId; taskTypes: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; maxOutputTokens?: number; }
 export interface AttachmentReference { attachmentId: string; filename: string; mediaType: string; sizeBytes: number; relativePath: string; }
 export interface InputFileReference { attachmentId: string; filename: string; mediaType: string; columns?: string[]; rowCount?: number; }
 export type ResponseFormat = "vision-result" | "draft-result" | "code-result" | "code-summary" | "chat-result";
 export interface ChatResult { text: string; }
-export interface ModelRequestBase { requestId: string; runId: string; taskType: TaskType; modelId: ModelId; systemPrompt: string; userPrompt: string; responseFormat: ResponseFormat; timeoutMs: number; temperature?: number; }
+export interface ModelRequestBase { requestId: string; runId: string; taskType: TaskType; modelId: ModelId; systemPrompt: string; userPrompt: string; responseFormat: ResponseFormat; timeoutMs: number; temperature?: number; maxTokens?: number; }
 export interface VisionModelRequest extends ModelRequestBase { taskType: "vision"; modelId: "vision-qwen25vl"; responseFormat: "vision-result"; attachment: AttachmentReference; inputMode: "typed-scan"; }
 export interface DraftModelRequest extends ModelRequestBase { taskType: "draft"; modelId: "draft-qwen3"; responseFormat: "draft-result"; findings: Finding[]; pageReferences: PageReference[]; retrievedChunks: RetrievedKnowledgeChunk[]; templateRequirements: string[]; }
 export interface CodeModelRequest extends ModelRequestBase { taskType: "code"; modelId: "code-qwen25coder"; responseFormat: "code-result"; task: string; inputFile: InputFileReference; allowedLanguage: "python"; executionRules: string[]; }

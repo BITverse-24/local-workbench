@@ -79,7 +79,7 @@ export type EditMessageInput = z.infer<typeof editMessageSchema>;
 export type GetSettingInput = z.infer<typeof getSettingSchema>;
 export type SetSettingInput = z.infer<typeof setSettingSchema>;
 
-export const startRunSchema = z.object({ userText: z.string().trim().min(1).max(8000), attachmentToken: z.string().uuid().optional(), runId: z.string().uuid().optional(), chatId: z.string().uuid().optional() }).strict();
+export const startRunSchema = z.object({ userText: z.string().trim().max(8000), attachmentToken: z.string().uuid().optional(), runId: z.string().uuid().optional(), chatId: z.string().uuid().optional() }).strict().refine((d) => d.userText.length > 0 || d.attachmentToken !== undefined, { message: "message text or an attachment is required" });
 export const confirmActionSchema = z.object({ runId: z.string().uuid(), actionId: z.string().uuid(), approved: z.boolean() }).strict();
 export const cancelRunSchema = z.object({ runId: z.string().uuid() }).strict();
 export const getArtifactSchema = z.object({ runId: z.string().uuid(), artifactId: z.string().uuid() }).strict();

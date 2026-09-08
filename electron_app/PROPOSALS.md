@@ -171,3 +171,29 @@
 * **Reason:** Last non-persisted chat mutation; makes "restart restores everything" hold.
 * **Impact:** Rename survives restart (title + bumped `updated_at` re-sorts history).
   Validation errors (bad uuid, empty/>200-char title) surface as invoke rejections.
+
+## P6 — Image-only sends fail persisting the user message (empty `content`)
+
+* **Target:** `electron_app/src/App.tsx` `handleSend` (~line 373)
+* **Issue:** Attaching an image with an empty composer still calls
+  `wb.sendMessage(cid, "user", "")`, and backend `sendMessageSchema` requires
+  `content` min(1). The send fails immediately with the cryptic
+  `String must contain at least 1 character(s)` before the run even starts.
+* **Evidence:** `App.tsx:353-356` allows send when `hasFiles` alone;
+  `App.tsx:373` persists raw `text` (possibly `""`);
+  `backend/src/main/ipc/validators.ts` `sendMessageSchema` (`content` min(1),
+  32k max). Backend side intentionally unchanged — empty persisted messages
+  stay invalid.
+* **Suggested change:** persist a label when the composer is empty, e.g.
+  ```ts
+  const label = text.trim() ? text : `[attached ${file.name}]`;
+  const { messageId } = await wb.sendMessage(cid, "user", label);
+  ```
+  and keep passing raw `text` (possibly `""`) as `startRun.userText` — the
+  backend now accepts empty text when `attachmentToken` is present
+  (`startRunSchema` refine + `RunManager.start` guard; vision flows use the
+  fixed `ai/` extraction prompt and ignore the text anyway).
+* **Reason:** The chat transcript should show *something* for an image-only
+  turn, and the run path already handles it.
+* **Impact:** Image-only sends persist + run instead of failing at step one.
+  No backend change needed (already done and tested).

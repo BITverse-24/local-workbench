@@ -53,6 +53,10 @@ contextBridge.exposeInMainWorld("workbench", {
     ipcRenderer.invoke("workbench:openArtifact", input),
   getHealth: () =>
     ipcRenderer.invoke("workbench:getHealth"),
+  getRunLogs: (input: { runId: string; limit?: number }) =>
+    ipcRenderer.invoke("workbench:getRunLogs", input),
+  getRunLogFile: (input: { runId: string; filename: string }) =>
+    ipcRenderer.invoke("workbench:getRunLogFile", input),
 
   // push events — returns unsubscribe
   onRunEvent: (listener: (event: unknown) => void) => {

@@ -1,8 +1,32 @@
 import type { AIError, ModelRequest, ModelResponse } from "../../shared/contracts.js";
 export function parseProviderContent(content: unknown): unknown {
   if (typeof content !== "string" || content.trim() === "") throw new Error("empty model response");
-  const clean = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  return JSON.parse(clean);
+  let clean = content.trim();
+  // Strip markdown fences and leading HTML/comment junk that small models emit.
+  clean = clean.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/g, "");
+  clean = clean.replace(/^[\s\S]*?(?=\{)/, "").trim();
+  // Remove trailing non-JSON tail (e.g. "</body> <sections>").
+  const lastBrace = clean.lastIndexOf("}");
+  if (lastBrace !== -1) clean = clean.slice(0, lastBrace + 1);
+  // First try direct parse, then fallback to extracting the largest JSON object.
+  try {
+    return JSON.parse(clean);
+  } catch (firstError) {
+    const firstBrace = content.indexOf("{");
+    const last = content.lastIndexOf("}");
+    if (firstBrace !== -1 && last !== -1 && last > firstBrace) {
+      const extracted = content.slice(firstBrace, last + 1);
+      try {
+        return JSON.parse(extracted);
+      } catch {}
+      // Try unwrapping escaped inner JSON (model double-stringifies).
+      try {
+        const unwrapped = JSON.parse(`"${extracted.replace(/"/g, '\\"')}"`);
+        if (typeof unwrapped === "string") return JSON.parse(unwrapped);
+      } catch {}
+    }
+    throw firstError;
+  }
 }
 export function providerError(error: unknown, request: ModelRequest): AIError {
   const message = error instanceof Error ? error.message : "model request failed";

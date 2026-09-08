@@ -113,6 +113,8 @@ interface WorkbenchBridge {
   getArtifact: (input: { runId: string; artifactId: string }) => Promise<ArtifactRef>;
   openArtifact: (input: { runId: string; artifactId: string }) => Promise<{ opened: true; filename: string }>;
   getHealth: () => Promise<ModelHealth[]>;
+  getRunLogs: (input: { runId: string; limit?: number }) => Promise<{ runId: string; entries: unknown[]; files: string[]; recentFull: unknown }>;
+  getRunLogFile: (input: { runId: string; filename: string }) => Promise<{ runId: string; filename: string; content: unknown }>;
   onRunEvent: (listener: (event: RunEvent) => void) => () => void;
 }
 

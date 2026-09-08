@@ -145,6 +145,14 @@ export async function getHealth(): Promise<ModelHealth[]> {
   return bridge().getHealth();
 }
 
+export async function getRunLogs(input: { runId: string; limit?: number }): Promise<{ runId: string; entries: unknown[]; files: string[]; recentFull: unknown }> {
+  return bridge().getRunLogs(input);
+}
+
+export async function getRunLogFile(input: { runId: string; filename: string }): Promise<{ runId: string; filename: string; content: unknown }> {
+  return bridge().getRunLogFile(input);
+}
+
 export function onRunEvent(listener: (event: RunEvent) => void): () => void {
   return bridge().onRunEvent(listener);
 }

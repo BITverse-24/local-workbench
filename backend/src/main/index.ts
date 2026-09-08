@@ -10,6 +10,7 @@
 // structural `MinimalIpcMain` surface is used, so this file is unit-testable and
 // bundler-friendly. Full run-protocol wiring lands in Phase 1.
 
+import { loadBackendEnv } from "./config/env.js";
 import { initDb } from "./persistence/db.js";
 import { registerChatHandlers, registerRunHandlers, type MinimalIpcMain } from "./ipc/handlers.js";
 import { RunManager } from "./run/manager.js";
@@ -20,6 +21,7 @@ export { registerChatHandlers, registerRunHandlers, type MinimalIpcMain } from "
 
 /** Open SQLite (idempotent migrate + seed) and register chat IPC handlers. */
 export function initBackend(ipcMain: MinimalIpcMain, emit?: (event: RunEvent) => void): RunManager {
+  loadBackendEnv();
   initDb();
   registerChatHandlers(ipcMain);
   const manager = new RunManager(undefined, emit);
