@@ -1,0 +1,40 @@
+{
+  "requestId": "fixture-request-draft-no-source",
+  "runId": "fixture-run-flow-a-no-source",
+  "modelId": "draft-qwen3",
+  "completedAt": "2026-08-20T00:00:40.000Z",
+  "taskType": "draft",
+  "result": {
+    "title": "Approval Note — Heat Exchanger E-201",
+    "body": "Equipment\nE-201; report reference: IR-E201-2026-08-20\n\nFindings\nThe supplied inspection findings are recorded, but no matching knowledge source was retrieved.\n\nRecommendation\nRecommendation unavailable because no matching knowledge source was retrieved.\n\nGrounding references\nNo grounding references retrieved.",
+    "sections": [
+      {
+        "id": "equipment-header",
+        "heading": "Equipment",
+        "body": "E-201; report reference: IR-E201-2026-08-20"
+      },
+      {
+        "id": "findings-summary",
+        "heading": "Findings",
+        "body": "The supplied inspection findings are recorded, but no matching knowledge source was retrieved."
+      },
+      {
+        "id": "recommendation",
+        "heading": "Recommendation",
+        "body": "Recommendation unavailable because no matching knowledge source was retrieved."
+      },
+      {
+        "id": "grounding-references",
+        "heading": "Grounding references",
+        "body": "No grounding references retrieved."
+      }
+    ],
+    "citations": [],
+    "missingInformation": [
+      {
+        "field": "knowledgeSources",
+        "note": "No suitable knowledge source was retrieved; document generation must not start."
+      }
+    ]
+  }
+}

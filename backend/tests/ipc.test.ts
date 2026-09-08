@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CHAT_CHANNELS, IPC_CHAT } from "../src/main/ipc/channels.js";
+import { CHAT_CHANNELS, IPC_CHAT, IPC_RUN, RUN_CHANNELS } from "../src/main/ipc/channels.js";
 import { registerChatHandlers, type MinimalIpcMain } from "../src/main/ipc/handlers.js";
 import { initBackend } from "../src/main/index.js";
 import { closeDb, initDb } from "../src/main/persistence/db.js";
@@ -44,11 +44,15 @@ afterEach(() => {
 });
 
 describe("chat IPC over mock Electron ipcMain", () => {
-  it("initBackend registers all 9 chat channels (launch wiring)", () => {
+  it("initBackend registers all chat+run channels (launch wiring)", () => {
     const fake = new FakeIpcMain();
     initBackend(fake);
-    expect([...fake.handlers.keys()].sort()).toEqual([...CHAT_CHANNELS].sort());
+    const expected = [...CHAT_CHANNELS, ...RUN_CHANNELS].filter(
+      (channel) => channel !== IPC_RUN.RUN_EVENT && channel !== IPC_RUN.OPEN_ARTIFACT,
+    );
+    expect([...fake.handlers.keys()].sort()).toEqual(expected.sort());
     expect(CHAT_CHANNELS).toHaveLength(9);
+    expect(RUN_CHANNELS).toHaveLength(9);
   });
 
   it("createChat → getChatHistory round-trips a uuid4 chat", async () => {

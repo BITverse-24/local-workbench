@@ -13,6 +13,7 @@ type Props = {
   attachedFiles?: File[];
   onAttachFiles?: (files: File[]) => { added: number; rejected: File[] };
   onRemoveFile?: (index: number) => void;
+  disabled?: boolean;
 };
 
 function formatSize(bytes: number): string {
@@ -55,13 +56,13 @@ function FileTypeIcon({ file }: { file: File }) {
   return <span className="w-8 h-8 rounded-lg neu-pressed grid place-items-center shrink-0 text-[8px] font-bold opacity-70">{label.slice(0, 4)}</span>;
 }
 
-export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusBtnRef, searchActive, setSearchActive, onVoice, onSend, attachedFiles = [], onAttachFiles, onRemoveFile }: Props) {
+export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusBtnRef, searchActive, setSearchActive, onVoice, onSend, attachedFiles = [], onAttachFiles, onRemoveFile, disabled }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
 
-  const canSend = input.trim().length > 0 || attachedFiles.length > 0;
+  const canSend = !disabled && (input.trim().length > 0 || attachedFiles.length > 0);
 
   const showError = (msg: string) => {
     setAttachError(msg);
@@ -255,7 +256,8 @@ export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusB
             onChange={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder={searchActive ? 'Search the web…' : attachedFiles.length ? 'Add a message…' : 'Write your prompt...'}
+            disabled={!!disabled}
+            placeholder={searchActive ? 'Search the web…' : disabled ? 'Run in progress…' : attachedFiles.length ? 'Add a message…' : 'Write your prompt...'}
             rows={1}
             className="flex-1 bg-transparent border-none outline-none px-2 md:px-3 py-2 min-w-0 text-sm placeholder:text-white/30 resize-none overflow-y-auto leading-5 max-h-[120px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             style={{ height: '36px', scrollbarWidth: 'none' } as React.CSSProperties}

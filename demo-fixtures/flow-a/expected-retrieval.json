@@ -1,0 +1,51 @@
+{
+  "query": "approval criteria for E-201 inspection findings and approval note format",
+  "topK": 5,
+  "chunks": [
+    {
+      "chunkId": "sop-114-3.2",
+      "documentId": "SOP-114",
+      "sectionId": "3.2",
+      "label": "SOP-114 §3.2",
+      "documentTitle": "SOP-114 — Pressure Equipment Inspection and Approval",
+      "excerpt": "When a report identifies a tube-wall measurement below the minimum allowable value, localised pitting, or gasket degradation, the approval note must list each finding and its evidence. Conditional clearance may be recorded only when the affected tubes are scheduled for retubing and any recommended gasket replacement is recorded. The approval note must cite this section as [SOP-114 §3.2].",
+      "score": 0.99
+    },
+    {
+      "chunkId": "tpl-012-equipment-header",
+      "documentId": "TPL-012",
+      "sectionId": "equipment-header",
+      "label": "TPL-012 equipment-header",
+      "documentTitle": "TPL-012 — Inspection approval-note template",
+      "excerpt": "Include the equipment identifier and the inspection report reference.",
+      "score": 0.94
+    },
+    {
+      "chunkId": "tpl-012-findings-summary",
+      "documentId": "TPL-012",
+      "sectionId": "findings-summary",
+      "label": "TPL-012 findings-summary",
+      "documentTitle": "TPL-012 — Inspection approval-note template",
+      "excerpt": "List every validated inspection finding with its measurement, condition, location, and page evidence where available.",
+      "score": 0.92
+    },
+    {
+      "chunkId": "sop-114-4.1",
+      "documentId": "SOP-114",
+      "sectionId": "4.1",
+      "label": "SOP-114 §4.1",
+      "documentTitle": "SOP-114 — Pressure Equipment Inspection and Approval",
+      "excerpt": "The generated approval note must retain the report reference, equipment identifier, findings summary, recommendation, and grounding references.",
+      "score": 0.88
+    },
+    {
+      "chunkId": "tpl-012-recommendation",
+      "documentId": "TPL-012",
+      "sectionId": "recommendation",
+      "label": "TPL-012 recommendation",
+      "documentTitle": "TPL-012 — Inspection approval-note template",
+      "excerpt": "State the supported approval disposition and any repair or replacement needed before return to service. Do not invent an approval date or authority.",
+      "score": 0.86
+    }
+  ]
+}

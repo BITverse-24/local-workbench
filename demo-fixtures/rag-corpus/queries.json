@@ -1,0 +1,39 @@
+{
+  "queryVersion": "1.0.0",
+  "defaultTopK": 5,
+  "similarityPolicy": {
+    "metric": "cosine",
+    "minimumSimilarity": 0.7,
+    "thresholdStatus": "initial-calibration-value",
+    "noMatchRule": "discard results below minimumSimilarity before returning matches"
+  },
+  "queries": [
+    {
+      "queryId": "flow-a-approval-note",
+      "query": "inspection report tube wall below minimum allowable thickness localised pitting gasket degradation conditional clearance approval note",
+      "topK": 5,
+      "expectedIncludes": [
+        { "documentId": "SOP-114", "sectionId": "3.2" },
+        { "documentId": "TPL-012", "sectionId": "recommendation" }
+      ],
+      "expectedOutcome": "matching_sources"
+    },
+    {
+      "queryId": "flow-a-template-sections",
+      "query": "approval note equipment header findings recommendation grounding references exact citation",
+      "topK": 5,
+      "expectedIncludes": [
+        { "documentId": "TPL-012", "sectionId": "equipment-header" },
+        { "documentId": "TPL-012", "sectionId": "grounding-references" }
+      ],
+      "expectedOutcome": "matching_sources"
+    },
+    {
+      "queryId": "no-match-astronomy",
+      "query": "galaxy classification telescope observations stellar spectra",
+      "topK": 5,
+      "expectedIncludes": [],
+      "expectedOutcome": "no_matching_source"
+    }
+  ]
+}

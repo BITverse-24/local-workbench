@@ -2,61 +2,123 @@
 
 declare namespace NodeJS {
   interface ProcessEnv {
-    /**
-     * The built directory structure
-     *
-     * ```tree
-     * ├─┬─┬ dist
-     * │ │ └── index.html
-     * │ │ │
-     * │ ├─┬ dist-electron
-     * │ │ ├── main.js
-     * │ │ └── preload.js
-     * │
-     * ```
-     */
-    APP_ROOT: string
-    /** /dist/ or /public/ */
-    VITE_PUBLIC: string
+    APP_ROOT: string;
+    VITE_PUBLIC: string;
   }
 }
 
-// Backend chat-persistence bridge contract (Phase DB slice).
-// Implemented in `electron/preload.ts`, served by backend/src/main/ipc/handlers.ts.
-// Shape mirrors backend IPC_CHAT channels; run-protocol methods land in Phase 1.
 interface ChatSummary {
-  id: string
-  title: string
-  updated_at: string
+  id: string;
+  title: string;
+  updated_at: string;
 }
 
 interface PersistedMessage {
-  id: string
-  chat_id: string
-  run_id: string | null
-  role: 'user' | 'assistant' | 'system' | 'tool'
-  content: string
-  model_id: string | null
-  created_at: string
-  edited_at: string | null
-  seq: number
+  id: string;
+  chat_id: string;
+  run_id: string | null;
+  role: "user" | "assistant" | "system" | "tool";
+  content: string;
+  model_id: string | null;
+  created_at: string;
+  edited_at: string | null;
+  seq: number;
 }
+
+type RunState =
+  | "created"
+  | "classifying"
+  | "planning"
+  | "acting"
+  | "awaiting_confirmation"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+interface AttachmentReference {
+  attachmentId: string;
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
+  relativePath: string;
+}
+
+interface ArtifactRef {
+  artifactId: string;
+  runId: string;
+  kind: "docx" | "pdf" | "xlsx" | "csv";
+  filename: string;
+  relativePath: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+interface PendingAction {
+  actionId: string;
+  runId: string;
+  kind: "generate_docx" | "execute_python" | "generate_xlsx";
+  prompt: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+interface RunSummary {
+  runId: string;
+  chatId: string;
+  state: RunState;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+interface ModelHealth {
+  modelId: string;
+  available: boolean;
+  checkedAt: string;
+  latencyMs?: number;
+  message?: string;
+}
+
+type RunEvent =
+  | { type: "run_state"; runId: string; state: RunState }
+  | { type: "routing"; runId: string; taskType: "vision" | "draft" | "code"; modelId: string; reason: string }
+  | { type: "plan_step"; runId: string; index: number; text: string }
+  | { type: "tool_call"; runId: string; tool: string; summary: string }
+  | { type: "tool_result"; runId: string; tool: string; summary: string }
+  | { type: "confirmation_required"; runId: string; action: PendingAction }
+  | { type: "artifact_ready"; runId: string; artifact: ArtifactRef }
+  | { type: "assistant_message"; runId: string; messageId: string; text: string; modelId: string }
+  | { type: "error"; runId: string; code: string; message: string; retryable?: boolean };
 
 interface WorkbenchBridge {
-  createChat: (input?: { title?: string }) => Promise<{ chatId: string }>
-  getChatHistory: (input?: { limit?: number }) => Promise<{ chats: ChatSummary[] }>
-  archiveChat: (chatId: string) => Promise<void>
-  getMessages: (chatId: string) => Promise<{ messages: PersistedMessage[] }>
-  sendMessage: (chatId: string, role: 'user' | 'assistant', content: string) => Promise<{ messageId: string; seq: number }>
-  editMessage: (messageId: string, content: string) => Promise<void>
-  renameChat: (chatId: string, title: string) => Promise<void>
-  getSetting: (key: string) => Promise<{ value: unknown }>
-  setSetting: (key: string, value: unknown) => Promise<void>
+  createChat: (input?: { title?: string }) => Promise<{ chatId: string }>;
+  getChatHistory: (input?: { limit?: number }) => Promise<{ chats: ChatSummary[] }>;
+  archiveChat: (chatId: string) => Promise<void>;
+  getMessages: (chatId: string) => Promise<{ messages: PersistedMessage[] }>;
+  sendMessage: (chatId: string, role: "user" | "assistant", content: string) => Promise<{ messageId: string; seq: number }>;
+  editMessage: (messageId: string, content: string) => Promise<void>;
+  renameChat: (chatId: string, title: string) => Promise<void>;
+  getSetting: (key: string) => Promise<{ value: unknown }>;
+  setSetting: (key: string, value: unknown) => Promise<void>;
+  startRun: (input: { userText: string; attachmentToken?: string; runId?: string; chatId?: string }) => Promise<{ runId: string }>;
+  registerAttachment: (input: {
+    chatId?: string;
+    filename: string;
+    mediaType: string;
+    sizeBytes: number;
+    base64OrBuffer: string;
+  }) => Promise<{ runId: string; attachment: AttachmentReference }>;
+  confirmAction: (input: { runId: string; actionId: string; approved: boolean }) => Promise<void>;
+  cancelRun: (input: { runId: string }) => Promise<void>;
+  getRunHistory: (input?: { limit?: number }) => Promise<RunSummary[]>;
+  getArtifact: (input: { runId: string; artifactId: string }) => Promise<ArtifactRef>;
+  openArtifact: (input: { runId: string; artifactId: string }) => Promise<{ opened: true; filename: string }>;
+  getHealth: () => Promise<ModelHealth[]>;
+  getRunLogs: (input: { runId: string; limit?: number }) => Promise<{ runId: string; entries: unknown[]; files: string[]; recentFull: unknown }>;
+  getRunLogFile: (input: { runId: string; filename: string }) => Promise<{ runId: string; filename: string; content: unknown }>;
+  onRunEvent: (listener: (event: RunEvent) => void) => () => void;
 }
 
-// Used in Renderer process, expose in `preload.ts`
 interface Window {
-  ipcRenderer: import('electron').IpcRenderer
-  /** Present only when running inside Electron with the preload bridge loaded. */
-  workbench?: WorkbenchBridge
+  electronAPI?: { minimize: () => void; maximize: () => void; close: () => void };
+  workbench?: WorkbenchBridge;
 }

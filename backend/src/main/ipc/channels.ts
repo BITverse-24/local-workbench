@@ -1,9 +1,3 @@
-// Chat-persistence IPC channels (backend/src/main/ipc/channels.ts).
-// `workbench:` prefix matches BACKEND_PLANS.md §8. These 9 chat-scoped channels are the
-// Phase-DB connection slice; run-protocol channels (startRun/confirmAction/cancelRun/
-// getArtifact/getRunHistory/registerAttachment/getHealth/runEvent) land in Phase 1 (TASKS.md 1.2)
-// and must not collide with these names.
-
 export const IPC_CHAT = {
   CREATE_CHAT: "workbench:createChat",
   GET_CHAT_HISTORY: "workbench:getChatHistory",
@@ -16,6 +10,19 @@ export const IPC_CHAT = {
   SET_SETTING: "workbench:setSetting",
 } as const;
 
+export const IPC_RUN = {
+  START_RUN: "workbench:startRun",
+  CONFIRM: "workbench:confirmAction",
+  CANCEL: "workbench:cancelRun",
+  GET_ARTIFACT: "workbench:getArtifact",
+  GET_HISTORY: "workbench:getRunHistory",
+  REGISTER_ATTACHMENT: "workbench:registerAttachment",
+  GET_HEALTH: "workbench:getHealth",
+  RUN_EVENT: "workbench:runEvent",
+  OPEN_ARTIFACT: "workbench:openArtifact",
+} as const;
+
 export type ChatChannel = (typeof IPC_CHAT)[keyof typeof IPC_CHAT];
 
 export const CHAT_CHANNELS: readonly string[] = Object.values(IPC_CHAT);
+export const RUN_CHANNELS: readonly string[] = Object.values(IPC_RUN);

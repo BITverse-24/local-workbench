@@ -1,0 +1,48 @@
+{
+  "requestId": "fixture-request-draft-success",
+  "runId": "fixture-run-flow-a",
+  "modelId": "draft-qwen3",
+  "completedAt": "2026-08-20T00:00:20.000Z",
+  "taskType": "draft",
+  "result": {
+    "title": "Approval Note — Heat Exchanger E-201",
+    "body": "Conditional clearance may be recorded only when the affected tubes are scheduled for retubing. [SOP-114 §3.2]",
+    "sections": [
+      {
+        "id": "equipment-header",
+        "heading": "Equipment",
+        "body": "Heat Exchanger E-201; report ID IR-E201-2026-08-20"
+      },
+      {
+        "id": "findings-summary",
+        "heading": "Findings",
+        "body": "Rows 12–15 measured 3.8–4.2 mm; minimum allowable is 4.6 mm. Localised pitting corrosion at the shell inlet nozzle; maximum pitting depth is 1.8 mm. Channel-head gasket shows degradation; replacement recommended before return to service."
+      },
+      {
+        "id": "recommendation",
+        "heading": "Recommendation",
+        "body": "Conditional clearance may be recorded only when the affected tubes are scheduled for retubing. Any recommended gasket replacement is recorded before return to service. [SOP-114 §3.2]"
+      },
+      {
+        "id": "grounding-references",
+        "heading": "Grounding references",
+        "body": "[SOP-114 §3.2]"
+      }
+    ],
+    "citations": [
+      {
+        "documentId": "SOP-114",
+        "sectionId": "3.2",
+        "label": "SOP-114 §3.2",
+        "inlineText": "[SOP-114 §3.2]",
+        "supportingExcerpt": "When a report identifies a tube-wall measurement below the minimum allowable value, localised pitting, or gasket degradation, the approval note must list each finding and its evidence. Conditional clearance may be recorded only when the affected tubes are scheduled for retubing and any recommended gasket replacement is recorded. The approval note must cite this section as [SOP-114 §3.2]."
+      }
+    ],
+    "missingInformation": [
+      {
+        "field": "approvalAuthority",
+        "note": "No approving authority is stated in the supplied inspection report."
+      }
+    ]
+  }
+}

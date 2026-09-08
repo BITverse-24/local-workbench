@@ -182,22 +182,40 @@ Actual Chroma indexing and querying will need the embedding service and backend 
 
 ### 8. Define AI validation rules
 
-Prepare pure validation logic for:
+Implemented in [`validation.ts`](./validation.ts), with focused cases in
+[`validation.test.ts`](./validation.test.ts). The validators accept `unknown`
+model JSON and return either the typed value or structured `ValidationFailure`
+items; they do not call Electron, the filesystem, a model provider, or a
+database.
+
+The pure validation rules cover:
 
 - OCR response structure
-- Required findings
-- Page references
-- Draft-note sections
-- Citation format
-- Citations existing in retrieved sources
-- Code response containing only allowed fields
-- Empty or malformed model responses
-- Unsupported claims
-- No-source retrieval behavior
+- Required findings through configurable rules, including the locked Flow A
+  three-finding rules
+- Page references, positive one-based pages, unique IDs, and finding-reference
+  integrity
+- Draft-note sections: exactly the four contract IDs in order
+- Citation format: stable identity, exact label, and exact inline marker
+- Citation membership in the retrieved chunk allowlist, including supporting
+  excerpt membership
+- Code responses with no unknown fields, logical filenames, approved imports,
+  fixed fixture names, and `task.py` only
+- Empty, null, array, malformed, missing-field, and extra-field responses
+- Conservative lexical grounding checks for unsupported OCR findings and draft
+  claims
+- No-source retrieval: no citations or citation markers, plus an explicit
+  missing-source notice
 
-This can be implemented as standalone TypeScript schemas and tests, without Electron.
+The locked Flow B code checks also reject Markdown fences, shell/subprocess and
+network access, dynamic execution, environment access, unrestricted file paths,
+and hard-coded expected counts. The backend must still execute accepted code
+in its own sandbox and validate common response-envelope fields, because these
+pure checks cannot enforce runtime policy or prove execution success.
 
-### 9. Create offline AI test fixtures
+This is standalone TypeScript validation and can be consumed by the backend later without Electron.
+
+### 9. Create offline AI test fixtures [COMPLETE]
 
 Create mock model responses for:
 
@@ -210,11 +228,15 @@ Create mock model responses for:
 - Malformed code response
 - No matching knowledge source
 
-These let Supreet test the orchestrator before live model calls are connected.
+Implemented in [`mock-responses/`](./mock-responses/), with complete
+`ModelResponse` envelopes for each success and failure case. The focused
+regression test is [`mock-responses.test.ts`](./mock-responses.test.ts); it
+validates the fixtures against the pure validators without calling Electron,
+the filesystem, a model provider, or a database.
 
-### 10. Define prompt regression tests
+### 10. Define prompt regression tests [COMPLETE]
 
-For each prompt, document:
+Implemented in [`prompt-regression.md`](./prompt-regression.md) and the runnable harness [`prompt-regression.test.ts`](./prompt-regression.test.ts). For each of the three prompts (`ai/ocr-vision-prompt.md`, `ai/approval-note-drafting-prompt.md`, `ai/coding-prompt.md`) the files document:
 
 - Input fixture
 - Required output fields
@@ -222,13 +244,15 @@ For each prompt, document:
 - Allowed variation
 - Failure conditions
 
-Examples:
+Examples (all gated by the pure validators in `ai/validation.ts`, no provider call):
 
-- OCR must find the known inspection issue.
-- Draft must cite `SOP-114 §3.2`.
-- Draft must not invent an inspection date.
-- Code must flag the known out-of-range CSV rows.
-- Code must return the expected summary.
+- OCR must find the known inspection issue (3 findings with locked values).
+- Draft must cite `SOP-114 §3.2` exactly (label/inlineText + citation in allowlist).
+- Draft must not invent an inspection date (grounding check fails on invented claim).
+- Code must flag the known out-of-range CSV rows (7 rows, 5 high 2 low).
+- Code must return the expected summary (`OUT_OF_RANGE 7/240 (high=5, low=2)`).
+
+Run: `npx --prefix backend vitest run --dir Y:/CODE/agent/ai` (22 tests green) plus `python demo-fixtures/validate_fixtures.py` and `python demo-fixtures/rag-corpus/validate_corpus.py`. The harness also cross-checks the committed oracles in `demo-fixtures/flow-a/expected-*.json` and `demo-fixtures/flow-b/expected-*.json/.py` against the same locked rules (`LOCKED_FLOW_A_REQUIRED_FINDINGS`, `LOCKED_FLOW_B_CODE_RULES`, `REQUIRED_DRAFT_SECTIONS`).
 
 ### 11. Plan the model transition
 

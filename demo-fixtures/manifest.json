@@ -1,0 +1,138 @@
+{
+  "fixtureVersion": "1.0.0",
+  "generatedAt": "2026-08-20T00:00:00Z",
+  "flows": {
+    "flowA": {
+      "reportReference": "IR-E201-2026-08-20",
+      "inspectionDate": "2026-08-20",
+      "equipment": "E-201",
+      "unit": "R-100",
+      "expectedFindingCount": 3,
+      "requiredCitation": "SOP-114 §3.2",
+      "requiredTemplate": "TPL-012"
+    },
+    "flowB": {
+      "inputRows": 240,
+      "reactorId": "R-101",
+      "limitsCelsius": {
+        "lowExclusive": 250.0,
+        "highExclusive": 350.0
+      },
+      "outOfRangeRows": 7,
+      "highRows": 5,
+      "lowRows": 2,
+      "expectedStdout": "OUT_OF_RANGE 7/240 (high=5, low=2)",
+      "expectedExitCode": 0
+    }
+  },
+  "files": {
+    "build_fixtures.py": {
+      "sha256": "8c14116e1867e5fe708a8d959d5257cbf2c2dfb7c83b1ae8dabe397e5139d86d",
+      "bytes": 5919
+    },
+    "flow-a/approval-note-template-TPL-012.md": {
+      "sha256": "1559f0e177b35a5accc87132bb0ee7dc78988d482f348bb8aee3d9229d32be92",
+      "bytes": 681
+    },
+    "flow-a/expected-approval-note.json": {
+      "sha256": "d7c9b8bd6f9d1d25a32f3d72311b4c58a370c6259411887fd289732fc0d27f1e",
+      "bytes": 2230
+    },
+    "flow-a/expected-ocr.json": {
+      "sha256": "950501b123d2899fa49628e943ddaf4fa8721d43843b4fc1c88d5a25b085851d",
+      "bytes": 2160
+    },
+    "flow-a/expected-retrieval.json": {
+      "sha256": "077e298af2c9b6304181dd4da3aac06e38490dfd0256980e0f43a54305748bf2",
+      "bytes": 2347
+    },
+    "flow-a/inspection-report-E201.pdf": {
+      "sha256": "c8a12e4c5b676b849ea1667ebc7d45239e4d7484dd0a64ca507ebe4ad887671c",
+      "bytes": 2094
+    },
+    "flow-a/sop-114-pressure-equipment-inspection.md": {
+      "sha256": "67d904eba5994e00a0689e9f3b9389969f593be66364202c7ee91c2577ca05f2",
+      "bytes": 1432
+    },
+    "flow-b/expected-out-of-range-summary.csv": {
+      "sha256": "57c31bb6004654d6302a5def55e7827ab5ab5801d85060218ad616c8b22495bd",
+      "bytes": 281
+    },
+    "flow-b/expected-out-of-range-summary.json": {
+      "sha256": "9caa380411a1ab35b4fc09a60bc061eb648dcf7ebf399c43d17a19e83b9cca7b",
+      "bytes": 923
+    },
+    "flow-b/expected-python-execution.json": {
+      "sha256": "f02adba3178b643ad1214125f71bc06a61b65193cf0575cbf3bc0df6e1aa446c",
+      "bytes": 258
+    },
+    "flow-b/expected-task.py": {
+      "sha256": "6554f0b7e40dc4916a6ea7ab4697b23dea0e8042d97d629e474442c38d07b5c1",
+      "bytes": 1377
+    },
+    "flow-b/reactor-temperature-log.csv": {
+      "sha256": "ce5f481ca6fab159f4d649fb1041196facff6f17c76e429153161b344ed6a238",
+      "bytes": 7236
+    },
+    "rag-corpus/build_corpus_manifest.py": {
+      "sha256": "207e910e31699949d3f25539b8e79a1b6b12d64988bf78e3e19653d1bcb9e09b",
+      "bytes": 4895
+    },
+    "rag-corpus/corpus-manifest.json": {
+      "sha256": "b905549077326d880a34f8f61ed39b0c929531b5d6300157b75617b028738d57",
+      "bytes": 60143
+    },
+    "rag-corpus/docs/REF-044-equipment-identifiers.md": {
+      "sha256": "7ba9f6ffc8aeecbb2feb73df16e8376359cbf9c873b3be3aa7626acefba0d349",
+      "bytes": 1038
+    },
+    "rag-corpus/docs/SOP-201-lockout-isolation.md": {
+      "sha256": "5233d1e1ec279478221eac4f2491c19c41227c9e8b6128423058d23466b2a424",
+      "bytes": 1655
+    },
+    "rag-corpus/docs/SOP-305-heat-exchanger-cleaning.md": {
+      "sha256": "0caf5a6630784d15c8b46023d773456ccc5283b8285c044393dfe7fe53dfa12d",
+      "bytes": 1509
+    },
+    "rag-corpus/docs/SOP-411-relief-valve-testing.md": {
+      "sha256": "ccd8906b087b8bfaba0632e45a93b59cbcb3460f5e2da7f11ff91c69517924d7",
+      "bytes": 1443
+    },
+    "rag-corpus/docs/SOP-520-inspection-records.md": {
+      "sha256": "bd7825ef482b722317fb793de04b64b42f55972d503575d4d687afc4ff239439",
+      "bytes": 1602
+    },
+    "rag-corpus/docs/SOP-610-instrument-calibration.md": {
+      "sha256": "70f323d66f49c9becff1ddaa0fecf2e9a3bd522e4e50d0d3eb7ee650b8926700",
+      "bytes": 1496
+    },
+    "rag-corpus/docs/TPL-021-maintenance-deviation-note.md": {
+      "sha256": "6ead522b21dfc55b285a33a633ca7d8b15e521bdad9e9d74b45f7a4a16ddcbc2",
+      "bytes": 1014
+    },
+    "rag-corpus/docs/WI-008-tube-retubing.md": {
+      "sha256": "1dc66bfe91ff86de376600b8e099504a5105ac6f7255bcb36fbf803577bf7b6c",
+      "bytes": 1319
+    },
+    "rag-corpus/queries.json": {
+      "sha256": "7f9e8d680132542535636c75c18075f64f0fe489691196bf99689826b8934097",
+      "bytes": 1351
+    },
+    "rag-corpus/README.md": {
+      "sha256": "995486e344e271bbbf9a54e06433aa16fa6054a6c4bcd8618bf47675d63db476",
+      "bytes": 1783
+    },
+    "rag-corpus/validate_corpus.py": {
+      "sha256": "fa10a86cab2d593f8010b1dd60d98025f71db4ce0fd18d6a0bc53a9d4e125d6b",
+      "bytes": 4434
+    },
+    "README.md": {
+      "sha256": "b7534b731bae13076c71f95be9e5f2b67afa213e18adbf38069882e9bec19a02",
+      "bytes": 2300
+    },
+    "validate_fixtures.py": {
+      "sha256": "9d15349539f2fd38287d9470bb635f1de41993053d7921dd2328e449cc7b5c23",
+      "bytes": 7547
+    }
+  }
+}
