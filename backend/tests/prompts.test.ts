@@ -21,6 +21,7 @@ describe("ai/ prompt wiring", () => {
     expect(DRAFT_SYSTEM_PROMPT).toContain("grounding-references");
     expect(DRAFT_SYSTEM_PROMPT).toContain("Use inlineText like [SOP-114 §3.2].");
     const user = buildDraftUserPrompt(
+      "Heat Exchanger E-201 Report IR-E201-2026-08-20",
       [{ findingId: "f1", title: "t", value: "v", pageReferenceIds: ["p1"], confidence: "high", evidence: "e" }],
       [{ id: "p1", page: 1, text: "excerpt" }],
       [{ documentId: "SOP-114", sectionId: "3.2", label: "SOP-114 §3.2", chunkId: "c1", documentTitle: "SOP", excerpt: "x" }],
@@ -29,9 +30,11 @@ describe("ai/ prompt wiring", () => {
     expect(user).toContain('"findingId":"f1"');
     expect(user).toContain('"sectionId":"3.2"');
     expect(user).toContain('"equipment-header"');
+    expect(user).toContain("Heat Exchanger E-201");
     expect(user).not.toContain("<FINDINGS_JSON>");
     expect(user).not.toContain("<RETRIEVED_CHUNKS_JSON>");
     expect(user).not.toContain("<TEMPLATE_REQUIREMENTS_JSON>");
+    expect(user).not.toContain("<SOURCE_TEXT>");
   });
   it("code prompt matches ai/coding-prompt.md", () => {
     expect(CODE_SYSTEM_PROMPT).toContain("reactor-temperature-log.csv");

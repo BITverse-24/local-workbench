@@ -225,7 +225,7 @@ export class RunManager {
   private async flowA(runId: string, text: string, attachment: AttachmentRow): Promise<void> {
     void text;
     this.tool(runId, "ocr_extract", "extracting typed scan");
-    const base = requestBase(runId, "vision", "vision-qwen25vl", "vision-result", VISION_SYSTEM_PROMPT, VISION_USER_PROMPT, 60000, 4096);
+    const base = requestBase(runId, "vision", "vision-qwen25vl", "vision-result", VISION_SYSTEM_PROMPT, VISION_USER_PROMPT, 60000, 1024);
     const request: VisionModelRequest = {
       ...base,
       taskType: "vision",
@@ -243,7 +243,7 @@ export class RunManager {
       // most of these without changing the locked contract.
       const firstFailure = validationMessage("vision result", vision.error);
       this.result(runId, "ocr_extract", `first pass invalid at '${vision.error.path || "<root>"}', retrying once with repair hint`);
-      const repairBase = requestBase(runId, "vision", "vision-qwen25vl", "vision-result", buildVisionRepairPrompt(firstFailure), VISION_USER_PROMPT, 60000, 4096);
+      const repairBase = requestBase(runId, "vision", "vision-qwen25vl", "vision-result", buildVisionRepairPrompt(firstFailure), VISION_USER_PROMPT, 60000, 1024);
       const repairRequest: VisionModelRequest = {
         ...repairBase,
         taskType: "vision",
@@ -263,35 +263,7 @@ export class RunManager {
       : "";
     this.result(runId, "ocr_extract", `${vision.value.findings.length} findings extracted${sizeNote}`);
     this.tool(runId, "search_knowledge", "searching local knowledge base");
-    let chunks = searchKnowledge(`${vision.value.sourceText} ${vision.value.findings.map((f) => f.value).join(" ")}`);
-    // Ensure Flow A fixture SOP is always citable — retrieval is term-based and misses SOP-114 on noisy inputs.
-    if (!chunks.some((c) => c.documentId === "SOP-114" && c.sectionId === "3.2")) {
-      try {
-        const { existsSync, readFileSync } = await import("node:fs");
-        const pathMod = await import("node:path");
-        const candidates = [
-          pathMod.join(process.cwd(), "demo-fixtures", "flow-a", "sop-114-pressure-equipment-inspection.md"),
-          pathMod.resolve(process.cwd(), "..", "demo-fixtures", "flow-a", "sop-114-pressure-equipment-inspection.md"),
-        ];
-        const found = candidates.find((p) => existsSync(p));
-        if (found) {
-          const text = readFileSync(found, "utf8");
-          const excerpt = text.slice(text.indexOf("## [section:3.2]"), text.indexOf("## [section:3.2]") + 3000).trim();
-          chunks = [
-            {
-              chunkId: "SOP-114:3.2",
-              documentId: "SOP-114",
-              sectionId: "3.2",
-              label: "SOP-114 §3.2",
-              documentTitle: "SOP-114 — Pressure Equipment Inspection and Approval",
-              excerpt: excerpt || text.slice(0, 3000),
-              score: 0.99,
-            },
-            ...chunks,
-          ].slice(0, 5);
-        }
-      } catch {}
-    }
+    const chunks = searchKnowledge(`${vision.value.sourceText} ${vision.value.findings.map((f) => f.value).join(" ")}`);
     if (!chunks.length) throw new Error("no matching knowledge source");
     this.result(runId, "search_knowledge", `${chunks.length} local chunks retrieved`);
     this.emit({ type: "routing", runId, taskType: "draft", modelId: "draft-qwen3", reason: "compose approval note" });
@@ -302,9 +274,9 @@ export class RunManager {
       "draft-qwen3",
       "draft-result",
       DRAFT_SYSTEM_PROMPT,
-      buildDraftUserPrompt(vision.value.findings, vision.value.pageReferences, chunks, templateRequirements),
+      buildDraftUserPrompt(vision.value.sourceText, vision.value.findings, vision.value.pageReferences, chunks, templateRequirements),
       45000,
-      8192,
+      4096,
     );
     let draftRequest: DraftModelRequest = {
       ...draftBase,
@@ -351,9 +323,9 @@ export class RunManager {
         "draft-qwen3",
         "draft-result",
         buildDraftRepairPrompt(firstFailure),
-        buildDraftUserPrompt(vision.value.findings, vision.value.pageReferences, chunks, templateRequirements),
+        buildDraftUserPrompt(vision.value.sourceText, vision.value.findings, vision.value.pageReferences, chunks, templateRequirements),
         45000,
-        8192,
+        4096,
       );
       const repairRequest: DraftModelRequest = {
         ...repairBase,
@@ -388,7 +360,7 @@ export class RunManager {
     const csv = Buffer.from(await (await import("node:fs/promises")).readFile(absoluteDataPath(attachment.relativePath))).toString("utf8");
     const rows = csv.trim().split(/\r?\n/).length - 1;
     this.result(runId, "read_file", `${rows} CSV rows read`);
-    const base = requestBase(runId, "code", "code-qwen25coder", "code-result", CODE_SYSTEM_PROMPT, text, 60000, 8192);
+    const base = requestBase(runId, "code", "code-qwen25coder", "code-result", CODE_SYSTEM_PROMPT, text, 60000, 4096);
     const request: CodeModelRequest = {
       ...base,
       taskType: "code",

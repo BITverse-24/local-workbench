@@ -79,6 +79,9 @@ Rules:
 
 const DRAFT_USER_TEMPLATE = `Draft the approval note for the supplied inspection report.
 
+OCR full transcription:
+<SOURCE_TEXT>
+
 OCR findings and page evidence:
 <FINDINGS_JSON>
 
@@ -106,15 +109,17 @@ Fix only the flagged problem. Return exactly one valid JSON object with the requ
 }
 
 export function buildDraftUserPrompt(
+  sourceText: string,
   findings: Finding[],
   pageReferences: PageReference[],
   retrievedChunks: RetrievedKnowledgeChunk[],
   templateRequirements: string[],
 ): string {
-  return DRAFT_USER_TEMPLATE.replace(
-    "<FINDINGS_JSON>",
-    JSON.stringify({ findings, pageReferences }),
-  )
+  return DRAFT_USER_TEMPLATE.replace("<SOURCE_TEXT>", sourceText)
+    .replace(
+      "<FINDINGS_JSON>",
+      JSON.stringify({ findings, pageReferences }),
+    )
     .replace("<RETRIEVED_CHUNKS_JSON>", JSON.stringify(retrievedChunks))
     .replace("<TEMPLATE_REQUIREMENTS_JSON>", JSON.stringify(templateRequirements));
 }

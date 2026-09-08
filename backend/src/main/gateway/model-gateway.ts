@@ -5,7 +5,7 @@ import type { AIResult, ModelRequest, ModelResponse, ModelRegistryEntry } from "
 import { loadRegistry, resolveModel } from "./registry.js";
 import { normalizeResponse, parseProviderContent, providerError } from "./normalizer.js";
 import { absoluteDataPath, createRunDirectories, runRoot } from "../run/filesystem.js";
-import { assertUploadableSize, prepareImage } from "../run/images.js";
+import { assertUploadableSize, extractPdfText, prepareImage, renderPdfToImages } from "../run/images.js";
 
 function gatewayConsole(level: "log" | "warn" | "error", request: { requestId: string; runId: string; taskType: string; modelId: string }, message: string, extra?: unknown) {
   const prefix = `[model-gateway:${request.taskType}:${request.modelId}:${request.requestId.slice(0, 8)}]`;
@@ -51,13 +51,13 @@ export class ModelGateway {
     if (model.runtime === "openrouter" && !key) return { ok: false, error: { kind: "ai-error", code: "model_rejected_request", message: `missing environment credential ${model.apiKeyEnv}`, retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
     const maybeVision = request as unknown as { taskType: string; attachment?: { mediaType: string; relativePath: string; filename?: string } };
     const isVision = maybeVision.taskType === "vision" && !!maybeVision.attachment;
-    // OpenRouter only accepts images in `image_url` parts — PDFs must go as
-    // `file` parts (parsed server-side, works on any model). Sending a PDF as
-    // image_url yields 400 "image format is illegal". Raster images are
-    // downscaled first: full-size photos would otherwise count millions of
-    // base64 characters against the request and 402 even healthy keys.
+    // PDFs are now parsed into per-page compressed JPEGs (1024px max edge, JPEG 80)
+    // and sent as multiple image_url parts to keep total tokens <4096.
+    // 2 pages at 1024px = ~3072 image tokens + ~524 prompt = ~3596 < 4096.
+    // Images are still downscaled via prepareImage; PDFs previously went as
+    // file parts and blew up server-side rasterization token count.
     this.lastVisionUpload = undefined;
-    const visionPart = isVision
+    const visionParts = isVision
       ? await (async () => {
           const att = maybeVision.attachment!;
           const raw = readFileSync(absoluteDataPath(att.relativePath));
@@ -70,17 +70,84 @@ export class ModelGateway {
               resized: prepared.resized,
               mediaType: prepared.mediaType,
             };
-            return {
-              type: "image_url",
-              image_url: { url: `data:${prepared.mediaType};base64,${prepared.buffer.toString("base64")}` },
-            };
+            return [
+              {
+                type: "image_url",
+                image_url: { url: `data:${prepared.mediaType};base64,${prepared.buffer.toString("base64")}` },
+              },
+            ];
           }
+          if (att.mediaType === "application/pdf") {
+            const pdfImages = await renderPdfToImages(raw);
+            if (pdfImages.length) {
+              const parts = [];
+              let totalBytes = 0;
+              for (const prepared of pdfImages) {
+                assertUploadableSize(prepared.finalBytes);
+                totalBytes += prepared.finalBytes;
+                parts.push({
+                  type: "image_url",
+                  image_url: { url: `data:${prepared.mediaType};base64,${prepared.buffer.toString("base64")}` },
+                });
+              }
+              // Track aggregate for logging (first page stats as representative)
+              this.lastVisionUpload = {
+                originalBytes: raw.length,
+                finalBytes: totalBytes,
+                resized: true,
+                mediaType: "image/jpeg",
+              };
+              return parts;
+            }
+            // Fallback: PDF -> image(s) -> compress -> vision (agreed). No file upload.
+            // If pdfjs/canvas not available, render PDF text as synthetic compressed JPEG(s).
+            const pdfText = extractPdfText(raw);
+            if (pdfText.trim().length > 20) {
+              const { createPlaceholderImagesFromText } = await import("../run/images.js");
+              const placeholders = await createPlaceholderImagesFromText(pdfText);
+              if (placeholders.length) {
+                const parts = [];
+                let totalBytes = 0;
+                for (const p of placeholders) {
+                  assertUploadableSize(p.finalBytes);
+                  totalBytes += p.finalBytes;
+                  parts.push({
+                    type: "image_url",
+                    image_url: { url: `data:${p.mediaType};base64,${p.buffer.toString("base64")}` },
+                  });
+                }
+                this.lastVisionUpload = {
+                  originalBytes: raw.length,
+                  finalBytes: totalBytes,
+                  resized: true,
+                  mediaType: "image/jpeg",
+                };
+                // Keep text in prompt as well - vision model sees both image + text
+                const enrichedPrompt = `${(request as { userPrompt: string }).userPrompt}\n\n[PDF rendered locally as compressed image(s) - ${placeholders.length} page(s)]\n${pdfText.slice(0, 2000)}`;
+                (request as { userPrompt: string }).userPrompt = enrichedPrompt;
+                return parts;
+              }
+              // Last resort: text-only enrichment with tiny placeholder to keep image_url type
+              this.lastVisionUpload = {
+                originalBytes: raw.length,
+                finalBytes: Buffer.byteLength(pdfText, "utf8"),
+                resized: false,
+                mediaType: "text/plain",
+              };
+              const enrichedPrompt = `${(request as { userPrompt: string }).userPrompt}\n\n[PDF text extracted - rendered as image fallback]\n${pdfText.slice(0, 6000)}`;
+              (request as { userPrompt: string }).userPrompt = enrichedPrompt;
+              // 1x1 white JPEG placeholder (avoids file $0.50, keeps vision image_url)
+              const placeholder = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAA8A/9k=";
+              return [{ type: "image_url", image_url: { url: placeholder } }];
+            }
+          }
+          // Fallback: PDF as file part when pdfjs/canvas not available and text extraction failed (e.g. scanned image PDF)
           const dataUrl = `data:${att.mediaType};base64,${raw.toString("base64")}`;
-          return { type: "file", file: { filename: att.filename ?? "document.pdf", file_data: dataUrl } };
+          return [{ type: "file", file: { filename: att.filename ?? "document.pdf", file_data: dataUrl } }];
         })()
       : null;
     const userContent = isVision
-      ? [{ type: "text", text: (request as { userPrompt: string }).userPrompt }, visionPart]
+      ? [{ type: "text", text: (request as { userPrompt: string }).userPrompt }, ...(visionParts ?? [])]
       : (request as { userPrompt: string }).userPrompt;
     // Providers with OpenAI semantics reject `response_format: json_object`
     // unless the messages mention JSON. Backstop every caller here.
@@ -108,7 +175,8 @@ export class ModelGateway {
       userPromptChars: typeof userContent === "string" ? userContent.length : JSON.stringify(userContent).length,
       userPromptPreview: typeof userContent === "string" ? userContent.slice(0, 2000) : "[multipart vision]",
       visionUpload: this.lastVisionUpload ?? null,
-      visionPartType: visionPart ? (visionPart as { type: string }).type : null,
+      visionPartsCount: Array.isArray(visionParts) ? visionParts.length : 0,
+      visionPartTypes: Array.isArray(visionParts) ? visionParts.map((p) => (p as { type: string }).type) : [],
     };
     gatewayConsole("log", request, `→ ${request.taskType} ${model.model} max_tokens=${maxTokens}`, outboundLog);
     persistGatewayTrace(request.runId, request.requestId, { ...outboundLog, bodyPreview: body.slice(0, 4000), bodyChars: body.length });
