@@ -19,6 +19,31 @@
 > Scope here is **chat persistence only** (chats/messages/settings survive restart).
 > Run-protocol channels (`startRun`/`confirmAction`/…) stay for Phase 1 — do NOT add them yet.
 
+## P5 — Connect the AI run protocol through the restricted Electron bridge
+
+* **Target:** `electron_app/electron/main.ts`, `electron_app/electron/preload.ts`,
+  `electron_app/electron/electron-env.d.ts`, and the renderer run client.
+* **Backend now provides:** `initBackend(ipcMain, emit?)` registers the existing chat
+  channels plus `workbench:startRun`, `confirmAction`, `cancelRun`, `getArtifact`,
+  `getRunHistory`, `registerAttachment`, and `getHealth`. Run events use the push-only
+  `workbench:runEvent` channel and are emitted by the backend manager.
+* **Main-process change:** call `initBackend(ipcMain, (event) =>
+  win?.webContents.send("workbench:runEvent", event))` after the window is created or
+  retain a safe callback that checks `win` before sending. Do not forward model URLs,
+  absolute filesystem paths, request headers, or credentials.
+* **Preload change:** remove the wildcard `ipcRenderer` exposure and expose only typed
+  methods for the chat API plus `startRun`, `registerAttachment`, `confirmAction`,
+  `cancelRun`, `getArtifact`, `getRunHistory`, `getHealth`, and `onRunEvent`. The
+  attachment bridge must accept bytes/metadata, never an absolute path; artifacts expose
+  only backend `ArtifactRef` metadata.
+* **Renderer change:** use `registerAttachment` on file drop, pass the returned opaque
+  token to `startRun`, render `routing`, `run_state`, tool, confirmation, error, and
+  artifact events, and invoke confirmations/cancellation through the bridge. No renderer
+  code may import Node, `fs`, model `fetch`, OpenRouter, Chroma, or child-process APIs.
+* **Reason:** The backend integration is complete and tested independently, but the
+  current renderer still exposes raw IPC and `main.ts` does not provide the event sink.
+  This is the remaining Electron boundary work required for the end-to-end UI.
+
 ## P1 — Register backend handlers in Electron main
 
 * **Target:** `electron_app/electron/main.ts` (keep `main.ts:75` window controls as-is)

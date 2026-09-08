@@ -234,9 +234,9 @@ regression test is [`mock-responses.test.ts`](./mock-responses.test.ts); it
 validates the fixtures against the pure validators without calling Electron,
 the filesystem, a model provider, or a database.
 
-### 10. Define prompt regression tests
+### 10. Define prompt regression tests [COMPLETE]
 
-For each prompt, document:
+Implemented in [`prompt-regression.md`](./prompt-regression.md) and the runnable harness [`prompt-regression.test.ts`](./prompt-regression.test.ts). For each of the three prompts (`ai/ocr-vision-prompt.md`, `ai/approval-note-drafting-prompt.md`, `ai/coding-prompt.md`) the files document:
 
 - Input fixture
 - Required output fields
@@ -244,13 +244,15 @@ For each prompt, document:
 - Allowed variation
 - Failure conditions
 
-Examples:
+Examples (all gated by the pure validators in `ai/validation.ts`, no provider call):
 
-- OCR must find the known inspection issue.
-- Draft must cite `SOP-114 §3.2`.
-- Draft must not invent an inspection date.
-- Code must flag the known out-of-range CSV rows.
-- Code must return the expected summary.
+- OCR must find the known inspection issue (3 findings with locked values).
+- Draft must cite `SOP-114 §3.2` exactly (label/inlineText + citation in allowlist).
+- Draft must not invent an inspection date (grounding check fails on invented claim).
+- Code must flag the known out-of-range CSV rows (7 rows, 5 high 2 low).
+- Code must return the expected summary (`OUT_OF_RANGE 7/240 (high=5, low=2)`).
+
+Run: `npx --prefix backend vitest run --dir Y:/CODE/agent/ai` (22 tests green) plus `python demo-fixtures/validate_fixtures.py` and `python demo-fixtures/rag-corpus/validate_corpus.py`. The harness also cross-checks the committed oracles in `demo-fixtures/flow-a/expected-*.json` and `demo-fixtures/flow-b/expected-*.json/.py` against the same locked rules (`LOCKED_FLOW_A_REQUIRED_FINDINGS`, `LOCKED_FLOW_B_CODE_RULES`, `REQUIRED_DRAFT_SECTIONS`).
 
 ### 11. Plan the model transition
 
