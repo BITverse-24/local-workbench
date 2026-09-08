@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { ChatResult, CodeDraftResult, DraftResult, Finding, VisionResult } from "../../shared/contracts.js";
 const page = z.object({ id: z.string().min(1), page: z.number().int().positive(), text: z.string().min(1).max(8000), location: z.string().max(200).optional() }).strict();
 const finding = z.object({ findingId: z.string().min(1), title: z.string().min(1).max(200), value: z.string().min(1).max(1000), pageReferenceIds: z.array(z.string().min(1)).min(1), confidence: z.enum(["high", "medium", "low"]), evidence: z.string().min(1).max(2000) }).strict();
-export const visionResultSchema = z.object({ sourceText: z.string().min(1).max(50000), findings: z.array(finding), pageReferences: z.array(page), warnings: z.array(z.string().max(500)).optional() }).strict();
+export const visionResultSchema = z.object({ sourceText: z.string().max(50000), findings: z.array(finding), pageReferences: z.array(page), warnings: z.array(z.string().max(500)).optional() }).strict();
 const citation = z.object({ documentId: z.string().min(1), sectionId: z.string().min(1), label: z.string().min(1), inlineText: z.string().min(1), supportingExcerpt: z.string().max(4000).optional() }).strict();
 const section = z.object({ id: z.enum(["equipment-header", "findings-summary", "recommendation", "grounding-references"]), heading: z.string().min(1).max(200), body: z.string().min(1).max(12000) }).strict();
 export const draftResultSchema = z.object({ title: z.string().min(1).max(300), body: z.string().min(1).max(40000), sections: z.array(section).length(4), citations: z.array(citation), missingInformation: z.array(z.object({ field: z.string().min(1), note: z.string().min(1).max(1000) }).strict()) }).strict();

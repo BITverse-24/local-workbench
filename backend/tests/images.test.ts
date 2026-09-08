@@ -34,7 +34,7 @@ describe("image upload prep", () => {
 
 describe("validation error surfacing", () => {
   it("names the failing field instead of a bare zod message", () => {
-    const result = validateVision({ sourceText: "", findings: [], pageReferences: [] });
+    const result = validateVision({ sourceText: 123 as unknown as string, findings: [], pageReferences: [] });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       const message = validationMessage("vision result", result.error);
@@ -42,5 +42,9 @@ describe("validation error surfacing", () => {
       expect(message).toContain("sourceText");
       expect(message).not.toBe("String must contain at least 1 character(s)");
     }
+  });
+  it("allows empty sourceText with warnings (non-inspection images)", () => {
+    const result = validateVision({ sourceText: "", findings: [], pageReferences: [], warnings: ["no inspection data"] });
+    expect(result.ok).toBe(true);
   });
 });
