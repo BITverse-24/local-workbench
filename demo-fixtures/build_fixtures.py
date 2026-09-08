@@ -50,12 +50,12 @@ def make_pdf(path: Path) -> None:
     objects.append(b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 7 0 R >>")
 
     for page in pages:
-        lines = [b"BT"]
+        lines = []
         y = 740
         for size, text in page:
-            lines.append(f"/F1 {size} Tf 72 {y} Td (".encode("ascii") + pdf_escape(text) + b") Tj")
+            # Each line gets its own BT/ET with absolute positioning (Tm) to avoid Td accumulation off-page.
+            lines.append(b"BT /F1 %d Tf 1 0 0 1 72 %d Tm (%s) Tj ET" % (size, y, pdf_escape(text)))
             y -= 28 if size >= 12 else 20
-        lines.append(b"ET")
         objects.append(b"<< /Length " + str(sum(len(line) + 1 for line in lines)).encode("ascii") + b" >>\nstream\n" + b"\n".join(lines) + b"\nendstream")
 
     output = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
