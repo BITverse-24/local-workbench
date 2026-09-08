@@ -1,8 +1,3 @@
-// Chat-persistence IPC channels (backend/src/main/ipc/channels.ts).
-// `workbench:` prefix matches BACKEND_PLANS.md §8. Chat persistence and run-protocol
-// channels share this namespace; RUN_EVENT is push-only and is not registered with
-// ipcMain.handle.
-
 export const IPC_CHAT = {
   CREATE_CHAT: "workbench:createChat",
   GET_CHAT_HISTORY: "workbench:getChatHistory",
@@ -24,6 +19,7 @@ export const IPC_RUN = {
   REGISTER_ATTACHMENT: "workbench:registerAttachment",
   GET_HEALTH: "workbench:getHealth",
   RUN_EVENT: "workbench:runEvent",
+  OPEN_ARTIFACT: "workbench:openArtifact",
 } as const;
 
 export type ChatChannel = (typeof IPC_CHAT)[keyof typeof IPC_CHAT];

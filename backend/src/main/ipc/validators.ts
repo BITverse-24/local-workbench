@@ -79,9 +79,10 @@ export type EditMessageInput = z.infer<typeof editMessageSchema>;
 export type GetSettingInput = z.infer<typeof getSettingSchema>;
 export type SetSettingInput = z.infer<typeof setSettingSchema>;
 
-export const startRunSchema = z.object({ userText: z.string().trim().min(1).max(8000), attachmentToken: z.string().uuid().optional(), runId: z.string().uuid().optional() }).strict();
+export const startRunSchema = z.object({ userText: z.string().trim().min(1).max(8000), attachmentToken: z.string().uuid().optional(), runId: z.string().uuid().optional(), chatId: z.string().uuid().optional() }).strict();
 export const confirmActionSchema = z.object({ runId: z.string().uuid(), actionId: z.string().uuid(), approved: z.boolean() }).strict();
 export const cancelRunSchema = z.object({ runId: z.string().uuid() }).strict();
 export const getArtifactSchema = z.object({ runId: z.string().uuid(), artifactId: z.string().uuid() }).strict();
 export const getRunHistorySchema = z.object({ limit: z.number().int().min(1).max(200).optional() }).strict();
 export const registerAttachmentSchema = z.object({ chatId: z.string().uuid().optional(), filename: z.string().min(1).max(255), mediaType: z.string().min(1).max(100), sizeBytes: z.number().int().nonnegative(), base64OrBuffer: z.union([z.string(), z.instanceof(Buffer)]) }).strict();
+export const openArtifactSchema = getArtifactSchema;

@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { assertSafeRelativePath } from "../persistence/paths.js";
@@ -15,3 +15,4 @@ export function registerAttachment(runId: string, input: { filename: string; med
 export function readRunFile(runId: string, relativePath: string, area: "input" | "intermediate" | "output" = "input"): Buffer { const expected = resolveRunPath(runId, relativePath.replace(`runs/${runId}/`, ""), area); return readFileSync(expected); }
 export function writeRunFile(runId: string, area: "intermediate" | "output" | "logs", filename: string, content: string | Buffer): string { assertSafeRelativePath(filename); const target = resolveRunPath(runId, `${area}/${filename}`, area); mkdirSync(path.dirname(target), { recursive: true }); writeFileSync(target, content, { flag: "wx" }); return `runs/${runId}/${area}/${filename}`; }
 export function artifactRef(runId: string, kind: ArtifactRef["kind"], filename: string, relativePath: string): ArtifactRef { const abs = resolveRunPath(runId, relativePath.replace(`runs/${runId}/`, ""), "output"); const stat = statSync(abs); return { artifactId: randomUUID(), runId, kind, filename, relativePath, sizeBytes: stat.size, createdAt: new Date().toISOString() }; }
+

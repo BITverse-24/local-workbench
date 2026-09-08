@@ -1,0 +1,38 @@
+type Props = {
+  open: boolean;
+  action: PendingAction | null;
+  runState: RunState | null;
+  onApprove: () => void;
+  onReject: () => void;
+  onClose: () => void;
+};
+
+export default function ConfirmationModal({ open, action, runState, onApprove, onReject }: Props) {
+  if (!open || !action) return null;
+  const expiresIn = (() => {
+    const ms = Date.parse(action.expiresAt) - Date.now();
+    if (ms <= 0) return "expired";
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    return `${m}:${String(s).padStart(2, "0")} remaining`;
+  })();
+  const kindLabel =
+    action.kind === "generate_docx" ? "DOCX generation" :
+    action.kind === "execute_python" ? "Python execution" :
+    "XLSX generation";
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-[1px] p-4 animate-apple-fade">
+      <div className="w-[420px] max-w-full neu-dropdown p-6 animate-apple-scaleIn">
+        <div className="text-[11px] tracking-[0.14em] uppercase opacity-50">{kindLabel}</div>
+        <h3 className="text-base font-semibold mt-1">{action.prompt}</h3>
+        <p className="text-xs opacity-60 mt-2">Run {action.runId.slice(0, 8)} • {runState ?? ""}</p>
+        <p className="text-xs opacity-50 mt-1">Expires: {expiresIn}</p>
+        <p className="text-xs opacity-50 mt-1">This action requires your approval before the backend proceeds.</p>
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onReject} className="px-5 py-2 rounded-full neu-button text-sm font-medium">Reject</button>
+          <button onClick={onApprove} className="px-5 py-2 rounded-full neu-button-primary text-sm font-semibold">Approve</button>
+        </div>
+      </div>
+    </div>
+  );
+}

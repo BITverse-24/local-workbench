@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 
 export function useCamera() {
   const [show, setShow] = useState(false);
@@ -8,9 +8,16 @@ export function useCamera() {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
 
+  const stopStream = useCallback(() => {
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop());
+      setStream(null);
+    }
+  }, [stream]);
+
   useEffect(() => {
     if (!show) {
-      if (stream) { stream.getTracks().forEach((t) => t.stop()); setStream(null); }
+      stopStream();
       return;
     }
     setError(null); setCapturedImage(null);
@@ -20,9 +27,9 @@ export function useCamera() {
       .catch((err) => setError(err.message || 'Camera not available'));
     return () => {
       if (activeStream) activeStream.getTracks().forEach((t) => t.stop());
-      if (stream) stream.getTracks().forEach((t) => t.stop());
+      stopStream();
     };
-  }, [show]);
+  }, [show, stopStream]);
 
   useEffect(() => { if (videoRef.current && stream) videoRef.current.srcObject = stream; }, [stream]);
 
@@ -35,7 +42,7 @@ export function useCamera() {
     }
   };
 
-  const close = () => { setShow(false); setError(null); setCapturedImage(null); };
+  const close = useCallback(() => { setShow(false); setError(null); setCapturedImage(null); }, []);
 
   return { show, setShow, videoRef, canvasRef, error, capturedImage, setCapturedImage, capturePhoto, close, stream };
 }

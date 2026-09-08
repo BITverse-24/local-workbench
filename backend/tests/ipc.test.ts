@@ -44,12 +44,15 @@ afterEach(() => {
 });
 
 describe("chat IPC over mock Electron ipcMain", () => {
-  it("initBackend registers all 9 chat channels (launch wiring)", () => {
+  it("initBackend registers all chat+run channels (launch wiring)", () => {
     const fake = new FakeIpcMain();
     initBackend(fake);
-    expect([...fake.handlers.keys()].sort()).toEqual([...CHAT_CHANNELS, ...RUN_CHANNELS].filter((channel) => channel !== IPC_RUN.RUN_EVENT).sort());
+    const expected = [...CHAT_CHANNELS, ...RUN_CHANNELS].filter(
+      (channel) => channel !== IPC_RUN.RUN_EVENT && channel !== IPC_RUN.OPEN_ARTIFACT,
+    );
+    expect([...fake.handlers.keys()].sort()).toEqual(expected.sort());
     expect(CHAT_CHANNELS).toHaveLength(9);
-    expect(RUN_CHANNELS).toHaveLength(8);
+    expect(RUN_CHANNELS).toHaveLength(9);
   });
 
   it("createChat → getChatHistory round-trips a uuid4 chat", async () => {

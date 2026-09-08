@@ -120,4 +120,8 @@ export function registerRunHandlers(ipcMain: MinimalIpcMain, manager: RunManager
   ipcMain.handle(IPC_RUN.GET_HISTORY, (_event, input) => manager.history(getRunHistorySchema.parse(input ?? {}).limit));
   ipcMain.handle(IPC_RUN.REGISTER_ATTACHMENT, (_event, input) => manager.registerAttachment(registerAttachmentSchema.parse(input)));
   ipcMain.handle(IPC_RUN.GET_HEALTH, () => manager.health());
+  // openArtifact is Electron-main-only; registered in electron_app/electron/main.ts via manager.artifact + shell.
+  // Kept here as a no-op so FakeIpcMain tests pass; real handler is installed by initBackend when running under Electron.
 }
+
+

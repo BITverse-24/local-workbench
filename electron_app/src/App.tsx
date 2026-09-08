@@ -1,27 +1,33 @@
-import { useState, useCallback, useEffect } from 'react';
-import './App.css';
-import TitleBar from './components/TitleBar';
-import LeftSidebar, { type SidebarChat } from './components/LeftSidebar';
-import ChatPanel from './components/ChatPanel';
-import ChatArea, { type ChatMessage } from './components/ChatArea';
-import InputBar from './components/InputBar';
-import RightSidebar from './components/RightSidebar';
-import ModelDropdown from './components/ModelDropdown';
-import PlusDropup from './components/PlusDropup';
-import UploadModal from './components/modals/UploadModal';
-import CameraModal from './components/modals/CameraModal';
-import VoiceModal from './components/modals/VoiceModal';
-import { MODELS } from './lib/models';
-import * as wb from './lib/workbench';
-import { useDropdownPosition, usePlusPosition } from './lib/hooks/useDropdownPosition';
-import { useCamera } from './lib/hooks/useCamera';
-import { useVoice } from './lib/hooks/useVoice';
-import { useUpload } from './lib/hooks/useUpload';
+import { useState, useCallback, useEffect, useRef } from "react";
+import "./App.css";
+import TitleBar from "./components/TitleBar";
+import LeftSidebar, { type SidebarChat } from "./components/LeftSidebar";
+import ChatPanel from "./components/ChatPanel";
+import ChatArea, { type ChatMessage } from "./components/ChatArea";
+import InputBar from "./components/InputBar";
+import RightSidebar from "./components/RightSidebar";
+import ModelDropdown from "./components/ModelDropdown";
+import PlusDropup from "./components/PlusDropup";
+import UploadModal from "./components/modals/UploadModal";
+import CameraModal from "./components/modals/CameraModal";
+import VoiceModal from "./components/modals/VoiceModal";
+import ConfirmationModal from "./components/ConfirmationModal";
+import RunTranscript from "./components/RunTranscript";
+import ArtifactPane from "./components/ArtifactPane";
+import RouteBadge from "./components/RouteBadge";
+import { MODELS } from "./lib/models";
+import * as wb from "./lib/workbench";
+import { useDropdownPosition, usePlusPosition } from "./lib/hooks/useDropdownPosition";
+import { useCamera } from "./lib/hooks/useCamera";
+import { useVoice } from "./lib/hooks/useVoice";
+import { useUpload } from "./lib/hooks/useUpload";
+
+const MAX_SIZE = 10 * 1024 * 1024;
 
 function toChatMessages(rows: PersistedMessage[]): ChatMessage[] {
   const out: ChatMessage[] = [];
   for (const r of rows) {
-    if (r.role === 'user' || r.role === 'assistant') {
+    if (r.role === "user" || r.role === "assistant") {
       out.push({ id: r.id, role: r.role, text: r.content });
     }
   }
@@ -29,7 +35,7 @@ function toChatMessages(rows: PersistedMessage[]): ChatMessage[] {
 }
 
 export default function App() {
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [temperature, setTemperature] = useState(0.7);
   const [selectedModel, setSelectedModel] = useState(MODELS[0]);
   const [modelOpen, setModelOpen] = useState(false);
@@ -39,17 +45,26 @@ export default function App() {
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  // NOTE: selectedModel stays local for now — UI model ids (gemini-*) don't map to the
-  // backend registry ids (draft-qwen3/…) until Phase 3/14. temperature + lastChatId persist.
 
-  // --- Persisted chat state (backend SQLite via window.workbench) ---
   const [history, setHistory] = useState<SidebarChat[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
-  // persistent === bridge reachable. False in plain `vite` web dev or when the main
-  // process backend failed to init — the app then runs fully in-memory as before.
   const [persistent, setPersistent] = useState(false);
 
-  // Launch: restore history, last chat, and temperature from the backend.
+  // Run state
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [runState, setRunState] = useState<RunState | null>(null);
+  const [activeRoute, setActiveRoute] = useState<{ taskType: string; modelId: string; reason: string } | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingAction | null>(null);
+  const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
+  const [runArtifacts, setRunArtifacts] = useState<ArtifactRef[]>([]);
+  const [runError, setRunError] = useState<{ code: string; message: string } | null>(null);
+  const [serviceHealth, setServiceHealth] = useState<ModelHealth[] | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const activeRunRef = useRef<string | null>(null);
+  activeRunRef.current = activeRunId;
+  const isRunning = runState !== null && !["completed", "failed", "cancelled"].includes(runState);
+
+  // Launch: restore history, last chat, temperature
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -59,25 +74,99 @@ export default function App() {
         if (cancelled) return;
         setPersistent(true);
         setHistory(chats.map((c) => ({ id: c.id, title: c.title, updated_at: c.updated_at })));
-        const temp = await wb.getSetting<number>('temperature');
-        if (!cancelled && typeof temp === 'number') setTemperature(temp);
-        const last = await wb.getSetting<string>('lastChatId');
+        const temp = await wb.getSetting<number>("temperature");
+        if (!cancelled && typeof temp === "number") setTemperature(temp);
+        const last = await wb.getSetting<string>("lastChatId");
         if (cancelled) return;
         const target =
-          (typeof last === 'string' && chats.some((c) => c.id === last) ? last : null) ??
+          (typeof last === "string" && chats.some((c) => c.id === last) ? last : null) ??
           chats[0]?.id ??
           null;
-        if (!target) return; // brand-new DB: first chat is created lazily on send
+        if (!target) return;
         setChatId(target);
-        await wb.setSetting('lastChatId', target);
+        await wb.setSetting("lastChatId", target);
         const rows = await wb.getMessages(target);
         if (!cancelled) setMessages(toChatMessages(rows));
+        // Health probe on startup
+        try {
+          const h = await wb.getHealth();
+          if (!cancelled) setServiceHealth(h);
+        } catch {
+          void 0;
+        }
       } catch {
         if (!cancelled) setPersistent(false);
       }
     })();
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  const refreshHealth = useCallback(async () => {
+    if (!wb.isWorkbenchAvailable()) return;
+    setHealthLoading(true);
+    try {
+      const h = await wb.getHealth();
+      setServiceHealth(h);
+    } catch {
+      void 0;
+    }
+    setHealthLoading(false);
+  }, []);
+
+  // Single run-event subscription
+  useEffect(() => {
+    if (!wb.isWorkbenchAvailable()) return;
+    let unsub: (() => void) | undefined;
+    try {
+      unsub = wb.onRunEvent((event: RunEvent) => {
+        // Ignore events for other runs when we have an active run filter
+        // but still accept routing/assistant for history coherence.
+        const rid = (event as { runId?: string }).runId;
+        if (activeRunRef.current && rid && rid !== activeRunRef.current) {
+          // Only skip UI-spam; keep routing visible if needed.
+          // For now ignore foreign run entirely.
+          return;
+        }
+        setRunEvents((prev) => [...prev, event]);
+        switch (event.type) {
+          case "run_state":
+            setRunState(event.state);
+            if (event.state === "completed" || event.state === "failed" || event.state === "cancelled") {
+              setPendingConfirmation(null);
+            }
+            break;
+          case "routing":
+            setActiveRoute({ taskType: event.taskType, modelId: event.modelId, reason: event.reason });
+            break;
+          case "confirmation_required":
+            setPendingConfirmation(event.action);
+            break;
+          case "artifact_ready":
+            setRunArtifacts((prev) => [...prev, event.artifact]);
+            break;
+          case "assistant_message":
+            setMessages((prev) => [...prev, { id: event.messageId, role: "assistant", text: event.text }]);
+            break;
+          case "error":
+            setRunError({ code: event.code, message: event.message });
+            setRunState("failed");
+            setPendingConfirmation(null);
+            break;
+          default:
+            break;
+        }
+      });
+    } catch {
+      void 0;
+    }
+    return () => {
+      try {
+        unsub?.();
+      } catch {
+        void 0;
+      }
     };
   }, []);
 
@@ -93,9 +182,17 @@ export default function App() {
   const handleSelectChat = useCallback(
     async (id: string) => {
       setChatId(id);
+      // Reset run UI when switching chats
+      setActiveRunId(null);
+      setRunState(null);
+      setActiveRoute(null);
+      setPendingConfirmation(null);
+      setRunEvents([]);
+      setRunArtifacts([]);
+      setRunError(null);
       if (!persistent) return;
       try {
-        await wb.setSetting('lastChatId', id);
+        await wb.setSetting("lastChatId", id);
         await loadMessages(id);
       } catch {
         setPersistent(false);
@@ -105,27 +202,34 @@ export default function App() {
   );
 
   const handleNewChat = useCallback(async () => {
+    setActiveRunId(null);
+    setRunState(null);
+    setActiveRoute(null);
+    setPendingConfirmation(null);
+    setRunEvents([]);
+    setRunArtifacts([]);
+    setRunError(null);
     if (persistent) {
       try {
-        const id = await wb.createChat('New chat');
-        setHistory((prev) => [{ id, title: 'New chat', updated_at: new Date().toISOString() }, ...prev]);
+        const id = await wb.createChat("New chat");
+        setHistory((prev) => [{ id, title: "New chat", updated_at: new Date().toISOString() }, ...prev]);
         setChatId(id);
         setMessages([]);
-        await wb.setSetting('lastChatId', id);
+        await wb.setSetting("lastChatId", id);
         return;
       } catch {
         setPersistent(false);
       }
     }
     const id = `local-${Date.now()}`;
-    setHistory((prev) => [{ id, title: 'New chat', updated_at: new Date().toISOString() }, ...prev]);
+    setHistory((prev) => [{ id, title: "New chat", updated_at: new Date().toISOString() }, ...prev]);
     setChatId(id);
     setMessages([]);
   }, [persistent]);
 
   const handleDeleteChat = useCallback(
     async (id: string) => {
-      if (persistent && !id.startsWith('local-')) {
+      if (persistent && !id.startsWith("local-")) {
         try {
           await wb.archiveChat(id);
         } catch {
@@ -144,12 +248,10 @@ export default function App() {
     [chatId, history, persistent, loadMessages],
   );
 
-  // Rename persists via workbench:renameChat (backend P-B1). Optimistic local update
-  // first so sidebar + header change instantly; a failed persist drops to fallback mode.
   const handleRenameChat = useCallback(
     async (id: string, title: string) => {
       setHistory((prev) => prev.map((c) => (c.id === id ? { ...c, title, updated_at: new Date().toISOString() } : c)));
-      if (persistent && !id.startsWith('local-')) {
+      if (persistent && !id.startsWith("local-")) {
         try {
           await wb.renameChat(id, title);
         } catch {
@@ -160,19 +262,18 @@ export default function App() {
     [persistent],
   );
 
-  const activeTitle = history.find((c) => c.id === chatId)?.title ?? 'Untitled Chat';
+  const activeTitle = history.find((c) => c.id === chatId)?.title ?? "Untitled Chat";
 
-  /** Ensure a persisted chat exists for sending; null in fallback mode. */
   const ensureChatId = useCallback(
     async (firstText: string): Promise<string | null> => {
-      if (chatId && !chatId.startsWith('local-')) return chatId;
+      if (chatId && !chatId.startsWith("local-")) return chatId;
       if (!persistent) return null;
       try {
-        const title = firstText.trim().slice(0, 40) || 'New chat';
+        const title = firstText.trim().slice(0, 40) || "New chat";
         const id = await wb.createChat(title);
         setChatId(id);
         setHistory((prev) => [{ id, title, updated_at: new Date().toISOString() }, ...prev]);
-        await wb.setSetting('lastChatId', id);
+        await wb.setSetting("lastChatId", id);
         return id;
       } catch {
         setPersistent(false);
@@ -185,7 +286,7 @@ export default function App() {
   const handleTemperature = useCallback(
     (v: number) => {
       setTemperature(v);
-      if (persistent) void wb.setSetting('temperature', v).catch(() => undefined);
+      if (persistent) void wb.setSetting("temperature", v).catch(() => undefined);
     },
     [persistent],
   );
@@ -196,8 +297,6 @@ export default function App() {
   const upload = useUpload();
   const camera = useCamera();
   const voice = useVoice();
-
-  const MAX_SIZE = 10 * 1024 * 1024;
 
   const addFiles = useCallback((incoming: File[]) => {
     const valid: File[] = [];
@@ -220,57 +319,119 @@ export default function App() {
     setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  const handleConfirm = useCallback(async (approved: boolean) => {
+    if (!pendingConfirmation || !activeRunId) return;
+    const { actionId, runId } = pendingConfirmation;
+    try {
+      await wb.confirmAction({ runId, actionId, approved });
+      setPendingConfirmation(null);
+    } catch (e) {
+      setRunError({ code: "confirm_failed", message: e instanceof Error ? e.message : String(e) });
+      setPendingConfirmation(null);
+    }
+  }, [pendingConfirmation, activeRunId]);
+
+  const handleCancelRun = useCallback(async () => {
+    if (!activeRunId) return;
+    try {
+      await wb.cancelRun(activeRunId);
+      setRunState("cancelled");
+      setPendingConfirmation(null);
+    } catch (e) {
+      setRunError({ code: "cancel_failed", message: e instanceof Error ? e.message : String(e) });
+    }
+  }, [activeRunId]);
+
+  const handleOpenArtifact = useCallback(async (artifact: ArtifactRef) => {
+    try {
+      await wb.openArtifact({ runId: artifact.runId, artifactId: artifact.artifactId });
+    } catch (e) {
+      setRunError({ code: "open_failed", message: e instanceof Error ? e.message : String(e) });
+    }
+  }, []);
+
   const handleSend = async () => {
     const hasText = input.trim().length > 0;
     const hasFiles = attachedFiles.length > 0;
     if (!hasText && !hasFiles) return;
+    if (isRunning) return;
+    if (attachedFiles.length > 1) {
+      setRunError({ code: "too_many_attachments", message: "Only one attachment per run is supported. Remove extra files and try again." });
+      return;
+    }
     const text = input;
-    const files = attachedFiles.length ? [...attachedFiles] : undefined;
-    setInput('');
-    setAttachedFiles([]);
+    const file = attachedFiles[0] ?? null;
+    // Clear composer only after validation; for file path clear after register succeeds.
+    if (!file) setInput("");
+
+    // Persistent chat + backend run path
     if (persistent) {
-      const id = await ensureChatId(text);
-      if (id) {
+      const cid = await ensureChatId(text);
+      if (cid) {
         try {
-          const { messageId } = await wb.sendMessage(id, 'user', text);
-          setMessages((prev) => [...prev, { id: messageId, role: 'user', text, files }]);
-          setHistory((prev) =>
-            prev.map((c) => (c.id === id ? { ...c, updated_at: new Date().toISOString() } : c)),
-          );
-        } catch {
-          setPersistent(false);
-          setMessages((prev) => [...prev, { id: `local-${Date.now()}`, role: 'user', text, files }]);
+          // Persist user message first (visible immediately)
+          const { messageId } = await wb.sendMessage(cid, "user", text);
+          setMessages((prev) => [...prev, { id: messageId, role: "user", text, files: file ? [file] : undefined }]);
+          setHistory((prev) => prev.map((c) => (c.id === cid ? { ...c, updated_at: new Date().toISOString() } : c)));
+
+          // Reset run UI
+          setRunEvents([]);
+          setRunArtifacts([]);
+          setRunError(null);
+          setActiveRoute(null);
+          setPendingConfirmation(null);
+          setRunState("created");
+
+          let attachmentToken: string | undefined;
+          let runIdForAttachment: string | undefined;
+          if (file) {
+            const reg = await wb.registerAttachment({ chatId: cid, file });
+            attachmentToken = reg.attachment.attachmentId;
+            runIdForAttachment = reg.runId;
+            setInput("");
+            setAttachedFiles([]);
+          } else {
+            setAttachedFiles([]);
+          }
+
+          const { runId } = await wb.startRun({
+            userText: text,
+            attachmentToken,
+            runId: runIdForAttachment,
+            chatId: cid,
+          });
+          setActiveRunId(runId);
+          // Chat stays on cid; run is linked via DB.
+          return;
+        } catch (e) {
+          setRunError({ code: "send_failed", message: e instanceof Error ? e.message : String(e) });
+          // keep composer content if register/start failed
+          if (file) {
+            // do not clear on failure — keep file for retry
+          }
+          return;
         }
-        // Assistant turns arrive from the orchestrator in Phase 1; no fake reply.
-        return;
       }
     }
-    const newMsg: ChatMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      text,
-      files,
-    };
+
+    // Fallback / non-persistent: in-memory only, no backend run
+    const fallbackFiles = file ? [file] : undefined;
+    if (!file) { setInput(""); setAttachedFiles([]); }
+    else { setInput(""); setAttachedFiles([]); }
+    const newMsg: ChatMessage = { id: Date.now().toString(), role: "user", text, files: fallbackFiles };
     setMessages((prev) => [...prev, newMsg]);
     if (chatId) {
       const now = new Date().toISOString();
       setHistory((prev) => prev.map((c) => (c.id === chatId ? { ...c, updated_at: now } : c)));
     }
-    // auto-reply with "Chat response" for every sent text
-    const reply: ChatMessage = {
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      text: '**Akakakakaa** ```java System.out.println("Hello, World"); class Sky { public Sky(){int k = 69;} }  ```\n Add stuffs to it',
-    };
-    // slight delay to preserve message order and allow auto-scroll animation
     window.setTimeout(() => {
-      setMessages((prev) => [...prev, reply]);
-    }, 300);
+      setMessages((prev) => [...prev, { id: (Date.now() + 1).toString(), role: "assistant", text: "Backend unavailable — response is local only. Launch inside Electron to enable AI runs." }]);
+    }, 200);
   };
 
   const handleEditMessage = useCallback(
     async (id: string, newText: string) => {
-      if (persistent && !id.startsWith('local-')) {
+      if (persistent && !id.startsWith("local-")) {
         try {
           await wb.editPersistedMessage(id, newText);
         } catch {
@@ -283,12 +444,11 @@ export default function App() {
   );
 
   const handleVoiceUseTranscript = useCallback(() => {
-    const text = `${voice.transcript}${voice.interimTranscript ? ' ' + voice.interimTranscript : ''}`.trim();
+    const text = `${voice.transcript}${voice.interimTranscript ? " " + voice.interimTranscript : ""}`.trim();
     if (text) {
-      setInput((prev) => (prev ? (prev.endsWith(' ') ? prev : prev + ' ') + text : text));
-      // auto-focus input after paste
+      setInput((prev) => (prev ? (prev.endsWith(" ") ? prev : prev + " ") + text : text));
       window.setTimeout(() => {
-        const el = document.querySelector('textarea[placeholder*="Write your prompt"]') as HTMLTextAreaElement | null;
+        const el = document.querySelector("textarea") as HTMLTextAreaElement | null;
         el?.focus();
       }, 50);
     }
@@ -296,14 +456,13 @@ export default function App() {
     window.setTimeout(() => voice.clearTranscript(), 200);
   }, [voice]);
 
-  // auto paste transcript when recording stops (so input is filled without extra click)
   useEffect(() => {
     if (!voice.isRecording && voice.recordedBlob && (voice.transcript || voice.interimTranscript)) {
-      const text = `${voice.transcript}${voice.interimTranscript ? ' ' + voice.interimTranscript : ''}`.trim();
+      const text = `${voice.transcript}${voice.interimTranscript ? " " + voice.interimTranscript : ""}`.trim();
       if (text) {
         setInput((prev) => {
           if (prev.includes(text)) return prev;
-          return prev ? (prev.endsWith(' ') ? prev : prev + ' ') + text : text;
+          return prev ? (prev.endsWith(" ") ? prev : prev + " ") + text : text;
         });
       }
     }
@@ -318,10 +477,10 @@ export default function App() {
   }, [upload, addFiles]);
 
   return (
-    <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none page-apple-enter" style={{ background: '#181818' }}>
+    <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none page-apple-enter" style={{ background: "#181818" }}>
       <TitleBar />
 
-      <div className="flex flex-1 overflow-hidden p-3 gap-3 relative z-10" style={{ background: '#181818' }}>
+      <div className="flex flex-1 overflow-hidden p-3 gap-3 relative z-10" style={{ background: "#181818" }}>
         <LeftSidebar
           collapsed={leftCollapsed}
           onCollapse={() => setLeftCollapsed(true)}
@@ -334,7 +493,23 @@ export default function App() {
         />
 
         <ChatPanel title={activeTitle} leftCollapsed={leftCollapsed} rightCollapsed={rightCollapsed} onToggleLeft={() => setLeftCollapsed(!leftCollapsed)} onToggleRight={() => setRightCollapsed(!rightCollapsed)}>
+          {activeRoute && <RouteBadge route={activeRoute} state={runState} />}
+          {runError && (
+            <div className="mx-4 mt-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex items-start justify-between gap-2">
+              <span><strong>{runError.code}:</strong> {runError.message}</span>
+              <button onClick={() => setRunError(null)} className="shrink-0 w-6 h-6 rounded-full bg-white/10 grid place-items-center">x</button>
+            </div>
+          )}
+          {isRunning && (
+            <div className="mx-4 mt-2 flex items-center gap-2 text-xs opacity-60">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              {runState === "awaiting_confirmation" ? "Awaiting confirmation" : `Run ${runState}...`}
+              <button onClick={handleCancelRun} className="ml-auto px-3 py-1 rounded-full neu-button text-xs">Cancel</button>
+            </div>
+          )}
+          <RunTranscript events={runEvents} />
           <ChatArea messages={messages} onEditMessage={handleEditMessage} onAttachFiles={addFiles} />
+          {runArtifacts.length > 0 && <ArtifactPane artifacts={runArtifacts} onOpen={handleOpenArtifact} runId={activeRunId ?? undefined} />}
           <InputBar
             input={input}
             setInput={setInput}
@@ -348,6 +523,7 @@ export default function App() {
             attachedFiles={attachedFiles}
             onAttachFiles={addFiles}
             onRemoveFile={removeAttached}
+            disabled={isRunning}
           />
         </ChatPanel>
 
@@ -361,6 +537,11 @@ export default function App() {
           modelBtnRef={modelBtnRef}
           temperature={temperature}
           setTemperature={handleTemperature}
+          activeRoute={activeRoute}
+          runState={runState}
+          health={serviceHealth}
+          healthLoading={healthLoading}
+          onRefreshHealth={refreshHealth}
         />
       </div>
 
@@ -396,6 +577,18 @@ export default function App() {
         onStop={voice.stop}
         onUseTranscript={handleVoiceUseTranscript}
       />
+
+      <ConfirmationModal
+        open={!!pendingConfirmation}
+        action={pendingConfirmation}
+        runState={runState}
+        onApprove={() => handleConfirm(true)}
+        onReject={() => handleConfirm(false)}
+        onClose={() => {}}
+      />
     </div>
   );
 }
+
+
+
