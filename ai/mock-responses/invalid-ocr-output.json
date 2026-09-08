@@ -1,0 +1,28 @@
+{
+  "requestId": "fixture-request-vision-invalid",
+  "runId": "fixture-run-flow-a-invalid-ocr",
+  "modelId": "vision-qwen25vl",
+  "completedAt": "2026-08-20T00:00:11.000Z",
+  "taskType": "vision",
+  "result": {
+    "sourceText": "Heat Exchanger E-201 Tube Bundle Inspection Report\nRows 12–15 measured 3.8–4.2 mm; minimum allowable tube wall thickness: 4.6 mm.",
+    "findings": [
+      {
+        "findingId": "finding-1",
+        "title": "Tube wall thickness below minimum allowable",
+        "value": "Rows 12–15 measured 3.8–4.2 mm; minimum allowable is 4.6 mm",
+        "pageReferenceIds": ["page-ref-does-not-exist"],
+        "confidence": "high",
+        "evidence": "The report states the measured range and minimum allowable value."
+      }
+    ],
+    "pageReferences": [
+      {
+        "id": "page-ref-1",
+        "page": 1,
+        "text": "Rows 12–15 measured 3.8–4.2 mm; minimum allowable tube wall thickness: 4.6 mm."
+      }
+    ],
+    "warnings": []
+  }
+}
