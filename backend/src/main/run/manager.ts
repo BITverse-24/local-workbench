@@ -8,6 +8,7 @@ import type {
   CodeModelRequest,
   CodeSummarizeRequest,
   DraftModelRequest,
+  DraftResult,
   ModelResponse,
   PendingAction,
   RunEvent,
@@ -316,12 +317,44 @@ export class RunManager {
       templateRequirements,
     };
     let draftResponse = await this.gateway.execute(draftRequest);
-    if (!draftResponse.ok) throw new Error(draftResponse.error.message);
-    let draft = validateDraft((draftResponse.value as ModelResponse).result, chunks);
-    if (!draft.ok) {
-      const firstFailure = validationMessage("approval note", draft.error);
-      this.result(runId, "draft_note", `first draft invalid at '${draft.error.path}', retrying once with repair hint`);
-      const repairBase = requestBase(runId, "draft", "draft-qwen3", "draft-result", buildDraftRepairPrompt(firstFailure), buildDraftUserPrompt(vision.value.findings, vision.value.pageReferences, chunks, templateRequirements), 45000, 8192);
+    let firstFailure: string | null = null;
+    let draftSuccess: DraftResult | null = null;
+    if (!draftResponse.ok) {
+      firstFailure = draftResponse.error.message;
+      this.result(runId, "draft_note", `first draft failed to parse (${firstFailure.slice(0, 120)}), retrying once with repair hint`);
+    } else {
+      const firstDraft = validateDraft((draftResponse.value as ModelResponse).result, chunks);
+      if (!firstDraft.ok) {
+        firstFailure = validationMessage("approval note", firstDraft.error);
+        this.result(runId, "draft_note", `first draft invalid at '${firstDraft.error.path}', retrying once with repair hint`);
+      } else {
+        draftSuccess = firstDraft.value;
+        // success on first attempt
+        this.result(runId, "draft_note", "approval note validated");
+        this.persistAssistant(runId, `${draftSuccess.title}\n\n${draftSuccess.body.slice(0, 4000)}`, "draft-qwen3");
+        await this.awaitConfirmation(runId, "generate_docx", async () => {
+          const artifacts = await generateDocx(runId, draftSuccess!);
+          for (const artifact of artifacts) {
+            this.persistArtifact(artifact as never);
+            this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
+          }
+          this.complete(runId);
+        });
+        return;
+      }
+    }
+    // One bounded retry for both parse and validation failures
+    if (firstFailure) {
+      const repairBase = requestBase(
+        runId,
+        "draft",
+        "draft-qwen3",
+        "draft-result",
+        buildDraftRepairPrompt(firstFailure),
+        buildDraftUserPrompt(vision.value.findings, vision.value.pageReferences, chunks, templateRequirements),
+        45000,
+        8192,
+      );
       const repairRequest: DraftModelRequest = {
         ...repairBase,
         taskType: "draft",
@@ -333,20 +366,22 @@ export class RunManager {
         templateRequirements,
       };
       const repairResponse = await this.gateway.execute(repairRequest);
-      if (!repairResponse.ok) throw new Error(repairResponse.error.message);
-      draft = validateDraft((repairResponse.value as ModelResponse).result, chunks);
-      if (!draft.ok) throw new Error(`${firstFailure} | retry also failed: ${validationMessage("approval note", draft.error)}`);
+      if (!repairResponse.ok) throw new Error(`${firstFailure} | retry also failed: ${repairResponse.error.message}`);
+      const retryDraft = validateDraft((repairResponse.value as ModelResponse).result, chunks);
+      if (!retryDraft.ok) throw new Error(`${firstFailure} | retry also failed: ${validationMessage("approval note", retryDraft.error)}`);
+      this.result(runId, "draft_note", "approval note validated (after retry)");
+      this.persistAssistant(runId, `${retryDraft.value.title}\n\n${retryDraft.value.body.slice(0, 4000)}`, "draft-qwen3");
+      await this.awaitConfirmation(runId, "generate_docx", async () => {
+        const artifacts = await generateDocx(runId, retryDraft.value);
+        for (const artifact of artifacts) {
+          this.persistArtifact(artifact as never);
+          this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
+        }
+        this.complete(runId);
+      });
+      return;
     }
-    this.result(runId, "draft_note", "approval note validated");
-    this.persistAssistant(runId, `${draft.value.title}\n\n${draft.value.body.slice(0, 4000)}`, "draft-qwen3");
-    await this.awaitConfirmation(runId, "generate_docx", async () => {
-      const artifacts = await generateDocx(runId, draft.value);
-      for (const artifact of artifacts) {
-        this.persistArtifact(artifact as never);
-        this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
-      }
-      this.complete(runId);
-    });
+    // unreachable - all paths returned above
   }
   private async flowB(runId: string, text: string, attachment: AttachmentRow): Promise<void> {
     this.tool(runId, "read_file", "reading CSV attachment");
