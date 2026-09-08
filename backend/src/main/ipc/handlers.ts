@@ -1,8 +1,7 @@
 // Chat-persistence IPC handlers (backend/src/main/ipc/handlers.ts).
-// Phase-DB connection slice: real `ipcMain.handle` registration for the 9 channels in
-// `./channels.ts`. Pure handler functions (no `electron` import) + `registerChatHandlers`
-// which takes a minimal structural ipcMain — the real Electron `ipcMain` satisfies it,
-// and tests pass a fake. Run-protocol handlers (startRun/confirm/…) land in Phase 1.
+// Pure handler functions (no `electron` import) plus structural IPC registration keep
+// the backend testable with a fake ipcMain. Run events are emitted through the callback
+// supplied to RunManager and forwarded by the Electron main process.
 //
 // Errors (incl. Zod validation failures) propagate as invoke rejections; the renderer
 // must try/catch. All returns are structured-clone / JSON-safe.
@@ -21,7 +20,15 @@ import {
   renameChatSchema,
   sendMessageSchema,
   setSettingSchema,
+  startRunSchema,
+  confirmActionSchema,
+  cancelRunSchema,
+  getArtifactSchema,
+  getRunHistorySchema,
+  registerAttachmentSchema,
 } from "./validators.js";
+import { IPC_RUN } from "./channels.js";
+import { RunManager } from "../run/manager.js";
 
 /** Structural subset of Electron's ipcMain needed here (keeps backend testable w/o electron). */
 export interface MinimalIpcMain {
@@ -103,4 +110,14 @@ export function registerChatHandlers(ipcMain: MinimalIpcMain): void {
   for (const [channel, fn] of Object.entries(table)) {
     ipcMain.handle(channel, (_event, input) => fn(input));
   }
+}
+
+export function registerRunHandlers(ipcMain: MinimalIpcMain, manager: RunManager): void {
+  ipcMain.handle(IPC_RUN.START_RUN, (_event, input) => manager.start(startRunSchema.parse(input)));
+  ipcMain.handle(IPC_RUN.CONFIRM, (_event, input) => manager.confirm(confirmActionSchema.parse(input)));
+  ipcMain.handle(IPC_RUN.CANCEL, (_event, input) => manager.cancel(cancelRunSchema.parse(input).runId));
+  ipcMain.handle(IPC_RUN.GET_ARTIFACT, (_event, input) => { const parsed = getArtifactSchema.parse(input); return manager.artifact(parsed.runId, parsed.artifactId); });
+  ipcMain.handle(IPC_RUN.GET_HISTORY, (_event, input) => manager.history(getRunHistorySchema.parse(input ?? {}).limit));
+  ipcMain.handle(IPC_RUN.REGISTER_ATTACHMENT, (_event, input) => manager.registerAttachment(registerAttachmentSchema.parse(input)));
+  ipcMain.handle(IPC_RUN.GET_HEALTH, () => manager.health());
 }

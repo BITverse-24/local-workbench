@@ -11,13 +11,18 @@
 // bundler-friendly. Full run-protocol wiring lands in Phase 1.
 
 import { initDb } from "./persistence/db.js";
-import { registerChatHandlers, type MinimalIpcMain } from "./ipc/handlers.js";
+import { registerChatHandlers, registerRunHandlers, type MinimalIpcMain } from "./ipc/handlers.js";
+import { RunManager } from "./run/manager.js";
+import type { RunEvent } from "../shared/contracts.js";
 
 export { CHAT_CHANNELS, IPC_CHAT, type ChatChannel } from "./ipc/channels.js";
-export { registerChatHandlers, type MinimalIpcMain } from "./ipc/handlers.js";
+export { registerChatHandlers, registerRunHandlers, type MinimalIpcMain } from "./ipc/handlers.js";
 
 /** Open SQLite (idempotent migrate + seed) and register chat IPC handlers. */
-export function initBackend(ipcMain: MinimalIpcMain): void {
+export function initBackend(ipcMain: MinimalIpcMain, emit?: (event: RunEvent) => void): RunManager {
   initDb();
   registerChatHandlers(ipcMain);
+  const manager = new RunManager(undefined, emit);
+  registerRunHandlers(ipcMain, manager);
+  return manager;
 }
