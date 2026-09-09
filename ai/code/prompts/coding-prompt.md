@@ -54,12 +54,12 @@ Required result metadata:
 - inputFiles must contain the supplied CSV filename;
 - outputFiles must contain only logical output filenames created by the script;
   it may be empty when the requested result is print-only;
-- allowedImports must contain only "csv" and "datetime".
+- allowedImports must contain only "csv", "datetime", and "math".
 
 Code restrictions:
 - source must contain only Python source; do not include Markdown fences,
   explanations, shell commands, or command-line arguments;
-- import only csv or datetime; do not use any other import;
+- import only csv, datetime, or math; do not use any other import;
 - do not use network access, subprocesses, shell execution, dynamic code
   evaluation, or environment-variable access;
 - access only the supplied input file and declared output files by logical

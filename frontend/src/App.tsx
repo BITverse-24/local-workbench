@@ -56,6 +56,7 @@ export default function App() {
   const [runState, setRunState] = useState<RunState | null>(null);
   const [activeRoute, setActiveRoute] = useState<{ taskType: string; modelId: string; reason: string } | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingAction | null>(null);
+  const [confirmationBusy, setConfirmationBusy] = useState(false);
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
   const [runArtifacts, setRunArtifacts] = useState<ArtifactRef[]>([]);
   const [runError, setRunError] = useState<{ code: string; message: string } | null>(null);
@@ -322,15 +323,19 @@ export default function App() {
 
   const handleConfirm = useCallback(async (approved: boolean) => {
     if (!pendingConfirmation || !activeRunId) return;
+    if (confirmationBusy) return;
     const { actionId, runId } = pendingConfirmation;
+    setConfirmationBusy(true);
     try {
       await wb.confirmAction({ runId, actionId, approved });
       setPendingConfirmation(null);
     } catch (e) {
       setRunError({ code: "confirm_failed", message: e instanceof Error ? e.message : String(e) });
       setPendingConfirmation(null);
+    } finally {
+      setConfirmationBusy(false);
     }
-  }, [pendingConfirmation, activeRunId]);
+  }, [pendingConfirmation, activeRunId, confirmationBusy]);
 
   const handleCancelRun = useCallback(async () => {
     if (!activeRunId) return;
@@ -598,8 +603,8 @@ export default function App() {
         onApprove={() => handleConfirm(true)}
         onReject={() => handleConfirm(false)}
         onClose={() => {}}
+        busy={confirmationBusy}
       />
     </div>
   );
 }
-

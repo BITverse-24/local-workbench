@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createChat } from "../persistence/chats.js";
 import { addMessage } from "../persistence/messages.js";
@@ -51,6 +52,7 @@ export interface ConfirmInput {
 export class RunManager {
   private readonly attachments = new Map<string, AttachmentRow>();
   private readonly continuations = new Map<string, Continuation>();
+  private readonly confirming = new Map<string, Promise<void>>();
   private readonly codeModel: CodeModel;
   private readonly chatModel: ChatModel;
   constructor(
@@ -89,23 +91,64 @@ export class RunManager {
     const text = input.userText ?? "";
     if (text.length > 8000 || /(?:^[A-Za-z]:[\\/]|^\/|\\.\.)/.test(text) || (!text.trim() && !input.attachmentToken))
       throw new Error("invalid run input");
-    const attachment = input.attachmentToken ? this.attachment(input.attachmentToken) : undefined;
-    const effectiveChatId = input.chatId ?? attachment?.chatId ?? createChat("New run");
-    const runId = input.runId ?? attachment?.runId ?? createRun(effectiveChatId, input.userText);
+    const requestedAttachment = input.attachmentToken ? this.attachment(input.attachmentToken) : undefined;
+    const effectiveChatId = input.chatId ?? requestedAttachment?.chatId ?? this.chatIdForRunIfPresent(input.runId) ?? createChat("New run");
+    // Follow-up questions in the same chat retain the latest uploaded file.
+    // A newly uploaded attachment always takes precedence.
+    let attachment = requestedAttachment ?? this.latestAttachment(effectiveChatId);
+    const runId = input.runId ?? requestedAttachment?.runId ?? createRun(effectiveChatId, input.userText);
     createRunDirectories(runId);
+    if (attachment && !requestedAttachment) {
+      // A follow-up gets a fresh run workspace. Copy the prior attachment into
+      // that workspace so the sandbox can resolve the model's logical filename.
+      const bytes = readFileSync(absoluteDataPath(attachment.relativePath));
+      const copied = saveAttachment(runId, {
+        filename: attachment.filename,
+        mediaType: attachment.mediaType,
+        sizeBytes: bytes.length,
+        base64OrBuffer: bytes,
+      });
+      attachment = { ...copied, runId, chatId: effectiveChatId };
+      this.attachments.set(attachment.attachmentId, attachment);
+      getDb()
+        .prepare(
+          "INSERT INTO attachments(attachment_id, chat_id, run_id, filename, media_type, size_bytes, relative_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          attachment.attachmentId,
+          effectiveChatId,
+          runId,
+          attachment.filename,
+          attachment.mediaType,
+          attachment.sizeBytes,
+          attachment.relativePath,
+          new Date().toISOString(),
+        );
+      getDb().prepare("UPDATE runs SET attachment_id=? WHERE id=?").run(attachment.attachmentId, runId);
+    }
     void this.execute(runId, input.userText, attachment).catch((error) => this.fail(runId, error));
     return { runId };
   }
   async confirm(input: ConfirmInput): Promise<void> {
+    const existing = this.confirming.get(input.actionId);
+    if (existing) return existing;
+    const operation = (async () => {
+      try {
+        decide(input.runId, input.actionId, input.approved);
+        const continuation = this.continuations.get(input.actionId);
+        if (!continuation) throw new Error("confirmation continuation not found");
+        this.continuations.delete(input.actionId);
+        await continuation();
+      } catch (error) {
+        this.fail(input.runId, error);
+        throw error;
+      }
+    })();
+    this.confirming.set(input.actionId, operation);
     try {
-      decide(input.runId, input.actionId, input.approved);
-      const continuation = this.continuations.get(input.actionId);
-      if (!continuation) throw new Error("confirmation continuation not found");
-      this.continuations.delete(input.actionId);
-      await continuation();
-    } catch (error) {
-      this.fail(input.runId, error);
-      throw error;
+      await operation;
+    } finally {
+      if (this.confirming.get(input.actionId) === operation) this.confirming.delete(input.actionId);
     }
   }
   cancel(runId: string): void {
@@ -140,6 +183,18 @@ export class RunManager {
     if (!row) throw new Error("attachment token not found");
     this.attachments.set(token, row);
     return row;
+  }
+  private latestAttachment(chatId: string): AttachmentRow | undefined {
+    return getDb()
+      .prepare(
+        "SELECT attachment_id as attachmentId, chat_id as chatId, run_id as runId, filename, media_type as mediaType, size_bytes as sizeBytes, relative_path as relativePath FROM attachments WHERE chat_id=? ORDER BY created_at DESC LIMIT 1",
+      )
+      .get(chatId) as AttachmentRow | undefined;
+  }
+  private chatIdForRunIfPresent(runId?: string): string | undefined {
+    if (!runId) return undefined;
+    const row = getDb().prepare("SELECT chat_id as chatId FROM runs WHERE id=?").get(runId) as { chatId: string } | undefined;
+    return row?.chatId;
   }
   private state(runId: string, state: RunState) {
     transition(runId, state);

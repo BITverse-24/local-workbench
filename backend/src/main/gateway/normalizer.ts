@@ -34,6 +34,16 @@ export function providerError(error: unknown, request: ModelRequest): AIError {
   return { kind: "ai-error", code, message: message.slice(0, 500), retryable: code === "model_timeout" || code === "model_unavailable", requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId };
 }
 export function normalizeResponse(value: unknown, request: ModelRequest): ModelResponse {
+  // Some OpenAI-compatible providers return the JSON response as a JSON
+  // string for simple chat turns, even when response_format=json_object was
+  // requested. Preserve the content as a valid typed chat result; structured
+  // code/vision responses remain strict objects below.
+  if (typeof value === "string" && request.responseFormat === "chat-result") {
+    const text = value.replace(/^>\s*\/\/\s*/, "").replace(/\s*\/\/\s*$/, "").trim();
+    if (text) {
+      return { requestId: request.requestId, runId: request.runId, modelId: request.modelId, taskType: request.taskType, completedAt: new Date().toISOString(), result: { text } } as ModelResponse;
+    }
+  }
   if (!value || typeof value !== "object") throw new Error("invalid model response");
   const raw = value as Record<string, unknown>;
   const result = raw.result ?? value;

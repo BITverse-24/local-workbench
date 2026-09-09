@@ -52,9 +52,10 @@ function stageInputs(runId: string, inputFiles: string[], aliases: InputAlias[])
   return { inputDir, intermediateDir, outputDir, stagedInputs };
 }
 
-function outputFiles(outputDir: string): string[] {
+function outputFiles(outputDir: string, stagedInputs: string[]): string[] {
+  const inputNames = new Set(stagedInputs);
   return readdirSync(outputDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name !== ".DS_Store")
+    .filter((entry) => entry.isFile() && entry.name !== ".DS_Store" && !inputNames.has(entry.name))
     .map((entry) => entry.name);
 }
 
@@ -99,9 +100,9 @@ export async function executePython(runId: string, source: string, inputFiles: s
 
   try {
     const result = await exec(command, args, { cwd: staged.outputDir, timeout: timeoutMs, maxBuffer: 16384 });
-    return { exitCode: 0, stdout: result.stdout.slice(0, 8000), stderr: result.stderr.slice(0, 8000), timedOut: false, outputFiles: outputFiles(staged.outputDir), durationMs: Date.now() - started };
+    return { exitCode: 0, stdout: result.stdout.slice(0, 8000), stderr: result.stderr.slice(0, 8000), timedOut: false, outputFiles: outputFiles(staged.outputDir, staged.stagedInputs), durationMs: Date.now() - started };
   } catch (error) {
     const e = error as { code?: number | string; stdout?: string; stderr?: string; killed?: boolean };
-    return { exitCode: typeof e.code === "number" ? e.code : 1, stdout: (e.stdout ?? "").slice(0, 8000), stderr: (e.stderr ?? String(error)).slice(0, 8000), timedOut: Boolean(e.killed), outputFiles: outputFiles(staged.outputDir), durationMs: Date.now() - started };
+    return { exitCode: typeof e.code === "number" ? e.code : 1, stdout: (e.stdout ?? "").slice(0, 8000), stderr: (e.stderr ?? String(error)).slice(0, 8000), timedOut: Boolean(e.killed), outputFiles: outputFiles(staged.outputDir, staged.stagedInputs), durationMs: Date.now() - started };
   }
 }

@@ -5,9 +5,10 @@ type Props = {
   onApprove: () => void;
   onReject: () => void;
   onClose: () => void;
+  busy?: boolean;
 };
 
-export default function ConfirmationModal({ open, action, runState, onApprove, onReject }: Props) {
+export default function ConfirmationModal({ open, action, runState, onApprove, onReject, busy = false }: Props) {
   if (!open || !action) return null;
   const expiresIn = (() => {
     const ms = Date.parse(action.expiresAt) - Date.now();
@@ -29,8 +30,8 @@ export default function ConfirmationModal({ open, action, runState, onApprove, o
         <p className="text-xs opacity-50 mt-1">Expires: {expiresIn}</p>
         <p className="text-xs opacity-50 mt-1">This action requires your approval before the backend proceeds.</p>
         <div className="flex justify-end gap-2 mt-5">
-          <button onClick={onReject} className="px-5 py-2 rounded-full neu-button text-sm font-medium">Reject</button>
-          <button onClick={onApprove} className="px-5 py-2 rounded-full neu-button-primary text-sm font-semibold">Approve</button>
+          <button onClick={onReject} disabled={busy} className="px-5 py-2 rounded-full neu-button text-sm font-medium disabled:opacity-40">{busy ? "Working…" : "Reject"}</button>
+          <button onClick={onApprove} disabled={busy} className="px-5 py-2 rounded-full neu-button-primary text-sm font-semibold disabled:opacity-40">{busy ? "Working…" : "Approve"}</button>
         </div>
       </div>
     </div>
