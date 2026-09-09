@@ -1,0 +1,59 @@
+// @see - https://www.electron.build/configuration/configuration
+// Packaging smoke coverage is deferred (migration phase 3 leaves it out).
+// This config already reflects the migrated layout so the later packaging
+// phase needs no path rework: built frontend output, Electron bundles, and
+// the model registry are included; no .env file and no source tree are.
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.sovereign.workbench",
+  "asar": true,
+  "productName": "Sovereign Workbench",
+  "directories": {
+    "output": "release/${version}"
+  },
+  "files": [
+    "frontend/dist/**/*",
+    "electron/dist-electron/**/*",
+    "config/models.json",
+    "backend/src/main/persistence/schema.sql"
+  ],
+  "extraResources": [
+    {
+      "from": "config/models.json",
+      "to": "config/models.json"
+    },
+    {
+      "from": "backend/src/main/persistence/schema.sql",
+      "to": "backend/schema.sql"
+    }
+  ],
+  "mac": {
+    "target": [
+      "dmg"
+    ],
+    "artifactName": "${productName}-Mac-${version}-Installer.${ext}"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "artifactName": "${productName}-Windows-${version}-Setup.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false
+  },
+  "linux": {
+    "target": [
+      "AppImage"
+    ],
+    "artifactName": "${productName}-Linux-${version}.${ext}"
+  }
+}

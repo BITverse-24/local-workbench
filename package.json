@@ -1,0 +1,59 @@
+{
+  "name": "sovereign-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sovereign Workbench — self-hosted agentic AI desktop app (Electron shell, framework-agnostic backend, React/Vite renderer)",
+  "main": "electron/dist-electron/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.cjs",
+    "dev:frontend": "vite --config frontend/vite.config.ts",
+    "dev:electron": "node scripts/dev.cjs --skip-frontend",
+    "build": "npm run build:frontend && npm run build:electron",
+    "build:frontend": "vite build --config frontend/vite.config.ts",
+    "build:electron": "node scripts/build-electron.cjs",
+    "package": "electron-builder --config electron/electron-builder.json5",
+    "typecheck": "tsc --noEmit -p backend/tsconfig.json && tsc --noEmit -p electron/tsconfig.json && tsc --noEmit -p frontend/tsconfig.json",
+    "test": "vitest run --config vitest.config.ts",
+    "lint": "npm run typecheck",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "canvas": "^3.2.3",
+    "electron": "^30.5.1",
+    "exceljs": "^4.4.0",
+    "pdfjs-dist": "^6.3.289",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "uuid": "^14.0.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^26.4.1",
+    "@types/react": "^18.2.64",
+    "@types/react-dom": "^18.2.21",
+    "@typescript-eslint/eslint-plugin": "^7.1.1",
+    "@typescript-eslint/parser": "^7.1.1",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.5.4",
+    "electron-builder": "^24.13.3",
+    "esbuild": "^0.21.5",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.5",
+    "postcss": "^8.5.26",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.6.3",
+    "vite": "^5.1.6",
+    "vitest": "^3.2.4"
+  },
+  "allowScripts": {
+    "better-sqlite3": true,
+    "canvas": true,
+    "electron": true,
+    "esbuild": true
+  }
+}

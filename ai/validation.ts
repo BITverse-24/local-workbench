@@ -1,14 +1,6 @@
-import type {
-  ApprovalNoteSectionId,
-  Citation,
-  CodeDraftResult,
-  DraftResult,
-  Finding,
-  PageReference,
-  RetrievedKnowledgeChunk,
-  ValidationFailure,
-  VisionResult,
-} from "./contracts";
+import type { ValidationFailure } from "./shared/errors";
+import type { CodeDraftResult as CodeResult } from "./code/contract";
+import type { Finding, PageReference, VisionResult } from "./vision/contract";
 
 export interface ValidationSuccess<T> {
   ok: true;
@@ -33,14 +25,6 @@ export interface VisionValidationOptions {
   requiredFindings?: readonly RequiredFindingRule[];
 }
 
-export interface DraftValidationContext {
-  retrievedChunks: readonly RetrievedKnowledgeChunk[];
-  findings?: readonly Finding[];
-  pageReferences?: readonly PageReference[];
-  sourceText?: string;
-  requiredCitations?: readonly Pick<Citation, "documentId" | "sectionId">[];
-}
-
 export interface CodeValidationOptions {
   allowedImports?: readonly string[];
   inputFiles?: readonly string[];
@@ -60,13 +44,6 @@ export const LOCKED_FLOW_B_CODE_RULES = {
   outputFiles: ["out-of-range-rows.csv"] as const,
   expectedResult: "OUT_OF_RANGE 7/240 (high=5, low=2)",
 };
-
-export const REQUIRED_DRAFT_SECTIONS: readonly ApprovalNoteSectionId[] = [
-  "equipment-header",
-  "findings-summary",
-  "recommendation",
-  "grounding-references",
-];
 
 const MAX_SOURCE_TEXT = 100_000;
 const MAX_FIELD_TEXT = 10_000;
@@ -181,17 +158,6 @@ function textSupportsClaim(claim: string, supportingText: string): boolean {
   return claimTokens.length > 0 && claimTokens.every((token) => sourceTokens.has(token));
 }
 
-export function findUnsupportedClaims(text: string, supportingTexts: readonly string[]): string[] {
-  const supportingText = supportingTexts.join(" ");
-  return text
-    .replace(/\[[^\]]+\]/g, "")
-    .split(/[!?\n]+/)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.length > 0)
-    .filter((sentence) => meaningfulTokens(sentence).length > 0)
-    .filter((sentence) => !textSupportsClaim(sentence, supportingText));
-}
-
 function validatePageReferences(value: unknown, issues: ValidationFailure[]): PageReference[] {
   if (!Array.isArray(value)) {
     issues.push(issue("pageReferences", "wrong-type", "array", value));
@@ -290,131 +256,11 @@ export function validateVisionResult(input: unknown, options: VisionValidationOp
   return finish(input as unknown as VisionResult, issues);
 }
 
-function validateChunk(entry: unknown, path: string, issues: ValidationFailure[]): RetrievedKnowledgeChunk | undefined {
-  if (!isRecord(entry)) {
-    issues.push(issue(path, "wrong-type", "object", entry));
-    return undefined;
-  }
-  exactKeys(entry, ["chunkId", "documentId", "sectionId", "label", "documentTitle", "excerpt"], ["score"], path, issues);
-  for (const key of ["chunkId", "documentId", "sectionId", "label", "documentTitle", "excerpt"]) stringField(entry, key, path, issues);
-  if ("score" in entry && (typeof entry.score !== "number" || !Number.isFinite(entry.score) || entry.score < 0 || entry.score > 1)) {
-    issues.push(issue(`${path}.score`, "invalid-value", "finite number from 0 through 1", entry.score));
-  }
-  return entry as unknown as RetrievedKnowledgeChunk;
-}
-
-export function validateRetrievedChunks(input: unknown): ValidationResult<RetrievedKnowledgeChunk[]> {
-  const issues: ValidationFailure[] = [];
-  if (!Array.isArray(input)) return { ok: false, issues: [issue("retrievedChunks", "wrong-type", "array", input)] };
-  const chunks = input.map((entry, index) => validateChunk(entry, `retrievedChunks[${index}]`, issues)).filter(Boolean) as RetrievedKnowledgeChunk[];
-  const seen = new Set<string>();
-  chunks.forEach((chunk, index) => {
-    if (seen.has(chunk.chunkId)) issues.push(issue(`retrievedChunks[${index}].chunkId`, "invalid-value", "unique chunk ID"));
-    seen.add(chunk.chunkId);
-  });
-  return finish(chunks, issues);
-}
-
-function validateCitation(entry: unknown, path: string, issues: ValidationFailure[]): Citation | undefined {
-  if (!isRecord(entry)) {
-    issues.push(issue(path, "wrong-type", "object", entry));
-    return undefined;
-  }
-  exactKeys(entry, ["documentId", "sectionId", "label", "inlineText"], ["supportingExcerpt"], path, issues);
-  for (const key of ["documentId", "sectionId", "label", "inlineText"]) stringField(entry, key, path, issues);
-  if (typeof entry.documentId === "string" && typeof entry.sectionId === "string") {
-    const label = `${entry.documentId} §${entry.sectionId}`;
-    if (entry.label !== label) issues.push(issue(`${path}.label`, "invalid-value", `exactly ${label}`));
-    if (entry.inlineText !== `[${label}]`) issues.push(issue(`${path}.inlineText`, "invalid-value", `exactly [${label}]`));
-  }
-  if ("supportingExcerpt" in entry && typeof entry.supportingExcerpt !== "string") {
-    issues.push(issue(`${path}.supportingExcerpt`, "wrong-type", "string", entry.supportingExcerpt));
-  }
-  return entry as unknown as Citation;
-}
-
-function hasMissingSourceNotice(result: DraftResult): boolean {
-  return result.missingInformation.some((item) => /source|retriev|knowledge|sop|template/i.test(item.field) && item.note.trim().length > 0);
-}
-
-export function validateDraftResult(input: unknown, context: DraftValidationContext): ValidationResult<DraftResult> {
-  const issues: ValidationFailure[] = [];
-  if (!isRecord(input)) return { ok: false, issues: [issue("result", "wrong-type", "object", input)] };
-  exactKeys(input, ["title", "body", "sections", "citations", "missingInformation"], [], "result", issues);
-  stringField(input, "title", "result", issues);
-  stringField(input, "body", "result", issues);
-  const sections: Record<string, unknown>[] = [];
-  if (!Array.isArray(input.sections)) issues.push(issue("result.sections", "wrong-type", "array", input.sections));
-  else input.sections.forEach((entry, index) => {
-    const path = `result.sections[${index}]`;
-    if (!isRecord(entry)) return issues.push(issue(path, "wrong-type", "object", entry));
-    exactKeys(entry, ["id", "heading", "body"], [], path, issues);
-    stringField(entry, "id", path, issues); stringField(entry, "heading", path, issues); stringField(entry, "body", path, issues);
-    sections.push(entry);
-  });
-  const expectedIds = REQUIRED_DRAFT_SECTIONS;
-  if (sections.length !== expectedIds.length || sections.some((section, index) => section.id !== expectedIds[index])) {
-    issues.push(issue("result.sections", "invalid-value", `exactly these IDs in order: ${expectedIds.join(", ")}`));
-  }
-  const citations: Citation[] = [];
-  if (!Array.isArray(input.citations)) issues.push(issue("result.citations", "wrong-type", "array", input.citations));
-  else input.citations.forEach((entry, index) => {
-    const citation = validateCitation(entry, `result.citations[${index}]`, issues);
-    if (citation) citations.push(citation);
-  });
-  const missingInformation: { field: string; note: string }[] = [];
-  if (!Array.isArray(input.missingInformation)) issues.push(issue("result.missingInformation", "wrong-type", "array", input.missingInformation));
-  else input.missingInformation.forEach((entry, index) => {
-    const path = `result.missingInformation[${index}]`;
-    if (!isRecord(entry)) return issues.push(issue(path, "wrong-type", "object", entry));
-    exactKeys(entry, ["field", "note"], [], path, issues);
-    const fieldOk = stringField(entry, "field", path, issues); const noteOk = stringField(entry, "note", path, issues);
-    if (fieldOk && noteOk) missingInformation.push({ field: entry.field, note: entry.note });
-  });
-  if (issues.length) return { ok: false, issues };
-  const result = input as unknown as DraftResult;
-  const chunks = context.retrievedChunks;
-  if (chunks.length === 0) {
-    if (citations.length > 0 || /\[[^\]]+\s§[^\]]+\]/.test(result.body + " " + sections.map((s) => s.body).join(" "))) {
-      issues.push(issue("result.citations", "invalid-value", "no citations when retrieval returns no sources"));
-    }
-    if (!hasMissingSourceNotice(result)) issues.push(issue("result.missingInformation", "missing-field", "explicit no-source notice"));
-  } else {
-    const identities = new Set(chunks.map((chunk) => `${chunk.documentId}:${chunk.sectionId}`));
-    citations.forEach((citation, index) => {
-      const identity = `${citation.documentId}:${citation.sectionId}`;
-      if (!identities.has(identity)) issues.push(issue(`result.citations[${index}]`, "invalid-value", "citation present in retrievedChunks"));
-      const chunk = chunks.find((candidate) => `${candidate.documentId}:${candidate.sectionId}` === identity);
-      if (citation.supportingExcerpt && chunk && !normalize(chunk.excerpt).includes(normalize(citation.supportingExcerpt))) {
-        issues.push(issue(`result.citations[${index}].supportingExcerpt`, "invalid-value", "excerpt contained in retrieved chunk"));
-      }
-    });
-    for (const required of context.requiredCitations ?? []) {
-      if (!citations.some((citation) => citation.documentId === required.documentId && citation.sectionId === required.sectionId)) {
-        issues.push(issue("result.citations", "missing-field", `required citation ${required.documentId} §${required.sectionId}`));
-      }
-    }
-  }
-  const supportingTexts = [
-    ...(context.sourceText ? [context.sourceText] : []),
-    ...(context.findings ?? []).flatMap((finding) => [finding.title, finding.value, finding.evidence]),
-    ...(context.pageReferences ?? []).map((ref) => ref.text),
-    ...chunks.map((chunk) => chunk.excerpt),
-  ];
-  const draftText = [result.body, ...sections.map((section) => section.body)].join("\n");
-  if (chunks.length > 0) {
-    for (const claim of findUnsupportedClaims(draftText, supportingTexts)) {
-      issues.push(issue("result.body", "invalid-value", `claim grounded in supplied findings or retrieved sources: ${claim}`));
-    }
-  }
-  return finish(result, issues);
-}
-
 function logicalFilename(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) && !value.includes("..");
 }
 
-export function validateCodeDraftResult(input: unknown, options: CodeValidationOptions = {}): ValidationResult<CodeDraftResult> {
+export function validateCodeDraftResult(input: unknown, options: CodeValidationOptions = {}): ValidationResult<CodeResult> {
   const issues: ValidationFailure[] = [];
   if (!isRecord(input)) return { ok: false, issues: [issue("result", "wrong-type", "object", input)] };
   exactKeys(input, ["filename", "source", "expectedResult", "inputFiles", "outputFiles", "allowedImports"], [], "result", issues);
@@ -445,5 +291,5 @@ export function validateCodeDraftResult(input: unknown, options: CodeValidationO
     if (!input.source.includes(expectedInputs[0]) || !input.source.includes(expectedOutputs[0])) issues.push(issue("result.source", "invalid-value", "reads and writes the declared fixture files"));
     if (/OUT_OF_RANGE\s+7\/240|high\s*=\s*5|low\s*=\s*2/.test(input.source)) issues.push(issue("result.source", "invalid-value", "calculate results instead of hard-coding expected counts"));
   }
-  return finish(input as unknown as CodeDraftResult, issues);
+  return finish(input as unknown as CodeResult, issues);
 }

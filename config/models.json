@@ -1,0 +1,44 @@
+{
+  "$comment": "Dev OpenRouter stand-ins; LAN switch edits this file only.",
+  "models": [
+    {
+      "id": "vision-qwen25vl",
+      "taskTypes": ["vision"],
+      "runtime": "openrouter",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "model": "qwen/qwen3-vl-32b-instruct",
+      "capabilities": ["text", "image-input", "structured-output"],
+      "requestTimeoutMs": 60000,
+      "healthPath": "/models",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "enabled": true,
+      "maxOutputTokens": 4096
+    },
+    {
+      "id": "draft-qwen3",
+      "taskTypes": ["draft"],
+      "runtime": "openrouter",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "model": "qwen/qwen3-8b",
+      "capabilities": ["text", "structured-output"],
+      "requestTimeoutMs": 45000,
+      "healthPath": "/models",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "enabled": true,
+      "maxOutputTokens": 8192
+    },
+    {
+      "id": "code-qwen25coder",
+      "taskTypes": ["code"],
+      "runtime": "openrouter",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "model": "qwen/qwen3-coder",
+      "capabilities": ["text", "code-generation"],
+      "requestTimeoutMs": 60000,
+      "healthPath": "/models",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "enabled": true,
+      "maxOutputTokens": 8192
+    }
+  ]
+}

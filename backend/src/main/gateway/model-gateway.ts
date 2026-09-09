@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { AIResult, ModelRequest, ModelResponse, ModelRegistryEntry } from "../../shared/contracts.js";
+import type { AIResult, ModelHealth, ModelId, ModelRequest, ModelResponse, ModelRegistryEntry } from "../../shared/contracts.js";
+import type { ModelClient } from "../models/ports.js";
 import { loadRegistry, resolveModel } from "./registry.js";
 import { normalizeResponse, parseProviderContent, providerError } from "./normalizer.js";
 import { absoluteDataPath, createRunDirectories, runRoot } from "../run/filesystem.js";
@@ -41,9 +42,13 @@ function persistGatewayTrace(runId: string, requestId: string, entry: Record<str
 export interface GatewayTransport { request(url: string, init: { method: string; headers: Record<string, string>; body?: string }, timeoutMs: number): Promise<{ status: number; text(): Promise<string> }>; }
 const nativeTransport: GatewayTransport = { async request(url, init, timeoutMs) { const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs); try { return await fetch(url, { ...init, signal: controller.signal }); } finally { clearTimeout(timer); } } };
 export interface VisionUploadInfo { originalBytes: number; finalBytes: number; resized: boolean; mediaType: string; }
-export class ModelGateway {
+export class ModelGateway implements ModelClient {
   readonly registry: Map<string, ModelRegistryEntry>; externalRequestCount = 0; lastVisionUpload?: VisionUploadInfo;
   constructor(private readonly transport: GatewayTransport = nativeTransport, registry = loadRegistry()) { this.registry = registry; }
+  /** `ModelClient` surface: delegates to `execute`. */
+  async complete(request: ModelRequest): Promise<AIResult<ModelResponse>> {
+    return this.execute(request);
+  }
   async execute(request: ModelRequest): Promise<AIResult<ModelResponse>> {
     let model: ModelRegistryEntry;
     try { model = resolveModel(this.registry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType); } catch { return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } }; }
@@ -249,8 +254,30 @@ export class ModelGateway {
       return { ok: false, error: providerError(error, request) };
     }
   }
-  async health(): Promise<Array<{ modelId: string; available: boolean; checkedAt: string; latencyMs?: number; message?: string }>> {
-    const results: Array<{ modelId: string; available: boolean; checkedAt: string; latencyMs?: number; message?: string }> = []; for (const model of this.registry.values()) { const started = Date.now(); try { const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined; const response = await this.transport.request(`${model.baseUrl}${model.healthPath}`, { method: "GET", headers: { ...(key ? { authorization: `Bearer ${key}` } : {}) } }, model.requestTimeoutMs); results.push({ modelId: model.id, available: response.status >= 200 && response.status < 300, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started }); } catch (error) { results.push({ modelId: model.id, available: false, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started, message: error instanceof Error ? error.message : "health check failed" }); } } return results;
+  async health(): Promise<ModelHealth[]>;
+  async health(modelId: ModelId): Promise<ModelHealth>;
+  async health(modelId?: ModelId): Promise<ModelHealth[] | ModelHealth> {
+    if (modelId !== undefined) return this.healthOne(modelId);
+    const results: ModelHealth[] = []; for (const model of this.registry.values()) { const started = Date.now(); try { const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined; const response = await this.transport.request(`${model.baseUrl}${model.healthPath}`, { method: "GET", headers: { ...(key ? { authorization: `Bearer ${key}` } : {}) } }, model.requestTimeoutMs); results.push({ modelId: model.id, available: response.status >= 200 && response.status < 300, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started }); } catch (error) { results.push({ modelId: model.id, available: false, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started, message: error instanceof Error ? error.message : "health check failed" }); } } return results;
+  }
+  /** Per-model health probe backing the `ModelClient` surface. */
+  async healthOne(modelId: ModelId): Promise<ModelHealth> {
+    const model = this.registry.get(modelId);
+    if (!model || !model.enabled) {
+      return { modelId, available: false, checkedAt: new Date().toISOString(), message: "model unavailable" };
+    }
+    const started = Date.now();
+    try {
+      const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
+      const response = await this.transport.request(
+        `${model.baseUrl}${model.healthPath}`,
+        { method: "GET", headers: { ...(key ? { authorization: `Bearer ${key}` } : {}) } },
+        model.requestTimeoutMs,
+      );
+      return { modelId, available: response.status >= 200 && response.status < 300, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started };
+    } catch (error) {
+      return { modelId, available: false, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started, message: error instanceof Error ? error.message : "health check failed" };
+    }
   }
 }
 export function requestBase(runId: string, taskType: ModelRequest["taskType"], modelId: ModelRequest["modelId"], responseFormat: ModelRequest["responseFormat"], systemPrompt: string, userPrompt: string, timeoutMs: number, maxTokens?: number): Pick<ModelRequest, "requestId" | "runId" | "taskType" | "modelId" | "responseFormat" | "systemPrompt" | "userPrompt" | "timeoutMs" | "maxTokens"> { return { requestId: randomUUID(), runId, taskType, modelId, responseFormat, systemPrompt, userPrompt, timeoutMs, maxTokens }; }

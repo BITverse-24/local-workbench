@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { assertSafeRelativePath } from "../persistence/paths.js";
@@ -6,14 +6,18 @@ import type { ArtifactRef, AttachmentReference } from "../../shared/contracts.js
 
 const MAX_ATTACHMENT = 25 * 1024 * 1024;
 const allowed = (mediaType: string) => mediaType === "application/pdf" || mediaType === "text/csv" || mediaType.startsWith("image/");
-function dataRoot(): string {
+
+let configuredDataDir: string | null = null;
+
+/** Set by `initBackend` from the Electron-provided config. Overrides env/default. */
+export function setDataDir(dir: string): void {
+  configuredDataDir = dir;
+}
+
+export function dataRoot(): string {
+  if (configuredDataDir) return configuredDataDir;
   if (process.env.WORKBENCH_DATA_ROOT) return process.env.WORKBENCH_DATA_ROOT;
-  // APP_ROOT is set by electron_app/electron/main.ts to electron_app/
-  const appRoot = process.env.APP_ROOT;
-  if (appRoot && existsSync(path.join(appRoot, "..", "backend", "data"))) return path.join(appRoot, "..", "backend", "data");
-  if (existsSync(path.join(process.cwd(), "backend", "data"))) return path.join(process.cwd(), "backend", "data");
-  if (existsSync(path.join(process.cwd(), "..", "backend", "data"))) return path.join(process.cwd(), "..", "backend", "data");
-  return existsSync(path.join(process.cwd(), "backend")) ? path.join(process.cwd(), "backend", "data") : path.join(process.cwd(), "data");
+  return path.join(process.cwd(), "data");
 }
 export function absoluteDataPath(relativePath: string): string { assertSafeRelativePath(relativePath); const root = path.resolve(dataRoot()); const target = path.resolve(root, relativePath); if (!target.startsWith(`${root}${path.sep}`)) throw new Error("data path escapes root"); return target; }
 export function runRoot(runId: string): string { if (!/^[0-9a-f-]{36}$/i.test(runId)) throw new Error("invalid run id"); return path.join(dataRoot(), "runs", runId); }

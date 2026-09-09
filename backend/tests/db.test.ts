@@ -38,7 +38,6 @@ const ALL_DDL_TABLES = [
   "execution_results",
   "confirmations",
   "artifacts",
-  "citations",
   "run_errors",
   "settings",
   "kv_meta",

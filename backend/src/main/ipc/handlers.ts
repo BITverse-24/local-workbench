@@ -31,12 +31,16 @@ import { IPC_RUN } from "./channels.js";
 import { RunManager } from "../run/manager.js";
 
 /** Structural subset of Electron's ipcMain needed here (keeps backend testable w/o electron). */
-export interface MinimalIpcMain {
+export interface IpcRegistrar {
   handle(
     channel: string,
     listener: (event: unknown, ...args: unknown[]) => unknown | Promise<unknown>,
   ): void;
+  on?(channel: string, listener: (event: unknown, ...args: unknown[]) => void): void;
 }
+
+/** Kept as an alias so existing tests compiling against `MinimalIpcMain` keep working. */
+export type MinimalIpcMain = IpcRegistrar;
 
 export interface ChatSummary {
   id: string;
