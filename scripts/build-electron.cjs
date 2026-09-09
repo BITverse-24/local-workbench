@@ -27,8 +27,11 @@ function build() {
   buildSync({
     ...shared,
     entryPoints: [path.join(ROOT, "electron", "preload.ts")],
-    format: "esm",
-    outfile: path.join(OUTDIR, "preload.mjs"),
+    // Preload must be CJS: Electron does not reliably load ESM preload
+    // scripts, and a silently-skipped preload leaves the renderer with no
+    // bridge (app falls back to local-only mode).
+    format: "cjs",
+    outfile: path.join(OUTDIR, "preload.cjs"),
   });
 }
 

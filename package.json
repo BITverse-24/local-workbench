@@ -15,7 +15,8 @@
     "package": "electron-builder --config electron/electron-builder.json5",
     "typecheck": "tsc --noEmit -p backend/tsconfig.json && tsc --noEmit -p electron/tsconfig.json && tsc --noEmit -p frontend/tsconfig.json",
     "test": "vitest run --config vitest.config.ts",
-    "lint": "npm run typecheck"
+    "lint": "npm run typecheck",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",

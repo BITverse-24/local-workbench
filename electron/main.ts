@@ -104,7 +104,7 @@ function createWindow(): void {
     minWidth: 1200,
     minHeight: 720,
     webPreferences: {
-      preload: path.join(__dirname, "preload.mjs"),
+      preload: path.join(__dirname, "preload.cjs"),
     },
   });
 
@@ -146,6 +146,9 @@ app.whenReady().then(async () => {
     manager = initBackend(ipcMain, (event) => {
       if (win && !win.isDestroyed()) win.webContents.send("workbench:runEvent", event);
     }, {
+      // Positive readiness signal: with this line and no failure line,
+      // the main side is fully wired; any remaining local-only fallback
+      // is a preload/renderer problem, not backend init.
       dataDir: app.isPackaged
         ? path.join(app.getPath("userData"), "data")
         : path.join(REPO_ROOT, "data"),
@@ -157,6 +160,7 @@ app.whenReady().then(async () => {
         ? path.join(process.resourcesPath, "backend", "schema.sql")
         : path.join(REPO_ROOT, "backend", "src", "main", "persistence", "schema.sql"),
     });
+    console.log("[backend] initialized");
 
     // Model trace logs — expose full gateway traces to renderer for debugging.
     // Reads per-run logs written by the backend gateway (model-gateway.log JSONL
