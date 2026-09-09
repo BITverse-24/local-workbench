@@ -7,24 +7,13 @@ import type {
   ChatModelRequest,
   CodeModelRequest,
   CodeSummarizeRequest,
-  DraftModelRequest,
-  DraftResult,
   ModelResponse,
   PendingAction,
   RunEvent,
   RunState,
-  VisionModelRequest,
 } from "../../shared/contracts.js";
 import { ModelGateway, requestBase } from "../gateway/model-gateway.js";
-import {
-  buildDraftRepairPrompt,
-  buildDraftUserPrompt,
-  buildVisionRepairPrompt,
-  CODE_SYSTEM_PROMPT,
-  DRAFT_SYSTEM_PROMPT,
-  VISION_SYSTEM_PROMPT,
-  VISION_USER_PROMPT,
-} from "./prompts.js";
+import { CODE_SYSTEM_PROMPT } from "./prompts.js";
 import { createRun, getState, listRuns, recordError, recordRouting, transition } from "./store.js";
 import {
   absoluteDataPath,
@@ -38,13 +27,10 @@ import {
   validateChat,
   validateCode,
   validateCodeSummary,
-  validateDraft,
-  validateVision,
   validationMessage,
 } from "../validators/responses.js";
-import { searchKnowledge } from "../tools/knowledge.js";
 import { executePython } from "../tools/python.js";
-import { generateDocx, generateXlsx } from "../tools/artifacts.js";
+import { generateXlsx } from "../tools/artifacts.js";
 
 type AttachmentRow = AttachmentReference & { runId: string; chatId: string };
 type Continuation = () => Promise<void>;
@@ -200,7 +186,7 @@ export class RunManager {
             : "Draft a response.",
     });
     this.state(runId, "acting");
-    if (route.taskType === "vision" && attachment) return this.flowA(runId, text, attachment);
+    if (route.taskType === "vision") throw new Error("vision flow is deferred in this build");
     if (route.taskType === "code" && attachment) return this.flowB(runId, text, attachment);
     if (route.taskType === "draft") return this.flowDraft(runId, text);
     throw new Error("an attachment is required for the locked flow");
@@ -221,139 +207,6 @@ export class RunManager {
     this.result(runId, "draft_note", "draft validated");
     this.persistAssistant(runId, chat.value.text, "draft-qwen3");
     this.complete(runId);
-  }
-  private async flowA(runId: string, text: string, attachment: AttachmentRow): Promise<void> {
-    void text;
-    this.tool(runId, "ocr_extract", "extracting typed scan");
-    const base = requestBase(runId, "vision", "vision-qwen25vl", "vision-result", VISION_SYSTEM_PROMPT, VISION_USER_PROMPT, 60000, 1024);
-    const request: VisionModelRequest = {
-      ...base,
-      taskType: "vision",
-      modelId: "vision-qwen25vl",
-      responseFormat: "vision-result",
-      attachment,
-      inputMode: "typed-scan",
-    };
-    const firstVision = await this.gateway.execute(request);
-    if (!firstVision.ok) throw new Error(firstVision.error.message);
-    let vision = validateVision((firstVision.value as ModelResponse).result);
-    if (!vision.ok) {
-      // Small models often return a valid shape with lazy empty fields (e.g.
-      // sourceText ""). Quote the failure back once — self-correction fixes
-      // most of these without changing the locked contract.
-      const firstFailure = validationMessage("vision result", vision.error);
-      this.result(runId, "ocr_extract", `first pass invalid at '${vision.error.path || "<root>"}', retrying once with repair hint`);
-      const repairBase = requestBase(runId, "vision", "vision-qwen25vl", "vision-result", buildVisionRepairPrompt(firstFailure), VISION_USER_PROMPT, 60000, 1024);
-      const repairRequest: VisionModelRequest = {
-        ...repairBase,
-        taskType: "vision",
-        modelId: "vision-qwen25vl",
-        responseFormat: "vision-result",
-        attachment,
-        inputMode: "typed-scan",
-      };
-      const repairResponse = await this.gateway.execute(repairRequest);
-      if (!repairResponse.ok) throw new Error(repairResponse.error.message);
-      vision = validateVision((repairResponse.value as ModelResponse).result);
-      if (!vision.ok) throw new Error(`${firstFailure} | retry also failed: ${validationMessage("vision result", vision.error)}`);
-    }
-    const upload = this.gateway.lastVisionUpload;
-    const sizeNote = upload
-      ? ` · image ${(upload.originalBytes / 1024).toFixed(0)}KB→${(upload.finalBytes / 1024).toFixed(0)}KB${upload.resized ? " (downscaled)" : ""}`
-      : "";
-    this.result(runId, "ocr_extract", `${vision.value.findings.length} findings extracted${sizeNote}`);
-    this.tool(runId, "search_knowledge", "searching local knowledge base");
-    const chunks = searchKnowledge(`${vision.value.sourceText} ${vision.value.findings.map((f) => f.value).join(" ")}`);
-    if (!chunks.length) throw new Error("no matching knowledge source");
-    this.result(runId, "search_knowledge", `${chunks.length} local chunks retrieved`);
-    this.emit({ type: "routing", runId, taskType: "draft", modelId: "draft-qwen3", reason: "compose approval note" });
-    const templateRequirements = ["equipment-header", "findings-summary", "recommendation", "grounding-references"];
-    let draftBase = requestBase(
-      runId,
-      "draft",
-      "draft-qwen3",
-      "draft-result",
-      DRAFT_SYSTEM_PROMPT,
-      buildDraftUserPrompt(vision.value.sourceText, vision.value.findings, vision.value.pageReferences, chunks, templateRequirements),
-      45000,
-      4096,
-    );
-    let draftRequest: DraftModelRequest = {
-      ...draftBase,
-      taskType: "draft",
-      modelId: "draft-qwen3",
-      responseFormat: "draft-result",
-      findings: vision.value.findings,
-      pageReferences: vision.value.pageReferences,
-      retrievedChunks: chunks,
-      templateRequirements,
-    };
-    let draftResponse = await this.gateway.execute(draftRequest);
-    let firstFailure: string | null = null;
-    let draftSuccess: DraftResult | null = null;
-    if (!draftResponse.ok) {
-      firstFailure = draftResponse.error.message;
-      this.result(runId, "draft_note", `first draft failed to parse (${firstFailure.slice(0, 120)}), retrying once with repair hint`);
-    } else {
-      const firstDraft = validateDraft((draftResponse.value as ModelResponse).result, chunks);
-      if (!firstDraft.ok) {
-        firstFailure = validationMessage("approval note", firstDraft.error);
-        this.result(runId, "draft_note", `first draft invalid at '${firstDraft.error.path}', retrying once with repair hint`);
-      } else {
-        draftSuccess = firstDraft.value;
-        // success on first attempt
-        this.result(runId, "draft_note", "approval note validated");
-        this.persistAssistant(runId, `${draftSuccess.title}\n\n${draftSuccess.body.slice(0, 4000)}`, "draft-qwen3");
-        await this.awaitConfirmation(runId, "generate_docx", async () => {
-          const artifacts = await generateDocx(runId, draftSuccess!);
-          for (const artifact of artifacts) {
-            this.persistArtifact(artifact as never);
-            this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
-          }
-          this.complete(runId);
-        });
-        return;
-      }
-    }
-    // One bounded retry for both parse and validation failures
-    if (firstFailure) {
-      const repairBase = requestBase(
-        runId,
-        "draft",
-        "draft-qwen3",
-        "draft-result",
-        buildDraftRepairPrompt(firstFailure),
-        buildDraftUserPrompt(vision.value.sourceText, vision.value.findings, vision.value.pageReferences, chunks, templateRequirements),
-        45000,
-        4096,
-      );
-      const repairRequest: DraftModelRequest = {
-        ...repairBase,
-        taskType: "draft",
-        modelId: "draft-qwen3",
-        responseFormat: "draft-result",
-        findings: vision.value.findings,
-        pageReferences: vision.value.pageReferences,
-        retrievedChunks: chunks,
-        templateRequirements,
-      };
-      const repairResponse = await this.gateway.execute(repairRequest);
-      if (!repairResponse.ok) throw new Error(`${firstFailure} | retry also failed: ${repairResponse.error.message}`);
-      const retryDraft = validateDraft((repairResponse.value as ModelResponse).result, chunks);
-      if (!retryDraft.ok) throw new Error(`${firstFailure} | retry also failed: ${validationMessage("approval note", retryDraft.error)}`);
-      this.result(runId, "draft_note", "approval note validated (after retry)");
-      this.persistAssistant(runId, `${retryDraft.value.title}\n\n${retryDraft.value.body.slice(0, 4000)}`, "draft-qwen3");
-      await this.awaitConfirmation(runId, "generate_docx", async () => {
-        const artifacts = await generateDocx(runId, retryDraft.value);
-        for (const artifact of artifacts) {
-          this.persistArtifact(artifact as never);
-          this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
-        }
-        this.complete(runId);
-      });
-      return;
-    }
-    // unreachable - all paths returned above
   }
   private async flowB(runId: string, text: string, attachment: AttachmentRow): Promise<void> {
     this.tool(runId, "read_file", "reading CSV attachment");

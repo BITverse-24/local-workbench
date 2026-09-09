@@ -1,6 +1,6 @@
 // Phase DB.1 — SQLite connection + idempotent schema apply + seeds.
-// Source DDL: backend/DATABASE.md §2 (local copy: ./schema.sql).
-// DB file: backend/data/workbench.db (gitignored, WAL mode).
+// Source DDL: ./schema.sql (path injected via configurePersistence).
+// DB file: <dataDir>/data/workbench.db (gitignored, WAL mode).
 
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -17,15 +17,36 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   lastChatId: null,
 };
 
-const here = path.dirname(fileURLToPath(import.meta.url)); // .../backend/src/main/persistence
-export const BACKEND_ROOT = path.resolve(here, "..", "..", "..", "..");
-export const SCHEMA_PATH = path.join(here, "schema.sql");
+function sourceDir(): string | null {
+  // Guarded: plain `import.meta.url` is undefined inside the esbuild CJS
+  // Electron bundle, where all paths arrive via configurePersistence().
+  try {
+    const url: unknown = (import.meta as unknown as { url?: unknown } | undefined)?.url;
+    return typeof url === "string" ? path.dirname(fileURLToPath(url)) : null;
+  } catch {
+    return null;
+  }
+}
+const here = sourceDir(); // .../backend/src/main/persistence (source/vitest only)
+export const BACKEND_ROOT = here ? path.resolve(here, "..", "..", "..", "..") : process.cwd();
+export const SCHEMA_PATH = here
+  ? path.join(here, "schema.sql")
+  : path.join(process.cwd(), "backend", "src", "main", "persistence", "schema.sql");
+
+let configuredDataDir: string | null = null;
+let configuredSchemaPath: string | null = null;
+
+/** Called from `initBackend` with the Electron-provided config. */
+export function configurePersistence(options: { dataDir?: string; schemaPath?: string }): void {
+  if (options.dataDir !== undefined) configuredDataDir = options.dataDir;
+  if (options.schemaPath !== undefined) configuredSchemaPath = options.schemaPath;
+}
 
 export function resolveDbPath(override?: string): string {
   if (override) return override;
   const fromEnv = process.env.WORKBENCH_DB_PATH;
   if (fromEnv) return fromEnv;
-  return path.join(BACKEND_ROOT, "data", "workbench.db");
+  return path.join(configuredDataDir ?? BACKEND_ROOT, "data", "workbench.db");
 }
 
 type Db = Database.Database;
@@ -34,12 +55,13 @@ let instance: Db | null = null;
 let instancePath: string | null = null;
 
 function findSchemaPath(): string {
-  // Works both from source (vitest/ts) and from compiled dist output:
-  // dist/src/main/persistence/*.js -> BACKEND_ROOT/src/main/persistence/schema.sql.
+  // Configured path (from initBackend) wins; otherwise fall back to the
+  // source-relative copy so vitest runs from source keep working.
   const candidates = [
+    configuredSchemaPath,
     SCHEMA_PATH,
     path.join(BACKEND_ROOT, "src", "main", "persistence", "schema.sql"),
-  ];
+  ].filter((c): c is string => typeof c === "string" && c.length > 0);
   for (const c of candidates) {
     if (existsSync(c)) return c;
   }

@@ -1,11 +1,14 @@
-"""Offline preflight checks for the fixed demo fixture bundle."""
+"""Offline preflight checks for the fixed Flow B demo fixture bundle.
+
+Flow A (scanned-report-to-approval-note) is deferred; its fixtures now live
+under docs/archive/rag-legacy/flow-a/ and are not checked here.
+"""
 
 from __future__ import annotations
 
 import csv
 import hashlib
 import json
-import re
 import shutil
 import subprocess
 import sys
@@ -14,7 +17,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
-FLOW_A = ROOT / "flow-a"
 FLOW_B = ROOT / "flow-b"
 
 
@@ -25,58 +27,6 @@ def load(name: str):
 def check(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
-
-
-def validate_pdf() -> None:
-    data = (FLOW_A / "inspection-report-E201.pdf").read_bytes()
-    check(data.startswith(b"%PDF-1.4"), "report is not a PDF 1.4 file")
-    check(len(re.findall(rb"/Type /Page /Parent", data)) == 2, "report must contain exactly two pages")
-    strings = [match.decode("cp1252") for match in re.findall(rb"\((.*?)\) Tj", data)]
-    text = "\n".join(strings)
-    required = [
-        "Heat Exchanger E-201 Tube Bundle Inspection Report",
-        "Report ID: IR-E201-2026-08-20",
-        "Inspection date: 2026-08-20",
-        "Unit: R-100",
-        "Rows 12–15 measured 3.8–4.2 mm; minimum allowable tube wall thickness: 4.6 mm.",
-        "Localised pitting corrosion at the shell inlet nozzle; maximum pitting depth: 1.8 mm.",
-        "Channel-head gasket shows degradation; replacement recommended before return to service.",
-    ]
-    for fragment in required:
-        check(fragment in text, f"report PDF is missing: {fragment}")
-
-
-def validate_flow_a() -> None:
-    ocr = load("flow-a/expected-ocr.json")
-    check(len(ocr["findings"]) == 3, "OCR oracle must contain three findings")
-    check([item["page"] for item in ocr["pageReferences"]] == [1, 1, 2], "OCR pages must be 1, 1, 2")
-    page_ids = {item["id"] for item in ocr["pageReferences"]}
-    check(all(set(item["pageReferenceIds"]) <= page_ids for item in ocr["findings"]), "finding references must resolve")
-    check(ocr["warnings"] == [], "clean report must have no OCR warnings")
-
-    sop = (FLOW_A / "sop-114-pressure-equipment-inspection.md").read_text(encoding="utf-8")
-    template = (FLOW_A / "approval-note-template-TPL-012.md").read_text(encoding="utf-8")
-    check("[section:3.2] Approval criteria" in sop, "SOP 3.2 section is missing")
-    check("[SOP-114 §3.2]" in sop, "SOP citation text is missing")
-    for section in ["equipment-header", "findings-summary", "recommendation", "grounding-references"]:
-        check(f"[section:{section}]" in template, f"TPL-012 section is missing: {section}")
-
-    retrieval = load("flow-a/expected-retrieval.json")
-    check(retrieval["topK"] == 5 and len(retrieval["chunks"]) == 5, "retrieval oracle must contain top five chunks")
-    identities = {(chunk["documentId"], chunk["sectionId"]) for chunk in retrieval["chunks"]}
-    check(("SOP-114", "3.2") in identities, "SOP-114 3.2 must be in top five")
-    check(any(chunk["documentId"] == "TPL-012" for chunk in retrieval["chunks"]), "TPL-012 must be in top five")
-
-    draft = load("flow-a/expected-approval-note.json")
-    expected_sections = ["equipment-header", "findings-summary", "recommendation", "grounding-references"]
-    check([section["id"] for section in draft["sections"]] == expected_sections, "draft sections are not locked")
-    check("E-201" in draft["sections"][0]["body"], "draft lacks equipment identifier")
-    check("IR-E201-2026-08-20" in draft["sections"][0]["body"], "draft lacks report reference")
-    check("Conditional clearance pending retubing" in draft["sections"][2]["body"], "draft lacks recommendation")
-    check("[SOP-114 §3.2]" in draft["body"], "draft lacks required citation")
-    check(draft["citations"][0]["documentId"] == "SOP-114", "draft citation has wrong document")
-    check(draft["citations"][0]["sectionId"] == "3.2", "draft citation has wrong section")
-    check(draft["missingInformation"][0]["field"] == "approvalAuthority", "draft must mark missing authority")
 
 
 def read_input_rows() -> list[dict[str, str]]:
@@ -146,11 +96,9 @@ def validate_manifest() -> None:
 
 
 def main() -> None:
-    validate_pdf()
-    validate_flow_a()
     validate_flow_b()
     validate_manifest()
-    print("Fixture preflight passed: Flow A and Flow B are deterministic and internally consistent.")
+    print("Fixture preflight passed: Flow B is deterministic and internally consistent.")
 
 
 if __name__ == "__main__":

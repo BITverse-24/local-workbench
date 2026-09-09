@@ -1,6 +1,6 @@
 -- Workbench SQLite schema — copy of backend/DATABASE.md §2 DDL (Phase DB.1).
 -- Applied idempotently by db.ts via better-sqlite3 exec().
--- One SQLite file: backend/data/workbench.db (WAL mode). Run binaries stay on disk.
+-- One SQLite file: <dataDir>/data/workbench.db (WAL mode). Run binaries stay on disk.
 
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -99,8 +99,7 @@ CREATE TABLE IF NOT EXISTS model_calls (
 CREATE TABLE IF NOT EXISTS tool_calls (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   run_id         TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-  tool           TEXT NOT NULL CHECK (tool IN ('read_file','ocr_extract','search_knowledge',
-                                               'draft_note','generate_docx','draft_code',
+  tool           TEXT NOT NULL CHECK (tool IN ('read_file','draft_note','draft_code',
                                                'execute_python','generate_xlsx')),
   input_summary  TEXT NOT NULL DEFAULT '',  -- bounded, no abs paths
   result_summary TEXT NOT NULL DEFAULT '',  -- bounded ≤ 4k
@@ -140,14 +139,6 @@ CREATE TABLE IF NOT EXISTS artifacts (
   created_at    TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS citations (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  run_id      TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-  document_id TEXT NOT NULL,               -- e.g. SOP-114
-  section_id  TEXT NOT NULL,               -- e.g. 3.2
-  label       TEXT NOT NULL                -- e.g. 'SOP-114 §3.2'
-);
-
 CREATE TABLE IF NOT EXISTS run_errors (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   run_id     TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
@@ -172,4 +163,4 @@ CREATE TABLE IF NOT EXISTS kv_meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
--- ('schema_version','1'), ('corpus_version','…')
+-- ('schema_version','1')

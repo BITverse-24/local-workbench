@@ -1,0 +1,11 @@
+{
+  // Shared base options. Each area config extends this and adds its own
+  // module system, libs, path aliases, and include list.
+  "compilerOptions": {
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  }
+}
