@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { initBackend } from "../backend/src/main/index.js";
 import { IPC_RUN } from "../backend/src/main/ipc/channels.js";
@@ -236,8 +236,30 @@ app.whenReady().then(async () => {
       if (result) throw new Error(result);
       return { opened: true as const, filename: ref.filename };
     });
+    ipcMain.handle(IPC_RUN.SAVE_ARTIFACT, async (_event, input) => {
+      const raw = input as { runId?: string; artifactId?: string };
+      if (!raw?.runId || !raw?.artifactId) throw new Error("runId and artifactId required");
+      if (!manager) throw new Error("backend not initialized");
+      const ref = manager.artifact(raw.runId, raw.artifactId) as { relativePath: string; filename: string };
+      const { absoluteDataPath } = await import("../backend/src/main/run/filesystem.js");
+      const source = absoluteDataPath(ref.relativePath);
+      const saveOptions = {
+        title: "Save workbench artifact",
+        defaultPath: ref.filename,
+        buttonLabel: "Save",
+      };
+      const chosen = win ? await dialog.showSaveDialog(win, saveOptions) : await dialog.showSaveDialog(saveOptions);
+      if (chosen.canceled || !chosen.filePath) return { saved: false as const };
+      copyFileSync(source, chosen.filePath);
+      return { saved: true as const, filename: path.basename(chosen.filePath) };
+    });
   } catch (err) {
-    console.error("[backend] initBackend failed:", err);
+    // Do not create a renderer with a half-registered IPC surface. It causes
+    // misleading follow-up errors such as "No handler registered" while the
+    // real startup failure is only visible in the main-process log.
+    console.error("[backend] initBackend failed; refusing to start renderer:", err);
+    app.quit();
+    return;
   }
 
   if (!app.isPackaged) {

@@ -54,7 +54,7 @@ section listing the same SOP section identifiers.
 OCR output is intentionally limited to clean, typed scans. The UI labels OCR
 findings as extracted content, not a claim of handwritten-note accuracy.
 
-## Flow B — CSV/code task to verified result
+## Data-analysis scenario (regression/demo fixture)
 
 ```mermaid
 sequenceDiagram
@@ -79,7 +79,12 @@ sequenceDiagram
     B-->>Main: exit code, stdout/stderr, output artifact refs
     Main->>C: summarise verified result
     C-->>Main: final explanation
-    Main-->>UI: tool result + artifact_ready + completed
+    Main-->>UI: assistant message + completed
+    opt User requested an export
+        Main-->>UI: confirmation_required(generate_xlsx)
+        User->>UI: Approve and select Save As destination
+        Main-->>UI: artifact_ready
+    end
 ```
 
 The code model never supplies shell arguments. The tool runner writes the

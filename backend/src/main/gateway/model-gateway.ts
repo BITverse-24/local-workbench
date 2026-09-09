@@ -190,7 +190,9 @@ export class ModelGateway implements ModelClient {
     let extractedContent: unknown = null;
     let parsedJson: unknown = null;
     try {
-      this.externalRequestCount += model.runtime === "openrouter" ? 1 : 0;
+      // The counter is for non-local egress evidence. Ollama and LAN model
+      // servers remain local; configured cloud endpoints count as external.
+      this.externalRequestCount += /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/i.test(model.baseUrl) || model.runtime === "ollama" || model.runtime === "mlx-lm" || model.runtime === "llama-server" ? 0 : 1;
       const t0 = Date.now();
       const response = await this.transport.request(`${model.baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body }, Math.min(request.timeoutMs, model.requestTimeoutMs));
       const latencyMs = Date.now() - t0;

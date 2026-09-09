@@ -15,8 +15,8 @@ opaque references the backend resolves inside its own run boundary.
 ## Request/response boundary
 
 - Vision requests embed one `AttachmentReference`; code requests embed one
-  `InputFileReference`. Both use logical filenames
-  (`reactor-temperature-log.csv`, `out-of-range-rows.csv`).
+  `InputFileReference`. Both use logical filenames supplied for the current
+  run; they never expose absolute filesystem paths to a model.
 - The backend owns token issuance, run-scoped resolution, size/media-type
   enforcement, and sandbox mounts.
 

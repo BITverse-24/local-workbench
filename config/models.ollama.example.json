@@ -1,0 +1,41 @@
+{
+  "$comment": "Copy to models.json when Ollama is running locally. The backend keeps the same typed model boundaries and only changes provider configuration.",
+  "models": [
+    {
+      "id": "vision-qwen25vl",
+      "taskTypes": ["vision"],
+      "runtime": "ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "model": "qwen2.5vl:3b",
+      "capabilities": ["text", "image-input", "structured-output"],
+      "requestTimeoutMs": 60000,
+      "healthPath": "/models",
+      "enabled": true,
+      "maxOutputTokens": 4096
+    },
+    {
+      "id": "draft-qwen3",
+      "taskTypes": ["draft"],
+      "runtime": "ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "model": "qwen3:8b",
+      "capabilities": ["text", "structured-output"],
+      "requestTimeoutMs": 45000,
+      "healthPath": "/models",
+      "enabled": true,
+      "maxOutputTokens": 8192
+    },
+    {
+      "id": "code-qwen25coder",
+      "taskTypes": ["code"],
+      "runtime": "ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "model": "qwen2.5-coder:7b",
+      "capabilities": ["text", "structured-output", "code-generation"],
+      "requestTimeoutMs": 60000,
+      "healthPath": "/models",
+      "enabled": true,
+      "maxOutputTokens": 8192
+    }
+  ]
+}

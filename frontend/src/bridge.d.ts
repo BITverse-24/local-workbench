@@ -107,6 +107,7 @@ interface WorkbenchBridge {
   getRunHistory: (input?: { limit?: number }) => Promise<RunSummary[]>;
   getArtifact: (input: { runId: string; artifactId: string }) => Promise<ArtifactRef>;
   openArtifact: (input: { runId: string; artifactId: string }) => Promise<{ opened: true; filename: string }>;
+  saveArtifact: (input: { runId: string; artifactId: string }) => Promise<{ saved: boolean; filename?: string }>;
   getHealth: () => Promise<ModelHealth[]>;
   getRunLogs: (input: { runId: string; limit?: number }) => Promise<{ runId: string; entries: unknown[]; files: string[]; recentFull: unknown }>;
   getRunLogFile: (input: { runId: string; filename: string }) => Promise<{ runId: string; filename: string; content: unknown }>;

@@ -1,6 +1,6 @@
 export type TaskType = "vision" | "draft" | "code";
 
-export type ModelRuntime = "mlx-lm" | "llama-server" | "openrouter";
+export type ModelRuntime = "mlx-lm" | "llama-server" | "openrouter" | "ollama";
 
 export type ModelId =
   | "vision-qwen25vl"
@@ -27,7 +27,7 @@ export interface ModelRegistryEntry {
   maxOutputTokens?: number;
 }
 
-export type ResponseFormat = "vision-result" | "draft-result" | "code-result" | "code-summary";
+export type ResponseFormat = "vision-result" | "draft-result" | "chat-result" | "code-result" | "code-summary";
 
 export interface ModelUsage {
   inputTokens?: number;

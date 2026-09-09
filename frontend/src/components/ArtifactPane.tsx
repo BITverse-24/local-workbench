@@ -1,10 +1,11 @@
 type Props = {
   artifacts: ArtifactRef[];
   onOpen: (a: ArtifactRef) => void;
+  onSave: (a: ArtifactRef) => void;
   runId?: string;
 };
 
-export default function ArtifactPane({ artifacts, onOpen }: Props) {
+export default function ArtifactPane({ artifacts, onOpen, onSave }: Props) {
   if (!artifacts.length) return null;
   return (
     <div className="mx-4 my-2 rounded-xl neu-card p-3">
@@ -17,7 +18,10 @@ export default function ArtifactPane({ artifacts, onOpen }: Props) {
               <div className="text-xs font-medium truncate">{a.filename}</div>
               <div className="text-[10px] opacity-50">{a.relativePath} • {(a.sizeBytes / 1024).toFixed(1)} KB</div>
             </div>
-            <button onClick={() => onOpen(a)} className="px-3 py-1.5 rounded-full neu-button text-xs font-medium shrink-0">Open</button>
+            <div className="flex gap-1.5 shrink-0">
+              <button onClick={() => onOpen(a)} className="px-3 py-1.5 rounded-full neu-button text-xs font-medium">Open</button>
+              <button onClick={() => onSave(a)} className="px-3 py-1.5 rounded-full neu-button-primary text-xs font-medium">Save As</button>
+            </div>
           </div>
         ))}
       </div>

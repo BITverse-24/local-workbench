@@ -26,10 +26,11 @@ stateDiagram-v2
     acting --> cancelled
 ```
 
-The run has a hard limit of eight model/tool iterations. Flow A normally uses
-vision extraction, knowledge search, drafting, and approval-note generation.
-Flow B normally uses file inspection, code drafting, Python execution, and
-result summarisation. Exceeding the limit fails the run with a visible reason.
+The run has a hard limit of eight model/tool iterations. Demo scenarios may
+exercise vision extraction, knowledge search, drafting, code execution, or
+spreadsheet generation, but the orchestrator is capability-driven rather than
+Flow A/Flow B-specific. Exceeding the limit fails the run with a visible
+reason.
 
 ## Model registry
 
@@ -39,14 +40,14 @@ does not construct arbitrary URLs.
 
 ```ts
 type TaskType = 'vision' | 'draft' | 'code';
-type ModelRuntime = 'mlx-lm' | 'llama-server' | 'openrouter';
+type ModelRuntime = 'mlx-lm' | 'llama-server' | 'openrouter' | 'ollama';
 
 interface ModelRegistryEntry {
   id: 'vision-qwen25vl' | 'draft-qwen3' | 'code-qwen25coder';
   taskTypes: TaskType[];
   runtime: ModelRuntime;
-  baseUrl: string;                 // approved http://LAN_IP:PORT/v1; OpenRouter URL in development
-  model: string;                   // local server alias, or OpenRouter model slug in development
+  baseUrl: string;                 // approved local/LAN /v1 endpoint, or OpenRouter URL in development
+  model: string;                   // local server alias, Ollama tag, or OpenRouter model slug
   requestTimeoutMs: number;
   healthPath: '/models';
   apiKeyEnv?: string;              // env var NAME holding the key; never the key value
@@ -60,7 +61,9 @@ stand-in model per task type — marked with `runtime: 'openrouter'` and an
 never enters the repository, the committed registry, or the renderer. The
 registry shipped in the demo bundle is LAN-only: task 11a removes the
 OpenRouter entries and re-runs every health check against the local endpoints
-before rehearsal.
+before rehearsal. Ollama can be selected with the example registry in
+`config/models.ollama.example.json`; it uses the same OpenAI-compatible
+adapter and local `/v1/models` health endpoint.
 
 | Route | Model/runtime | Host | Purpose |
 | --- | --- | --- | --- |
@@ -68,11 +71,13 @@ before rehearsal.
 | `draft` | Qwen3-4B-Instruct, GGUF Q4 via `llama-server` | i7 #1 | approval-note planning and drafting |
 | `code` | Qwen2.5-Coder-7B-Instruct, GGUF Q4 via `llama-server` | i7 #2 | Python task planning, code generation, and output interpretation |
 
-The gateway normalizes all three model services into one internal contract. It
-uses OpenAI-compatible `/v1/chat/completions` and `/v1/models` interfaces,
-with streaming enabled only when forwarding user-visible draft text. Calls use
-fixed endpoint aliases, bounded context, low temperature, and task-specific
-system prompts.
+The gateway normalizes all model services into one internal contract. Typed
+`ChatModel` and `CodeModel` services own task-specific request/response
+validation; their provider-neutral `ModelClient` delegates transport to the
+gateway. The gateway uses OpenAI-compatible `/v1/chat/completions` and
+`/v1/models` interfaces, with streaming enabled only when forwarding
+user-visible draft text. Calls use fixed endpoint aliases, bounded context,
+low temperature, and task-specific system prompts.
 
 ## Router and agent policy
 
@@ -147,6 +152,12 @@ or use by the next agent step.
 | `draft_code` | task and input schema | Python source plus expected output description | code model call |
 | `execute_python` | generated source and input refs | exit code, capped stdout/stderr, output refs | Bubblewrap runner |
 | `generate_xlsx` | validated rows/columns | XLSX artifact ref | local spreadsheet worker |
+
+Every task also declares an output intent: `chat`, `artifact`, or
+`chat_and_artifact`. Chat is the default, including analysis of an attached
+CSV. Artifact output requires an explicit user request or a model proposal
+that is shown to the user; the renderer offers a native Save As destination
+after the artifact passes validation.
 
 SQLite stores run metadata, state transitions, routing decisions, pending and
 resolved confirmations, event summaries, citations, artifact metadata, and

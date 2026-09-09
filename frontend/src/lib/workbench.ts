@@ -141,6 +141,10 @@ export async function openArtifact(input: { runId: string; artifactId: string })
   await bridge().openArtifact(input);
 }
 
+export async function saveArtifact(input: { runId: string; artifactId: string }): Promise<{ saved: boolean; filename?: string }> {
+  return bridge().saveArtifact(input);
+}
+
 export async function getHealth(): Promise<ModelHealth[]> {
   return bridge().getHealth();
 }

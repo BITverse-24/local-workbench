@@ -351,6 +351,14 @@ export default function App() {
     }
   }, []);
 
+  const handleSaveArtifact = useCallback(async (artifact: ArtifactRef) => {
+    try {
+      await wb.saveArtifact({ runId: artifact.runId, artifactId: artifact.artifactId });
+    } catch (e) {
+      setRunError({ code: "save_failed", message: e instanceof Error ? e.message : String(e) });
+    }
+  }, []);
+
   const handleSend = async () => {
     const hasText = input.trim().length > 0;
     const hasFiles = attachedFiles.length > 0;
@@ -496,12 +504,12 @@ export default function App() {
         <ChatPanel title={activeTitle} leftCollapsed={leftCollapsed} rightCollapsed={rightCollapsed} onToggleLeft={() => setLeftCollapsed(!leftCollapsed)} onToggleRight={() => setRightCollapsed(!rightCollapsed)}>
           {activeRoute && <RouteBadge route={activeRoute} state={runState} />}
           {runError && (
-            <div className="mx-4 mt-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex flex-col gap-1">
+            <div className="mx-4 mt-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex flex-col gap-1 select-text">
               <div className="flex items-start justify-between gap-2">
-                <span><strong>{runError.code}:</strong> {runError.message}</span>
+                <span className="break-words whitespace-pre-wrap cursor-text"><strong>{runError.code}:</strong> {runError.message}</span>
                 <button onClick={() => setRunError(null)} className="shrink-0 w-6 h-6 rounded-full bg-white/10 grid place-items-center">x</button>
               </div>
-              <span className="opacity-60 text-[11px]">Full model response is in Model trace below — expand provider_content_raw / normalized to see what the model returned (e.g. missing SOP-114 grounding or section count).</span>
+              <span className="opacity-60 text-[11px] cursor-text">Full model response is in Model trace below — expand provider_content_raw / normalized to see what the model returned (e.g. missing SOP-114 grounding or section count).</span>
             </div>
           )}
           {isRunning && (
@@ -514,7 +522,7 @@ export default function App() {
           <RunTranscript events={runEvents} />
           {activeRunId && <ModelTracePanel runId={activeRunId} />}
           <ChatArea messages={messages} onEditMessage={handleEditMessage} onAttachFiles={addFiles} />
-          {runArtifacts.length > 0 && <ArtifactPane artifacts={runArtifacts} onOpen={handleOpenArtifact} runId={activeRunId ?? undefined} />}
+          {runArtifacts.length > 0 && <ArtifactPane artifacts={runArtifacts} onOpen={handleOpenArtifact} onSave={handleSaveArtifact} runId={activeRunId ?? undefined} />}
           <InputBar
             input={input}
             setInput={setInput}
@@ -594,6 +602,4 @@ export default function App() {
     </div>
   );
 }
-
-
 

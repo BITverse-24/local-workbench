@@ -48,11 +48,11 @@ describe("chat IPC over mock Electron ipcMain", () => {
     const fake = new FakeIpcMain();
     initBackend(fake);
     const expected = [...CHAT_CHANNELS, ...RUN_CHANNELS].filter(
-      (channel) => channel !== IPC_RUN.RUN_EVENT && channel !== IPC_RUN.OPEN_ARTIFACT,
+      (channel) => channel !== IPC_RUN.RUN_EVENT && channel !== IPC_RUN.OPEN_ARTIFACT && channel !== IPC_RUN.SAVE_ARTIFACT,
     );
     expect([...fake.handlers.keys()].sort()).toEqual(expected.sort());
     expect(CHAT_CHANNELS).toHaveLength(9);
-    expect(RUN_CHANNELS).toHaveLength(9);
+    expect(RUN_CHANNELS).toHaveLength(10);
   });
 
   it("createChat → getChatHistory round-trips a uuid4 chat", async () => {
