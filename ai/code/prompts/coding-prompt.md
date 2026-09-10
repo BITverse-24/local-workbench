@@ -17,7 +17,7 @@ task. Return only one valid JSON object matching this exact shape:
   "outputFiles": string[],
   "allowedImports": string[],
   "outputMode": "chat" | "artifact" | "chat_and_artifact",
-  "artifactKind": "xlsx" | "csv" (only when outputMode includes artifact),
+  "artifactKind": "xlsx" | "csv" | "txt" | "json" (only when outputMode includes artifact),
   "artifactFilename": string (only when outputMode includes artifact),
   "artifactRationale": string (only when outputMode includes artifact)
 }
@@ -35,7 +35,7 @@ Output intent rules:
 - Use outputMode "artifact" only when the user explicitly requests a file or
   export. Use "chat_and_artifact" when the user requests both an explanation
   and a file.
-- For CSV work, artifactKind must be "xlsx" or "csv" and artifactFilename
+- For CSV work, artifactKind must be "xlsx", "csv", "txt" or "json" and artifactFilename
   must be a safe, descriptive filename with the matching extension.
 - Never infer a file request solely from the fact that an attachment exists.
 

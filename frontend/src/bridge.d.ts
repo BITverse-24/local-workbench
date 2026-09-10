@@ -41,7 +41,7 @@ interface AttachmentReference {
 interface ArtifactRef {
   artifactId: string;
   runId: string;
-  kind: "docx" | "pdf" | "xlsx" | "csv";
+  kind: "docx" | "pdf" | "xlsx" | "csv" | "txt" | "json";
   filename: string;
   relativePath: string;
   sizeBytes: number;
@@ -55,6 +55,7 @@ interface PendingAction {
   prompt: string;
   createdAt: string;
   expiresAt: string;
+  preview?: string;
 }
 
 interface RunSummary {

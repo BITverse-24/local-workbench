@@ -1,7 +1,30 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRunDirectories, registerAttachment, writeRunFile } from "../src/main/run/filesystem.js";
+
+vi.mock("../src/main/tools/python.js", () => {
+  return {
+    executePython: vi.fn().mockImplementation(async (runId, source, inputFiles, aliases, timeoutMs) => {
+      // Mock side effects
+      const fs = require('fs');
+      const path = require('path');
+      const rootDir = process.env.WORKBENCH_DATA_ROOT || path.join(process.cwd(), 'data');
+      const outputDir = path.join(rootDir, "runs", runId, "output");
+      fs.mkdirSync(outputDir, { recursive: true });
+      fs.writeFileSync(path.join(outputDir, "summary.csv"), "rows\n2\n");
+      return {
+        exitCode: 0,
+        stdout: "ROWS 2\n",
+        stderr: "",
+        timedOut: false,
+        outputFiles: ["summary.csv"],
+        durationMs: 10
+      };
+    })
+  };
+});
+
 import { executePython } from "../src/main/tools/python.js";
 
 let tempDir = "";

@@ -9,6 +9,6 @@ describe("ai/ prompt wiring", () => {
     expect(CODE_SYSTEM_PROMPT).toContain("actual CSV");
     expect(CODE_SYSTEM_PROMPT).toContain("Do not assume a fixed filename");
     expect(CODE_SYSTEM_PROMPT).not.toContain("OUT_OF_RANGE 7/240");
-    expect(CODE_SYSTEM_PROMPT).toContain('allowedImports must contain only "csv" and "datetime".');
+    expect(CODE_SYSTEM_PROMPT).toContain('allowedImports must contain only "csv", "datetime", and "math".');
   });
 });
