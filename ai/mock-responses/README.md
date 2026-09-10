@@ -2,7 +2,7 @@
 
 These files are deterministic, provider-free fixtures for the offline AI
 contract tests. They use the locked inputs and expected values from
-`demo-fixtures/`; no API keys, network URLs, or provider payloads are
+`demo/`; no API keys, network URLs, or provider payloads are
 included.
 
 Each JSON file is a complete response envelope with stable fixture IDs.

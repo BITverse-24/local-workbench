@@ -1,0 +1,8 @@
+{
+  "flow": "flow_c",
+  "monitor": "independent-lan-monitor",
+  "allowedHosts": ["vision-lan", "draft-lan", "code-lan", "app-lan", "monitor-lan"],
+  "externalRequests": 0,
+  "blockedAttempt": {"host": "vendor-cloud.example", "result": "blocked", "recorded": true},
+  "assertion": "Drawing interpretation, SOP comparison, and corrective-note generation stayed on the approved LAN."
+}

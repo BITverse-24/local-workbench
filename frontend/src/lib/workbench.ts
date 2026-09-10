@@ -114,6 +114,7 @@ export async function startRun(input: {
   attachmentToken?: string;
   runId?: string;
   chatId?: string;
+  temperature?: number;
 }): Promise<{ runId: string }> {
   return bridge().startRun(input);
 }
@@ -139,6 +140,10 @@ export async function getArtifact(input: { runId: string; artifactId: string }):
 
 export async function openArtifact(input: { runId: string; artifactId: string }): Promise<void> {
   await bridge().openArtifact(input);
+}
+
+export async function saveArtifact(input: { runId: string; artifactId: string }): Promise<{ saved: boolean; filename?: string }> {
+  return bridge().saveArtifact(input);
 }
 
 export async function getHealth(): Promise<ModelHealth[]> {

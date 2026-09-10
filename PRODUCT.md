@@ -24,7 +24,7 @@ These are the things a competing "local RAG chatbot" will *not* have. Everything
 
 1. **Verifiable model auto-routing.** The system classifies each incoming task and automatically dispatches it to a different model suited to that task type (vision/OCR, general drafting, code) — and *shows this happening* via a live routing badge in the UI. Not a user-facing dropdown. Not one model doing everything with different prompts.
 2. **Live sovereignty proof.** A permanently visible panel shows real network activity (or the deliberate absence of it) for the entire session — an allowlist of the team's own LAN boxes, a running counter of external requests (must stay at zero), and a demo-able "blocked" event if an outbound call is attempted. This directly answers the PS requirement that the sovereignty claim be *proven*, not stated.
-3. **One flawless end-to-end agentic flow** (see Flow A below) that ties routing, OCR, RAG grounding, and a real deliverable file together in a single narrative — this is the *proof point* for the USPs above, not itself the differentiator.
+3. **Three visibly different agentic flows** (see `DEMO.md`) covering scanned evidence, code repair, and engineering-drawing compliance — each with a real deliverable and a continuous sovereignty proof.
 
 ## 6. Scope
 
@@ -32,38 +32,32 @@ These are the things a competing "local RAG chatbot" will *not* have. Everything
 - Model registry: config file (task type → model endpoint), 3 models total, one per dedicated LAN box
 - Router: automatic task classification (file type + lightweight intent check), not manual selection
 - Agent orchestrator: plan → tool call → observe → repeat, with every step streamed to the UI as a visible transcript
-- Tools: file read/write, OCR/vision call, `.docx`/`.xlsx` generation, sandboxed Python execution (no network), local vector search (RAG) over a small curated document set (10–30 docs)
+- Tools: file read/write, OCR/vision call, local SOP criteria checks, `.docx`/`.xlsx` generation, sandboxed Python execution (no network), and drawing/compliance analysis
 - Sovereignty dashboard: live connection monitor + always-visible "0 external requests" badge, with a demo-able block event
 - Electron desktop shell: chat pane, live agent-step transcript, artifact preview pane
-- RAG citations surfaced in generated documents (e.g. "grounded in SOP-114 §3.2")
+- Local rule citations surfaced beside every grounded decision (e.g. "grounded in SOP-114 §3.2")
 
 ### Out of scope (explicitly do not build)
-- General/robust handwriting OCR — demo on clean/typed scans only; handwriting is roadmap
+- General handwriting OCR — Flow A demonstrates a fixed handwritten annotation, but does not claim robust handwriting coverage
 - PowerPoint generation — bonus-only if time remains after Flow A and B are solid
 - Multi-user auth, roles, enterprise deployment/ops tooling
-- Large/general-purpose knowledge base — curated demo corpus only
+- Large/general-purpose knowledge base — only the fixed local SOP/specification assets are in the demo bundle
 - More than one sandboxed language (Python only)
 - A model registry that's *actually* infinitely pluggable — it must *look* config-driven and extensible in the pitch; don't over-engineer the plugin mechanism itself
 - Any live/improvised generative step during the finals demo — flagship flows run on pre-tested, fixed sample inputs only
 
 ## 7. Primary user flows
 
-### Flow A — Inspection report → approval note (flagship)
-1. User drops a scanned inspection report (image/PDF) into the app.
-2. Router detects a scanned-document task → routes to the vision/OCR model. Badge updates.
-3. OCR/vision model extracts text and key findings (structured output).
-4. Agent queries the local RAG index for the matching SOP/approval-note template.
-5. Router switches to the general drafting model. Badge updates.
-6. Agent drafts the approval note, citing the retrieved SOP section.
-7. Tool call generates a `.docx` file; it renders in the artifact preview pane.
+### Flow A — Scanned inspection bundle → approval note (flagship)
+The vision model reads two scanned reports, extracts typed and handwritten evidence, applies local SOP-114 criteria, and hands a cited assessment to the drafting model. The final `.docx` contains findings, anomalies, corrective actions, and a conditional recommendation.
 
-### Flow B — Data/coding task
-1. User asks for a script-based task (e.g. "flag out-of-range readings in this CSV, generate a summary").
-2. Router detects a coding task → routes to the code model. Badge updates.
-3. Agent writes the script, executes it in the sandboxed container (no network), captures stdout/stderr and exit code.
-4. Result (and optionally a generated `.xlsx`) appears in the artifact pane.
+### Flow B — Internal tool bug fix → sandbox verification
+The code model repairs a deliberately broken vendor-log parser, runs it against a malformed CSV in the network-disabled sandbox, observes the real traceback, self-corrects, and produces a verified script plus output file.
 
-Both flows run continuously against the visible sovereignty panel, which must show zero external requests throughout.
+### Flow C — Engineering drawing → compliance finding
+The vision model reads a labeled pump-skid drawing, the reasoning model compares numeric values against local SOP-220 requirements, and the workbench produces a concise cited corrective-action note without claiming approval.
+
+All three flows run continuously against the visible sovereignty panel, which must show zero external requests and a recorded blocked attempt.
 
 ## 8. System components (product-level contracts)
 
@@ -72,7 +66,7 @@ Both flows run continuously against the visible sovereignty panel, which must sh
 | **Model Registry** | Config mapping task type → model endpoint (host:port) | Model training, quantization tooling |
 | **Router** | Classify incoming task, pick a registry entry, emit the routing event the UI badges on | Generating any content itself |
 | **Agent Orchestrator** | Run the plan→act→observe loop, call tools, stream each step | Model serving, sandboxing internals |
-| **Tools** (file I/O, OCR, docx/xlsx gen, sandbox exec, RAG search) | One well-defined job each, callable by the orchestrator with a fixed schema | Deciding *when* they're called (that's the orchestrator) |
+| **Tools** (file I/O, OCR, SOP checks, docx/xlsx gen, sandbox exec, drawing analysis) | One well-defined job each, callable by the orchestrator with a fixed schema | Deciding *when* they're called (that's the orchestrator) |
 | **Sovereignty Dashboard** | Poll and display real connection state, maintain the allowlist, log/flag anything outside it | Actually being a firewall (pair with a real iptables/OS-level rule) |
 | **Artifact Preview Pane** | Render/download generated files | Editing generated files in-app (out of scope) |
 | **Desktop Shell (Electron)** | Host the renderer, forward orchestrator events over IPC | Any model or business logic — kept thin |
@@ -86,8 +80,8 @@ No dedicated GPUs — one model per machine over LAN, orchestrator kept model-fr
 | M4 Mac Mini 16GB | Vision/OCR model |
 | i7 16GB (#1) | General drafting/reasoning model |
 | i7 16GB (#2) | Coding model |
-| i7 16GB (#3) | Orchestrator, RAG index, sandbox host, Electron backend |
-| i5 11th-gen 16GB | Embedding model + network-monitor collector |
+| i7 16GB (#3) | Orchestrator, local criteria, sandbox host, Electron backend |
+| i5 11th-gen 16GB | Network-monitor collector |
 
 Sovereignty dashboard's allowlist = exactly these five LAN IPs. Anything else contacted = visible failure state.
 
@@ -95,16 +89,17 @@ Sovereignty dashboard's allowlist = exactly these five LAN IPs. Anything else co
 
 Maps 1:1 to the PS's "Expected Solution":
 
-- [ ] Model auto-selection visibly demonstrated across ≥2 task types (Flow A + Flow B)
-- [ ] End-to-end agentic task: scanned report → extracted findings → drafted `.docx` approval note
-- [ ] Coding task run and verified inside the sandbox
-- [ ] Multimodal (image/scanned-doc) understanding demonstrated
+- [ ] Model auto-selection visibly demonstrated across vision, drafting, and code paths
+- [ ] Flow A: scanned report bundle → extracted typed/handwritten findings → cited `.docx` approval note
+- [ ] Flow B: broken internal utility repaired, executed, observed, and self-corrected in the sandbox
+- [ ] Flow C: engineering drawing values compared against SOP limits with step-by-step reasoning
+- [ ] Multimodal (scanned PDF and engineering drawing) understanding demonstrated
 - [ ] Live proof of zero external calls for the full session, including a demonstrated block event
-- [ ] RAG citation visible in the generated approval note
+- [ ] Local SOP/specification citations visible beside Flow A and Flow C conclusions
 
 ## 11. Non-goals (say this explicitly if asked)
 
-This is a hackathon MVP proving a deployment *pattern*, not a hardened production system. Security of the sandbox, scale of the RAG corpus, and breadth of supported models are intentionally minimal — the architecture is designed so each can be extended later without a redesign, which is the claim being made, not a claim that it's already been done.
+This is a hackathon MVP proving a deployment *pattern*, not a hardened production system. Security of the sandbox, breadth of the local rule set, and breadth of supported models are intentionally minimal — the architecture is designed so each can be extended later without a redesign, which is the claim being made, not a claim that it's already been done.
 
 ## 12. Glossary
 
@@ -112,5 +107,5 @@ This is a hackathon MVP proving a deployment *pattern*, not a hardened productio
 - **Model Registry**: the config file listing available models and what they're for.
 - **Agent Loop**: the plan → tool-call → observe → repeat cycle the orchestrator runs.
 - **Sovereignty Badge**: the always-visible UI element proving zero external egress.
-- **Flagship Flow**: Flow A (inspection report → approval note) — the primary demo narrative.
+- **Flagship Flow**: Flow A (inspection bundle → approval note) — the primary demo narrative.
 - **Task Type**: the classification the router assigns to an incoming request (e.g. `vision`, `draft`, `code`).

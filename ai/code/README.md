@@ -1,10 +1,10 @@
 # ai/code — Flow B Python generation (active)
 
 Purpose: the one active AI boundary. The model writes a single safe,
-deterministic Python script for the fixed Flow B CSV task
-(`reactor-temperature-log.csv` → `out-of-range-rows.csv`), and later
-summarizes real sandbox execution output. This is the only AI contract with
-live acceptance tests.
+deterministic Python script for the current Flow B CSV task, using the
+attached input and run-scoped output filenames supplied by the backend, and
+later summarizes real sandbox execution output. This is the only AI contract
+with live acceptance tests.
 
 ## Files
 
@@ -18,10 +18,13 @@ live acceptance tests.
 ## Expected identity and health
 
 - Stable identity `code-qwen25coder` (see `../shared/types.ts`).
-- Deployment: the model behind this identity may run as a LAN service
-  reporting health at `GET <baseUrl>/models`; routing stays behind the
-  stable ID so dev (OpenRouter) and LAN swaps need no contract change.
-- No server, weights, GPU startup, or supervisor is implemented here.
+- Deployment: the model behind this identity may run through OpenRouter or an
+  OpenAI-compatible local service such as Ollama reporting health at
+  `GET <baseUrl>/models`; routing stays behind the stable ID so provider swaps
+  need no contract change.
+- Provider startup, weights, GPU startup, and supervision are outside this
+  contract. The backend's typed `CodeModel` owns the runtime boundary while
+  `ModelClient` owns transport/provider details.
 
 ## Request/response boundary
 
@@ -30,7 +33,8 @@ live acceptance tests.
 - Draft response: exactly `task.py` source plus `expectedResult`,
   `inputFiles`, `outputFiles`, `allowedImports`. Imports limited to `csv`
   and `datetime`; no network, shell, subprocess, dynamic code, environment
-  access, or extra files; counts are calculated, never hard-coded.
+  access, or extra files; counts are calculated from the attached CSV, never
+  hard-coded.
 - Summarize request (`phase: "summarize"`, `responseFormat: "code-summary"`):
   the backend sends back the real `PythonExecutionResult`; the model returns
   a `CodeSummaryResult` (`summary`, `verified`) describing only what

@@ -12,11 +12,11 @@ platform. Read the linked documents in this order:
 ## Architecture goals
 
 - Demonstrate automatic routing across vision, drafting, and coding models.
-- Produce a grounded approval-note `.docx` and preview PDF from a scanned
-  report, including SOP citations.
+- Produce an evidence-grounded approval-readiness decision packet `.docx` and
+  preview PDF from a scanned report, including SOP citations.
 - Generate and verify a Python solution in a network-isolated execution
   environment.
-- Keep all inference, retrieval, artifacts, and audit data on the LAN.
+- Keep all inference, local criteria, artifacts, and audit data on the LAN.
 - Keep the implementation small enough for a 12-day, three-person build.
 
 ## System boundary
@@ -38,7 +38,7 @@ flowchart LR
     G --> D[Draft model<br/>i7 #1]
     G --> C[Code model<br/>i7 #2]
     O --> T[Tool runner]
-    T --> K[Chroma knowledge base<br/>local embedding service]
+    T --> K[Local SOP criteria<br/>fixture bundle]
     T --> S[Bubblewrap Python runner]
     T --> A[Run-scoped artifacts<br/>DOCX / XLSX / PDF]
     M --> Q[(SQLite run audit)]
@@ -55,8 +55,8 @@ evidence that only the named LAN hosts exchanged traffic.
 
 ## Deliberate MVP limits
 
-- The curated knowledge corpus is 10–30 prepared documents, not an
-  enterprise-scale repository.
+- The governing SOP criteria are a small prepared local fixture set, not an
+  enterprise-scale knowledge repository.
 - Only two rehearsed flows are in the acceptance bar. Presenters use fixed,
   pre-tested local files through the real file-drop interaction.
 - Python is the only executable language. There is no multi-user support,
@@ -72,7 +72,7 @@ evidence that only the named LAN hosts exchanged traffic.
 | --- | --- | --- |
 | Ayush (frontend) | Electron renderer, file drop, transcript, confirmations, routing badge, PDF pane | No direct filesystem, model, tool, or LAN access |
 | Supreet (backend) | Electron main composition, IPC, orchestrator, registry gateway, tools, SQLite, artifacts | Does not build the external monitor or model runtimes |
-| Sid (AI/ML) | Offline model provisioning, performance checks, embedding/index preparation, OCR and prompt evaluation | Does not add unsupported task categories |
+| Sid (AI/ML) | Offline model provisioning, performance checks, OCR, drawing, and prompt evaluation | Does not add unsupported task categories |
 
 ## Module composition
 
@@ -89,12 +89,12 @@ apps/desktop/src/main/index.ts              Electron main root
 ```
 
 These are modules imported by Electron main, not independently deployed
-application services. Model servers and the local embedding endpoint are the
-only LAN services required by the MVP.
+application services. Model servers are the only LAN services required by the
+MVP; Flow A criteria are bundled locally with the fixed demo fixtures.
 
 ## Non-negotiable operational rules
 
-1. All model weights, application dependencies, embeddings, and demo files
+1. All model weights, application dependencies, local criteria, and demo files
    are installed before the air-gapped rehearsal.
 2. The registry shipped in the demo bundle contains only approved LAN IP
    addresses and ports. A development registry may point at the team's

@@ -41,7 +41,7 @@ interface AttachmentReference {
 interface ArtifactRef {
   artifactId: string;
   runId: string;
-  kind: "docx" | "pdf" | "xlsx" | "csv";
+  kind: "docx" | "pdf" | "xlsx" | "csv" | "txt" | "json" | "md";
   filename: string;
   relativePath: string;
   sizeBytes: number;
@@ -55,6 +55,7 @@ interface PendingAction {
   prompt: string;
   createdAt: string;
   expiresAt: string;
+  preview?: string;
 }
 
 interface RunSummary {
@@ -94,7 +95,7 @@ interface WorkbenchBridge {
   renameChat: (chatId: string, title: string) => Promise<void>;
   getSetting: (key: string) => Promise<{ value: unknown }>;
   setSetting: (key: string, value: unknown) => Promise<void>;
-  startRun: (input: { userText: string; attachmentToken?: string; runId?: string; chatId?: string }) => Promise<{ runId: string }>;
+  startRun: (input: { userText: string; attachmentToken?: string; runId?: string; chatId?: string; temperature?: number }) => Promise<{ runId: string }>;
   registerAttachment: (input: {
     chatId?: string;
     filename: string;
@@ -107,6 +108,7 @@ interface WorkbenchBridge {
   getRunHistory: (input?: { limit?: number }) => Promise<RunSummary[]>;
   getArtifact: (input: { runId: string; artifactId: string }) => Promise<ArtifactRef>;
   openArtifact: (input: { runId: string; artifactId: string }) => Promise<{ opened: true; filename: string }>;
+  saveArtifact: (input: { runId: string; artifactId: string }) => Promise<{ saved: boolean; filename?: string }>;
   getHealth: () => Promise<ModelHealth[]>;
   getRunLogs: (input: { runId: string; limit?: number }) => Promise<{ runId: string; entries: unknown[]; files: string[]; recentFull: unknown }>;
   getRunLogFile: (input: { runId: string; filename: string }) => Promise<{ runId: string; filename: string; content: unknown }>;

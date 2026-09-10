@@ -1,0 +1,15 @@
+{
+  "assessmentId": "assessment-E201",
+  "sourceReport": "IR-E201-2026-08-20",
+  "criteriaCitation": "[SOP-114 §3.2]",
+  "criteria": "Conditional clearance is supported only when affected tubes are scheduled for retubing and recommended gasket replacement is recorded before return to service.",
+  "assessments": [
+    {"findingId": "finding-1", "pageReferenceIds": ["page-ref-1"], "criterion": "Tube-wall measurements below the minimum allowable value must be listed and corrected before return to service.", "status": "fail", "requiredAction": "Retube the affected tubes in rows 12–15.", "citation": "[SOP-114 §3.2]"},
+    {"findingId": "finding-2", "pageReferenceIds": ["page-ref-2"], "criterion": "Localised pitting must be recorded as an inspection finding and included in the approval decision.", "status": "pass", "requiredAction": "Retain the pitting measurement and location in the approval record.", "citation": "[SOP-114 §3.2]"},
+    {"findingId": "finding-3", "pageReferenceIds": ["page-ref-3"], "criterion": "Recommended gasket replacement must be recorded before return to service.", "status": "fail", "requiredAction": "Record and complete the recommended channel-head gasket replacement.", "citation": "[SOP-114 §3.2]"},
+    {"findingId": "approval-status", "pageReferenceIds": [], "criterion": "The supplied record must establish the approval status or leave the decision for human review.", "status": "unknown", "requiredAction": "Obtain approval authority disposition; do not claim final approval from this report alone.", "citation": "[SOP-114 §3.2]"}
+  ],
+  "recommendation": "Conditional clearance pending retubing of the affected tubes and recording the recommended gasket replacement. Final approval authority disposition is still required.",
+  "missingInformation": [{"field": "approvalAuthority", "note": "No approving authority or final approval status is stated in the supplied inspection report."}],
+  "groundingReferences": ["[SOP-114 §3.2]"]
+}

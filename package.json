@@ -14,7 +14,7 @@
     "build:electron": "node scripts/build-electron.cjs",
     "package": "electron-builder --config electron/electron-builder.json5",
     "typecheck": "tsc --noEmit -p backend/tsconfig.json && tsc --noEmit -p electron/tsconfig.json && tsc --noEmit -p frontend/tsconfig.json",
-    "test": "vitest run --config vitest.config.ts",
+    "test": "node scripts/test.cjs",
     "lint": "npm run typecheck",
     "postinstall": "electron-builder install-app-deps"
   },

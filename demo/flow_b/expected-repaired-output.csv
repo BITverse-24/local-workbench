@@ -1,0 +1,6 @@
+timestamp,asset_id,temperature_c,event,status
+2026-08-21T09:00,P-204,349.8,normal,within_limit
+2026-08-21T09:10,P-204,,sensor_gap,malformed_row
+2026-08-21T09:20,P-204,350.0,limit_check,within_limit
+2026-08-21T09:30,P-204,351.4,high_temperature,above_limit
+2026-08-21T09:40,P-204,348.9,normal,within_limit

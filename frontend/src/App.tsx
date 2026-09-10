@@ -12,10 +12,8 @@ import UploadModal from "./components/modals/UploadModal";
 import CameraModal from "./components/modals/CameraModal";
 import VoiceModal from "./components/modals/VoiceModal";
 import ConfirmationModal from "./components/ConfirmationModal";
-import RunTranscript from "./components/RunTranscript";
 import ArtifactPane from "./components/ArtifactPane";
 import RouteBadge from "./components/RouteBadge";
-import ModelTracePanel from "./components/ModelTracePanel";
 import { MODELS } from "./lib/models";
 import * as wb from "./lib/workbench";
 import { useDropdownPosition, usePlusPosition } from "./lib/hooks/useDropdownPosition";
@@ -56,6 +54,7 @@ export default function App() {
   const [runState, setRunState] = useState<RunState | null>(null);
   const [activeRoute, setActiveRoute] = useState<{ taskType: string; modelId: string; reason: string } | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingAction | null>(null);
+  const [confirmationBusy, setConfirmationBusy] = useState(false);
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
   const [runArtifacts, setRunArtifacts] = useState<ArtifactRef[]>([]);
   const [runError, setRunError] = useState<{ code: string; message: string } | null>(null);
@@ -77,17 +76,15 @@ export default function App() {
         setHistory(chats.map((c) => ({ id: c.id, title: c.title, updated_at: c.updated_at })));
         const temp = await wb.getSetting<number>("temperature");
         if (!cancelled && typeof temp === "number") setTemperature(temp);
-        const last = await wb.getSetting<string>("lastChatId");
-        if (cancelled) return;
-        const target =
-          (typeof last === "string" && chats.some((c) => c.id === last) ? last : null) ??
-          chats[0]?.id ??
-          null;
-        if (!target) return;
-        setChatId(target);
-        await wb.setSetting("lastChatId", target);
-        const rows = await wb.getMessages(target);
-        if (!cancelled) setMessages(toChatMessages(rows));
+        // Open a fresh new chat on startup (chat history remains accessible in the sidebar)
+        setChatId(null);
+        setMessages([]);
+        setActiveRunId(null);
+        setRunState(null);
+        setActiveRoute(null);
+        setRunEvents([]);
+        setRunArtifacts([]);
+        setRunError(null);
         // Health probe on startup
         try {
           const h = await wb.getHealth();
@@ -322,15 +319,19 @@ export default function App() {
 
   const handleConfirm = useCallback(async (approved: boolean) => {
     if (!pendingConfirmation || !activeRunId) return;
+    if (confirmationBusy) return;
     const { actionId, runId } = pendingConfirmation;
+    setConfirmationBusy(true);
     try {
       await wb.confirmAction({ runId, actionId, approved });
       setPendingConfirmation(null);
     } catch (e) {
       setRunError({ code: "confirm_failed", message: e instanceof Error ? e.message : String(e) });
       setPendingConfirmation(null);
+    } finally {
+      setConfirmationBusy(false);
     }
-  }, [pendingConfirmation, activeRunId]);
+  }, [pendingConfirmation, activeRunId, confirmationBusy]);
 
   const handleCancelRun = useCallback(async () => {
     if (!activeRunId) return;
@@ -348,6 +349,14 @@ export default function App() {
       await wb.openArtifact({ runId: artifact.runId, artifactId: artifact.artifactId });
     } catch (e) {
       setRunError({ code: "open_failed", message: e instanceof Error ? e.message : String(e) });
+    }
+  }, []);
+
+  const handleSaveArtifact = useCallback(async (artifact: ArtifactRef) => {
+    try {
+      await wb.saveArtifact({ runId: artifact.runId, artifactId: artifact.artifactId });
+    } catch (e) {
+      setRunError({ code: "save_failed", message: e instanceof Error ? e.message : String(e) });
     }
   }, []);
 
@@ -400,6 +409,7 @@ export default function App() {
             attachmentToken,
             runId: runIdForAttachment,
             chatId: cid,
+            temperature,
           });
           setActiveRunId(runId);
           // Chat stays on cid; run is linked via DB.
@@ -496,12 +506,12 @@ export default function App() {
         <ChatPanel title={activeTitle} leftCollapsed={leftCollapsed} rightCollapsed={rightCollapsed} onToggleLeft={() => setLeftCollapsed(!leftCollapsed)} onToggleRight={() => setRightCollapsed(!rightCollapsed)}>
           {activeRoute && <RouteBadge route={activeRoute} state={runState} />}
           {runError && (
-            <div className="mx-4 mt-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex flex-col gap-1">
+            <div className="mx-4 mt-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex flex-col gap-1 select-text">
               <div className="flex items-start justify-between gap-2">
-                <span><strong>{runError.code}:</strong> {runError.message}</span>
+                <span className="break-words whitespace-pre-wrap cursor-text"><strong>{runError.code}:</strong> {runError.message}</span>
                 <button onClick={() => setRunError(null)} className="shrink-0 w-6 h-6 rounded-full bg-white/10 grid place-items-center">x</button>
               </div>
-              <span className="opacity-60 text-[11px]">Full model response is in Model trace below — expand provider_content_raw / normalized to see what the model returned (e.g. missing SOP-114 grounding or section count).</span>
+              <span className="opacity-60 text-[11px] cursor-text">Full model response is in Model Trace (Settings sidebar & terminal logs) — expand provider_content_raw / normalized to see what the model returned.</span>
             </div>
           )}
           {isRunning && (
@@ -511,10 +521,8 @@ export default function App() {
               <button onClick={handleCancelRun} className="ml-auto px-3 py-1 rounded-full neu-button text-xs">Cancel</button>
             </div>
           )}
-          <RunTranscript events={runEvents} />
-          {activeRunId && <ModelTracePanel runId={activeRunId} />}
           <ChatArea messages={messages} onEditMessage={handleEditMessage} onAttachFiles={addFiles} />
-          {runArtifacts.length > 0 && <ArtifactPane artifacts={runArtifacts} onOpen={handleOpenArtifact} runId={activeRunId ?? undefined} />}
+          {runArtifacts.length > 0 && <ArtifactPane artifacts={runArtifacts} onOpen={handleOpenArtifact} onSave={handleSaveArtifact} runId={activeRunId ?? undefined} />}
           <InputBar
             input={input}
             setInput={setInput}
@@ -547,6 +555,8 @@ export default function App() {
           health={serviceHealth}
           healthLoading={healthLoading}
           onRefreshHealth={refreshHealth}
+          runEvents={runEvents}
+          runId={activeRunId}
         />
       </div>
 
@@ -590,10 +600,8 @@ export default function App() {
         onApprove={() => handleConfirm(true)}
         onReject={() => handleConfirm(false)}
         onClose={() => {}}
+        busy={confirmationBusy}
       />
     </div>
   );
 }
-
-
-

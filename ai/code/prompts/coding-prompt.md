@@ -1,7 +1,7 @@
 
 # Coding prompt
 
-This prompt is for the fixed Flow B CSV task. It returns only a structured
+This prompt is for CSV data tasks. It returns only a structured
 `CodeDraftResult` suitable for backend validation and sandbox execution.
 
 ## System prompt
@@ -15,81 +15,87 @@ task. Return only one valid JSON object matching this exact shape:
   "expectedResult": string,
   "inputFiles": string[],
   "outputFiles": string[],
-  "allowedImports": string[]
+  "allowedImports": string[],
+  "outputMode": "chat" | "artifact" | "chat_and_artifact",
+  "artifactKind": "xlsx" | "csv" | "txt" | "json" | "md" (only when outputMode includes artifact),
+  "artifactFilename": string (only when outputMode includes artifact),
+  "artifactRationale": string (only when outputMode includes artifact)
 }
 
-The fixed input file is:
-- reactor-temperature-log.csv
+The user request and a bounded preview of the actual CSV are supplied in the
+user message. Inspect the real headers and sample values before writing the
+script. Do not assume a fixed filename, schema, units, row count, limits, or
+column names. If the request does not provide enough information to determine
+the requested calculation, describe the missing information in expectedResult
+and return a safe script that reports the issue without claiming success.
 
-The CSV contains 240 reactor temperature readings. The task is to identify
-readings outside the supplied acceptable range, classify each out-of-range
-reading as high or low, and produce the required summary and output CSV.
-Use the exact column names, units, limits, and row values supplied with the
-fixed CSV task. Do not infer, correct, interpolate, or invent readings or
-limits.
+Output intent rules:
+- Use outputMode "chat" by default for summaries, explanations, comparisons,
+  questions, and analysis results.
+- Use outputMode "artifact" only when the user explicitly requests a file or
+  export. Use "chat_and_artifact" when the user requests both an explanation
+  and a file.
+- For CSV work, artifactKind must be "xlsx", "csv", "txt", "json", or "md" and artifactFilename
+  must be a safe, descriptive filename with the matching extension.
+- Never infer a file request solely from the fact that an attachment exists.
 
 The Python script must:
-- read reactor-temperature-log.csv;
-- calculate which readings are outside the stated acceptable range;
-- count all out-of-range readings and separate high from low readings;
-- write out-of-range-rows.csv containing the out-of-range rows and the
-  required classification;
-- produce the summary represented by:
-  OUT_OF_RANGE 7/240 (high=5, low=2)
-  when run against the fixed fixture;
-- use deterministic output and return exit code 0 on success.
+- read the supplied CSV input filename;
+- use the actual column names and constraints relevant to the user request;
+- perform the requested analysis rather than assuming a fixed schema or
+  operation;
+- print a concise deterministic result for analysis-only requests;
+- create one or more logical CSV/text outputs only when the user requests a
+  generated file, and declare every such output in outputFiles;
+- return exit code 0 on success.
 
 Required result metadata:
 - filename must be exactly task.py;
-- inputFiles must be exactly ["reactor-temperature-log.csv"];
-- outputFiles must be exactly ["out-of-range-rows.csv"];
-- allowedImports must contain only "csv" and "datetime".
+- inputFiles must contain the supplied CSV filename;
+- outputFiles must contain only logical output filenames created by the script;
+  it may be empty when the requested result is print-only;
+- allowedImports must contain only "csv", "datetime", and "math".
 
 Code restrictions:
 - source must contain only Python source; do not include Markdown fences,
   explanations, shell commands, or command-line arguments;
-- import only csv or datetime; do not use any other import;
+- import only csv, datetime, or math; do not use any other import;
 - do not use network access, subprocesses, shell execution, dynamic code
   evaluation, or environment-variable access;
-- access only the supplied input file and the required output file by their
-  fixed filenames; do not read or write any other path;
+- access only the supplied input file and declared output files by logical
+  filenames; do not read or write any other path;
 - do not delete, rename, or modify the input CSV;
 - do not embed a replacement copy of the CSV or hard-code the expected counts
   instead of calculating them;
+- do not use command-line arguments; the runner provides the logical input
+  filename directly;
 - do not create additional files;
 - do not claim successful execution or output contents beyond the expected
-  result description.
+  result description;
+- safely handle initial values, types, and comparisons: never compare variables
+  against None with relational operators (<, >, <=, >=); check if None first
+  (e.g. `if max_val is None or val > max_val:`) or collect values in lists and
+  use min()/max(); handle missing or empty fields safely.
 
 The backend and sandbox validate imports, paths, output files, timeout,
 network isolation, exit code, and actual execution results. The model must
 return only the JSON object above with no extra fields or commentary.
 ```
 
-## Fixed Flow B expected result
+## CSV task result
 
-The fixed input is `reactor-temperature-log.csv`. A valid generated script
-must identify 7 out-of-range readings among 240 rows, with 5 high readings and
-2 low readings, and write `out-of-range-rows.csv`.
-
-The expected result description must include:
-
-```text
-OUT_OF_RANGE 7/240 (high=5, low=2)
-```
-
-The exact output-row values and CSV formatting come from the fixed fixture;
-they must not be invented in the prompt or by the model.
+The expected result description must describe the requested operation without
+inventing values that were not present in the input.
 
 ## Validation and failure cases
 
 Reject the model response if it is not one JSON object, contains unknown
 fields, omits a required field, uses a filename other than `task.py`, names
-an unapproved import, names an unapproved input or output file, includes
+an unsafe import, names an invalid input or output file, includes
 non-Python text in `source`, hard-codes the expected result instead of reading
 the CSV, or requests network, shell, subprocess, dynamic-code, or unrestricted
 filesystem access.
 
 After validation, the backend must execute the source in the sandbox and
-compare the actual `PythonExecutionResult` and generated output against the
-fixed expected result. The model's `expectedResult` is a description for
-comparison; it is not evidence that the script was executed.
+verify its exit status and declared output files. The model's `expectedResult`
+is a description for the user; it is not evidence that the script executed.

@@ -1,179 +1,31 @@
-# Demo Requirements (Locked)
+# Demo Requirements
 
-Locked 2026-09-03 for the MVP build (TASKS.md 1a, owner: Supreet). Sources:
-`PRODUCT.md`, `PS.md`, `TASKS.md`, `docs/architecture/`. This is the one
-canonical description of the two fixed demos; every workstream builds toward
-exactly these inputs, outputs, screens, and evidence.
+The canonical SIH 2026 rehearsal plan is [`DEMO.md`](../DEMO.md). It defines
+all three fixed flows, user prompts, visible agent steps, routing changes,
+assets, expected outputs, failure behavior, and sovereignty evidence.
 
-## Fixed demo inputs
+## Acceptance bar
 
-Fixtures live in `demo-fixtures/` in the application repo and are installed
-into the offline demo bundle before the air-gapped rehearsal. The SOP and
-template below are also seed entries of the Chroma corpus (task 3b).
+- Flow A processes the two-report scanned bundle, preserves the handwritten
+  annotation as evidence, applies SOP-114, and produces a cited approval note.
+- Flow B repairs the broken vendor-log parser, observes a real sandbox failure,
+  self-corrects, and produces a verified output file.
+- Flow C identifies both deliberate drawing/specification mismatches, cites
+  SOP-220, and produces a corrective-action note without claiming approval.
+- All flows use fixed assets under `demo/flow_a`, `demo/flow_b`, and
+  `demo/flow_c`.
+- All flows visibly show automatic routing, a streamed plan, tool execution,
+  and the independent sovereignty monitor with zero external requests plus a
+  recorded blocked attempt.
 
-| File | Used by | Description |
-| --- | --- | --- |
-| `demo-fixtures/flow-a/inspection-report-E201.pdf` | Flow A | Two-page clean typed scan: "Heat Exchanger E-201 Tube Bundle Inspection Report", fixed report ID/date, unit R-100 |
-| `demo-fixtures/flow-a/sop-114-pressure-equipment-inspection.md` | Flow A corpus | SOP-114 "Pressure Equipment Inspection and Approval" with stable section IDs, including §3.2 approval criteria |
-| `demo-fixtures/flow-a/approval-note-template-TPL-012.md` | Flow A corpus | Approval-note template with stable section IDs |
-| `demo-fixtures/flow-b/reactor-temperature-log.csv` | Flow B | 240 data rows, columns `timestamp,reactor_id,temperature_c`, reactor R-101, limits 250.0–350.0 °C |
+## Fixture preflight
 
-The CSV is generated to match the expected result table below exactly
-(task 8a). No improvised or live inputs are in the acceptance scope.
+Run:
 
-## Flow A — exact story (drop report → open approval note)
+```text
+python3 demo/validate_fixtures.py
+```
 
-1. Presenter drops `inspection-report-E201.pdf` into the file-drop area and
-   sends the fixed request: "Draft the approval note for this inspection
-   report."
-2. Transcript shows the run entering `classifying`; the routing badge changes
-   to `vision` — Qwen2.5-VL, reason "scanned report" (routing event 1).
-3. `ocr_extract` appears as tool call + result: extracted text summary and the
-   three findings with page references (table below).
-4. `search_knowledge` appears as tool call + result: top chunks include
-   `SOP-114 §3.2` and `TPL-012` excerpts.
-5. Routing badge changes to `draft` — Qwen3, reason "compose approval note"
-   (routing event 2).
-6. `draft_note` produces the note body citing `[SOP-114 §3.2]`.
-7. Confirmation dialog: "Generate the approval-note DOCX?" with Approve /
-   Reject. Unanswered confirmations expire after five minutes.
-8. On approve, `generate_docx` runs locally; the artifact pane shows the PDF
-   preview and the DOCX as downloadable. Run state reaches `completed`.
-9. Presenter opens the PDF preview and shows the "Grounding references"
-   section listing `SOP-114 §3.2`.
-10. The sovereignty panel is visible throughout: five approved LAN hosts,
-    external-request counter at 0, monitor-active indicator.
-
-Visible failure behaviour: rejecting (or expiring) the confirmation cancels
-the document action; a citation outside the retrieval set or a missing SOP
-match fails the run before any document is created. The full flow must
-complete within three minutes on finals hardware.
-
-## Flow B — exact story (drop CSV → verified result)
-
-1. Presenter drops `reactor-temperature-log.csv` with the fixed request:
-   "Flag out-of-range readings in this CSV and generate a summary
-   spreadsheet."
-2. Routing badge changes to `code` — Qwen2.5-Coder, reason "CSV/code intent"
-   (routing event).
-3. `read_file` inspects the attachment metadata; plan steps stream to the
-   transcript.
-4. `draft_code` returns `task.py`; the transcript shows the source or a
-   concise script summary. The code model never supplies shell arguments.
-5. Confirmation dialog: "Execute the generated Python?" with Approve /
-   Reject.
-6. On approve, the Bubblewrap runner executes `task.py` with read-only input,
-   run-scoped writable output, and no network, under a 60-second timeout.
-   The transcript shows exit code `0` and the stdout summary
-   `OUT_OF_RANGE 7/240 (high=5, low=2)`.
-7. `generate_xlsx` is proposed from the validated result rows; a second
-   confirmation dialog appears; on approve `out-of-range-summary.xlsx`
-   appears in the artifact pane.
-8. A final code-model step summarises the verified result using the actual
-   execution output and exit code. Run state reaches `completed`.
-
-A timeout or non-zero exit is presented as a failed verification, never as a
-successful calculation. The full flow must complete within two and a half
-minutes on finals hardware.
-
-## Locked expectations
-
-### Flow A — expected findings (OCR must extract all three)
-
-| # | Finding | Page |
-| --- | --- | --- |
-| 1 | Tube wall thickness at rows 12–15 measured 3.8–4.2 mm against the minimum allowable 4.6 mm | 1 |
-| 2 | Localised pitting corrosion at the shell inlet nozzle, maximum depth 1.8 mm | 1 |
-| 3 | Channel-head gasket degradation; replacement recommended | 2 |
-
-### Flow A — retrieval, citation, and note content
-
-- `search_knowledge` must return `SOP-114 §3.2` (approval criteria) and
-  `TPL-012` (approval-note template) within its top 5 chunks.
-- The note must cite `[SOP-114 §3.2]` at least once. The document worker
-  refuses to create the deliverable if any citation is absent from the run's
-  retrieval set.
-- The generated DOCX (`approval-note-E201.docx`) contains: an equipment header
-  (E-201, report reference), a findings summary using the extracted findings,
-  a recommendation of conditional clearance pending retubing of the affected
-  tubes, and a "Grounding references" section listing `SOP-114 §3.2`.
-
-### Flow A — required visible route changes
-
-| Order | Task type | Model id | Reason string |
-| --- | --- | --- | --- |
-| 1 | `vision` | `vision-qwen25vl` | scanned report |
-| 2 | `draft` | `draft-qwen3` | compose approval note |
-
-### Flow B — expected code result
-
-Expected out-of-range rows (the CSV fixture is generated to match exactly):
-
-| Timestamp (2026-08-20) | Reading (°C) | Direction |
-| --- | --- | --- |
-| 03:10 | 352.4 | high |
-| 03:20 | 354.1 | high |
-| 05:30 | 248.6 | low |
-| 09:40 | 351.8 | high |
-| 14:50 | 353.2 | high |
-| 17:20 | 249.3 | low |
-| 21:00 | 352.9 | high |
-
-- Script result: exit code `0`; stdout contains
-  `OUT_OF_RANGE 7/240 (high=5, low=2)`; flagged rows are written to the run's
-  output folder.
-- XLSX artifact: `out-of-range-summary.xlsx` with the seven flagged rows and
-  the summary count.
-
-### Flow B — required visible route change
-
-| Order | Task type | Model id | Reason string |
-| --- | --- | --- | --- |
-| 1 | `code` | `code-qwen25coder` | CSV/code intent |
-
-## Expected screens and evidence
-
-Screens (all visible during the demos, per TASKS 1c): chat/input with file
-drop, live agent transcript, routing badge(s), confirmation dialog(s),
-artifact preview pane, run status, and the always-visible sovereignty panel
-(five-host LAN allowlist, external-request counter at 0, monitor-active
-indicator).
-
-| Evidence | Flow | Form |
-| --- | --- | --- |
-| Cited DOCX | A | `data/runs/<run-id>/output/approval-note-E201.docx` with "Grounding references" |
-| PDF preview | A | derived locally from the DOCX; no fake preview on conversion failure |
-| Execution record | B | exit code 0 and capped stdout/stderr in the transcript and SQLite |
-| XLSX artifact | B | `data/runs/<run-id>/output/out-of-range-summary.xlsx` |
-| Confirmation audit | both | approve/reject decision with timestamp in SQLite |
-| Zero external egress | both | sovereignty panel plus independent monitor records |
-| Blocked-egress proof | infra | preconfigured outbound test blocked and recorded (tasks 10d/11b); never an application feature |
-
-Coverage of the finals Definition of Done (`PRODUCT.md` §10): Flow A covers
-auto-selection, the end-to-end agentic task, multimodal understanding, and the
-SOP citation; Flow B covers the code task type and the sandboxed, verified
-coding run; both flows run against the zero-external-request proof.
-
-## Deliberately out of scope for this build
-
-- Handwriting or general-purpose OCR — clean typed scans only.
-- PowerPoint generation.
-- Multi-user auth, roles, enterprise deployment/ops tooling.
-- Any knowledge base beyond the curated 10–30 document corpus.
-- Languages other than Python in the execution sandbox.
-- Editing generated artifacts in-app.
-- A general plugin framework — the model registry is config-only.
-- Any cloud fallback or internet-capable application feature.
-- The external network monitor/firewall as an application component — it is
-  independent infrastructure; the app only displays its active state.
-- Improvised, live, or user-chosen demo inputs — fixed fixtures only.
-
-## Change control
-
-These requirements are frozen. Any change to fixtures, expected findings,
-citations, expected code results, route reasons, or confirmation wording
-requires agreement from all three owners and a dated entry below.
-
-| Date | Change | Approved by |
-| --- | --- | --- |
-| 2026-09-03 | Initial lock | Supreet, Ayush, Sid |
+The validator checks all three flow bundles, deterministic output oracles,
+citations, expected failure/repair behavior, sovereignty proof records, and
+the manifest hashes.

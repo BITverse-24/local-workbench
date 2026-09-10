@@ -20,6 +20,7 @@ export const IPC_RUN = {
   GET_HEALTH: "workbench:getHealth",
   RUN_EVENT: "workbench:runEvent",
   OPEN_ARTIFACT: "workbench:openArtifact",
+  SAVE_ARTIFACT: "workbench:saveArtifact",
 } as const;
 
 export type ChatChannel = (typeof IPC_CHAT)[keyof typeof IPC_CHAT];

@@ -7,8 +7,8 @@ import {
 } from "../validation";
 import successfulCode from "../mock-responses/successful-code-generation.json";
 import malformedCode from "../mock-responses/malformed-code-response.json";
-import expectedSummary from "../../demo-fixtures/flow-b/expected-out-of-range-summary.json";
-import expectedExecution from "../../demo-fixtures/flow-b/expected-python-execution.json";
+import expectedSummary from "../../demo/flow_b/expected-out-of-range-summary.json";
+import expectedExecution from "../../demo/flow_b/expected-python-execution.json";
 
 describe("code contract (Flow B generation)", () => {
   it("accepts the safe code mock and pins the Flow B summary counts", () => {
@@ -55,7 +55,7 @@ describe("code contract (Flow B generation)", () => {
 
   it("golden Python file stays the safe reference for the fixed CSV task", () => {
     const golden = readFileSync(
-      path.resolve("demo-fixtures/flow-b/expected-task.py"),
+      path.resolve("demo/flow_b/expected-task.py"),
       "utf8",
     );
     expect(golden).toContain("reactor-temperature-log.csv");
