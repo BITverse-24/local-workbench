@@ -73,6 +73,32 @@ function applySchema(db: Db): void {
   db.exec(schema);
 }
 
+function migrateArtifactsSchema(db: Db): void {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='artifacts'").get() as
+    | { sql: string }
+    | undefined;
+  if (!row?.sql) return;
+  if (!row.sql.includes("'txt'") || !row.sql.includes("'md'")) {
+    db.pragma("foreign_keys = OFF");
+    db.exec(`
+      CREATE TABLE artifacts_new (
+        artifact_id   TEXT PRIMARY KEY,
+        run_id        TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        kind          TEXT NOT NULL CHECK (kind IN ('docx','pdf','xlsx','csv','txt','json','md')),
+        filename      TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        size_bytes    INTEGER NOT NULL DEFAULT 0,
+        created_at    TEXT NOT NULL
+      );
+      INSERT INTO artifacts_new (artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at)
+        SELECT artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at FROM artifacts;
+      DROP TABLE artifacts;
+      ALTER TABLE artifacts_new RENAME TO artifacts;
+    `);
+    db.pragma("foreign_keys = ON");
+  }
+}
+
 function seedDefaults(db: Db): void {
   const now = new Date().toISOString();
   const seedSetting = db.prepare(
@@ -101,6 +127,7 @@ export function initDb(dbPath?: string): Db {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   applySchema(db);
+  migrateArtifactsSchema(db);
   seedDefaults(db);
   instance = db;
   instancePath = resolved;

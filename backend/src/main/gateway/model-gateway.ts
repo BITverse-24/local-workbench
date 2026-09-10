@@ -7,6 +7,14 @@ import { loadRegistry, resolveModel } from "./registry.js";
 import { normalizeResponse, parseProviderContent, providerError } from "./normalizer.js";
 import { absoluteDataPath, createRunDirectories, runRoot } from "../run/filesystem.js";
 import { assertUploadableSize, extractPdfText, prepareImage, renderPdfToImages } from "../run/images.js";
+import {
+  logGatewayError,
+  logGeneratedCode,
+  logModelRequest,
+  logModelResponse,
+  logModelSummary,
+  logVisionFindings,
+} from "../logger.js";
 
 function gatewayConsole(level: "log" | "warn" | "error", request: { requestId: string; runId: string; taskType: string; modelId: string }, message: string, extra?: unknown) {
   const prefix = `[model-gateway:${request.taskType}:${request.modelId}:${request.requestId.slice(0, 8)}]`;
@@ -183,7 +191,15 @@ export class ModelGateway implements ModelClient {
       visionPartsCount: Array.isArray(visionParts) ? visionParts.length : 0,
       visionPartTypes: Array.isArray(visionParts) ? visionParts.map((p) => (p as { type: string }).type) : [],
     };
-    gatewayConsole("log", request, `→ ${request.taskType} ${model.model} max_tokens=${maxTokens}`, outboundLog);
+    logModelRequest({
+      taskType: request.taskType,
+      modelId: request.modelId,
+      providerModel: model.model,
+      requestId: request.requestId,
+      maxTokens,
+      temperature: request.temperature ?? 0.2,
+      userPromptPreview: typeof userContent === "string" ? userContent : "[multipart vision]",
+    });
     persistGatewayTrace(request.runId, request.requestId, { ...outboundLog, bodyPreview: body.slice(0, 4000), bodyChars: body.length });
     let rawText = "";
     let envelope: unknown = null;
@@ -197,7 +213,13 @@ export class ModelGateway implements ModelClient {
       const response = await this.transport.request(`${model.baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body }, Math.min(request.timeoutMs, model.requestTimeoutMs));
       const latencyMs = Date.now() - t0;
       try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
-      gatewayConsole(response.status < 200 || response.status >= 300 ? "error" : "log", request, `← HTTP ${response.status} in ${latencyMs}ms, ${rawText.length} chars`, rawText.slice(0, 4000));
+      logModelResponse({
+        taskType: request.taskType,
+        requestId: request.requestId,
+        status: response.status,
+        latencyMs,
+        chars: rawText.length,
+      });
       persistGatewayTrace(request.runId, request.requestId, { phase: "http_response", taskType: request.taskType, status: response.status, latencyMs, rawTextChars: rawText.length, rawText, bodyChars: body.length });
 
       if (response.status < 200 || response.status >= 300) {
@@ -209,7 +231,7 @@ export class ModelGateway implements ModelClient {
       try {
         envelope = JSON.parse(rawText) as unknown as { choices?: Array<{ message?: { content?: unknown; finish_reason?: string }; finish_reason?: string }>; usage?: unknown; id?: string; model?: string };
       } catch (e) {
-        gatewayConsole("error", request, "failed to parse envelope JSON", rawText.slice(0, 2000));
+        logGatewayError(request, "failed to parse envelope JSON", rawText.slice(0, 500));
         persistGatewayTrace(request.runId, request.requestId, { phase: "envelope_parse_error", taskType: request.taskType, error: e instanceof Error ? e.message : String(e), rawText });
         throw new Error(`provider returned non-JSON envelope: ${(e instanceof Error ? e.message : String(e)).slice(0, 500)} — raw: ${rawText.slice(0, 1000)}`);
       }
@@ -217,41 +239,51 @@ export class ModelGateway implements ModelClient {
       extractedContent = envTyped.choices?.[0]?.message?.content;
       const finishReason = (envTyped.choices?.[0] as { finish_reason?: string })?.finish_reason ?? (envTyped.choices?.[0]?.message as { finish_reason?: string } | undefined)?.finish_reason;
       const usage = envTyped["usage" as keyof typeof envTyped];
-      gatewayConsole("log", request, `envelope parsed: finish_reason=${finishReason ?? "n/a"} contentType=${typeof extractedContent} contentChars=${typeof extractedContent === "string" ? extractedContent.length : JSON.stringify(extractedContent ?? "").length}`, { finishReason, usage, envelopePreview: JSON.stringify(envelope).slice(0, 4000) });
       persistGatewayTrace(request.runId, request.requestId, { phase: "envelope", taskType: request.taskType, envelope, finishReason, usage, extractedContent, extractedContentChars: typeof extractedContent === "string" ? extractedContent.length : 0 });
 
-      // Log raw content string exactly as model returned it (with truncation preview for console, full in file)
-      if (typeof extractedContent === "string") {
-        gatewayConsole("log", request, `model content raw (${extractedContent.length} chars)`, extractedContent.slice(0, 4000));
-      } else {
-        gatewayConsole("warn", request, "model content is not a string (unexpected)", extractedContent);
-      }
       persistGatewayTrace(request.runId, request.requestId, { phase: "provider_content_raw", taskType: request.taskType, extractedContent });
 
       try {
         parsedJson = parseProviderContent(extractedContent);
       } catch (e) {
-        gatewayConsole("error", request, "parseProviderContent failed (empty/invalid JSON)", { error: e instanceof Error ? e.message : String(e), extractedContentPreview: typeof extractedContent === "string" ? (extractedContent as string).slice(0, 4000) : String(extractedContent).slice(0, 4000) });
+        logGatewayError(request, "parseProviderContent failed (empty/invalid JSON)", e instanceof Error ? e.message : String(e));
         persistGatewayTrace(request.runId, request.requestId, { phase: "parse_error", taskType: request.taskType, error: e instanceof Error ? e.message : String(e), extractedContent, rawText, envelope });
         throw e;
       }
-      gatewayConsole("log", request, `parsed JSON keys=${parsedJson && typeof parsedJson === "object" ? Object.keys(parsedJson as object).join(",") : typeof parsedJson}`, JSON.stringify(parsedJson).slice(0, 6000));
       persistGatewayTrace(request.runId, request.requestId, { phase: "parsed_json", taskType: request.taskType, parsedJson });
 
       let normalized: ModelResponse;
       try {
         normalized = normalizeResponse(parsedJson, request);
       } catch (e) {
-        gatewayConsole("error", request, "normalizeResponse failed", { error: e instanceof Error ? e.message : String(e), parsedJsonPreview: JSON.stringify(parsedJson).slice(0, 4000) });
+        logGatewayError(request, "normalizeResponse failed", e instanceof Error ? e.message : String(e));
         persistGatewayTrace(request.runId, request.requestId, { phase: "normalize_error", taskType: request.taskType, error: e instanceof Error ? e.message : String(e), parsedJson, extractedContent, rawText, envelope });
         throw e;
       }
-      gatewayConsole("log", request, `normalized OK result keys=${normalized.result && typeof normalized.result === "object" ? Object.keys(normalized.result as object).join(",") : typeof normalized.result}`, JSON.stringify(normalized.result).slice(0, 6000));
+
+      if (parsedJson && typeof parsedJson === "object") {
+        const pj = parsedJson as Record<string, unknown>;
+        if (typeof pj["source"] === "string" && typeof pj["filename"] === "string") {
+          logGeneratedCode({
+            filename: String(pj["filename"]),
+            source: String(pj["source"]),
+            outputMode: typeof pj["outputMode"] === "string" ? pj["outputMode"] : undefined,
+            artifactKind: typeof pj["artifactKind"] === "string" ? pj["artifactKind"] : undefined,
+            artifactFilename: typeof pj["artifactFilename"] === "string" ? pj["artifactFilename"] : undefined,
+            expectedResult: typeof pj["expectedResult"] === "string" ? pj["expectedResult"] : undefined,
+          });
+        } else if (typeof pj["summary"] === "string" || typeof pj["text"] === "string") {
+          logModelSummary((pj["summary"] as string) || (pj["text"] as string), typeof pj["verified"] === "boolean" ? pj["verified"] : undefined);
+        } else if (Array.isArray(pj["findings"])) {
+          logVisionFindings(pj["findings"] as Array<{ title: string; value?: string; confidence?: string }>);
+        }
+      }
+
       persistGatewayTrace(request.runId, request.requestId, { phase: "normalized", taskType: request.taskType, latencyMs, finishReason, usage, result: normalized.result, resultChars: JSON.stringify(normalized.result).length, envelope, rawText, extractedContent, parsedJson });
       return { ok: true, value: normalized };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      gatewayConsole("error", request, `gateway failed: ${msg}`, { rawTextPreview: rawText.slice(0, 2000), extractedContentPreview: typeof extractedContent === "string" ? (extractedContent as string).slice(0, 2000) : extractedContent, parsedJsonPreview: parsedJson ? JSON.stringify(parsedJson).slice(0, 2000) : null });
+      logGatewayError(request, `gateway failed: ${msg}`);
       persistGatewayTrace(request.runId, request.requestId, { phase: "gateway_error", taskType: request.taskType, error: msg, stack: error instanceof Error ? error.stack?.slice(0, 3000) : undefined, rawText, envelope, extractedContent, parsedJson });
       return { ok: false, error: providerError(error, request) };
     }

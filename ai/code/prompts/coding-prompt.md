@@ -17,7 +17,7 @@ task. Return only one valid JSON object matching this exact shape:
   "outputFiles": string[],
   "allowedImports": string[],
   "outputMode": "chat" | "artifact" | "chat_and_artifact",
-  "artifactKind": "xlsx" | "csv" | "txt" | "json" (only when outputMode includes artifact),
+  "artifactKind": "xlsx" | "csv" | "txt" | "json" | "md" (only when outputMode includes artifact),
   "artifactFilename": string (only when outputMode includes artifact),
   "artifactRationale": string (only when outputMode includes artifact)
 }
@@ -35,7 +35,7 @@ Output intent rules:
 - Use outputMode "artifact" only when the user explicitly requests a file or
   export. Use "chat_and_artifact" when the user requests both an explanation
   and a file.
-- For CSV work, artifactKind must be "xlsx", "csv", "txt" or "json" and artifactFilename
+- For CSV work, artifactKind must be "xlsx", "csv", "txt", "json", or "md" and artifactFilename
   must be a safe, descriptive filename with the matching extension.
 - Never infer a file request solely from the fact that an attachment exists.
 
@@ -71,7 +71,11 @@ Code restrictions:
   filename directly;
 - do not create additional files;
 - do not claim successful execution or output contents beyond the expected
-  result description.
+  result description;
+- safely handle initial values, types, and comparisons: never compare variables
+  against None with relational operators (<, >, <=, >=); check if None first
+  (e.g. `if max_val is None or val > max_val:`) or collect values in lists and
+  use min()/max(); handle missing or empty fields safely.
 
 The backend and sandbox validate imports, paths, output files, timeout,
 network isolation, exit code, and actual execution results. The model must

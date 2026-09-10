@@ -52,8 +52,13 @@ function waitForEvent(events: RunEvent[], type: RunEvent["type"]): Promise<RunEv
 }
 
 function waitForState(events: RunEvent[], state: Extract<RunEvent, { type: "run_state" }>["state"]): Promise<Extract<RunEvent, { type: "run_state" }>> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const poll = () => {
+      const errEvent = events.find((candidate) => candidate.type === "error");
+      if (errEvent && state !== "failed") {
+        reject(new Error(`Run failed with error event: ${(errEvent as { message?: string }).message}`));
+        return;
+      }
       const event = events.find((candidate): candidate is Extract<RunEvent, { type: "run_state" }> => candidate.type === "run_state" && candidate.state === state);
       if (event) resolve(event);
       else setTimeout(poll, 5);
@@ -177,4 +182,265 @@ describe("Flow B end-to-end", () => {
     expect(events.some((event) => event.type === "assistant_message" && event.text === "STDDEV 5.0000")).toBe(true);
     expect(events.some((event) => event.type === "error")).toBe(false);
   });
+
+  it("generates and registers a txt artifact when requested without prompting for xlsx", async () => {
+    vi.mocked(pythonModule.executePython).mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: "Summary saved to summary.txt",
+      stderr: "",
+      timedOut: false,
+      durationMs: 40,
+      outputFiles: ["summary.txt"],
+    });
+    const events: RunEvent[] = [];
+    const source = [
+      "with open('summary.txt', 'w') as f:",
+      "    f.write('Reactor Summary Report')",
+      "print('Summary saved to summary.txt')",
+    ].join("\n");
+    const gateway = {
+      async complete(request: ModelRequest) {
+        if (request.responseFormat === "code-result") {
+          return response(request, {
+            filename: "task.py",
+            source,
+            expectedResult: "summary.txt contains detailed summary",
+            inputFiles: ["input.csv"],
+            outputFiles: ["summary.txt"],
+            allowedImports: ["csv"],
+            outputMode: "artifact",
+            artifactKind: "txt",
+            artifactFilename: "summary.txt",
+            artifactRationale: "User explicitly requested summary.txt",
+          });
+        }
+        return response(request, { summary: "Summary written to summary.txt", verified: true });
+      },
+      async health() { return []; },
+    } as unknown as ModelGateway;
+    const manager = new RunManager(gateway, (event) => events.push(event));
+    const csv = "name,value\na,10\nb,20\n";
+    const registered = manager.registerAttachment({ filename: "input.csv", mediaType: "text/csv", sizeBytes: Buffer.byteLength(csv), base64OrBuffer: Buffer.from(csv) });
+    const started = await manager.start({
+      userText: "Write a detailed summary in summary.txt (make a file)",
+      attachmentToken: registered.attachment.attachmentId,
+      runId: registered.runId,
+    });
+
+    const executeConfirmation = await waitForEvent(events, "confirmation_required") as Extract<RunEvent, { type: "confirmation_required" }>;
+    expect(executeConfirmation.action.kind).toBe("execute_python");
+    await manager.confirm({ runId: started.runId, actionId: executeConfirmation.action.actionId, approved: true });
+
+    await waitForState(events, "completed");
+
+    // Must NOT have prompted for XLSX generation
+    const confirmations = events.filter((e) => e.type === "confirmation_required");
+    expect(confirmations.every((c) => (c as Extract<RunEvent, { type: "confirmation_required" }>).action.kind !== "generate_xlsx")).toBe(true);
+
+    // Must have emitted artifact_ready for summary.txt
+    const artifactEvent = events.find((e): e is Extract<RunEvent, { type: "artifact_ready" }> => e.type === "artifact_ready");
+    expect(artifactEvent).toBeDefined();
+    expect(artifactEvent?.artifact.filename).toBe("summary.txt");
+    expect(artifactEvent?.artifact.kind).toBe("txt");
+    expect(events.some((e) => e.type === "error")).toBe(false);
+  });
+
+  it("generates and registers a csv artifact when requested without prompting for xlsx", async () => {
+    vi.mocked(pythonModule.executePython).mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: "Out of range rows saved",
+      stderr: "",
+      timedOut: false,
+      durationMs: 40,
+      outputFiles: ["out-of-range.csv"],
+    });
+    const events: RunEvent[] = [];
+    const source = [
+      "with open('out-of-range.csv', 'w') as f:",
+      "    f.write('id,temp\\n1,105\\n')",
+      "print('Out of range rows saved')",
+    ].join("\n");
+    const gateway = {
+      async complete(request: ModelRequest) {
+        if (request.responseFormat === "code-result") {
+          return response(request, {
+            filename: "task.py",
+            source,
+            expectedResult: "out-of-range.csv contains flagged rows",
+            inputFiles: ["input.csv"],
+            outputFiles: ["out-of-range.csv"],
+            allowedImports: ["csv"],
+            outputMode: "artifact",
+            artifactKind: "csv",
+            artifactFilename: "out-of-range.csv",
+            artifactRationale: "User explicitly requested out-of-range.csv",
+          });
+        }
+        return response(request, { summary: "Flagged rows saved to out-of-range.csv", verified: true });
+      },
+      async health() { return []; },
+    } as unknown as ModelGateway;
+    const manager = new RunManager(gateway, (event) => events.push(event));
+    const csv = "name,value\na,10\nb,20\n";
+    const registered = manager.registerAttachment({ filename: "input.csv", mediaType: "text/csv", sizeBytes: Buffer.byteLength(csv), base64OrBuffer: Buffer.from(csv) });
+    const started = await manager.start({
+      userText: "Export out-of-range rows to out-of-range.csv",
+      attachmentToken: registered.attachment.attachmentId,
+      runId: registered.runId,
+    });
+
+    const executeConfirmation = await waitForEvent(events, "confirmation_required") as Extract<RunEvent, { type: "confirmation_required" }>;
+    expect(executeConfirmation.action.kind).toBe("execute_python");
+    await manager.confirm({ runId: started.runId, actionId: executeConfirmation.action.actionId, approved: true });
+
+    await waitForState(events, "completed");
+
+    // Must NOT have prompted for XLSX generation
+    const confirmations = events.filter((e) => e.type === "confirmation_required");
+    expect(confirmations.every((c) => (c as Extract<RunEvent, { type: "confirmation_required" }>).action.kind !== "generate_xlsx")).toBe(true);
+
+    // Must have emitted artifact_ready for out-of-range.csv
+    const artifactEvent = events.find((e): e is Extract<RunEvent, { type: "artifact_ready" }> => e.type === "artifact_ready");
+    expect(artifactEvent).toBeDefined();
+    expect(artifactEvent?.artifact.filename).toBe("out-of-range.csv");
+    expect(artifactEvent?.artifact.kind).toBe("csv");
+    expect(events.some((e) => e.type === "error")).toBe(false);
+  });
+
+  it("generates and registers a markdown artifact when requested without prompting for xlsx", async () => {
+    vi.mocked(pythonModule.executePython).mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: "Markdown report generated",
+      stderr: "",
+      timedOut: false,
+      durationMs: 40,
+      outputFiles: ["report.md"],
+    });
+    const events: RunEvent[] = [];
+    const source = [
+      "with open('report.md', 'w') as f:",
+      "    f.write('# Report\\n\\nAll good.')",
+      "print('Markdown report generated')",
+    ].join("\n");
+    const gateway = {
+      async complete(request: ModelRequest) {
+        if (request.responseFormat === "code-result") {
+          return response(request, {
+            filename: "task.py",
+            source,
+            expectedResult: "report.md contains formatted summary",
+            inputFiles: ["input.csv"],
+            outputFiles: ["report.md"],
+            allowedImports: ["csv"],
+            outputMode: "artifact",
+            artifactKind: "md",
+            artifactFilename: "report.md",
+            artifactRationale: "User explicitly requested report.md",
+          });
+        }
+        return response(request, { summary: "Report written to report.md", verified: true });
+      },
+      async health() { return []; },
+    } as unknown as ModelGateway;
+    const manager = new RunManager(gateway, (event) => events.push(event));
+    const csv = "name,value\na,10\nb,20\n";
+    const registered = manager.registerAttachment({ filename: "input.csv", mediaType: "text/csv", sizeBytes: Buffer.byteLength(csv), base64OrBuffer: Buffer.from(csv) });
+    const started = await manager.start({
+      userText: "Write a detailed report in report.md (export file)",
+      attachmentToken: registered.attachment.attachmentId,
+      runId: registered.runId,
+    });
+
+    const executeConfirmation = await waitForEvent(events, "confirmation_required") as Extract<RunEvent, { type: "confirmation_required" }>;
+    expect(executeConfirmation.action.kind).toBe("execute_python");
+    await manager.confirm({ runId: started.runId, actionId: executeConfirmation.action.actionId, approved: true });
+
+    await waitForState(events, "completed");
+
+    // Must NOT have prompted for XLSX generation
+    const confirmations = events.filter((e) => e.type === "confirmation_required");
+    expect(confirmations.every((c) => (c as Extract<RunEvent, { type: "confirmation_required" }>).action.kind !== "generate_xlsx")).toBe(true);
+
+    // Must have emitted artifact_ready for report.md
+    const artifactEvent = events.find((e): e is Extract<RunEvent, { type: "artifact_ready" }> => e.type === "artifact_ready");
+    expect(artifactEvent).toBeDefined();
+    expect(artifactEvent?.artifact.filename).toBe("report.md");
+    expect(artifactEvent?.artifact.kind).toBe("md");
+    expect(events.some((e) => e.type === "error")).toBe(false);
+  });
+
+  it("recovers and completes when initial Python execution fails with an error", async () => {
+    // 1st attempt fails with TypeError, 2nd attempt succeeds
+    vi.mocked(pythonModule.executePython)
+      .mockResolvedValueOnce({
+        exitCode: 1,
+        stdout: "",
+        stderr: "TypeError: '>' not supported between instances of 'str' and 'NoneType'",
+        timedOut: false,
+        durationMs: 30,
+        outputFiles: [],
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "Data Summary: Total readings: 240, Avg: 25.4 °C",
+        stderr: "",
+        timedOut: false,
+        durationMs: 40,
+        outputFiles: [],
+      });
+
+    const events: RunEvent[] = [];
+    let codeCalls = 0;
+    const gateway = {
+      async complete(request: ModelRequest) {
+        if (request.responseFormat === "code-result") {
+          codeCalls++;
+          if (codeCalls === 1) {
+            // First code attempt with bug
+            return response(request, {
+              filename: "task.py",
+              source: "ts = '2024-01-01'\nlast = None\nif ts > last: pass",
+              expectedResult: "Summary",
+              inputFiles: ["input.csv"],
+              outputFiles: [],
+              allowedImports: ["csv"],
+              outputMode: "chat",
+            });
+          }
+          // Repaired code
+          expect(request.userPrompt).toContain("PREVIOUS SCRIPT ATTEMPT FAILED");
+          expect(request.userPrompt).toContain("TypeError");
+          return response(request, {
+            filename: "task.py",
+            source: "ts = '2024-01-01'\nlast = None\nif last is None or ts > last: last = ts\nprint('Data Summary: Total readings: 240, Avg: 25.4 °C')",
+            expectedResult: "Summary",
+            inputFiles: ["input.csv"],
+            outputFiles: [],
+            allowedImports: ["csv"],
+            outputMode: "chat",
+          });
+        }
+        return response(request, { summary: "Data Summary: Total readings: 240, Avg: 25.4 °C", verified: true });
+      },
+      async health() { return []; },
+    } as unknown as ModelGateway;
+
+    const manager = new RunManager(gateway, (event) => events.push(event));
+    const csv = "timestamp,temperature_c\n2024-01-01,25.4\n";
+    const registered = manager.registerAttachment({ filename: "input.csv", mediaType: "text/csv", sizeBytes: Buffer.byteLength(csv), base64OrBuffer: Buffer.from(csv) });
+    await manager.start({
+      userText: "Summarise this CSV",
+      attachmentToken: registered.attachment.attachmentId,
+      runId: registered.runId,
+    });
+
+    await waitForState(events, "completed");
+
+    expect(codeCalls).toBe(2);
+    expect(events.some((e) => e.type === "tool_call" && e.summary.includes("repairing Python script"))).toBe(true);
+    expect(events.some((e) => e.type === "assistant_message" && e.text.includes("Total readings: 240"))).toBe(true);
+    expect(events.some((e) => e.type === "error")).toBe(false);
+  });
 });
+
+

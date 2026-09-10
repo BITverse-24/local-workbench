@@ -5,6 +5,7 @@ import { createChat } from "../persistence/chats.js";
 import { addMessage } from "../persistence/messages.js";
 import { getDb } from "../persistence/db.js";
 import type {
+  ArtifactKind,
   AttachmentReference,
   ChatModelRequest,
   CodeModelRequest,
@@ -20,6 +21,7 @@ import { CODE_SYSTEM_PROMPT } from "./prompts.js";
 import { createRun, getState, listRuns, recordError, recordRouting, transition } from "./store.js";
 import {
   absoluteDataPath,
+  artifactRef,
   createRunDirectories,
   registerAttachment as saveAttachment,
   writeRunFile,
@@ -28,6 +30,22 @@ import { createConfirmation, cancelPending, decide } from "../confirmation/store
 import { routeTask } from "../router/deterministic-router.js";
 import { executePython } from "../tools/python.js";
 import { generateXlsx } from "../tools/artifacts.js";
+import { logArtifactReady, logPythonExecution, logRunTransition, logScriptRepair } from "../logger.js";
+
+function inferArtifactKind(filename: string, declaredKind?: string): ArtifactKind {
+  if (declaredKind && ["docx", "pdf", "xlsx", "csv", "txt", "json", "md"].includes(declaredKind)) {
+    return declaredKind as ArtifactKind;
+  }
+  const ext = path.extname(filename).toLowerCase().replace(/^\./, "");
+  if (["xlsx", "xls"].includes(ext)) return "xlsx";
+  if (["csv"].includes(ext)) return "csv";
+  if (["txt"].includes(ext)) return "txt";
+  if (["json"].includes(ext)) return "json";
+  if (["md", "markdown"].includes(ext)) return "md";
+  if (["docx", "doc"].includes(ext)) return "docx";
+  if (["pdf"].includes(ext)) return "pdf";
+  return "txt";
+}
 
 type AttachmentRow = AttachmentReference & { runId: string; chatId: string };
 type Continuation = () => Promise<void>;
@@ -198,6 +216,7 @@ export class RunManager {
   }
   private state(runId: string, state: RunState) {
     transition(runId, state);
+    logRunTransition(runId, state);
     this.emit({ type: "run_state", runId, state });
   }
   private route(runId: string, text: string, attachment?: AttachmentRow) {
@@ -289,15 +308,72 @@ export class RunManager {
     if (!code.ok) throw new Error(code.error.message);
     writeRunFile(runId, "intermediate", "task.py", code.value.source);
     const executePythonContinuation = async () => {
-      const logicalInputFiles = code.value.inputFiles;
-      // Attachments are stored as <uuid>-<display filename> on disk. The
-      // generated script uses its logical input filename, so map that name
-      // to the actual run-local stored basename.
+      let currentCode = code.value;
       const storedAttachmentName = path.basename(attachment.relativePath);
-      const inputAliases = logicalInputFiles.length === 1
-        ? [{ logical: logicalInputFiles[0], source: storedAttachmentName }]
-        : [];
-      const execution = await executePython(runId, code.value.source, logicalInputFiles, inputAliases);
+      const getAliases = (inputs: string[]) =>
+        inputs.length === 1 ? [{ logical: inputs[0], source: storedAttachmentName }] : [];
+
+      let execution = await executePython(runId, currentCode.source, currentCode.inputFiles, getAliases(currentCode.inputFiles));
+      logPythonExecution({
+        exitCode: execution.exitCode,
+        durationMs: execution.durationMs,
+        inputFiles: currentCode.inputFiles,
+        outputFiles: execution.outputFiles,
+        stdout: execution.stdout,
+        stderr: execution.stderr,
+        timedOut: execution.timedOut,
+      });
+
+      const MAX_REPAIRS = 2;
+      let repairs = 0;
+
+      while (repairs < MAX_REPAIRS) {
+        const missingOutputs = currentCode.outputFiles.filter((file) => !execution.outputFiles.includes(file));
+        const failed = execution.exitCode !== 0 || execution.timedOut || missingOutputs.length > 0;
+        if (!failed) break;
+
+        repairs++;
+        const errorDetail = execution.stderr || execution.stdout || (missingOutputs.length ? `missing output files: ${missingOutputs.join(", ")}` : "execution failed");
+        logScriptRepair(repairs, MAX_REPAIRS, errorDetail);
+        this.tool(runId, "draft_code", `repairing Python script (attempt ${repairs}): ${errorDetail.slice(0, 100)}`);
+
+        const repairPrompt = `${modelPrompt}\n\n[PREVIOUS SCRIPT ATTEMPT FAILED]\nThe previous script failed during execution with exit code ${execution.exitCode}:\n${errorDetail.slice(0, 1500)}\n\nPrevious source:\n\`\`\`python\n${currentCode.source}\n\`\`\`\n\nPlease fix the error in task.py (e.g. check for None comparisons such as 'val > None', missing variables, incorrect keys, or unhandled types) and return the corrected JSON object.\n[/PREVIOUS SCRIPT ATTEMPT FAILED]`;
+        const repairBase = requestBase(runId, "code", "code-qwen25coder", "code-result", CODE_SYSTEM_PROMPT, repairPrompt, 60000, 4096);
+        const repairRequest: CodeModelRequest = {
+          ...repairBase,
+          taskType: "code",
+          modelId: "code-qwen25coder",
+          responseFormat: "code-result",
+          task: text,
+          inputFile: {
+            attachmentId: attachment.attachmentId,
+            filename: attachment.filename,
+            mediaType: attachment.mediaType,
+            rowCount: rows,
+          },
+          allowedLanguage: "python",
+          executionRules: ["task.py only", "no network", "no shell", "read input and write output only"],
+        };
+
+        const repaired = await this.codeModel.generate(repairRequest);
+        if (!repaired.ok) break;
+
+        currentCode = repaired.value;
+        writeRunFile(runId, "intermediate", "task.py", currentCode.source, true);
+        this.result(runId, "draft_code", `script repaired (attempt ${repairs})`);
+
+        execution = await executePython(runId, currentCode.source, currentCode.inputFiles, getAliases(currentCode.inputFiles));
+        logPythonExecution({
+          exitCode: execution.exitCode,
+          durationMs: execution.durationMs,
+          inputFiles: currentCode.inputFiles,
+          outputFiles: execution.outputFiles,
+          stdout: execution.stdout,
+          stderr: execution.stderr,
+          timedOut: execution.timedOut,
+        });
+      }
+
       getDb()
         .prepare(
           "INSERT OR REPLACE INTO execution_results(run_id, exit_code, timed_out, duration_ms, stdout_capped, stderr_capped, output_files) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -311,12 +387,12 @@ export class RunManager {
           execution.stderr,
           JSON.stringify(execution.outputFiles),
         );
-      const missingOutputs = code.value.outputFiles.filter((file) => !execution.outputFiles.includes(file));
+      const finalMissingOutputs = currentCode.outputFiles.filter((file) => !execution.outputFiles.includes(file));
       if (execution.exitCode !== 0 || execution.timedOut) {
         const detail = execution.stderr || execution.stdout || "no execution output";
         throw new Error(`Python execution failed (exit code ${execution.exitCode}): ${detail.slice(0, 500)}`);
       }
-      if (missingOutputs.length) throw new Error(`Python execution completed but did not create declared output file(s): ${missingOutputs.join(", ")}`);
+      if (finalMissingOutputs.length) throw new Error(`Python execution completed but did not create declared output file(s): ${finalMissingOutputs.join(", ")}`);
       this.result(runId, "execute_python", `verified Python execution (exit code ${execution.exitCode})`);
       const executionData = JSON.stringify({
         exitCode: execution.exitCode,
@@ -349,18 +425,54 @@ export class RunManager {
       if (!summary.ok || !summary.value.verified) throw new Error(summary.ok ? "execution summary failed validation" : summary.error.message);
       this.persistAssistant(runId, summary.value.summary, "code-qwen25coder");
 
-      const outputMode = code.value.outputMode ?? (this.requestsArtifact(text) ? "artifact" : "chat");
+      const outputMode = currentCode.outputMode ?? (this.requestsArtifact(text) ? "artifact" : "chat");
       if (outputMode === "chat") {
         this.complete(runId);
         return;
       }
 
-      await this.awaitConfirmation(runId, "generate_xlsx", async () => {
-        const artifact = await generateXlsx(runId, execution, code.value.artifactFilename);
+      const isXlsxRequested =
+        currentCode.artifactKind === "xlsx" ||
+        /\.xlsx$/i.test(currentCode.artifactFilename ?? "") ||
+        /\b(xlsx|excel|spreadsheet)\b/i.test(text);
+
+      if (isXlsxRequested) {
+        const prompt = currentCode.artifactFilename
+          ? `Generate the Excel export (${currentCode.artifactFilename})?`
+          : undefined;
+        await this.awaitConfirmation(
+          runId,
+          "generate_xlsx",
+          async () => {
+            const artifact = await generateXlsx(runId, execution, currentCode.artifactFilename);
+            this.persistArtifact(artifact as never);
+            this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
+            this.complete(runId);
+          },
+          undefined,
+          prompt,
+        );
+        return;
+      }
+
+      if (execution.outputFiles.length > 0) {
+        for (const file of execution.outputFiles) {
+          const kind = inferArtifactKind(file, currentCode.artifactFilename === file ? currentCode.artifactKind : undefined);
+          const rel = `runs/${runId}/output/${file}`;
+          const artifact = artifactRef(runId, kind, file, rel);
+          this.persistArtifact(artifact as never);
+          this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
+        }
+      } else {
+        const targetFilename = currentCode.artifactFilename || "summary.txt";
+        const rel = writeRunFile(runId, "output", targetFilename, execution.stdout);
+        const kind = inferArtifactKind(targetFilename, currentCode.artifactKind);
+        const artifact = artifactRef(runId, kind, targetFilename, rel);
         this.persistArtifact(artifact as never);
         this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
-        this.complete(runId);
-      });
+      }
+
+      this.complete(runId);
     };
 
     if (code.value.outputFiles.length === 0) {
@@ -370,15 +482,16 @@ export class RunManager {
     }
   }
   private requestsArtifact(text: string): boolean {
-    return /\b(export|download|save|create|generate|write|make)\b[\s\S]*\b(file|xlsx|excel|spreadsheet|csv)\b|\b(file|xlsx|excel|spreadsheet|csv)\b[\s\S]*\b(export|download|save|create|generate|write|make)\b/i.test(text);
+    return /\b(export|download|save|create|generate|write|make)\b[\s\S]*\b(file|xlsx|excel|spreadsheet|csv|txt|json|md|markdown)\b|\b(file|xlsx|excel|spreadsheet|csv|txt|json|md|markdown)\b[\s\S]*\b(export|download|save|create|generate|write|make)\b/i.test(text);
   }
   private async awaitConfirmation(
     runId: string,
     kind: PendingAction["kind"],
     continuation: Continuation,
-    preview?: string
+    preview?: string,
+    customPrompt?: string,
   ): Promise<void> {
-    const action = createConfirmation(runId, kind, preview);
+    const action = createConfirmation(runId, kind, preview, customPrompt);
     this.continuations.set(action.actionId, continuation);
     this.state(runId, "awaiting_confirmation");
     this.emit({ type: "confirmation_required", runId, action });
@@ -404,6 +517,7 @@ export class RunManager {
     sizeBytes: number;
     createdAt: string;
   }) {
+    logArtifactReady(artifact);
     getDb()
       .prepare(
         "INSERT INTO artifacts(artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",

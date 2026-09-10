@@ -1,3 +1,5 @@
+import RunTelemetryWidget from "./RunTelemetryWidget";
+
 type Model = { id: string; name: string; desc: string };
 
 type Props = {
@@ -15,6 +17,8 @@ type Props = {
   health?: ModelHealth[] | null;
   healthLoading?: boolean;
   onRefreshHealth?: () => void;
+  runEvents?: RunEvent[];
+  runId?: string | null;
 };
 
 export default function RightSidebar({
@@ -32,6 +36,8 @@ export default function RightSidebar({
   health,
   healthLoading,
   onRefreshHealth,
+  runEvents,
+  runId,
 }: Props) {
   const isRunning = runState != null && !["completed", "failed", "cancelled"].includes(runState);
   return (
@@ -144,6 +150,8 @@ export default function RightSidebar({
             className="w-full rounded-2xl p-3 text-sm outline-none resize-none neu-input placeholder:text-white/30"
           ></textarea>
         </div>
+
+        <RunTelemetryWidget runEvents={runEvents} runId={runId} />
       </div>
     </aside>
   );

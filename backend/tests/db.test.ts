@@ -149,4 +149,59 @@ describe("Phase DB — SQLite working", () => {
     expect(listMessages(chatId).map((m) => m.content)).toEqual(["before restart"]);
     expect(getSchemaVersion()).toBe("1");
   });
+
+  it("permits artifacts of all supported kinds: docx, pdf, xlsx, csv, txt, json, md", () => {
+    const chatId = createChat("artifacts test");
+    const db = getDb();
+    const now = new Date().toISOString();
+    const runId = "test-run-1";
+    db.prepare("INSERT INTO runs(id, chat_id, created_at) VALUES (?, ?, ?)").run(runId, chatId, now);
+
+    const kinds = ["docx", "pdf", "xlsx", "csv", "txt", "json", "md"];
+    for (let i = 0; i < kinds.length; i++) {
+      const kind = kinds[i]!;
+      expect(() => {
+        db.prepare(
+          "INSERT INTO artifacts(artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ).run(`art-${i}`, runId, kind, `file.${kind}`, `runs/${runId}/output/file.${kind}`, 100, now);
+      }).not.toThrow();
+    }
+  });
+
+  it("migrates old artifacts table with restrictive CHECK constraint on initDb", () => {
+    closeDb();
+    const oldDbPath = path.join(dir, "old-workbench.db");
+    const oldDb = new (require("better-sqlite3"))(oldDbPath);
+    // Create old schema with restrictive check constraint
+    oldDb.exec(`
+      CREATE TABLE runs (id TEXT PRIMARY KEY, chat_id TEXT, created_at TEXT);
+      CREATE TABLE artifacts (
+        artifact_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        kind TEXT NOT NULL CHECK (kind IN ('docx','pdf','xlsx','csv')),
+        filename TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+      INSERT INTO runs VALUES ('r1', 'c1', '2026-01-01');
+      INSERT INTO artifacts VALUES ('a1', 'r1', 'csv', 'test.csv', 'runs/r1/test.csv', 10, '2026-01-01');
+    `);
+    oldDb.close();
+
+    // initDb should detect outdated artifacts table and migrate it
+    const db = initDb(oldDbPath);
+    const existing = db.prepare("SELECT * FROM artifacts WHERE artifact_id = 'a1'").get() as any;
+    expect(existing.filename).toBe("test.csv");
+
+    // Inserting txt and md should now succeed
+    expect(() => {
+      db.prepare(
+        "INSERT INTO artifacts(artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).run("a2", "r1", "txt", "test.txt", "runs/r1/test.txt", 10, "2026-01-01");
+      db.prepare(
+        "INSERT INTO artifacts(artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).run("a3", "r1", "md", "test.md", "runs/r1/test.md", 10, "2026-01-01");
+    }).not.toThrow();
+  });
 });

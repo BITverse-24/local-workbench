@@ -41,7 +41,7 @@ interface AttachmentReference {
 interface ArtifactRef {
   artifactId: string;
   runId: string;
-  kind: "docx" | "pdf" | "xlsx" | "csv" | "txt" | "json";
+  kind: "docx" | "pdf" | "xlsx" | "csv" | "txt" | "json" | "md";
   filename: string;
   relativePath: string;
   sizeBytes: number;

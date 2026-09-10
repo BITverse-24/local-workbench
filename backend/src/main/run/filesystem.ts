@@ -25,5 +25,21 @@ export function createRunDirectories(runId: string): string { const root = runRo
 export function resolveRunPath(runId: string, relativePath: string, area?: "input" | "intermediate" | "output" | "logs"): string { assertSafeRelativePath(relativePath); const root = runRoot(runId); const target = path.resolve(root, relativePath); if (!target.startsWith(`${root}${path.sep}`)) throw new Error("path escapes run"); if (area) { const areaRoot = path.join(root, area); if (target !== areaRoot && !target.startsWith(`${areaRoot}${path.sep}`)) throw new Error("path outside permitted run area"); } return target; }
 export function registerAttachment(runId: string, input: { filename: string; mediaType: string; sizeBytes: number; base64OrBuffer: string | Buffer }): AttachmentReference { if (!allowed(input.mediaType)) throw new Error("unsupported attachment type"); const bytes = typeof input.base64OrBuffer === "string" ? Buffer.from(input.base64OrBuffer, "base64") : input.base64OrBuffer; if (input.sizeBytes !== bytes.length || bytes.length > MAX_ATTACHMENT) throw new Error("attachment size rejected"); const filename = path.basename(input.filename); if (!filename || filename !== input.filename || /[\0]/.test(filename)) throw new Error("invalid attachment filename"); createRunDirectories(runId); const relativePath = `runs/${runId}/input/${randomUUID()}-${filename}`; writeFileSync(absoluteDataPath(relativePath), bytes, { flag: "wx" }); return { attachmentId: randomUUID(), filename, mediaType: input.mediaType, sizeBytes: bytes.length, relativePath }; }
 export function readRunFile(runId: string, relativePath: string, area: "input" | "intermediate" | "output" = "input"): Buffer { const expected = resolveRunPath(runId, relativePath.replace(`runs/${runId}/`, ""), area); return readFileSync(expected); }
-export function writeRunFile(runId: string, area: "intermediate" | "output" | "logs", filename: string, content: string | Buffer): string { assertSafeRelativePath(filename); const target = resolveRunPath(runId, `${area}/${filename}`, area); mkdirSync(path.dirname(target), { recursive: true }); writeFileSync(target, content, { flag: "wx" }); return `runs/${runId}/${area}/${filename}`; }
-export function artifactRef(runId: string, kind: ArtifactRef["kind"], filename: string, relativePath: string): ArtifactRef { const abs = resolveRunPath(runId, relativePath.replace(`runs/${runId}/`, ""), "output"); const stat = statSync(abs); return { artifactId: randomUUID(), runId, kind, filename, relativePath, sizeBytes: stat.size, createdAt: new Date().toISOString() }; }
+export function writeRunFile(runId: string, area: "intermediate" | "output" | "logs", filename: string, content: string | Buffer, overwrite = false): string {
+  assertSafeRelativePath(filename);
+  const target = resolveRunPath(runId, `${area}/${filename}`, area);
+  mkdirSync(path.dirname(target), { recursive: true });
+  writeFileSync(target, content, { flag: overwrite ? "w" : "wx" });
+  return `runs/${runId}/${area}/${filename}`;
+}
+export function artifactRef(runId: string, kind: ArtifactRef["kind"], filename: string, relativePath: string): ArtifactRef {
+  const abs = resolveRunPath(runId, relativePath.replace(`runs/${runId}/`, ""), "output");
+  let size = 0;
+  try {
+    size = statSync(abs).size;
+  } catch {
+    size = 0;
+  }
+  return { artifactId: randomUUID(), runId, kind, filename, relativePath, sizeBytes: size, createdAt: new Date().toISOString() };
+}
+

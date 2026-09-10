@@ -12,7 +12,7 @@ export const codeResultSchema = z.object({
   outputFiles: z.array(z.string().min(1)),
   allowedImports: z.array(z.string().min(1)),
   outputMode: nullableOptional(z.enum(["chat", "artifact", "chat_and_artifact"])),
-  artifactKind: nullableOptional(z.enum(["docx", "pdf", "xlsx", "csv", "txt", "json"])),
+  artifactKind: nullableOptional(z.enum(["docx", "pdf", "xlsx", "csv", "txt", "json", "md"])),
   artifactFilename: nullableOptional(z.string().min(1).max(200)),
   artifactRationale: nullableOptional(z.string().max(1000)),
 }).strict();
@@ -42,7 +42,7 @@ export function validateCode(value: unknown): { ok: true; value: CodeDraftResult
     || result.inputFiles.some(unsafeName)
     || result.outputFiles.some(unsafeName)
     || result.allowedImports.some((name) => !SAFE_IMPORTS.has(name))
-    || (wantsArtifact && (!result.artifactKind || !result.artifactFilename || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(xlsx|csv|txt|json)$/i.test(result.artifactFilename)))
+    || (wantsArtifact && (!result.artifactKind || !result.artifactFilename || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(xlsx|csv|txt|json|md)$/i.test(result.artifactFilename)))
     || new Set(declaredFiles).size !== declaredFiles.length
     || imports.some((name) => !SAFE_IMPORTS.has(name) || !declaredImports.has(name));
   if (invalid) return { ok: false, error: { kind: "validation-failure", code: "invalid-value", message: "generated Python must use one safe CSV input, approved standard-library imports, and no network/shell/path escape; outputs must be declared when requested", path: "source", expected: "validated local Python task" } };
