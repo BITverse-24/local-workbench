@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS confirmations (
 CREATE TABLE IF NOT EXISTS artifacts (
   artifact_id   TEXT PRIMARY KEY,         -- uuid4
   run_id        TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-  kind          TEXT NOT NULL CHECK (kind IN ('docx','pdf','xlsx','csv')),
+  kind          TEXT NOT NULL CHECK (kind IN ('docx','pdf','xlsx','csv','txt','json')),
   filename      TEXT NOT NULL,             -- e.g. approval-note-E201.docx
   relative_path TEXT NOT NULL,             -- runs/<runId>/output/…
   size_bytes    INTEGER NOT NULL DEFAULT 0,

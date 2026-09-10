@@ -55,3 +55,19 @@ describe("code response validation", () => {
     expect(result.ok).toBe(false);
   });
 });
+
+  it("accepts an artifact response with a text file", () => {
+    const result = validateCode({
+      filename: "task.py",
+      source: "import csv\nwith open('input.csv', newline='') as handle:\n    rows = list(csv.DictReader(handle))\nwith open('summary.txt', 'w') as out:\n    out.write(str(len(rows)))",
+      expectedResult: "Writes the number of CSV rows to a text file.",
+      inputFiles: ["input.csv"],
+      outputFiles: ["summary.txt"],
+      allowedImports: ["csv"],
+      outputMode: "artifact",
+      artifactKind: "txt",
+      artifactFilename: "summary.txt",
+      artifactRationale: "Requested text file",
+    });
+    expect(result.ok).toBe(true);
+  });

@@ -6,7 +6,7 @@ export interface ModelRegistryEntry { id: ModelId; taskTypes: TaskType[]; runtim
 export interface AttachmentReference { attachmentId: string; filename: string; mediaType: string; sizeBytes: number; relativePath: string; }
 export interface InputFileReference { attachmentId: string; filename: string; mediaType: string; columns?: string[]; rowCount?: number; }
 export type OutputMode = "chat" | "artifact" | "chat_and_artifact";
-export type ArtifactKind = "docx" | "pdf" | "xlsx" | "csv";
+export type ArtifactKind = "docx" | "pdf" | "xlsx" | "csv" | "txt" | "json";
 export type ResponseFormat = "vision-result" | "draft-result" | "code-result" | "code-summary" | "chat-result";
 export interface ChatResult { text: string; }
 export interface ModelRequestBase { requestId: string; runId: string; taskType: TaskType; modelId: ModelId; systemPrompt: string; userPrompt: string; responseFormat: ResponseFormat; timeoutMs: number; temperature?: number; maxTokens?: number; }
