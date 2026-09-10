@@ -17,3 +17,15 @@ export function routeTask(userText: string, attachment?: { mediaType: string }):
 
   return { taskType: "draft", modelId: "draft-qwen3", reason: "fallback drafting" };
 }
+
+export function routeSubtask(taskType: TaskType): RouteDecision {
+  switch (taskType) {
+    case "vision":
+      return { taskType: "vision", modelId: "vision-qwen25vl", reason: "vision subtask execution" };
+    case "code":
+      return { taskType: "code", modelId: "code-qwen25coder", reason: "code subtask execution" };
+    case "draft":
+    default:
+      return { taskType: "draft", modelId: "draft-qwen3", reason: "draft subtask execution" };
+  }
+}

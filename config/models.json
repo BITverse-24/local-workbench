@@ -39,6 +39,19 @@
       "apiKeyEnv": "OPENROUTER_API_KEY",
       "enabled": true,
       "maxOutputTokens": 8192
+    },
+    {
+      "id": "plan-qwen3-8b",
+      "taskTypes": ["plan"],
+      "runtime": "openrouter",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "model": "qwen/qwen3-8b",
+      "capabilities": ["text", "structured-output"],
+      "requestTimeoutMs": 45000,
+      "healthPath": "/models",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "enabled": true,
+      "maxOutputTokens": 8192
     }
   ]
 }

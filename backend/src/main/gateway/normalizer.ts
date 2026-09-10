@@ -133,7 +133,7 @@ export function normalizeResponse(value: unknown, request: ModelRequest): ModelR
     if (obj.text !== undefined && obj.text !== null) {
       result = { text: String(obj.text).trim() };
     } else {
-      const altKeys = ["message", "response", "answer", "reply", "content", "output", "result", "summary"];
+      const altKeys = ["message", "response", "answer", "reply", "content", "output", "result", "summary", "displayed_text"];
       let found: string | undefined;
       for (const k of altKeys) {
         if (obj[k] !== undefined && obj[k] !== null) {

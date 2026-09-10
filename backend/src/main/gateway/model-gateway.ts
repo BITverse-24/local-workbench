@@ -170,8 +170,26 @@ export class ModelGateway implements ModelClient {
     // OpenRouter pre-checks affordability against (prompt + max_tokens): omitting
     // max_tokens defaults it to the model's full window (e.g. 32768) and yields
     // 402 on low-credit keys even for tiny replies. Always cap explicitly.
+    // Map the internal ResponseFormat to a strict JSON schema if applicable
+    let responseFormatPayload: any = { type: "json_object" };
+    if (request.responseFormat === "chat-result") {
+      responseFormatPayload = {
+        type: "json_schema",
+        json_schema: {
+          name: "chat_result",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: { text: { type: "string" } },
+            required: ["text"],
+            additionalProperties: false
+          }
+        }
+      };
+    }
+
     const maxTokens = request.maxTokens ?? model.maxOutputTokens ?? 2048;
-    const body = JSON.stringify({ model: model.model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }], response_format: { type: "json_object" }, temperature: request.temperature ?? 0.2, max_tokens: maxTokens });
+    const body = JSON.stringify({ model: model.model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }], response_format: responseFormatPayload, temperature: request.temperature ?? 0.2, max_tokens: maxTokens });
     // Log outgoing request (without leaking key, with vision metadata instead of full base64)
     const outboundLog = {
       phase: "request" as const,

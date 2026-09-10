@@ -254,29 +254,55 @@ export class RunManager {
   }
   private async execute(runId: string, text: string, attachment?: AttachmentRow): Promise<void> {
     this.state(runId, "classifying");
-    const route = this.route(runId, text, attachment);
+    
+    // Dynamically generate the plan
+    const { generatePlan } = await import("../router/planner.js");
+    const { routeSubtask } = await import("../router/deterministic-router.js");
+    
+    const plan = await generatePlan(runId, text, this.gateway, this.runTemperatures.get(runId), attachment);
+
     this.state(runId, "planning");
-    this.emit({
-      type: "plan_step",
-      runId,
-      index: 0,
-      text:
-        route.taskType === "vision"
-          ? "Extract the inspection findings and ground an approval note."
-          : route.taskType === "code"
-            ? "Generate and verify a Python data transformation."
-            : "Draft a response.",
+    
+    // Emit plan steps to the UI
+    plan.tasks.forEach((task, idx) => {
+      this.emit({
+        type: "plan_step",
+        runId,
+        index: idx,
+        text: task.description,
+      });
     });
+
     this.state(runId, "acting");
-    if (route.taskType === "vision") throw new Error("vision flow is deferred in this build");
-    if (route.taskType === "code" && attachment) return this.executeDataTask(runId, text, attachment);
-    if (route.taskType === "draft") return this.executeChatTask(runId, text);
-    throw new Error("an attachment is required for the locked flow");
+
+    // Execute the subtask plan sequentially
+    for (const task of plan.tasks) {
+      // 1. Route specific to this subtask
+      const route = routeSubtask(task.type);
+      
+      // 2. Record and emit routing decision
+      const requestId = randomUUID();
+      recordRouting(runId, requestId, route.taskType, route.modelId, route.reason);
+      this.emit({ type: "routing", runId, ...route });
+
+      // 3. Execute subtask
+      if (route.taskType === "vision") {
+        throw new Error("vision flow is deferred in this build");
+      } else if (route.taskType === "code") {
+        // Execute code task (requires attachment for now, or fallback)
+        if (!attachment) {
+          throw new Error("an attachment is required for the code task flow");
+        }
+        await this.executeDataTask(runId, text, attachment);
+      } else {
+        await this.executeChatTask(runId, text);
+      }
+    }
   }
   private async executeChatTask(runId: string, text: string): Promise<void> {
     this.tool(runId, "draft_note", "drafting response");
     const temperature = this.runTemperatures.get(runId);
-    const systemPrompt = "You are a helpful assistant. Always respond with a valid JSON object containing your response in the \"text\" field, e.g.: {\"text\": \"your answer here\"}. Never return an empty JSON object.";
+    const systemPrompt = "You are a helpful assistant. Provide your answer strictly as a JSON object with a single key 'text': {\"text\": \"your plain text answer\"}. Do NOT add any other fields such as 'displayed_text' or 'display_time'. Never return an empty JSON object.";
     const base = requestBase(runId, "draft", "draft-qwen3", "chat-result", systemPrompt, text, 45000, 1024, temperature);
     const request: ChatModelRequest = {
       ...base,

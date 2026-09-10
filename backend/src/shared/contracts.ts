@@ -1,6 +1,6 @@
-export type TaskType = "vision" | "draft" | "code";
+export type TaskType = "vision" | "draft" | "code" | "plan";
 export type ModelRuntime = "mlx-lm" | "llama-server" | "openrouter" | "ollama";
-export type ModelId = "vision-qwen25vl" | "draft-qwen3" | "code-qwen25coder";
+export type ModelId = "vision-qwen25vl" | "draft-qwen3" | "code-qwen25coder" | "plan-qwen3-8b";
 export type ModelCapability = "text" | "image-input" | "structured-output" | "code-generation";
 export interface ModelRegistryEntry { id: ModelId; taskTypes: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; maxOutputTokens?: number; }
 export interface AttachmentReference { attachmentId: string; filename: string; mediaType: string; sizeBytes: number; relativePath: string; }
@@ -14,13 +14,15 @@ export interface VisionModelRequest extends ModelRequestBase { taskType: "vision
 export interface CodeModelRequest extends ModelRequestBase { taskType: "code"; modelId: "code-qwen25coder"; responseFormat: "code-result"; task: string; inputFile: InputFileReference; allowedLanguage: "python"; executionRules: string[]; }
 export interface CodeSummarizeRequest extends ModelRequestBase { taskType: "code"; modelId: "code-qwen25coder"; responseFormat: "code-summary"; phase: "summarize"; execution: PythonExecutionResult; task: string; }
 export interface ChatModelRequest extends ModelRequestBase { taskType: "draft"; modelId: "draft-qwen3"; responseFormat: "chat-result"; }
-export type ModelRequest = VisionModelRequest | CodeModelRequest | CodeSummarizeRequest | ChatModelRequest;
+export interface PlanModelRequest extends ModelRequestBase { taskType: "plan"; modelId: "plan-qwen3-8b"; responseFormat: "chat-result"; }
+export type ModelRequest = VisionModelRequest | CodeModelRequest | CodeSummarizeRequest | ChatModelRequest | PlanModelRequest;
 export interface ModelUsage { inputTokens?: number; outputTokens?: number; durationMs?: number; }
 export interface ModelResponseBase { requestId: string; runId: string; modelId: ModelId; completedAt: string; usage?: ModelUsage; }
 export interface VisionModelResponse extends ModelResponseBase { taskType: "vision"; result: VisionResult; }
 export interface CodeModelResponse extends ModelResponseBase { taskType: "code"; result: CodeDraftResult | CodeSummaryResult; }
 export interface ChatModelResponse extends ModelResponseBase { taskType: "draft"; result: ChatResult; }
-export type ModelResponse = VisionModelResponse | CodeModelResponse | ChatModelResponse;
+export interface PlanModelResponse extends ModelResponseBase { taskType: "plan"; result: ChatResult; }
+export type ModelResponse = VisionModelResponse | CodeModelResponse | ChatModelResponse | PlanModelResponse;
 export type Confidence = "high" | "medium" | "low";
 export interface PageReference { id: string; page: number; text: string; location?: string; }
 export interface Finding { findingId: string; title: string; value: string; pageReferenceIds: string[]; confidence: Confidence; evidence: string; }
@@ -44,3 +46,13 @@ export interface ArtifactRef { artifactId: string; runId: string; kind: Artifact
 export type RunEvent = { type: "run_state"; runId: string; state: RunState } | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string } | { type: "plan_step"; runId: string; index: number; text: string } | { type: "tool_call"; runId: string; tool: ToolName; summary: string } | { type: "tool_result"; runId: string; tool: ToolName; summary: string } | { type: "confirmation_required"; runId: string; action: PendingAction } | { type: "artifact_ready"; runId: string; artifact: ArtifactRef } | { type: "assistant_message"; runId: string; messageId: string; text: string; modelId: ModelId } | { type: "error"; runId: string; code: string; message: string; retryable?: boolean };
 export interface RunSummary { runId: string; chatId: string; state: RunState; createdAt: string; completedAt: string | null; }
 export interface ModelHealth { modelId: ModelId; available: boolean; checkedAt: string; latencyMs?: number; message?: string; }
+
+export interface Subtask {
+  id: string;
+  type: TaskType;
+  description: string;
+  dependsOn?: string[];
+}
+export interface SubtaskPlan {
+  tasks: Subtask[];
+}
