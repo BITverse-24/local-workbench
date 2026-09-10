@@ -1,0 +1,17 @@
+{
+  "task": "Fix the vendor maintenance log parser and verify it against the sample file.",
+  "initialRun": {"exitCode": 1, "errorContains": "could not convert string to float"},
+  "repairIteration": 1,
+  "repairs": [
+    "Treat blank temperature cells as malformed rows instead of crashing.",
+    "Use the inclusive vendor upper limit of 350.0 degrees Celsius."
+  ],
+  "verifiedRun": {
+    "exitCode": 0,
+    "rowsRead": 5,
+    "malformedRows": 1,
+    "aboveLimitRows": 1,
+    "stdout": "ROWS 5; MALFORMED 1; ABOVE_LIMIT 1"
+  },
+  "artifacts": ["repaired-vendor-log-parser.py", "repaired-vendor-log.csv"]
+}

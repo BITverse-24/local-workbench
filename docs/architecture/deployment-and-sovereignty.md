@@ -10,7 +10,7 @@
 | i7, 16 GB #3 | application host | Electron app, TypeScript modules, SQLite, local criteria, LibreOffice, Bubblewrap | renderer-local; model LAN peers |
 
 Each model has a fixed LAN address and port entered in `config/models.json`
-before the rehearsal. The registry allowlist is exactly the model and embedding
+before the rehearsal. The registry allowlist is exactly the model and monitor
 hosts. No DNS discovery, cloud endpoint, remote model download, telemetry SDK,
 or arbitrary URL is part of the application.
 
@@ -20,16 +20,16 @@ Before disconnecting the demo network:
 
 1. Download and checksum all model weights, GGUF files, Python wheels, Node
    modules, Electron bundle, LibreOffice packages, Bubblewrap package, and
-   embedding model on a staging network.
+   local criteria and demo assets on a staging network.
 2. Transfer them to the five approved hosts, install from local media/caches,
    and record versions in the deployment notes.
 3. Start each model service using a local model path and a stable model alias;
    verify `/v1/models` and a small fixture request from the orchestrator host.
 4. Install the fixed Flow A criteria and decision oracles from
-   `demo-fixtures/flow-a/`, then exercise criteria assessment against the
+   `demo/flow_a/`, then exercise criteria assessment against the
    inspection fixture.
-5. Disconnect external networking, retain the private LAN, then repeat both
-   end-to-end flows before finals.
+5. Disconnect external networking, retain the private LAN, then repeat all
+   three end-to-end flows before finals.
 
 ## Independent egress evidence
 
@@ -70,7 +70,7 @@ scoped filesystem access, fixed interpreter invocation, and visible logs.
 ## Service health and failure policy
 
 At application launch Electron main performs health checks against registry
-entries and the local embedding service. The renderer displays unavailable
+entries and the monitor service. The renderer displays unavailable
 models before accepting a run. A model service failure does not trigger a
 cloud fallback or substitution by a task-inappropriate local model. Operators
 fix the host or update the tested registry between rehearsals.

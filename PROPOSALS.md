@@ -8,7 +8,7 @@
 - **Issue:** These files still mention `docs/archive/rag-legacy/`,
   `expected-retrieval`, or the retired archive as historical material. The
   archive has now been deleted and Flow A fixtures live under
-  `demo-fixtures/flow-a/`.
+  `demo/flow_a/`.
 - **Evidence:** Repository-wide search after archive deletion returns stale
   references in the listed files.
 - **Suggested change:** Replace obsolete archive links with the active fixture

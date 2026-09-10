@@ -72,7 +72,7 @@ evidence that only the named LAN hosts exchanged traffic.
 | --- | --- | --- |
 | Ayush (frontend) | Electron renderer, file drop, transcript, confirmations, routing badge, PDF pane | No direct filesystem, model, tool, or LAN access |
 | Supreet (backend) | Electron main composition, IPC, orchestrator, registry gateway, tools, SQLite, artifacts | Does not build the external monitor or model runtimes |
-| Sid (AI/ML) | Offline model provisioning, performance checks, embedding/index preparation, OCR and prompt evaluation | Does not add unsupported task categories |
+| Sid (AI/ML) | Offline model provisioning, performance checks, OCR, drawing, and prompt evaluation | Does not add unsupported task categories |
 
 ## Module composition
 
@@ -94,7 +94,7 @@ MVP; Flow A criteria are bundled locally with the fixed demo fixtures.
 
 ## Non-negotiable operational rules
 
-1. All model weights, application dependencies, embeddings, and demo files
+1. All model weights, application dependencies, local criteria, and demo files
    are installed before the air-gapped rehearsal.
 2. The registry shipped in the demo bundle contains only approved LAN IP
    addresses and ports. A development registry may point at the team's

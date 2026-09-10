@@ -1,0 +1,15 @@
+{
+  "bundleId": "inspection-bundle-E201",
+  "request": "Read these inspection reports, pull out the key findings, and draft an approval note for the plant manager.",
+  "files": [
+    "inspection-report-E201-annotated.pdf",
+    "inspection-report-E202-followup.pdf"
+  ],
+  "handwrittenEvidence": {
+    "text": "RECHECK WELD JOINT 4B - field inspector",
+    "sourceFile": "inspection-report-E201-annotated.pdf",
+    "page": 1
+  },
+  "expectedRoute": ["vision", "draft"],
+  "expectedArtifact": "approval-note-E201.docx"
+}

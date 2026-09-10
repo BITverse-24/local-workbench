@@ -1,4 +1,4 @@
-"""Offline preflight checks for the fixed Flow A and Flow B demo fixtures."""
+"""Offline preflight checks for the fixed Flow A, Flow B, and Flow C demo fixtures."""
 
 from __future__ import annotations
 
@@ -13,8 +13,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
-FLOW_B = ROOT / "flow-b"
-FLOW_A = ROOT / "flow-a"
+FLOW_B = ROOT / "flow_b"
+FLOW_A = ROOT / "flow_a"
+FLOW_C = ROOT / "flow_c"
 
 
 def load(name: str):
@@ -39,6 +40,9 @@ def validate_flow_a() -> None:
         "expected-ocr.json",
         "expected-assessment.json",
         "expected-approval-note.json",
+        "report-bundle.json",
+        "expected-bundle-extraction.json",
+        "sovereignty-proof.json",
     ]
     for filename in required:
         path = FLOW_A / filename
@@ -48,14 +52,14 @@ def validate_flow_a() -> None:
     check("[section:3.2] Approval criteria" in sop, "SOP criteria section is missing")
     check("[SOP-114 §3.2]" in sop, "SOP citation is missing")
 
-    ocr = load("flow-a/expected-ocr.json")
+    ocr = load("flow_a/expected-ocr.json")
     check(len(ocr["findings"]) == 3, "OCR oracle must contain three findings")
     check({finding["findingId"] for finding in ocr["findings"]} == {"finding-1", "finding-2", "finding-3"},
           "OCR finding IDs are incorrect")
     check({reference["page"] for reference in ocr["pageReferences"]} == {1, 2},
           "OCR page references are incomplete")
 
-    assessment = load("flow-a/expected-assessment.json")
+    assessment = load("flow_a/expected-assessment.json")
     check(assessment["criteriaCitation"] == "[SOP-114 §3.2]", "assessment citation is incorrect")
     check({item["status"] for item in assessment["assessments"]} == {"fail", "pass", "unknown"},
           "assessment must demonstrate pass, fail, and unknown statuses")
@@ -65,11 +69,20 @@ def validate_flow_a() -> None:
     check(assessment["missingInformation"][0]["field"] == "approvalAuthority",
           "missing approval authority must be explicit")
 
-    note = load("flow-a/expected-approval-note.json")
+    note = load("flow_a/expected-approval-note.json")
     check("[SOP-114 §3.2]" in note["body"], "approval note lacks SOP citation")
     check(note["missingInformation"], "approval note must preserve missing information")
     check(any(section["id"] == "recommendation" for section in note["sections"]),
           "approval note recommendation section is missing")
+    bundle = load("flow_a/report-bundle.json")
+    check(len(bundle["files"]) == 2, "Flow A must contain a two-report bundle")
+    extraction = load("flow_a/expected-bundle-extraction.json")
+    check(extraction["documentsProcessed"] == 2, "bundle extraction count is incorrect")
+    check("RECHECK WELD JOINT 4B" in extraction["handwrittenAnnotations"][0]["text"],
+          "handwritten annotation is missing")
+    sovereignty = load("flow_a/sovereignty-proof.json")
+    check(sovereignty["externalRequests"] == 0 and sovereignty["blockedAttempt"]["recorded"],
+          "Flow A sovereignty proof is incomplete")
 
 
 def validate_flow_b() -> None:
@@ -86,8 +99,8 @@ def validate_flow_b() -> None:
         check(250.0 <= float(row["temperature_c"]) <= 350.0 or row["timestamp"] in special_timestamps,
               f"unexpected out-of-range row: {row}")
 
-    execution = load("flow-b/expected-python-execution.json")
-    summary = load("flow-b/expected-out-of-range-summary.json")
+    execution = load("flow_b/expected-python-execution.json")
+    summary = load("flow_b/expected-out-of-range-summary.json")
     expected_rows = summary["rows"]
     with tempfile.TemporaryDirectory(prefix=".preflight-", dir=ROOT) as temporary:
         run_dir = Path(temporary)
@@ -122,9 +135,36 @@ def validate_flow_b() -> None:
     check(expected_csv.endswith("2026-08-20T21:00,R-101,352.9,high\n"), "expected output CSV is incomplete")
 
 
+def validate_flow_c() -> None:
+    required = [
+        "pump-skid-P204.svg",
+        "piping-spec-SOP-220.md",
+        "expected-compliance-assessment.json",
+        "corrective-action-note.md",
+        "sovereignty-proof.json",
+    ]
+    for filename in required:
+        path = FLOW_C / filename
+        check(path.exists() and path.stat().st_size > 0, f"Flow C fixture is missing or empty: {filename}")
+    drawing = (FLOW_C / "pump-skid-P204.svg").read_text(encoding="utf-8")
+    check("CLASS 150" in drawing and "DN80" in drawing, "drawing discrepancies are missing")
+    spec = (FLOW_C / "piping-spec-SOP-220.md").read_text(encoding="utf-8")
+    check("[SOP-220 §4.2]" in spec and "[SOP-220 §4.3]" in spec, "piping criteria are missing")
+    assessment = load("flow_c/expected-compliance-assessment.json")
+    check(len(assessment["checks"]) == 2, "Flow C must contain two compliance checks")
+    check(all(item["status"] == "non_compliant" for item in assessment["checks"]),
+          "Flow C checks must be non-compliant")
+    check({item["citation"] for item in assessment["checks"]} == {"[SOP-220 §4.2]", "[SOP-220 §4.3]"},
+          "Flow C citations are incomplete")
+    check(assessment["noApprovalClaim"] is True, "Flow C must not claim approval")
+    sovereignty = load("flow_c/sovereignty-proof.json")
+    check(sovereignty["externalRequests"] == 0 and sovereignty["blockedAttempt"]["recorded"],
+          "Flow C sovereignty proof is incomplete")
+
+
 def validate_manifest() -> None:
     manifest = load("manifest.json")
-    check(manifest["fixtureVersion"] == "1.0.0", "unexpected fixture version")
+    check(manifest["fixtureVersion"] == "2.0.0", "unexpected fixture version")
     for relative, details in manifest["files"].items():
         path = ROOT / relative
         check(path.exists(), f"manifest file is missing: {relative}")
@@ -136,8 +176,9 @@ def validate_manifest() -> None:
 def main() -> None:
     validate_flow_a()
     validate_flow_b()
+    validate_flow_c()
     validate_manifest()
-    print("Fixture preflight passed: Flow A and Flow B are deterministic and internally consistent.")
+    print("Fixture preflight passed: Flow A, Flow B, and Flow C are deterministic and internally consistent.")
 
 
 if __name__ == "__main__":
