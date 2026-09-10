@@ -7,8 +7,7 @@
 | M4 Mac Mini, 16 GB | vision/OCR server | Qwen2.5-VL-3B-Instruct 4-bit and `mlx_lm.server` | orchestrator only |
 | i7, 16 GB #1 | drafting server | Qwen3-4B-Instruct GGUF Q4 and `llama-server` | orchestrator only |
 | i7, 16 GB #2 | code server | Qwen2.5-Coder-7B-Instruct GGUF Q4 and `llama-server` | orchestrator only |
-| i7, 16 GB #3 | application host | Electron app, TypeScript modules, SQLite, Chroma, LibreOffice, Bubblewrap | renderer-local; model/embedding LAN peers |
-| i5 11th-gen, 16 GB | embedding/index host | local embedding endpoint and persistent Chroma corpus | orchestrator only |
+| i7, 16 GB #3 | application host | Electron app, TypeScript modules, SQLite, local criteria, LibreOffice, Bubblewrap | renderer-local; model LAN peers |
 
 Each model has a fixed LAN address and port entered in `config/models.json`
 before the rehearsal. The registry allowlist is exactly the model and embedding
@@ -26,8 +25,9 @@ Before disconnecting the demo network:
    and record versions in the deployment notes.
 3. Start each model service using a local model path and a stable model alias;
    verify `/v1/models` and a small fixture request from the orchestrator host.
-4. Build the 10–30 document corpus locally, persist Chroma, and exercise
-   citation lookup against Flow A fixtures.
+4. Install the fixed Flow A criteria and decision oracles from
+   `demo-fixtures/flow-a/`, then exercise criteria assessment against the
+   inspection fixture.
 5. Disconnect external networking, retain the private LAN, then repeat both
    end-to-end flows before finals.
 

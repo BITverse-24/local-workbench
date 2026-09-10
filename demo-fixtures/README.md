@@ -1,13 +1,13 @@
 # Sovereign Workbench fixed demo fixtures
 
-This directory is the immutable input and oracle bundle for the one active
-offline demo, Flow B (CSV → code → sandbox → XLSX). The canonical behavior
-is defined in `docs/demo-requirements.md`.
+This directory is the immutable input and oracle bundle for both active
+offline demos. The canonical behavior is defined in
+`docs/demo-requirements.md`.
 
-Flow A (scanned-report-to-approval-note) is strictly deferred and active
-retrieval is removed repo-wide: `flow-a/` and `rag-corpus/` were archived
-under `docs/archive/rag-legacy/` during the migration, and `manifest.json`
-below covers Flow B only.
+Flow A is an evidence-grounded approval-readiness assessment: the scan is
+extracted, governing SOP criteria are applied, and the oracle records status,
+required action, uncertainty, and citation for each decision point. The
+approval-note template is a fixed output shape, not a retrieval oracle.
 
 ## Contents
 
@@ -16,11 +16,15 @@ below covers Flow B only.
 - `flow-b/expected-python-execution.json`: execution oracle.
 - `flow-b/expected-out-of-range-summary.json`: semantic spreadsheet oracle.
 - `flow-b/expected-out-of-range-summary.csv`: expected flagged-row data.
-- `build_fixtures.py`: reproducible CSV builder and manifest generator
-  (Flow B only).
-- `validate_fixtures.py`: offline fixture and golden-code test runner
-  (Flow B only).
-- `manifest.json`: hashes and locked expectations for the Flow B fixtures.
+- `flow-a/inspection-report-E201.pdf`: fixed scanned inspection input.
+- `flow-a/expected-ocr.json`: OCR extraction oracle with page evidence.
+- `flow-a/expected-assessment.json`: approval-readiness status/action oracle.
+- `flow-a/expected-approval-note.json`: grounded approval-note oracle.
+- `flow-a/sop-114-pressure-equipment-inspection.md`: governing local criteria.
+- `flow-a/approval-note-template-TPL-012.md`: deterministic note structure.
+- `build_fixtures.py`: reproducible fixture manifest generator.
+- `validate_fixtures.py`: offline Flow A and Flow B fixture validator.
+- `manifest.json`: hashes and locked expectations for both flows.
 
 Run the preflight test from this directory:
 

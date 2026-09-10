@@ -97,7 +97,7 @@ execution.
 
 | Flow | Allowed automatic tools | Confirmation-required tools |
 | --- | --- | --- |
-| Inspection report → approval note | `read_file`, `ocr_extract`, `search_knowledge`, `draft_note` | `generate_docx` |
+| Inspection report → approval decision packet | `read_file`, `ocr_extract`, `assess_against_sop`, `draft_note` | `generate_docx` |
 | CSV/code → result | `read_file`, `draft_code` | `execute_python`, `generate_xlsx` |
 
 No tool can create network clients, change registry configuration, access a
@@ -146,8 +146,8 @@ or use by the next agent step.
 | --- | --- | --- | --- |
 | `read_file` | attachment token or run-relative path | bounded text/CSV metadata | local reader with type/size allowlist |
 | `ocr_extract` | image/PDF attachment | structured findings, page references, source text | vision gateway call |
-| `search_knowledge` | query, `topK ≤ 5` | chunks with `documentId`, section, excerpt | local Chroma query |
-| `draft_note` | findings and retrieved citations | approval-note body plus cited source IDs | drafting model call |
+| `assess_against_sop` | findings and governing SOP criteria | pass/fail/unknown rows, required actions, cited criteria | local criteria evaluator |
+| `draft_note` | findings and assessment rows | decision packet plus cited source IDs | drafting model call |
 | `generate_docx` | validated title/body/citations | DOCX and preview-PDF artifact refs | local document worker + LibreOffice |
 | `draft_code` | task and input schema | Python source plus expected output description | code model call |
 | `execute_python` | generated source and input refs | exit code, capped stdout/stderr, output refs | Bubblewrap runner |

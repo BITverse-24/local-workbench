@@ -8,20 +8,22 @@ exactly these inputs, outputs, screens, and evidence.
 ## Fixed demo inputs
 
 Fixtures live in `demo-fixtures/` in the application repo and are installed
-into the offline demo bundle before the air-gapped rehearsal. The SOP and
-template below are also seed entries of the Chroma corpus (task 3b).
+into the offline demo bundle before the air-gapped rehearsal. The SOP below
+is the governing local source for Flow A. The template is a fixed output
+shape, not a retrieval oracle.
 
 | File | Used by | Description |
 | --- | --- | --- |
 | `demo-fixtures/flow-a/inspection-report-E201.pdf` | Flow A | Two-page clean typed scan: "Heat Exchanger E-201 Tube Bundle Inspection Report", fixed report ID/date, unit R-100 |
-| `demo-fixtures/flow-a/sop-114-pressure-equipment-inspection.md` | Flow A corpus | SOP-114 "Pressure Equipment Inspection and Approval" with stable section IDs, including §3.2 approval criteria |
-| `demo-fixtures/flow-a/approval-note-template-TPL-012.md` | Flow A corpus | Approval-note template with stable section IDs |
+| `demo-fixtures/flow-a/sop-114-pressure-equipment-inspection.md` | Flow A | SOP-114 "Pressure Equipment Inspection and Approval" with stable section IDs, including §3.2 approval criteria |
+| `demo-fixtures/flow-a/approval-note-template-TPL-012.md` | Flow A | Fixed approval-note output structure with stable section IDs |
+| `demo-fixtures/flow-a/expected-assessment.json` | Flow A | Evidence-to-criteria decision oracle with pass/fail/unknown statuses |
 | `demo-fixtures/flow-b/reactor-temperature-log.csv` | Flow B | 240 data rows, columns `timestamp,reactor_id,temperature_c`, reactor R-101, limits 250.0–350.0 °C |
 
 The CSV is generated to match the expected result table below exactly
 (task 8a). No improvised or live inputs are in the acceptance scope.
 
-## Flow A — exact story (drop report → open approval note)
+## Flow A — exact story (drop report → approval-readiness decision packet)
 
 1. Presenter drops `inspection-report-E201.pdf` into the file-drop area and
    sends the fixed request: "Draft the approval note for this inspection
@@ -30,23 +32,25 @@ The CSV is generated to match the expected result table below exactly
    to `vision` — Qwen2.5-VL, reason "scanned report" (routing event 1).
 3. `ocr_extract` appears as tool call + result: extracted text summary and the
    three findings with page references (table below).
-4. `search_knowledge` appears as tool call + result: top chunks include
-   `SOP-114 §3.2` and `TPL-012` excerpts.
+4. `assess_against_sop` appears as tool call + result: local governing
+   criteria are applied to each finding and produce `pass`, `fail`, or
+   `unknown`, with a required action and `[SOP-114 §3.2]` citation.
 5. Routing badge changes to `draft` — Qwen3, reason "compose approval note"
    (routing event 2).
-6. `draft_note` produces the note body citing `[SOP-114 §3.2]`.
-7. Confirmation dialog: "Generate the approval-note DOCX?" with Approve /
+6. `draft_note` produces a decision packet containing the evidence matrix,
+   conditional recommendation, missing-information warning, and citation.
+7. Confirmation dialog: "Generate the approval-readiness decision packet?" with Approve /
    Reject. Unanswered confirmations expire after five minutes.
 8. On approve, `generate_docx` runs locally; the artifact pane shows the PDF
    preview and the DOCX as downloadable. Run state reaches `completed`.
-9. Presenter opens the PDF preview and shows the "Grounding references"
-   section listing `SOP-114 §3.2`.
+9. Presenter opens the PDF preview and shows the evidence matrix, conditional
+   recommendation, explicit unknown approval status, and grounding reference.
 10. The sovereignty panel is visible throughout: five approved LAN hosts,
     external-request counter at 0, monitor-active indicator.
 
 Visible failure behaviour: rejecting (or expiring) the confirmation cancels
-the document action; a citation outside the retrieval set or a missing SOP
-match fails the run before any document is created. The full flow must
+the document action; an unsupported criterion citation or missing governing
+criteria fails the run before any document is created. The full flow must
 complete within three minutes on finals hardware.
 
 ## Flow B — exact story (drop CSV → verified result)
@@ -86,17 +90,16 @@ minutes on finals hardware.
 | 2 | Localised pitting corrosion at the shell inlet nozzle, maximum depth 1.8 mm | 1 |
 | 3 | Channel-head gasket degradation; replacement recommended | 2 |
 
-### Flow A — retrieval, citation, and note content
+### Flow A — assessment, citation, and decision-packet content
 
-- `search_knowledge` must return `SOP-114 §3.2` (approval criteria) and
-  `TPL-012` (approval-note template) within its top 5 chunks.
-- The note must cite `[SOP-114 §3.2]` at least once. The document worker
-  refuses to create the deliverable if any citation is absent from the run's
-  retrieval set.
-- The generated DOCX (`approval-note-E201.docx`) contains: an equipment header
-  (E-201, report reference), a findings summary using the extracted findings,
-  a recommendation of conditional clearance pending retubing of the affected
-  tubes, and a "Grounding references" section listing `SOP-114 §3.2`.
+- The assessment must contain `fail`, `pass`, and `unknown` statuses.
+- Every assessment row must cite `[SOP-114 §3.2]`; unsupported citations are
+  rejected before document generation.
+- The assessment must identify missing approval authority information and must
+  not claim final approval.
+- The generated DOCX (`approval-note-E201.docx`) contains an equipment header,
+  extracted findings, the evidence/criteria matrix, conditional clearance
+  pending retubing and gasket replacement, and grounding references.
 
 ### Flow A — required visible route changes
 
@@ -141,7 +144,7 @@ indicator).
 
 | Evidence | Flow | Form |
 | --- | --- | --- |
-| Cited DOCX | A | `data/runs/<run-id>/output/approval-note-E201.docx` with "Grounding references" |
+| Decision packet DOCX | A | `data/runs/<run-id>/output/approval-note-E201.docx` with evidence matrix and grounding references |
 | PDF preview | A | derived locally from the DOCX; no fake preview on conversion failure |
 | Execution record | B | exit code 0 and capped stdout/stderr in the transcript and SQLite |
 | XLSX artifact | B | `data/runs/<run-id>/output/out-of-range-summary.xlsx` |
@@ -150,9 +153,10 @@ indicator).
 | Blocked-egress proof | infra | preconfigured outbound test blocked and recorded (tasks 10d/11b); never an application feature |
 
 Coverage of the finals Definition of Done (`PRODUCT.md` §10): Flow A covers
-auto-selection, the end-to-end agentic task, multimodal understanding, and the
-SOP citation; Flow B covers the code task type and the sandboxed, verified
-coding run; both flows run against the zero-external-request proof.
+auto-selection, multimodal extraction, local criteria grounding, uncertainty,
+and a human-reviewable decision packet; Flow B covers the code task type and
+the sandboxed, verified coding run; both flows run against the
+zero-external-request proof.
 
 ## Deliberately out of scope for this build
 

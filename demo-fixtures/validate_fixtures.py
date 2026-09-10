@@ -1,8 +1,4 @@
-"""Offline preflight checks for the fixed Flow B demo fixture bundle.
-
-Flow A (scanned-report-to-approval-note) is deferred; its fixtures now live
-under docs/archive/rag-legacy/flow-a/ and are not checked here.
-"""
+"""Offline preflight checks for the fixed Flow A and Flow B demo fixtures."""
 
 from __future__ import annotations
 
@@ -18,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 FLOW_B = ROOT / "flow-b"
+FLOW_A = ROOT / "flow-a"
 
 
 def load(name: str):
@@ -32,6 +29,47 @@ def check(condition: bool, message: str) -> None:
 def read_input_rows() -> list[dict[str, str]]:
     with (FLOW_B / "reactor-temperature-log.csv").open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
+
+
+def validate_flow_a() -> None:
+    required = [
+        "inspection-report-E201.pdf",
+        "sop-114-pressure-equipment-inspection.md",
+        "approval-note-template-TPL-012.md",
+        "expected-ocr.json",
+        "expected-assessment.json",
+        "expected-approval-note.json",
+    ]
+    for filename in required:
+        path = FLOW_A / filename
+        check(path.exists() and path.stat().st_size > 0, f"Flow A fixture is missing or empty: {filename}")
+
+    sop = (FLOW_A / "sop-114-pressure-equipment-inspection.md").read_text(encoding="utf-8")
+    check("[section:3.2] Approval criteria" in sop, "SOP criteria section is missing")
+    check("[SOP-114 §3.2]" in sop, "SOP citation is missing")
+
+    ocr = load("flow-a/expected-ocr.json")
+    check(len(ocr["findings"]) == 3, "OCR oracle must contain three findings")
+    check({finding["findingId"] for finding in ocr["findings"]} == {"finding-1", "finding-2", "finding-3"},
+          "OCR finding IDs are incorrect")
+    check({reference["page"] for reference in ocr["pageReferences"]} == {1, 2},
+          "OCR page references are incomplete")
+
+    assessment = load("flow-a/expected-assessment.json")
+    check(assessment["criteriaCitation"] == "[SOP-114 §3.2]", "assessment citation is incorrect")
+    check({item["status"] for item in assessment["assessments"]} == {"fail", "pass", "unknown"},
+          "assessment must demonstrate pass, fail, and unknown statuses")
+    check(all(item["citation"] == "[SOP-114 §3.2]" for item in assessment["assessments"]),
+          "every assessment must cite the governing SOP")
+    check("Conditional clearance" in assessment["recommendation"], "conditional recommendation is missing")
+    check(assessment["missingInformation"][0]["field"] == "approvalAuthority",
+          "missing approval authority must be explicit")
+
+    note = load("flow-a/expected-approval-note.json")
+    check("[SOP-114 §3.2]" in note["body"], "approval note lacks SOP citation")
+    check(note["missingInformation"], "approval note must preserve missing information")
+    check(any(section["id"] == "recommendation" for section in note["sections"]),
+          "approval note recommendation section is missing")
 
 
 def validate_flow_b() -> None:
@@ -96,9 +134,10 @@ def validate_manifest() -> None:
 
 
 def main() -> None:
+    validate_flow_a()
     validate_flow_b()
     validate_manifest()
-    print("Fixture preflight passed: Flow B is deterministic and internally consistent.")
+    print("Fixture preflight passed: Flow A and Flow B are deterministic and internally consistent.")
 
 
 if __name__ == "__main__":

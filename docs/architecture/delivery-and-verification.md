@@ -16,10 +16,11 @@ Keep fixtures under the application-controlled demo data bundle, not in the
 knowledge corpus upload path:
 
 - one clean, typed scanned inspection-report PDF with known findings;
-- one matching SOP and approval-note template carrying stable section IDs;
+- one governing SOP, fixed approval-note template, and approval-readiness
+  decision oracle carrying stable section IDs;
 - one CSV with known out-of-range readings and expected flags/summary;
-- expected approval-note citation list, DOCX text assertions, and PDF preview
-  existence check;
+- expected assessment statuses/actions, approval-note citation list, DOCX text
+  assertions, and PDF preview existence check;
 - expected Python stdout, exit code, and generated data output assertions.
 
 Use the real file-drop control for every test and rehearsal. Fixtures are fixed
@@ -44,8 +45,8 @@ scope.
 ### Product proof points
 
 - [ ] Flow A displays `vision` then `draft` routing events, extracts fixture
-  findings, retrieves the expected SOP section, and creates a cited DOCX plus
-  local PDF preview.
+  findings, assesses them against the governing SOP, and creates a cited
+  decision-packet DOCX plus local PDF preview.
 - [ ] Flow B displays `code` routing, executes the fixture script after
   confirmation, and shows exit code, bounded logs, and the expected result.
 - [ ] Invalid model output, unavailable model host, rejected confirmation, and

@@ -2,6 +2,17 @@
   "fixtureVersion": "1.0.0",
   "generatedAt": "2026-08-20T00:00:00Z",
   "flows": {
+    "flowA": {
+      "reportId": "IR-E201-2026-08-20",
+      "equipmentId": "E-201",
+      "criteriaCitation": "[SOP-114 §3.2]",
+      "statuses": [
+        "fail",
+        "pass",
+        "unknown"
+      ],
+      "recommendation": "Conditional clearance pending retubing and recorded gasket replacement; final approval authority disposition required."
+    },
     "flowB": {
       "inputRows": 240,
       "reactorId": "R-101",
@@ -18,12 +29,36 @@
   },
   "files": {
     "README.md": {
-      "sha256": "c80a3bd3877be58bb0f0dcc8b9b951874970763efc0b494e828180688f0f4e20",
-      "bytes": 1355
+      "sha256": "a217df02a2160d7d9bdc9283b44e3e3feb02e3baa4a946377b5dfbee493ac05c",
+      "bytes": 1755
     },
     "build_fixtures.py": {
-      "sha256": "d222eb8843195222a6c4095e4fdbb1a5e92df0e6a63b881fe707046500f22f83",
-      "bytes": 2810
+      "sha256": "6ca679704caa62b56eb9bdcb1b9c18510f5c4e341c28b4d61579c6f6f4152f13",
+      "bytes": 3062
+    },
+    "flow-a/approval-note-template-TPL-012.md": {
+      "sha256": "1559f0e177b35a5accc87132bb0ee7dc78988d482f348bb8aee3d9229d32be92",
+      "bytes": 681
+    },
+    "flow-a/expected-approval-note.json": {
+      "sha256": "d7c9b8bd6f9d1d25a32f3d72311b4c58a370c6259411887fd289732fc0d27f1e",
+      "bytes": 2230
+    },
+    "flow-a/expected-assessment.json": {
+      "sha256": "a9ddc429b0bfa3b2286b5217ef0a3b01065e762ff45bdc1b2bd7a337fd605e8e",
+      "bytes": 1983
+    },
+    "flow-a/expected-ocr.json": {
+      "sha256": "950501b123d2899fa49628e943ddaf4fa8721d43843b4fc1c88d5a25b085851d",
+      "bytes": 2160
+    },
+    "flow-a/inspection-report-E201.pdf": {
+      "sha256": "c8a12e4c5b676b849ea1667ebc7d45239e4d7484dd0a64ca507ebe4ad887671c",
+      "bytes": 2094
+    },
+    "flow-a/sop-114-pressure-equipment-inspection.md": {
+      "sha256": "67d904eba5994e00a0689e9f3b9389969f593be66364202c7ee91c2577ca05f2",
+      "bytes": 1432
     },
     "flow-b/expected-out-of-range-summary.csv": {
       "sha256": "57c31bb6004654d6302a5def55e7827ab5ab5801d85060218ad616c8b22495bd",
@@ -46,8 +81,8 @@
       "bytes": 6995
     },
     "validate_fixtures.py": {
-      "sha256": "a8cfdfc16261e27ef2bab2564f179fd65a9582361e771ba8645cd90ef89d9f22",
-      "bytes": 4188
+      "sha256": "6310235c158580b361eea87fa9d172dd0af0ba544d55ca6aabb8938d53149dae",
+      "bytes": 6311
     }
   }
 }

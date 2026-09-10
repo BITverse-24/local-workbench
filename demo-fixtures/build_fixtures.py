@@ -1,9 +1,4 @@
-"""Build deterministic Flow B fixtures and refresh manifest hashes.
-
-Flow A (scanned-report-to-approval-note) is deferred; its fixtures now live
-under docs/archive/rag-legacy/flow-a/. This script builds only the active
-Flow B bundle.
-"""
+"""Build deterministic demo fixtures and refresh manifest hashes."""
 
 from __future__ import annotations
 
@@ -16,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 FLOW_B = ROOT / "flow-b"
+FLOW_A = ROOT / "flow-a"
 
 
 def make_csv(path: Path) -> None:
@@ -57,6 +53,13 @@ def make_manifest() -> None:
         "fixtureVersion": "1.0.0",
         "generatedAt": "2026-08-20T00:00:00Z",
         "flows": {
+            "flowA": {
+                "reportId": "IR-E201-2026-08-20",
+                "equipmentId": "E-201",
+                "criteriaCitation": "[SOP-114 §3.2]",
+                "statuses": ["fail", "pass", "unknown"],
+                "recommendation": "Conditional clearance pending retubing and recorded gasket replacement; final approval authority disposition required.",
+            },
             "flowB": {
                 "inputRows": 240,
                 "reactorId": "R-101",
