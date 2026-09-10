@@ -235,19 +235,41 @@ export class ModelGateway implements ModelClient {
         persistGatewayTrace(request.runId, request.requestId, { phase: "envelope_parse_error", taskType: request.taskType, error: e instanceof Error ? e.message : String(e), rawText });
         throw new Error(`provider returned non-JSON envelope: ${(e instanceof Error ? e.message : String(e)).slice(0, 500)} — raw: ${rawText.slice(0, 1000)}`);
       }
-      const envTyped = envelope as { choices?: Array<{ message?: { content?: unknown; finish_reason?: string }; finish_reason?: string }>; usage?: unknown };
-      extractedContent = envTyped.choices?.[0]?.message?.content;
-      const finishReason = (envTyped.choices?.[0] as { finish_reason?: string })?.finish_reason ?? (envTyped.choices?.[0]?.message as { finish_reason?: string } | undefined)?.finish_reason;
+      const envTyped = envelope as {
+        choices?: Array<{
+          message?: {
+            content?: unknown;
+            reasoning?: unknown;
+            reasoning_content?: unknown;
+            finish_reason?: string;
+          };
+          finish_reason?: string;
+        }>;
+        usage?: unknown;
+      };
+      const choiceMsg = envTyped.choices?.[0]?.message;
+      extractedContent = choiceMsg?.content;
+      const reasoning = choiceMsg?.reasoning ?? choiceMsg?.reasoning_content;
+      const finishReason = (envTyped.choices?.[0] as { finish_reason?: string })?.finish_reason ?? choiceMsg?.finish_reason;
       const usage = envTyped["usage" as keyof typeof envTyped];
-      persistGatewayTrace(request.runId, request.requestId, { phase: "envelope", taskType: request.taskType, envelope, finishReason, usage, extractedContent, extractedContentChars: typeof extractedContent === "string" ? extractedContent.length : 0 });
+      persistGatewayTrace(request.runId, request.requestId, {
+        phase: "envelope",
+        taskType: request.taskType,
+        envelope,
+        finishReason,
+        usage,
+        extractedContent,
+        reasoning,
+        extractedContentChars: typeof extractedContent === "string" ? extractedContent.length : 0,
+      });
 
-      persistGatewayTrace(request.runId, request.requestId, { phase: "provider_content_raw", taskType: request.taskType, extractedContent });
+      persistGatewayTrace(request.runId, request.requestId, { phase: "provider_content_raw", taskType: request.taskType, extractedContent, reasoning });
 
       try {
-        parsedJson = parseProviderContent(extractedContent);
+        parsedJson = parseProviderContent(extractedContent, reasoning);
       } catch (e) {
         logGatewayError(request, "parseProviderContent failed (empty/invalid JSON)", e instanceof Error ? e.message : String(e));
-        persistGatewayTrace(request.runId, request.requestId, { phase: "parse_error", taskType: request.taskType, error: e instanceof Error ? e.message : String(e), extractedContent, rawText, envelope });
+        persistGatewayTrace(request.runId, request.requestId, { phase: "parse_error", taskType: request.taskType, error: e instanceof Error ? e.message : String(e), extractedContent, reasoning, rawText, envelope });
         throw e;
       }
       persistGatewayTrace(request.runId, request.requestId, { phase: "parsed_json", taskType: request.taskType, parsedJson });
@@ -314,4 +336,4 @@ export class ModelGateway implements ModelClient {
     }
   }
 }
-export function requestBase(runId: string, taskType: ModelRequest["taskType"], modelId: ModelRequest["modelId"], responseFormat: ModelRequest["responseFormat"], systemPrompt: string, userPrompt: string, timeoutMs: number, maxTokens?: number): Pick<ModelRequest, "requestId" | "runId" | "taskType" | "modelId" | "responseFormat" | "systemPrompt" | "userPrompt" | "timeoutMs" | "maxTokens"> { return { requestId: randomUUID(), runId, taskType, modelId, responseFormat, systemPrompt, userPrompt, timeoutMs, maxTokens }; }
+export function requestBase(runId: string, taskType: ModelRequest["taskType"], modelId: ModelRequest["modelId"], responseFormat: ModelRequest["responseFormat"], systemPrompt: string, userPrompt: string, timeoutMs: number, maxTokens?: number, temperature?: number): Pick<ModelRequest, "requestId" | "runId" | "taskType" | "modelId" | "responseFormat" | "systemPrompt" | "userPrompt" | "timeoutMs" | "maxTokens" | "temperature"> { return { requestId: randomUUID(), runId, taskType, modelId, responseFormat, systemPrompt, userPrompt, timeoutMs, maxTokens, temperature }; }

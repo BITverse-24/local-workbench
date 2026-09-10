@@ -114,6 +114,7 @@ export async function startRun(input: {
   attachmentToken?: string;
   runId?: string;
   chatId?: string;
+  temperature?: number;
 }): Promise<{ runId: string }> {
   return bridge().startRun(input);
 }

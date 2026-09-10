@@ -95,7 +95,7 @@ interface WorkbenchBridge {
   renameChat: (chatId: string, title: string) => Promise<void>;
   getSetting: (key: string) => Promise<{ value: unknown }>;
   setSetting: (key: string, value: unknown) => Promise<void>;
-  startRun: (input: { userText: string; attachmentToken?: string; runId?: string; chatId?: string }) => Promise<{ runId: string }>;
+  startRun: (input: { userText: string; attachmentToken?: string; runId?: string; chatId?: string; temperature?: number }) => Promise<{ runId: string }>;
   registerAttachment: (input: {
     chatId?: string;
     filename: string;

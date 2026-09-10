@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import * as wb from "../lib/workbench";
 
 type Props = {
@@ -13,7 +13,7 @@ type TraceEntry = Record<string, unknown> & {
   requestId?: string;
 };
 
-type TabType = "transcript" | "trace" | "files";
+type ModalType = "transcript" | "trace" | "files" | null;
 
 function iconFor(e: RunEvent): string {
   switch (e.type) {
@@ -89,12 +89,10 @@ function tracePreview(entry: TraceEntry): string {
 export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
   const [entries, setEntries] = useState<TraceEntry[]>([]);
   const [files, setFiles] = useState<string[]>([]);
-  const [recentFull, setRecentFull] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
 
-  // Modal inspection state
-  const [modalOpen, setModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>("transcript");
+  // Independent Modal State: null = closed, or one of the 3 diagnostics
+  const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [expandedTraceIdx, setExpandedTraceIdx] = useState<number | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [selectedFileContent, setSelectedFileContent] = useState<unknown>(null);
@@ -108,7 +106,6 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
       const res = await wb.getRunLogs({ runId, limit: 100 });
       setEntries((res.entries as TraceEntry[]) ?? []);
       setFiles(res.files ?? []);
-      setRecentFull(res.recentFull ?? null);
     } catch {
       // keep prior logs
     }
@@ -120,7 +117,6 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
     if (!runId) {
       setEntries([]);
       setFiles([]);
-      setRecentFull(null);
       return;
     }
     const id = window.setInterval(() => {
@@ -141,10 +137,9 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
     }
   }, [runId]);
 
-  const handleOpenTab = (tab: TabType) => {
-    setActiveTab(tab);
-    setModalOpen(true);
-    if (tab === "files" && files.length > 0 && !selectedFileName) {
+  const handleOpenModal = (modal: ModalType) => {
+    setActiveModal(modal);
+    if (modal === "files" && files.length > 0 && !selectedFileName) {
       void openFile(files[files.length - 1]!);
     }
   };
@@ -181,7 +176,7 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
 
         {/* 1. Run Transcript Row (Latest Update Only) */}
         <div
-          onClick={() => handleOpenTab("transcript")}
+          onClick={() => handleOpenModal("transcript")}
           className="p-2.5 rounded-xl bg-black/20 hover:bg-black/30 border border-white/5 cursor-pointer transition-colors group"
         >
           <div className="flex items-center justify-between text-[11px] font-medium opacity-70 mb-1">
@@ -209,7 +204,7 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
 
         {/* 2. Model Trace Row (Latest Update Only) */}
         <div
-          onClick={() => handleOpenTab("trace")}
+          onClick={() => handleOpenModal("trace")}
           className="p-2.5 rounded-xl bg-black/20 hover:bg-black/30 border border-white/5 cursor-pointer transition-colors group"
         >
           <div className="flex items-center justify-between text-[11px] font-medium opacity-70 mb-1">
@@ -239,7 +234,7 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
 
         {/* 3. Per-Request Files Row (Latest Update Only) */}
         <div
-          onClick={() => handleOpenTab("files")}
+          onClick={() => handleOpenModal("files")}
           className="p-2.5 rounded-xl bg-black/20 hover:bg-black/30 border border-white/5 cursor-pointer transition-colors group"
         >
           <div className="flex items-center justify-between text-[11px] font-medium opacity-70 mb-1">
@@ -266,83 +261,93 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
         </div>
       </div>
 
-      {/* Pop-up Detail Inspection Modal */}
-      {modalOpen && (
+      {/* Independent Modal Dialog: Run Transcript */}
+      {activeModal === "transcript" && (
         <div
           className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-apple-fade"
-          onClick={() => setModalOpen(false)}
+          onClick={() => setActiveModal(null)}
+        >
+          <div
+            className="bg-[#1c1c1c] border border-white/10 rounded-2xl w-full max-w-3xl h-[80vh] flex flex-col overflow-hidden shadow-2xl animate-apple-scaleIn"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-black/30">
+              <div className="flex items-center gap-2.5">
+                <span className="text-base font-semibold">Run Transcript</span>
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/10 font-mono text-white/80">
+                  {runEvents.length} {runEvents.length === 1 ? "event" : "events"}
+                </span>
+                {runId && <span className="text-[11px] font-mono opacity-40 ml-2">run:{runId.slice(0, 8)}</span>}
+              </div>
+              <button
+                onClick={() => setActiveModal(null)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/15 grid place-items-center text-sm transition-colors"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-hidden p-4">
+              {runEvents.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-xs opacity-40 italic">
+                  No run events recorded yet.
+                </div>
+              ) : (
+                <div className="h-full overflow-y-auto space-y-1.5 pr-2">
+                  {runEvents.map((e, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-start gap-3 p-2.5 rounded-xl bg-black/25 border border-white/5 text-xs font-mono"
+                    >
+                      <span className="opacity-40 shrink-0 w-5 text-center mt-0.5">{iconFor(e)}</span>
+                      <div className="flex-1 break-words">
+                        <span className="opacity-40 mr-2">[{e.type}]</span>
+                        <span className="opacity-90">{labelFor(e)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Independent Modal Dialog: Model Trace */}
+      {activeModal === "trace" && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-apple-fade"
+          onClick={() => setActiveModal(null)}
         >
           <div
             className="bg-[#1c1c1c] border border-white/10 rounded-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden shadow-2xl animate-apple-scaleIn"
             onClick={(ev) => ev.stopPropagation()}
           >
-            {/* Modal Header with Tabs */}
-            <div className="flex items-center justify-between p-3.5 border-b border-white/10 bg-black/30">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold tracking-wider uppercase opacity-50 mr-2">Diagnostics</span>
-                <div className="flex items-center bg-black/40 p-1 rounded-xl border border-white/5 gap-1">
-                  <button
-                    onClick={() => setActiveTab("transcript")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                      activeTab === "transcript"
-                        ? "bg-white/15 text-white shadow-sm"
-                        : "opacity-60 hover:opacity-100"
-                    }`}
-                  >
-                    Run Transcript ({runEvents.length})
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("trace")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                      activeTab === "trace"
-                        ? "bg-white/15 text-white shadow-sm"
-                        : "opacity-60 hover:opacity-100"
-                    }`}
-                  >
-                    Model Trace ({entries.length})
-                  </button>
-                  <button
-                    onClick={() => {
-                      setActiveTab("files");
-                      if (files.length > 0 && !selectedFileName) {
-                        void openFile(files[files.length - 1]!);
-                      }
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                      activeTab === "files"
-                        ? "bg-white/15 text-white shadow-sm"
-                        : "opacity-60 hover:opacity-100"
-                    }`}
-                  >
-                    Per-Request Files ({files.length})
-                  </button>
-                </div>
+            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-black/30">
+              <div className="flex items-center gap-2.5">
+                <span className="text-base font-semibold">Model Trace</span>
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/10 font-mono text-white/80">
+                  {entries.length} {entries.length === 1 ? "entry" : "entries"}
+                </span>
+                {hasError && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-medium">
+                    errors detected
+                  </span>
+                )}
+                {runId && <span className="text-[11px] font-mono opacity-40 ml-2">run:{runId.slice(0, 8)}</span>}
               </div>
 
               <div className="flex items-center gap-2">
-                {activeTab === "trace" && (
-                  <button
-                    onClick={() => void fetchLogs()}
-                    className="px-2.5 py-1 rounded-full neu-button text-xs"
-                  >
-                    Refresh
-                  </button>
-                )}
-                {activeTab === "trace" && recentFull != null && (
-                  <button
-                    onClick={() => {
-                      setSelectedFileContent(recentFull);
-                      setSelectedFileName("recentFull (latest)");
-                      setActiveTab("files");
-                    }}
-                    className="px-2.5 py-1 rounded-full neu-button text-xs"
-                  >
-                    Full JSON
-                  </button>
-                )}
                 <button
-                  onClick={() => setModalOpen(false)}
-                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/15 grid place-items-center text-sm"
+                  onClick={() => void fetchLogs()}
+                  className="px-3 py-1 rounded-full neu-button text-xs font-medium"
+                >
+                  Refresh
+                </button>
+                <button
+                  onClick={() => setActiveModal(null)}
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/15 grid place-items-center text-sm transition-colors ml-1"
                   title="Close"
                 >
                   ✕
@@ -350,143 +355,131 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
               </div>
             </div>
 
-            {/* Modal Content */}
             <div className="flex-1 overflow-hidden p-4">
-              {/* Tab 1: Run Transcript */}
-              {activeTab === "transcript" && (
-                <div className="h-full flex flex-col">
-                  <div className="text-xs opacity-50 mb-3 flex items-center justify-between">
-                    <span>Full chronological run event log ({runEvents.length} events)</span>
-                    {runId && <span className="font-mono text-[11px]">Run ID: {runId}</span>}
-                  </div>
-                  {runEvents.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-xs opacity-40 italic">
-                      No run events recorded yet.
-                    </div>
-                  ) : (
-                    <div className="flex-1 overflow-y-auto space-y-1.5 pr-2">
-                      {runEvents.map((e, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-start gap-3 p-2.5 rounded-xl bg-black/25 border border-white/5 text-xs font-mono"
-                        >
-                          <span className="opacity-40 shrink-0 w-5 text-center mt-0.5">{iconFor(e)}</span>
-                          <div className="flex-1 break-words">
-                            <span className="opacity-40 mr-2">[{e.type}]</span>
-                            <span className="opacity-90">{labelFor(e)}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+              {entries.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-xs opacity-40 italic">
+                  No model trace entries logged yet for this run.
                 </div>
-              )}
-
-              {/* Tab 2: Model Trace */}
-              {activeTab === "trace" && (
-                <div className="h-full flex flex-col">
-                  <div className="text-xs opacity-50 mb-3 flex items-center justify-between">
-                    <span>Model Gateway Trace ({entries.length} entries)</span>
-                    {runId && <span className="font-mono text-[11px]">Run ID: {runId}</span>}
-                  </div>
-                  {entries.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-xs opacity-40 italic">
-                      No model trace entries logged yet for this run.
-                    </div>
-                  ) : (
-                    <div className="flex-1 overflow-y-auto space-y-1.5 pr-2">
-                      {entries.map((entry, idx) => (
-                        <div
-                          key={idx}
-                          className={`rounded-xl p-2.5 bg-black/25 border border-white/5 ${
-                            expandedTraceIdx === idx ? "bg-black/40 border-white/15" : ""
-                          }`}
-                        >
-                          <button
-                            onClick={() => setExpandedTraceIdx(expandedTraceIdx === idx ? null : idx)}
-                            className="w-full text-left flex gap-2.5 items-start"
-                          >
-                            <span className={`text-[11px] font-mono shrink-0 mt-0.5 ${phaseColor(entry.phase)}`}>
-                              [{entry.phase ?? "?"}]
-                            </span>
-                            <span className="text-xs opacity-80 break-all leading-relaxed flex-1">
-                              {tracePreview(entry)}
-                            </span>
-                            <span className="text-[10px] opacity-30 shrink-0">
-                              {entry.timestamp ? new Date(entry.timestamp as string).toLocaleTimeString() : ""}
-                            </span>
-                          </button>
-                          {expandedTraceIdx === idx && (
-                            <div className="mt-2.5 pt-2 border-t border-white/10 flex flex-col gap-2">
-                              <div className="flex justify-end">
-                                <button
-                                  onClick={() => handleCopy(entry)}
-                                  className="px-2.5 py-1 rounded-full neu-button text-[11px]"
-                                >
-                                  {copyFeedback ? "Copied!" : "Copy Payload"}
-                                </button>
-                              </div>
-                              <pre className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-all bg-black/50 rounded-lg p-3 max-h-[280px] overflow-auto">
-                                {JSON.stringify(entry, null, 2)}
-                              </pre>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Tab 3: Per-Request Files */}
-              {activeTab === "files" && (
-                <div className="h-full flex flex-col">
-                  {files.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-xs opacity-40 italic">
-                      No per-request trace files generated yet.
-                    </div>
-                  ) : (
-                    <div className="h-full flex flex-col gap-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto">
-                          {files.map((f) => (
+              ) : (
+                <div className="h-full overflow-y-auto space-y-2 pr-2">
+                  {entries.map((entry, idx) => (
+                    <div
+                      key={idx}
+                      className={`rounded-xl p-3 bg-black/25 border border-white/5 transition-colors ${
+                        expandedTraceIdx === idx ? "bg-black/45 border-white/15" : ""
+                      }`}
+                    >
+                      <button
+                        onClick={() => setExpandedTraceIdx(expandedTraceIdx === idx ? null : idx)}
+                        className="w-full text-left flex gap-2.5 items-start"
+                      >
+                        <span className={`text-[11px] font-mono shrink-0 mt-0.5 ${phaseColor(entry.phase)}`}>
+                          [{entry.phase ?? "?"}]
+                        </span>
+                        <span className="text-xs opacity-80 break-all leading-relaxed flex-1 font-mono">
+                          {tracePreview(entry)}
+                        </span>
+                        <span className="text-[10px] opacity-30 shrink-0">
+                          {entry.timestamp ? new Date(entry.timestamp as string).toLocaleTimeString() : ""}
+                        </span>
+                      </button>
+                      {expandedTraceIdx === idx && (
+                        <div className="mt-2.5 pt-2 border-t border-white/10 flex flex-col gap-2">
+                          <div className="flex justify-end">
                             <button
-                              key={f}
-                              onClick={() => void openFile(f)}
-                              className={`px-3 py-1 rounded-full text-xs font-mono transition-colors ${
-                                selectedFileName === f
-                                  ? "bg-white/20 text-white font-semibold"
-                                  : "bg-white/5 hover:bg-white/10 opacity-70"
-                              }`}
+                              onClick={() => handleCopy(entry)}
+                              className="px-2.5 py-1 rounded-full neu-button text-[11px]"
                             >
-                              {f}
+                              {copyFeedback ? "Copied!" : "Copy Payload"}
                             </button>
-                          ))}
+                          </div>
+                          <pre className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-all bg-black/50 rounded-lg p-3 max-h-[300px] overflow-auto">
+                            {JSON.stringify(entry, null, 2)}
+                          </pre>
                         </div>
-                        {selectedFileContent != null && (
-                          <button
-                            onClick={() => handleCopy(selectedFileContent)}
-                            className="px-3 py-1 rounded-full neu-button text-xs shrink-0 ml-2"
-                          >
-                            {copyFeedback ? "Copied!" : "Copy JSON"}
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="flex-1 bg-black/40 rounded-xl border border-white/10 overflow-hidden flex flex-col">
-                        <div className="p-2 px-3 bg-black/30 border-b border-white/10 text-xs font-mono opacity-60">
-                          {selectedFileName ?? "Select a file to inspect"}
-                        </div>
-                        <pre className="p-4 text-xs font-mono leading-relaxed whitespace-pre-wrap break-all overflow-auto flex-1 text-emerald-300/90">
-                          {selectedFileContent != null
-                            ? typeof selectedFileContent === "string"
-                              ? selectedFileContent
-                              : JSON.stringify(selectedFileContent, null, 2)
-                            : "Click any file button above to inspect its untruncated content."}
-                        </pre>
-                      </div>
+                      )}
                     </div>
-                  )}
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Independent Modal Dialog: Per-Request Files */}
+      {activeModal === "files" && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-apple-fade"
+          onClick={() => setActiveModal(null)}
+        >
+          <div
+            className="bg-[#1c1c1c] border border-white/10 rounded-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden shadow-2xl animate-apple-scaleIn"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-black/30">
+              <div className="flex items-center gap-2.5">
+                <span className="text-base font-semibold">Per-Request Files</span>
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/10 font-mono text-white/80">
+                  {files.length} {files.length === 1 ? "file" : "files"}
+                </span>
+                {runId && <span className="text-[11px] font-mono opacity-40 ml-2">run:{runId.slice(0, 8)}</span>}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {selectedFileContent != null && (
+                  <button
+                    onClick={() => handleCopy(selectedFileContent)}
+                    className="px-3 py-1 rounded-full neu-button text-xs font-medium"
+                  >
+                    {copyFeedback ? "Copied!" : "Copy JSON"}
+                  </button>
+                )}
+                <button
+                  onClick={() => setActiveModal(null)}
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/15 grid place-items-center text-sm transition-colors ml-1"
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-hidden p-4">
+              {files.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-xs opacity-40 italic">
+                  No per-request trace files generated yet for this run.
+                </div>
+              ) : (
+                <div className="h-full flex flex-col gap-3">
+                  <div className="flex flex-wrap gap-1.5 max-h-[90px] overflow-y-auto p-1 bg-black/20 rounded-xl border border-white/5">
+                    {files.map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => void openFile(f)}
+                        className={`px-3 py-1 rounded-full text-xs font-mono transition-colors ${
+                          selectedFileName === f
+                            ? "bg-white/20 text-white font-semibold shadow-sm"
+                            : "bg-white/5 hover:bg-white/10 opacity-70"
+                        }`}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex-1 bg-black/40 rounded-xl border border-white/10 overflow-hidden flex flex-col">
+                    <div className="p-2.5 px-4 bg-black/30 border-b border-white/10 text-xs font-mono opacity-60 flex justify-between">
+                      <span>{selectedFileName ?? "Select a file to inspect"}</span>
+                    </div>
+                    <pre className="p-4 text-xs font-mono leading-relaxed whitespace-pre-wrap break-all overflow-auto flex-1 text-emerald-300/90">
+                      {selectedFileContent != null
+                        ? typeof selectedFileContent === "string"
+                          ? selectedFileContent
+                          : JSON.stringify(selectedFileContent, null, 2)
+                        : "Click any file button above to inspect its untruncated content."}
+                    </pre>
+                  </div>
                 </div>
               )}
             </div>

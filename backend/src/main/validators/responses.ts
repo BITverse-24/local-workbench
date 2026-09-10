@@ -17,8 +17,19 @@ export const codeResultSchema = z.object({
   artifactRationale: nullableOptional(z.string().max(1000)),
 }).strict();
 export const codeSummarySchema = z.object({ summary: z.string().min(1).max(4000), verified: z.boolean() }).strict();
-export const chatResultSchema = z.object({ text: z.string().min(1).max(40000) }).strict();
-function failure(error: z.ZodError) { const first = error.issues[0]; return { kind: "validation-failure" as const, code: first.code === "unrecognized_keys" ? "extra-field" as const : first.code === "invalid_type" ? "wrong-type" as const : "invalid-value" as const, message: first.message, path: first.path.join("."), expected: "valid response" }; }
+export const chatResultSchema = z.object({ text: z.string().min(1).max(40000) });
+function failure(error: z.ZodError) {
+  const first = error.issues[0];
+  const field = first.path.join(".");
+  const msg = field ? `field '${field}': ${first.message}` : first.message;
+  return {
+    kind: "validation-failure" as const,
+    code: first.code === "unrecognized_keys" ? "extra-field" as const : first.code === "invalid_type" ? "wrong-type" as const : "invalid-value" as const,
+    message: msg,
+    path: field,
+    expected: "valid response"
+  };
+}
 // Bare zod messages ("String must contain at least 1 character(s)") are
 // useless in the UI. Always surface the failing field and what was expected.
 export function validationMessage(label: string, error: { message: string; path: string; expected: string }): string {
@@ -49,5 +60,44 @@ export function validateCode(value: unknown): { ok: true; value: CodeDraftResult
   return { ok: true, value: result as CodeDraftResult };
 }
 export function validateCodeSummary(value: unknown) { const parsed = codeSummarySchema.safeParse(value); return parsed.success ? { ok: true as const, value: parsed.data } : { ok: false as const, error: failure(parsed.error) }; }
-export function validateChat(value: unknown): { ok: true; value: ChatResult } | { ok: false; error: ReturnType<typeof failure> } { const parsed = chatResultSchema.safeParse(value); return parsed.success ? { ok: true, value: parsed.data as ChatResult } : { ok: false, error: failure(parsed.error) }; }
+export function validateChat(value: unknown): { ok: true; value: ChatResult } | { ok: false; error: ReturnType<typeof failure> } {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return { ok: true, value: { text: trimmed.slice(0, 40000) } };
+    }
+  }
+
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    if (obj.text !== undefined && obj.text !== null) {
+      const str = String(obj.text).trim();
+      if (str.length > 0) {
+        return { ok: true, value: { text: str.slice(0, 40000) } };
+      }
+    }
+
+    const altKeys = ["message", "response", "answer", "reply", "content", "output", "result", "summary"];
+    for (const k of altKeys) {
+      if (obj[k] !== undefined && obj[k] !== null) {
+        const str = typeof obj[k] === "object" ? JSON.stringify(obj[k]) : String(obj[k]).trim();
+        if (str.length > 0) {
+          return { ok: true, value: { text: str.slice(0, 40000) } };
+        }
+      }
+    }
+
+    const keys = Object.keys(obj);
+    if (keys.length === 1 && obj[keys[0]] !== undefined && obj[keys[0]] !== null) {
+      const val = obj[keys[0]];
+      const str = typeof val === "object" ? JSON.stringify(val) : String(val).trim();
+      if (str.length > 0) {
+        return { ok: true, value: { text: str.slice(0, 40000) } };
+      }
+    }
+  }
+
+  const parsed = chatResultSchema.safeParse(value);
+  return parsed.success ? { ok: true, value: parsed.data as ChatResult } : { ok: false, error: failure(parsed.error) };
+}
 export type ValidatedFinding = Finding;

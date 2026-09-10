@@ -99,6 +99,7 @@ function createWindow(): void {
     title: "Sovereign Workbench",
     icon: path.join(frontendPublicDir(), "electron-vite.svg"),
     frame: false,
+    fullscreen: true,
     width: 1200,
     height: 720,
     minWidth: 1200,
@@ -281,7 +282,9 @@ ipcMain.on("window-minimize", () => {
 });
 
 ipcMain.on("window-maximize", () => {
-  if (win?.isMaximized()) {
+  if (win?.isFullScreen()) {
+    win.setFullScreen(false);
+  } else if (win?.isMaximized()) {
     win.unmaximize();
   } else {
     win?.maximize();

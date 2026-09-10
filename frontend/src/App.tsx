@@ -12,10 +12,8 @@ import UploadModal from "./components/modals/UploadModal";
 import CameraModal from "./components/modals/CameraModal";
 import VoiceModal from "./components/modals/VoiceModal";
 import ConfirmationModal from "./components/ConfirmationModal";
-import RunTranscript from "./components/RunTranscript";
 import ArtifactPane from "./components/ArtifactPane";
 import RouteBadge from "./components/RouteBadge";
-import ModelTracePanel from "./components/ModelTracePanel";
 import { MODELS } from "./lib/models";
 import * as wb from "./lib/workbench";
 import { useDropdownPosition, usePlusPosition } from "./lib/hooks/useDropdownPosition";
@@ -78,17 +76,15 @@ export default function App() {
         setHistory(chats.map((c) => ({ id: c.id, title: c.title, updated_at: c.updated_at })));
         const temp = await wb.getSetting<number>("temperature");
         if (!cancelled && typeof temp === "number") setTemperature(temp);
-        const last = await wb.getSetting<string>("lastChatId");
-        if (cancelled) return;
-        const target =
-          (typeof last === "string" && chats.some((c) => c.id === last) ? last : null) ??
-          chats[0]?.id ??
-          null;
-        if (!target) return;
-        setChatId(target);
-        await wb.setSetting("lastChatId", target);
-        const rows = await wb.getMessages(target);
-        if (!cancelled) setMessages(toChatMessages(rows));
+        // Open a fresh new chat on startup (chat history remains accessible in the sidebar)
+        setChatId(null);
+        setMessages([]);
+        setActiveRunId(null);
+        setRunState(null);
+        setActiveRoute(null);
+        setRunEvents([]);
+        setRunArtifacts([]);
+        setRunError(null);
         // Health probe on startup
         try {
           const h = await wb.getHealth();
@@ -413,6 +409,7 @@ export default function App() {
             attachmentToken,
             runId: runIdForAttachment,
             chatId: cid,
+            temperature,
           });
           setActiveRunId(runId);
           // Chat stays on cid; run is linked via DB.
@@ -514,7 +511,7 @@ export default function App() {
                 <span className="break-words whitespace-pre-wrap cursor-text"><strong>{runError.code}:</strong> {runError.message}</span>
                 <button onClick={() => setRunError(null)} className="shrink-0 w-6 h-6 rounded-full bg-white/10 grid place-items-center">x</button>
               </div>
-              <span className="opacity-60 text-[11px] cursor-text">Full model response is in Model trace below — expand provider_content_raw / normalized to see what the model returned (e.g. missing SOP-114 grounding or section count).</span>
+              <span className="opacity-60 text-[11px] cursor-text">Full model response is in Model Trace (Settings sidebar & terminal logs) — expand provider_content_raw / normalized to see what the model returned.</span>
             </div>
           )}
           {isRunning && (
@@ -524,8 +521,6 @@ export default function App() {
               <button onClick={handleCancelRun} className="ml-auto px-3 py-1 rounded-full neu-button text-xs">Cancel</button>
             </div>
           )}
-          <RunTranscript events={runEvents} />
-          {activeRunId && <ModelTracePanel runId={activeRunId} />}
           <ChatArea messages={messages} onEditMessage={handleEditMessage} onAttachFiles={addFiles} />
           {runArtifacts.length > 0 && <ArtifactPane artifacts={runArtifacts} onOpen={handleOpenArtifact} onSave={handleSaveArtifact} runId={activeRunId ?? undefined} />}
           <InputBar
@@ -560,6 +555,8 @@ export default function App() {
           health={serviceHealth}
           healthLoading={healthLoading}
           onRefreshHealth={refreshHealth}
+          runEvents={runEvents}
+          runId={activeRunId}
         />
       </div>
 
