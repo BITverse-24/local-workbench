@@ -29,6 +29,11 @@ export default function ConfirmationModal({ open, action, runState, onApprove, o
         <p className="text-xs opacity-60 mt-2">Run {action.runId.slice(0, 8)} • {runState ?? ""}</p>
         <p className="text-xs opacity-50 mt-1">Expires: {expiresIn}</p>
         <p className="text-xs opacity-50 mt-1">This action requires your approval before the backend proceeds.</p>
+        {action.preview && (
+          <div className="mt-4 bg-black/10 dark:bg-black/40 rounded border border-black/10 dark:border-white/10 p-3 overflow-x-auto max-h-[200px] overflow-y-auto">
+            <pre className="text-xs font-mono whitespace-pre-wrap">{action.preview}</pre>
+          </div>
+        )}
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onReject} disabled={busy} className="px-5 py-2 rounded-full neu-button text-sm font-medium disabled:opacity-40">{busy ? "Working…" : "Reject"}</button>
           <button onClick={onApprove} disabled={busy} className="px-5 py-2 rounded-full neu-button-primary text-sm font-semibold disabled:opacity-40">{busy ? "Working…" : "Approve"}</button>

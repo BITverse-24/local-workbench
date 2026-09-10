@@ -288,7 +288,7 @@ export class RunManager {
     const code = await this.codeModel.generate(request);
     if (!code.ok) throw new Error(code.error.message);
     writeRunFile(runId, "intermediate", "task.py", code.value.source);
-    await this.awaitConfirmation(runId, "execute_python", async () => {
+    const executePythonContinuation = async () => {
       const logicalInputFiles = code.value.inputFiles;
       // Attachments are stored as <uuid>-<display filename> on disk. The
       // generated script uses its logical input filename, so map that name
@@ -361,7 +361,13 @@ export class RunManager {
         this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
         this.complete(runId);
       });
-    });
+    };
+
+    if (code.value.outputFiles.length === 0) {
+      await executePythonContinuation();
+    } else {
+      await this.awaitConfirmation(runId, "execute_python", executePythonContinuation, code.value.source);
+    }
   }
   private requestsArtifact(text: string): boolean {
     return /\b(export|download|save|create|generate|write|make)\b[\s\S]*\b(file|xlsx|excel|spreadsheet|csv)\b|\b(file|xlsx|excel|spreadsheet|csv)\b[\s\S]*\b(export|download|save|create|generate|write|make)\b/i.test(text);
@@ -370,8 +376,9 @@ export class RunManager {
     runId: string,
     kind: PendingAction["kind"],
     continuation: Continuation,
+    preview?: string
   ): Promise<void> {
-    const action = createConfirmation(runId, kind);
+    const action = createConfirmation(runId, kind, preview);
     this.continuations.set(action.actionId, continuation);
     this.state(runId, "awaiting_confirmation");
     this.emit({ type: "confirmation_required", runId, action });

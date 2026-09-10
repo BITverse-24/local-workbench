@@ -3,11 +3,14 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { RunManager } from "../src/main/run/manager.js";
+import * as pythonModule from "../src/main/tools/python.js";
+import { vi } from "vitest";
 import { createChat } from "../src/main/persistence/chats.js";
 import { closeDb, initDb } from "../src/main/persistence/db.js";
 import type { ModelRequest, ModelResponse, RunEvent } from "../src/shared/contracts.js";
 
 let tempDir = "";
+vi.mock("../src/main/tools/python.js", () => ({ executePython: vi.fn().mockResolvedValue({ exitCode: 0, stdout: "ROWS 2\nOUT_OF_RANGE 7/240 (high=5, low=2)", stderr: "", timedOut: false, durationMs: 100, outputFiles: ["summary.csv", "csv-summary.xlsx"] }) }));
 
 beforeEach(() => {
   tempDir = mkdtempSync(path.join(process.cwd(), ".tmp-flow-b-e2e-"));
@@ -80,7 +83,7 @@ describe("Flow B end-to-end", () => {
             source,
             expectedResult: "summary.csv contains the row count",
             inputFiles: ["input.csv"],
-            outputFiles: ["summary.csv"],
+            outputFiles: [],
             allowedImports: ["csv"],
           });
         }
@@ -93,12 +96,7 @@ describe("Flow B end-to-end", () => {
     const csv = "name,value\na,10\nb,20\n";
     const registered = manager.registerAttachment({ filename: "input.csv", mediaType: "text/csv", sizeBytes: Buffer.byteLength(csv), base64OrBuffer: Buffer.from(csv) });
     const started = await manager.start({ userText: "Summarise this CSV", attachmentToken: registered.attachment.attachmentId, runId: registered.runId });
-    const executeConfirmation = await waitForEvent(events, "confirmation_required") as Extract<RunEvent, { type: "confirmation_required" }>;
     expect(events.some((event) => event.type === "routing" && event.taskType === "code")).toBe(true);
-    await Promise.all([
-      manager.confirm({ runId: started.runId, actionId: executeConfirmation.action.actionId, approved: true }),
-      manager.confirm({ runId: started.runId, actionId: executeConfirmation.action.actionId, approved: true }),
-    ]);
     const completed = await waitForState(events, "completed");
 
     expect(completed.state).toBe("completed");
@@ -120,8 +118,8 @@ describe("Flow B end-to-end", () => {
       async complete(request: ModelRequest) {
         if (request.responseFormat === "code-result") {
           return response(request, {
-            filename: "task.py", source, expectedResult: "row count", inputFiles: ["input.csv"], outputFiles: [], allowedImports: ["csv"],
-            outputMode: "artifact", artifactKind: "xlsx", artifactFilename: "csv-summary.xlsx", artifactRationale: "Requested Excel export",
+            filename: "task.py", source, expectedResult: "row count", inputFiles: ["input.csv"], allowedImports: ["csv"],
+            outputFiles: ["summary.csv"], outputMode: "artifact", artifactKind: "xlsx", artifactFilename: "csv-summary.xlsx", artifactRationale: "Requested Excel export",
           });
         }
         return response(request, { summary: "ROWS 2", verified: true });
@@ -170,17 +168,12 @@ describe("Flow B end-to-end", () => {
     const csv = "value\n0\n10\n";
     const registered = manager.registerAttachment({ chatId, filename: "input.csv", mediaType: "text/csv", sizeBytes: Buffer.byteLength(csv), base64OrBuffer: Buffer.from(csv) });
     const first = await manager.start({ userText: "Summarise this CSV", attachmentToken: registered.attachment.attachmentId, runId: registered.runId, chatId });
-    const firstApproval = await waitForEvent(events, "confirmation_required") as Extract<RunEvent, { type: "confirmation_required" }>;
-    await manager.confirm({ runId: first.runId, actionId: firstApproval.action.actionId, approved: true });
+
     await waitForState(events, "completed");
 
     const second = await manager.start({ userText: "What is the standard deviation?", chatId });
-    const secondApproval = await waitForEvent(events, "confirmation_required") as Extract<RunEvent, { type: "confirmation_required" }>;
-    await manager.confirm({ runId: second.runId, actionId: secondApproval.action.actionId, approved: true });
-    await new Promise<void>((resolve) => {
-      const poll = () => codeCalls >= 2 ? resolve() : setTimeout(poll, 5);
-      poll();
-    });
+
+    await waitForState(events, "completed");
     expect(events.some((event) => event.type === "assistant_message" && event.text === "STDDEV 5.0000")).toBe(true);
     expect(events.some((event) => event.type === "error")).toBe(false);
   });

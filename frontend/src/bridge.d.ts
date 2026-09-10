@@ -55,6 +55,7 @@ interface PendingAction {
   prompt: string;
   createdAt: string;
   expiresAt: string;
+  preview?: string;
 }
 
 interface RunSummary {
