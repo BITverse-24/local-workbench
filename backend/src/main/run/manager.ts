@@ -18,6 +18,9 @@ import type {
 import { ModelGateway, requestBase } from "../gateway/model-gateway.js";
 import { CodeModel } from "../models/code-model.js";
 import { ChatModel } from "../models/chat-model.js";
+import { HarnessManager } from "../harness/harness-manager.js";
+import { buildHarnessSystemPrompt, formatTreeForPrompt } from "../harness/harness-prompt.js";
+import type { HarnessToolCall } from "../../shared/contracts.js";
 import { CODE_SYSTEM_PROMPT } from "./prompts.js";
 import { createRun, getState, listRuns, recordError, recordRouting, transition } from "./store.js";
 import {
@@ -29,6 +32,7 @@ import {
 } from "./filesystem.js";
 import { createConfirmation, cancelPending, decide } from "../confirmation/store.js";
 import { routeTask } from "../router/deterministic-router.js";
+import { classifyIntent } from "../router/intent-classifier.js";
 import { executePython } from "../tools/python.js";
 import { generateXlsx } from "../tools/artifacts.js";
 import { logArtifactReady, logPythonExecution, logRunTransition, logScriptRepair } from "../logger.js";
@@ -76,12 +80,18 @@ export class RunManager {
   private readonly runTemperatures = new Map<string, number>();
   private readonly codeModel: CodeModel;
   private readonly chatModel: ChatModel;
+  public harness?: HarnessManager;
+
   constructor(
     private readonly gateway = new ModelGateway(),
     private readonly emit: (event: RunEvent) => void = () => undefined,
   ) {
     this.codeModel = new CodeModel(gateway);
     this.chatModel = new ChatModel(gateway);
+  }
+
+  setHarness(harness: HarnessManager): void {
+    this.harness = harness;
   }
   registerAttachment(input: RegisterAttachmentInput): {
     runId: string;
@@ -253,6 +263,31 @@ export class RunManager {
     return id;
   }
   private async execute(runId: string, text: string, attachment?: AttachmentRow): Promise<void> {
+    const isWorkspaceActive = this.harness?.isWorkspaceActive() ?? false;
+    const intent = classifyIntent({
+      userText: text,
+      attachment,
+      isWorkspaceActive,
+    });
+
+    // 1. Workspace action branch
+    if (intent.actionTarget === "harness") {
+      if (isWorkspaceActive && !attachment) {
+        await this.executeWorkspaceTask(runId, text);
+        return;
+      }
+
+      // If user specifically requested writing/creating a file but no workspace is active,
+      // create it in run output as an artifact so user can view/download it, and guide them.
+      if (
+        /\b(create|write|save|make|add|generate)\b/i.test(text) &&
+        /\b(file|\.txt|\.js|\.ts|\.json|\.md|\.py|\.csv|\.html)\b/i.test(text)
+      ) {
+        await this.executeStandaloneFileCreation(runId, text);
+        return;
+      }
+    }
+
     this.state(runId, "classifying");
     
     // Dynamically generate the plan
@@ -299,10 +334,99 @@ export class RunManager {
       }
     }
   }
+
+  private async executeStandaloneFileCreation(runId: string, text: string): Promise<void> {
+    this.state(runId, "classifying");
+    const route = {
+      taskType: "code" as const,
+      modelId: "code-qwen25coder" as const,
+      reason: "standalone file generation (no active workspace)",
+    };
+    const requestId = randomUUID();
+    recordRouting(runId, requestId, route.taskType, route.modelId, route.reason);
+    this.emit({ type: "routing", runId, ...route });
+
+    this.state(runId, "planning");
+    this.emit({
+      type: "plan_step",
+      runId,
+      index: 0,
+      text: "Determine target filename and content",
+    });
+    this.emit({
+      type: "plan_step",
+      runId,
+      index: 1,
+      text: "Write file to run artifacts and finalize",
+    });
+
+    this.state(runId, "acting");
+
+    // Extract filename from prompt or default
+    const fileMatch = text.match(/\b([a-zA-Z0-9_\-.]+\.(?:txt|json|md|py|js|ts|csv|html))\b/i);
+    let targetFilename = fileMatch ? fileMatch[1] : "output.txt";
+
+    // Extract content if prompt matches "saying '...'" or 'saying "..."'
+    const sayingMatch = text.match(/saying\s+(?:'([^']+)'|"([^"]+)"|([^\s\n]+))/i);
+    let initialContent = sayingMatch ? (sayingMatch[1] ?? sayingMatch[2] ?? sayingMatch[3] ?? "") : "";
+
+    if (!fileMatch || !initialContent) {
+      const prompt = `The user asked: "${text}". Extract the filename and file content requested. Return JSON strictly matching: {"filename": string, "content": string}.`;
+      const temperature = this.runTemperatures.get(runId) ?? 0.2;
+      const base = requestBase(
+        runId,
+        "code",
+        "code-qwen25coder",
+        "code-result",
+        "You are a helpful coding assistant. Return strictly valid JSON with keys 'filename' and 'content'.",
+        prompt,
+        30000,
+        2048,
+        temperature,
+      );
+      const req: CodeModelRequest = {
+        ...base,
+        requestId: randomUUID(),
+        taskType: "code",
+        modelId: "code-qwen25coder",
+        responseFormat: "code-result",
+        task: text,
+        inputFile: { attachmentId: randomUUID(), filename: "prompt", mediaType: "text/plain", rowCount: 1 },
+        allowedLanguage: "python",
+        executionRules: ["standalone file extraction"],
+      };
+      try {
+        const resp = await this.gateway.execute(req);
+        if (resp.ok && resp.value.result) {
+          const resObj = resp.value.result as any;
+          if (resObj.filename) targetFilename = String(resObj.filename);
+          if (resObj.content !== undefined) initialContent = String(resObj.content);
+        }
+      } catch {}
+    }
+
+    if (!initialContent && sayingMatch) {
+      initialContent = sayingMatch[1] ?? sayingMatch[2] ?? sayingMatch[3] ?? "hello";
+    }
+    if (!initialContent) {
+      initialContent = `Generated content for: ${text}\n`;
+    }
+
+    const rel = writeRunFile(runId, "output", targetFilename, initialContent, true);
+    const kind = inferArtifactKind(targetFilename);
+    const artifact = artifactRef(runId, kind, targetFilename, rel);
+    this.persistArtifact(artifact as never);
+    this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
+
+    const message = `Created file **${targetFilename}** in run artifacts.\n\n*(Tip: To write files directly to your project on disk, open a local project folder from the Left Sidebar).*`;
+    this.persistAssistant(runId, message, "code-qwen25coder");
+    this.complete(runId);
+  }
+
   private async executeChatTask(runId: string, text: string): Promise<void> {
     this.tool(runId, "draft_note", "drafting response");
     const temperature = this.runTemperatures.get(runId);
-    const systemPrompt = "You are a helpful assistant. Provide your answer strictly as a JSON object with a single key 'text': {\"text\": \"your plain text answer\"}. Do NOT add any other fields such as 'displayed_text' or 'display_time'. Never return an empty JSON object.";
+    const systemPrompt = "You are a helpful assistant. If providing code, always wrap it in standard markdown code blocks with language identifiers (e.g. ```python). Provide your answer strictly as a JSON object with a single key 'text': {\"text\": \"your markdown-formatted answer\"}. Do NOT add any other fields such as 'displayed_text' or 'display_time'. Never return an empty JSON object.";
     const base = requestBase(runId, "draft", "draft-qwen3", "chat-result", systemPrompt, text, 45000, 1024, temperature);
     const request: ChatModelRequest = {
       ...base,
@@ -331,6 +455,293 @@ export class RunManager {
     this.persistAssistant(runId, chat.value.text, "draft-qwen3");
     this.complete(runId);
   }
+
+  private async executeWorkspaceTask(runId: string, text: string): Promise<void> {
+    if (!this.harness) throw new Error("harness not initialized");
+    const ws = this.harness.requireActiveWorkspace();
+
+    this.state(runId, "classifying");
+
+    const route = {
+      taskType: "code" as const,
+      modelId: "code-qwen25coder" as const,
+      reason: "local project workspace task",
+    };
+
+    const requestId = randomUUID();
+    recordRouting(runId, requestId, route.taskType, route.modelId, route.reason);
+    this.emit({ type: "routing", runId, ...route });
+
+    this.state(runId, "planning");
+    this.emit({
+      type: "plan_step",
+      runId,
+      index: 0,
+      text: "Analyze workspace structure and plan required changes",
+    });
+    this.emit({
+      type: "plan_step",
+      runId,
+      index: 1,
+      text: "Execute file operations and verify in workspace",
+    });
+
+    this.state(runId, "acting");
+
+    const tree = this.harness.getDirectoryTree();
+    const treeFormatted = formatTreeForPrompt(tree);
+    const systemPrompt = `${buildHarnessSystemPrompt(treeFormatted)}
+
+RESPONSE FORMAT INSTRUCTIONS:
+You must respond strictly with a valid JSON object.
+Do NOT include markdown formatting or backticks around the JSON.
+At each step, decide whether to call a tool or provide your final response to the user.
+
+Option 1: To call a tool:
+{
+  "thought": "brief explanation of why you are taking this action",
+  "action": "tool_call",
+  "tool": "list_dir" | "read_file" | "search" | "write_file" | "run_command",
+  "args": { ... tool arguments ... }
+}
+
+Tool argument details:
+- list_dir: {"path": "."}
+- read_file: {"path": "relative/path/to/file"}
+- search: {"query": "search query", "path": "."}
+- write_file: {"path": "relative/path/to/file", "content": "complete file content"}
+- run_command: {"command": "shell command"}
+
+Option 2: When you have finished the task and want to report back:
+{
+  "thought": "brief summary of what was completed",
+  "action": "final_answer",
+  "text": "your response to the user detailing what you did"
+}
+
+IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST call write_file with the path and content! Never merely output the file content in the text field without calling write_file.
+`;
+
+    const MAX_TURNS = 10;
+    let turn = 0;
+    let conversationHistory = `User Task: ${text}`;
+    let finalAnswer = "";
+
+    while (turn < MAX_TURNS) {
+      turn++;
+      const currentRequestId = randomUUID();
+      const temperature = this.runTemperatures.get(runId) ?? 0.2;
+
+      const base = requestBase(
+        runId,
+        "code",
+        "code-qwen25coder",
+        "code-result",
+        systemPrompt,
+        conversationHistory,
+        60000,
+        4096,
+        temperature,
+      );
+
+      const req: CodeModelRequest = {
+        ...base,
+        requestId: currentRequestId,
+        taskType: "code",
+        modelId: "code-qwen25coder",
+        responseFormat: "code-result",
+        task: text,
+        inputFile: {
+          attachmentId: randomUUID(),
+          filename: "workspace",
+          mediaType: "application/x-directory",
+          rowCount: tree.length,
+        },
+        allowedLanguage: "python",
+        executionRules: ["workspace harness"],
+      };
+
+      const resp = await this.gateway.execute(req);
+      if (!resp.ok) {
+        throw new Error(resp.error.message);
+      }
+
+      const parsed = (resp.value as any).result;
+      const action = this.parseWorkspaceAction(parsed);
+
+      // Guardrail: if on turn 1 the model returned final_answer but the user explicitly requested
+      // writing/creating a file, nudge the model to call write_file
+      if (
+        turn === 1 &&
+        action.type === "final_answer" &&
+        /\b(create|write|save|make|add|generate)\b/i.test(text) &&
+        /\b(file|\.txt|\.js|\.ts|\.json|\.md|\.py|\.csv|\.html)\b/i.test(text)
+      ) {
+        conversationHistory += `\n\nAssistant: ${JSON.stringify(parsed)}\n\n[SYSTEM FEEDBACK]: You answered without calling write_file, but the user requested creating/writing a file. You MUST call write_file to save the file into the workspace directory on disk. Output a tool_call action now with {"action": "tool_call", "tool": "write_file", "args": {"path": "<filename>", "content": "<content>"}}.`;
+        continue;
+      }
+
+      if (action.type === "final_answer") {
+        finalAnswer = action.text;
+        break;
+      }
+
+      // Execute tool
+      const toolCall = action.call;
+      let toolResultSummary = "";
+
+      try {
+        const result = await this.harness.executeTool(toolCall, runId);
+        toolResultSummary = JSON.stringify(result.result);
+
+        // If a file was written, register as artifact so user can view/open it in ArtifactPane
+        if (toolCall.tool === "write_file") {
+          try {
+            this.harness.createWorkspaceArtifact(runId, toolCall.args.path);
+          } catch {}
+        }
+      } catch (err: any) {
+        toolResultSummary = `Error: ${err?.message ?? String(err)}`;
+      }
+
+      conversationHistory += `\n\nTurn ${turn} Action: ${JSON.stringify(toolCall)}\nTurn ${turn} Result: ${toolResultSummary}\n\nWhat is your next action? If complete, return final_answer. Otherwise, call another tool. Output valid JSON:`;
+    }
+
+    if (!finalAnswer) {
+      finalAnswer = `Completed workspace operations for: "${text.slice(0, 60)}"`;
+    }
+
+    this.persistAssistant(runId, finalAnswer, "code-qwen25coder");
+    this.complete(runId);
+  }
+
+  private parseWorkspaceAction(
+    raw: unknown,
+  ):
+    | { type: "tool_call"; call: HarnessToolCall }
+    | { type: "final_answer"; text: string } {
+    if (!raw || typeof raw !== "object") {
+      return {
+        type: "final_answer",
+        text: typeof raw === "string" ? raw : String(raw ?? ""),
+      };
+    }
+
+    const obj = raw as Record<string, unknown>;
+
+    // 1. Explicit tool_call action
+    const toolName = (obj.tool ?? obj.name ?? (obj.action === "tool_call" ? obj.tool : undefined)) as string | undefined;
+
+    if (
+      toolName &&
+      ["list_dir", "read_file", "search", "write_file", "run_command"].includes(toolName)
+    ) {
+      let args = (obj.args ?? obj.arguments ?? obj.parameters) as Record<string, any> | undefined;
+      if (!args || typeof args !== "object") {
+        args = { ...obj };
+        delete args.tool;
+        delete args.action;
+        delete args.thought;
+      }
+
+      switch (toolName) {
+        case "list_dir":
+          return {
+            type: "tool_call",
+            call: { tool: "list_dir", args: { path: args.path ? String(args.path) : undefined } },
+          };
+        case "read_file":
+          return {
+            type: "tool_call",
+            call: { tool: "read_file", args: { path: String(args.path ?? args.file ?? "") } },
+          };
+        case "search":
+          return {
+            type: "tool_call",
+            call: {
+              tool: "search",
+              args: { query: String(args.query ?? ""), path: args.path ? String(args.path) : undefined },
+            },
+          };
+        case "write_file":
+          return {
+            type: "tool_call",
+            call: {
+              tool: "write_file",
+              args: {
+                path: String(args.path ?? args.file ?? args.filename ?? ""),
+                content: String(args.content ?? args.source ?? args.code ?? args.text ?? ""),
+              },
+            },
+          };
+        case "run_command":
+          return {
+            type: "tool_call",
+            call: {
+              tool: "run_command",
+              args: { command: String(args.command ?? args.cmd ?? "") },
+            },
+          };
+      }
+    }
+
+    // 2. Check if a tool name is used as the key: e.g. { "write_file": { "path": ..., "content": ... } }
+    for (const t of ["list_dir", "read_file", "search", "write_file", "run_command"] as const) {
+      if (obj[t] && typeof obj[t] === "object") {
+        return this.parseWorkspaceAction({ tool: t, args: obj[t] });
+      }
+    }
+
+    // 2.5 Intercept Python file-writing code if model emitted code instead of tool_call
+    const candidateText = typeof obj.text === "string" ? obj.text : typeof raw === "string" ? raw : "";
+    if (candidateText && /open\s*\(\s*['"][^'"]+['"]\s*,\s*['"][wa+]/.test(candidateText)) {
+      const matchWith = candidateText.match(
+        /with\s+open\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"][wa+]['"][^)]*\)\s*as\s*\w+:\s*[\r\n\s]*\w+\.write\(\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)')\s*\)/,
+      );
+      if (matchWith) {
+        const filePath = matchWith[1];
+        let content = matchWith[2] ?? matchWith[3] ?? matchWith[4] ?? matchWith[5] ?? "";
+        content = content.replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\"/g, '"');
+        return {
+          type: "tool_call",
+          call: {
+            tool: "write_file",
+            args: { path: filePath, content },
+          },
+        };
+      }
+      const matchDirect = candidateText.match(
+        /open\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"][wa+]['"][^)]*\)\.write\(\s*(?:"""([\s\S]*?)"""|'''([\s\S]*?)'''|"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)')\s*\)/,
+      );
+      if (matchDirect) {
+        const filePath = matchDirect[1];
+        let content = matchDirect[2] ?? matchDirect[3] ?? matchDirect[4] ?? matchDirect[5] ?? "";
+        content = content.replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\"/g, '"');
+        return {
+          type: "tool_call",
+          call: {
+            tool: "write_file",
+            args: { path: filePath, content },
+          },
+        };
+      }
+    }
+
+    // 3. Fallback to final answer
+    const text =
+      obj.text ??
+      obj.message ??
+      obj.summary ??
+      obj.answer ??
+      obj.response ??
+      obj.content;
+
+    return {
+      type: "final_answer",
+      text: typeof text === "string" ? text : JSON.stringify(obj),
+    };
+  }
+
   private async executeDataTask(runId: string, text: string, attachment: AttachmentRow): Promise<void> {
     this.tool(runId, "read_file", "reading CSV attachment");
     const csv = Buffer.from(await (await import("node:fs/promises")).readFile(absoluteDataPath(attachment.relativePath))).toString("utf8");

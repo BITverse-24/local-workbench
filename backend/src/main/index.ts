@@ -64,6 +64,7 @@ export function initBackend(
   registerRunHandlers(ipcMain, manager);
   const harness = new HarnessManager(undefined, emit);
   registerWorkspaceHandlers(ipcMain, harness);
+  manager.setHarness(harness);
 
   (manager as any).harness = harness;
   return manager as BackendInstance;

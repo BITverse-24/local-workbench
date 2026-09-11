@@ -26,8 +26,11 @@ export async function generatePlan(
   temperature?: number,
   attachment?: { mediaType: string; filename: string }
 ): Promise<SubtaskPlan> {
-  // Fast Path: Cut latency to 0ms for simple, single-step prompts
-  const isComplex = /\b(and then|next|after|also|first|second|step|multiple|both)\b/i.test(userText) || userText.length > 150;
+  // Fast Path: Cut latency to 0ms for standard, single-phase prompts.
+  // Only multi-stage pipeline sequences spanning separate steps or modalities warrant LLM planning.
+  const hasExplicitMultiSteps =
+    /(?:step\s*1\b.*step\s*2\b|\b1\.\s+.*\b2\.\s+|\bfirst[,:\s]+.*then[,:\s]+.*(?:finally|next|after)\b)/is.test(userText);
+  const isComplex = hasExplicitMultiSteps;
   
   if (!isComplex) {
     const decision = routeTask(userText, attachment);
