@@ -28,3 +28,9 @@ export interface RetrievalResult {
   page: number;
   score: number;
 }
+
+export interface EmbeddingConfig {
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+}

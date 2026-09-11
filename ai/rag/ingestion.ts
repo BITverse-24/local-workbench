@@ -2,23 +2,27 @@ import { DocumentRecord } from "./types.js";
 import { chunkDocument } from "./chunker.js";
 import { RAGDatabase } from "./db.js";
 import { EmbeddingService } from "./embedding.js";
-import fs from "fs/promises";
-import * as pdfjs from "pdfjs-dist/legacy/build/pdf.js";
-
+import fs from "node:fs/promises";
 // Helper function to extract text from a local PDF file
 async function extractTextFromPDF(filePath: string): Promise<string> {
   const data = await fs.readFile(filePath);
-  const pdf = await pdfjs.getDocument({ data: new Uint8Array(data) }).promise;
+  try {
+    const pdfjs: any = await import("pdfjs-dist");
+    const pdf = await pdfjs.getDocument({ data: new Uint8Array(data) }).promise;
 
-  let fullText = "";
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const text = content.items.map((item: any) => item.str).join(" ");
-    fullText += text + "\n\n";
+    let fullText = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const text = content.items.map((item: any) => item.str).join(" ");
+      fullText += text + "\n\n";
+    }
+    return fullText;
+  } catch {
+    return data.toString("utf8");
   }
-  return fullText;
 }
+
 
 export class IngestionPipeline {
   constructor(private embeddingService: EmbeddingService) {}
@@ -55,11 +59,14 @@ export class IngestionPipeline {
     }
 
     const sqlite = RAGDatabase.getSqlite();
-    const chroma = RAGDatabase.getChroma();
+    const vectra = RAGDatabase.getVectra();
 
     // Delete existing document chunks if this is a re-index
     sqlite.prepare("DELETE FROM chunks_fts WHERE doc_id = ?").run(doc.doc_id);
-    await chroma.delete({ where: { doc_id: doc.doc_id } });
+    const existing = await vectra.listItemsByMetadata({ doc_id: { $eq: doc.doc_id } });
+    if (existing.length > 0) {
+      await vectra.deleteItems(existing.map(i => i.id));
+    }
 
     // Write to SQLite FTS
     const insertStmt = sqlite.prepare(`
@@ -73,23 +80,56 @@ export class IngestionPipeline {
       }
     })();
 
-    // Write to Chroma
-    const ids = rawChunks.map(c => c.chunk_id);
-    const embeddings = rawChunks.map(c => (c as any).embedding);
-    const metadatas = rawChunks.map(c => ({
-      doc_id: c.doc_id,
-      section_label: c.section_label,
-      page: c.page
-    }));
-    const documents = rawChunks.map(c => c.text);
+    // Upsert document record in SQLite
+    const upsertDocStmt = sqlite.prepare(`
+      INSERT OR REPLACE INTO documents (
+        doc_id, title, source_path, doc_type, department, effective_date, indexed_at, page_count, ocr_used, chunk_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    upsertDocStmt.run(
+      doc.doc_id,
+      doc.title,
+      doc.source_path,
+      doc.doc_type,
+      doc.department,
+      doc.effective_date,
+      doc.indexed_at || new Date().toISOString(),
+      doc.page_count,
+      doc.ocr_used ? 1 : 0,
+      rawChunks.length
+    );
 
-    await chroma.add({
-      ids,
-      embeddings,
-      metadatas,
-      documents
-    });
+    // Write to Vectra
+    await vectra.beginUpdate();
+    for (const c of rawChunks) {
+      await vectra.insertItem({
+        id: c.chunk_id,
+        vector: (c as any).embedding,
+        metadata: {
+          doc_id: c.doc_id,
+          section_label: c.section_label,
+          section_title: c.section_title || "",
+          page: c.page,
+          text: c.text
+        }
+      });
+    }
+    await vectra.endUpdate();
 
     return rawChunks.length;
   }
+
+  async deleteDocument(docId: string): Promise<void> {
+    const sqlite = RAGDatabase.getSqlite();
+    const vectra = RAGDatabase.getVectra();
+
+    sqlite.prepare("DELETE FROM documents WHERE doc_id = ?").run(docId);
+    sqlite.prepare("DELETE FROM chunks_fts WHERE doc_id = ?").run(docId);
+
+    const existing = await vectra.listItemsByMetadata({ doc_id: { $eq: docId } });
+    if (existing.length > 0) {
+      await vectra.deleteItems(existing.map(i => i.id));
+    }
+  }
 }
+

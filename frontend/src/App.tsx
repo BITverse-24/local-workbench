@@ -60,6 +60,8 @@ export default function App() {
   const [runError, setRunError] = useState<{ code: string; message: string } | null>(null);
   const [serviceHealth, setServiceHealth] = useState<ModelHealth[] | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [groundingEnabled, setGroundingEnabled] = useState(true);
+  const [groundingStatus, setGroundingStatus] = useState<{ status: "retrieving" | "injected" | "skipped"; chunkCount?: number } | null>(null);
   const activeRunRef = useRef<string | null>(null);
   activeRunRef.current = activeRunId;
   const isRunning = runState !== null && !["completed", "failed", "cancelled"].includes(runState);
@@ -90,6 +92,7 @@ export default function App() {
         setRunEvents([]);
         setRunArtifacts([]);
         setRunError(null);
+        setGroundingStatus(null);
         // Health probe on startup
         try {
           const h = await wb.getHealth();
@@ -166,6 +169,9 @@ export default function App() {
             break;
           case "assistant_message":
             setMessages((prev) => [...prev, { id: event.messageId, role: "assistant", text: event.text }]);
+            break;
+          case "grounding_context":
+            setGroundingStatus({ status: event.status, chunkCount: event.chunkCount });
             break;
           case "error":
             setRunError({ code: event.code, message: event.message });
@@ -284,6 +290,7 @@ export default function App() {
       setRunEvents([]);
       setRunArtifacts([]);
       setRunError(null);
+      setGroundingStatus(null);
       if (!persistent) return;
       try {
         await wb.setSetting("lastChatId", id);
@@ -303,6 +310,7 @@ export default function App() {
     setRunEvents([]);
     setRunArtifacts([]);
     setRunError(null);
+    setGroundingStatus(null);
     if (persistent) {
       try {
         const id = await wb.createChat("New chat");
@@ -486,6 +494,7 @@ export default function App() {
           setRunError(null);
           setActiveRoute(null);
           setPendingConfirmation(null);
+          setGroundingStatus(null);
           setRunState("created");
 
           let attachmentToken: string | undefined;
@@ -510,6 +519,7 @@ export default function App() {
             runId: clientRunId,
             chatId: cid,
             temperature,
+            groundingEnabled,
           });
           setActiveRunId(runId);
           activeRunRef.current = runId;
@@ -641,6 +651,16 @@ export default function App() {
             <div className="mx-4 mt-2 flex items-center gap-2 text-xs opacity-60">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               {runState === "awaiting_confirmation" ? "Awaiting confirmation" : `Run ${runState}...`}
+              {groundingStatus && (
+                <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+                  {groundingStatus.status === "retrieving"
+                    ? "Retrieving SOP context..."
+                    : groundingStatus.status === "injected"
+                    ? `Grounding: ${groundingStatus.chunkCount ?? 0} SOP chunks`
+                    : "Grounding: No SOP found"}
+                </span>
+              )}
               <button onClick={handleCancelRun} className="ml-auto px-3 py-1 rounded-full neu-button text-xs">Cancel</button>
             </div>
           )}
@@ -660,6 +680,8 @@ export default function App() {
             onAttachFiles={addFiles}
             onRemoveFile={removeAttached}
             disabled={isRunning}
+            groundingEnabled={groundingEnabled}
+            setGroundingEnabled={setGroundingEnabled}
           />
         </ChatPanel>
 

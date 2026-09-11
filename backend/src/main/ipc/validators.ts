@@ -79,7 +79,7 @@ export type EditMessageInput = z.infer<typeof editMessageSchema>;
 export type GetSettingInput = z.infer<typeof getSettingSchema>;
 export type SetSettingInput = z.infer<typeof setSettingSchema>;
 
-export const startRunSchema = z.object({ userText: z.string().trim().max(8000), attachmentToken: z.string().uuid().optional(), runId: z.string().uuid().optional(), chatId: z.string().uuid().optional(), temperature: z.number().min(0).max(2).optional() }).strict().refine((d) => d.userText.length > 0 || d.attachmentToken !== undefined, { message: "message text or an attachment is required" });
+export const startRunSchema = z.object({ userText: z.string().trim().max(8000), attachmentToken: z.string().uuid().optional(), runId: z.string().uuid().optional(), chatId: z.string().uuid().optional(), temperature: z.number().min(0).max(2).optional(), groundingEnabled: z.boolean().optional() }).strict().refine((d) => d.userText.length > 0 || d.attachmentToken !== undefined, { message: "message text or an attachment is required" });
 export const confirmActionSchema = z.object({ runId: z.string().uuid(), actionId: z.string().uuid(), approved: z.boolean() }).strict();
 export const cancelRunSchema = z.object({ runId: z.string().uuid() }).strict();
 export const getArtifactSchema = z.object({ runId: z.string().uuid(), artifactId: z.string().uuid() }).strict();
@@ -121,3 +121,35 @@ export type HarnessReadFileInput = z.infer<typeof harnessReadFileSchema>;
 export type HarnessSearchInput = z.infer<typeof harnessSearchSchema>;
 export type HarnessWriteFileInput = z.infer<typeof harnessWriteFileSchema>;
 export type HarnessRunCommandInput = z.infer<typeof harnessRunCommandSchema>;
+
+// ── Knowledge Base validators ──────────────────────────────────────────
+
+export const kbIngestDocSchema = z.object({
+  doc_id: z.string().min(1).max(100),
+  title: z.string().min(1).max(255),
+  source_path: z.string().min(1).max(4096),
+  doc_type: z.string().min(1).max(50).default("sop"),
+  department: z.string().min(1).max(100).default("engineering"),
+  effective_date: z.string().max(50).default(""),
+  page_count: z.number().int().nonnegative().default(1),
+  ocr_used: z.boolean().default(false),
+}).strict();
+
+export const kbDeleteDocSchema = z.object({
+  docId: z.string().min(1).max(100),
+}).strict();
+
+export const kbReindexSchema = z.object({
+  docId: z.string().min(1).max(100).optional(),
+}).strict();
+
+export const kbQuerySchema = z.object({
+  text: z.string().min(1).max(2000),
+  topK: z.number().int().min(1).max(20).optional().default(5),
+}).strict();
+
+export type KbIngestDocInput = z.infer<typeof kbIngestDocSchema>;
+export type KbDeleteDocInput = z.infer<typeof kbDeleteDocSchema>;
+export type KbReindexInput = z.infer<typeof kbReindexSchema>;
+export type KbQueryInput = z.infer<typeof kbQuerySchema>;
+

@@ -12,6 +12,8 @@ export interface IntentDecision {
   extractedFilename?: string;
   suggestedExtension?: string;
   confidence?: number;
+  needsGrounding?: boolean;
+  groundingReason?: string;
 }
 
 export interface ClassifyIntentInput {
@@ -26,7 +28,7 @@ const FILE_ACTION_VERBS =
   /\b(create|write|save|make|add|generate|gen|edit|modify|update|touch|delete|remove|append|produce|build|draft|output|export|dump|render|prepare|put|place)\b/i;
 
 const FILE_CONTAINER_NOUNS =
-  /\b(file|files|txt file|archive)\b/i;
+  /\b(file|files|txt file|script|scripts|archive)\b/i;
 
 const REFERENTIAL_DELIVERABLE_NOUNS =
   /\b(it|this|that|artifact|artefact|document|deliverable|output|note|draft|script|report)\b/i;
@@ -36,6 +38,10 @@ const REFERENTIAL_FOLLOWUP_PATTERN =
 
 const DRAFTING_INTENT_PATTERNS =
   /\b(approval note|draft (?:an? )?(?:note|memo|letter|report|document|brief|summary|proposal)|write (?:an? )?(?:approval note|memo|formal note|letter|recommendation)|nuclear reactor shutdown|maintenance shutdown|word document|\.docx|docx\b|executive summary|formal note|compliance note|clearance note|incident report|briefing note)\b/i;
+
+const SOP_REFERENCE = /\bSOP[-\s]?\d+/i;
+const GROUNDING_KEYWORDS =
+  /\b(compliance|against\s+(?:the\s+)?(?:spec|sop|standard)|per\s+(?:the\s+)?sop|check.+spec|verify.+sop|grounding|cross[- ]?check|criteria)\b/i;
 
 const WORKSPACE_CONTAINER_NOUNS =
   /\b(workspace|directory|dir|folder|codebase|repo|repository|project|disk|filesystem|cwd|root|ws)\b/i;
@@ -261,16 +267,32 @@ export function classifyIntent(input: ClassifyIntentInput): IntentDecision {
   const { userText, attachment, isWorkspaceActive = false } = input;
   const lower = userText.toLowerCase();
 
+  const needsGrounding =
+    DRAFTING_INTENT_PATTERNS.test(userText) ||
+    SOP_REFERENCE.test(userText) ||
+    GROUNDING_KEYWORDS.test(userText);
+  const groundingReason = needsGrounding
+    ? SOP_REFERENCE.test(userText)
+      ? "SOP reference detected"
+      : "criteria grounding recommended"
+    : undefined;
+
+  const withGrounding = (d: IntentDecision): IntentDecision => ({
+    ...d,
+    needsGrounding: d.needsGrounding ?? needsGrounding,
+    groundingReason: d.groundingReason ?? groundingReason,
+  });
+
   // 1. Vision Intent (Absolute precedence when media attached)
   if (attachment && (attachment.mediaType === "application/pdf" || attachment.mediaType.startsWith("image/"))) {
-    return {
+    return withGrounding({
       taskType: "vision",
       modelId: "vision-qwen25vl",
       actionTarget: "vision",
       reason: "scanned report",
       isWorkspaceAction: false,
       confidence: 1.0,
-    };
+    });
   }
 
   // 2. Data Intent (CSV attachment or explicit CSV/data processing with attachment)
@@ -278,26 +300,26 @@ export function classifyIntent(input: ClassifyIntentInput): IntentDecision {
     attachment?.mediaType === "text/csv" ||
     (attachment && DATA_ANALYSIS_KEYWORDS.test(lower))
   ) {
-    return {
+    return withGrounding({
       taskType: "code",
       modelId: "code-qwen25coder",
       actionTarget: "data",
       reason: "CSV/code intent",
       isWorkspaceAction: false,
       confidence: 0.95,
-    };
+    });
   }
 
   // 2.5. Approval Note & Document Drafting Intent (routes to draft model draft-qwen3)
   if (DRAFTING_INTENT_PATTERNS.test(userText)) {
-    return {
+    return withGrounding({
       taskType: "draft",
       modelId: "draft-qwen3",
       actionTarget: "chat",
       reason: "approval note drafting",
       isWorkspaceAction: false,
       confidence: 0.95,
-    };
+    });
   }
 
   // 3. Extract Syntactic and Semantic Features
@@ -325,6 +347,22 @@ export function classifyIntent(input: ClassifyIntentInput): IntentDecision {
 
   const hasExplorationAction = EXPLORATION_PHRASES.test(lower);
 
+  // Meta-conversational inquiry or complaint (e.g. "Why did you save it?", "I didn't tell you to do that")
+  const isMetaQuestion =
+    /\b(why did you|why are you|why would you|did i (?:tell|ask|say)|who told you|why was|why is it|why isnt|why not)\b/i.test(lower) ||
+    /\b(didnt|did not|dont|do not|never|no|not)\b.*\b(tell|ask|want|say)\b/i.test(lower);
+
+  if (isMetaQuestion) {
+    return withGrounding({
+      taskType: "draft",
+      modelId: "draft-qwen3",
+      actionTarget: "chat",
+      reason: "meta-conversational inquiry",
+      isWorkspaceAction: false,
+      confidence: 0.95,
+    });
+  }
+
   // 4. Evidence-Based Scoring System
   let scoreHarness = 0;
   let scoreStandalone = 0;
@@ -333,10 +371,22 @@ export function classifyIntent(input: ClassifyIntentInput): IntentDecision {
 
   const hasReferentialNoun = REFERENTIAL_DELIVERABLE_NOUNS.test(lower);
 
-  // File creation intent
+  // Generic script request without language, filename, directory, or standalone target (e.g. "write me a small script")
+  const isGenericScriptInquiry =
+    /^(?:write|give|show|create)\s+(?:me\s+)?(?:a\s+)?(?:small\s+|quick\s+|simple\s+)?script$/i.test(lower.trim()) ||
+    (/\b(?:write|give)\s+(?:me\s+)?(?:a\s+)?(?:small\s+|quick\s+|simple\s+)?script\b/i.test(lower) &&
+      !hasDirectoryContext &&
+      !hasProjectPath &&
+      !hasFileExtension &&
+      !hasStandaloneHint &&
+      !suggestedExtension);
+
+  // File creation intent: MUST specify an actual file target (container noun, filename, or extension).
+  // A request to "write code in C++" or "write a python function" is coding assistance in chat, NOT a file creation!
   const isFileCreationRequest =
-    (hasFileActionVerb && (hasFileContainerNoun || hasReferentialNoun || hasFileExtension || suggestedExtension !== undefined)) ||
-    hasFileExtension;
+    !isGenericScriptInquiry &&
+    ((hasFileActionVerb && (hasFileContainerNoun || (hasReferentialNoun && (hasDirectoryContext || hasProjectPath)) || hasFileExtension)) ||
+      hasFileExtension);
 
   if (isFileCreationRequest) {
     if (hasNegativeWorkspaceConstraint || hasStandaloneHint) {
@@ -388,7 +438,7 @@ export function classifyIntent(input: ClassifyIntentInput): IntentDecision {
   // 5. Intent Decision Resolution
   // Case A: Explicit standalone file requested OR negative workspace constraint
   if (hasNegativeWorkspaceConstraint || (hasStandaloneHint && isFileCreationRequest)) {
-    return {
+    return withGrounding({
       taskType: "code",
       modelId: "code-qwen25coder",
       actionTarget: "standalone_file",
@@ -400,17 +450,18 @@ export function classifyIntent(input: ClassifyIntentInput): IntentDecision {
       extractedFilename,
       suggestedExtension,
       confidence: 0.95,
-    };
+    });
   }
 
   // Case B: Workspace harness execution
   const isWorkspaceFileOp =
-    (hasFileActionVerb && (hasFileContainerNoun || hasFileExtension || hasDirectoryContext)) ||
-    hasDirectoryContext ||
-    hasFileExtension;
+    !isGenericScriptInquiry &&
+    ((hasFileActionVerb && (hasFileContainerNoun || hasFileExtension || hasDirectoryContext)) ||
+      hasDirectoryContext ||
+      hasFileExtension);
 
   if (scoreHarness > scoreChat && (isWorkspaceFileOp || hasCommandAction || hasExplorationAction || (isWorkspaceActive && scoreHarness >= 30))) {
-    return {
+    return withGrounding({
       taskType: "code",
       modelId: "code-qwen25coder",
       actionTarget: "harness",
@@ -425,16 +476,16 @@ export function classifyIntent(input: ClassifyIntentInput): IntentDecision {
       extractedFilename,
       suggestedExtension,
       confidence: 0.9,
-    };
+    });
   }
 
   // Case C: Fallback to conversational assistant
-  return {
+  return withGrounding({
     taskType: "draft",
     modelId: "draft-qwen3",
     actionTarget: "chat",
     reason: "fallback drafting",
     isWorkspaceAction: false,
     confidence: 0.8,
-  };
+  });
 }

@@ -22,6 +22,7 @@ import { ChatModel } from "../models/chat-model.js";
 import { HarnessManager } from "../harness/harness-manager.js";
 import { buildHarnessSystemPrompt, formatTreeForPrompt } from "../harness/harness-prompt.js";
 import type { HarnessToolCall } from "../../shared/contracts.js";
+import type { GroundingProvider } from "../grounding/provider.js";
 import { CODE_SYSTEM_PROMPT } from "./prompts.js";
 import { createRun, getState, listRuns, recordError, recordRouting, transition } from "./store.js";
 import {
@@ -76,6 +77,7 @@ export interface StartRunInput {
   runId?: string;
   chatId?: string;
   temperature?: number;
+  groundingEnabled?: boolean;
 }
 export interface ConfirmInput {
   runId: string;
@@ -87,9 +89,11 @@ export class RunManager {
   private readonly continuations = new Map<string, Continuation>();
   private readonly confirming = new Map<string, Promise<void>>();
   private readonly runTemperatures = new Map<string, number>();
+  private readonly runGroundingEnabled = new Map<string, boolean>();
   private readonly codeModel: CodeModel;
   private readonly chatModel: ChatModel;
   public harness?: HarnessManager;
+  private grounding?: GroundingProvider;
 
   constructor(
     private readonly gateway = new ModelGateway(),
@@ -101,6 +105,10 @@ export class RunManager {
 
   setHarness(harness: HarnessManager): void {
     this.harness = harness;
+  }
+
+  setGrounding(grounding: GroundingProvider): void {
+    this.grounding = grounding;
   }
   registerAttachment(input: RegisterAttachmentInput): {
     runId: string;
@@ -146,6 +154,9 @@ export class RunManager {
     const temp = typeof input.temperature === "number" ? input.temperature : getSetting<number>("temperature");
     if (typeof temp === "number" && !isNaN(temp)) {
       this.runTemperatures.set(runId, temp);
+    }
+    if (typeof input.groundingEnabled === "boolean") {
+      this.runGroundingEnabled.set(runId, input.groundingEnabled);
     }
     if (attachment && !requestedAttachment) {
       // A follow-up gets a fresh run workspace. Copy the prior attachment into
@@ -463,10 +474,10 @@ export class RunManager {
         if (attachment) {
           await this.executeDataTask(runId, text, attachment);
         } else {
-          await this.executeChatTask(runId, text);
+          await this.executeChatTask(runId, text, intent);
         }
       } else {
-        await this.executeChatTask(runId, text);
+        await this.executeChatTask(runId, text, intent);
       }
     }
   }
@@ -587,12 +598,43 @@ export class RunManager {
     this.complete(runId);
   }
 
-  private async executeChatTask(runId: string, text: string): Promise<void> {
+  private async executeChatTask(runId: string, text: string, intent?: IntentDecision): Promise<void> {
     this.tool(runId, "draft_note", "drafting response");
     const chatId = this.chatIdForRun(runId);
     const history = this.getRecentChatHistory(chatId, text);
     const temperature = this.runTemperatures.get(runId);
-    const systemPrompt = "You are a helpful assistant. If providing code, always wrap it in standard markdown code blocks with language identifiers (e.g. ```python). Provide your answer strictly as a JSON object with a single key 'text': {\"text\": \"your markdown-formatted answer\"}. Do NOT add any other fields such as 'displayed_text' or 'display_time'. Never return an empty JSON object.";
+
+    // Grounding check: explicit per-run toggle wins; otherwise fallback to classifier recommendation
+    let groundingNote = "";
+    const explicitGrounding = this.runGroundingEnabled.get(runId);
+    const shouldGround =
+      explicitGrounding !== undefined
+        ? explicitGrounding
+        : intent?.needsGrounding ?? false;
+
+    if (shouldGround && this.grounding) {
+      this.tool(runId, "retrieve_sop", "retrieving relevant SOP / criteria context");
+      this.emit({ type: "grounding_context", runId, status: "retrieving" });
+      const prep = await this.grounding.prepare({ runId, text });
+      if (prep.notes && prep.notes.length > 0) {
+        groundingNote = `\n\n${prep.notes.join("\n\n")}`;
+        this.emit({
+          type: "grounding_context",
+          runId,
+          status: "injected",
+          chunkCount: prep.chunks?.length ?? 0,
+          chunks: prep.chunks,
+        });
+        this.result(runId, "retrieve_sop", `Retrieved ${prep.chunks?.length ?? 0} SOP excerpts`);
+      } else {
+        this.emit({ type: "grounding_context", runId, status: "skipped", chunkCount: 0 });
+        this.result(runId, "retrieve_sop", "No matching SOP excerpts found");
+      }
+    }
+
+    const baseSystemPrompt =
+      "You are a helpful assistant. If providing code, always wrap it in standard markdown code blocks with language identifiers (e.g. ```python). Provide your answer strictly as a JSON object with a single key 'text': {\"text\": \"your markdown-formatted answer\"}. Do NOT add any other fields such as 'displayed_text' or 'display_time'. Never return an empty JSON object.";
+    const systemPrompt = `${baseSystemPrompt}${groundingNote}`;
     const base = requestBase(runId, "draft", "draft-qwen3", "chat-result", systemPrompt, text, 45000, 1024, temperature, history);
     const request: ChatModelRequest = {
       ...base,
@@ -671,10 +713,14 @@ export class RunManager {
     const chatArtifacts = this.getChatArtifacts(chatId);
 
     // Check if user specifically requested saving/transferring an existing chat artifact to the workspace
+    const hasNegationOrInterrogative =
+      /\b(why|did i|didnt|did not|dont|do not|never|not|without|stop|wont|cant|who told you)\b/i.test(text);
+
     const isSaveArtifactToWorkspaceIntent =
-      /\b(save|copy|move|put|place|transfer|write)\b.*\b(workspace|project|directory|folder|repo|root)\b/i.test(text) ||
-      /\b(the artifact|the artefact|the deliverable|which you just|generated earlier)\b/i.test(text) ||
-      /\bsave\s+(?:it|this|that|artifact|document|file)\b/i.test(text);
+      !hasNegationOrInterrogative &&
+      (/\b(?:please\s+)?(?:save|copy|move|transfer)\s+(?:the\s+)?(?:artifact|artefact|deliverable|file|it|this)\s+(?:to|in|into)\s+(?:the\s+)?(?:workspace|project|directory|folder|root)\b/i.test(text) ||
+       /\b(?:please\s+)?(?:save|copy|transfer)\s+(?:it|this|that|the artifact|the deliverable)\s+(?:in|into|to)\s+(?:the\s+)?workspace\b/i.test(text) ||
+       /^(?:save|copy)\s+(?:it|this|that|the artifact|the deliverable)\b/i.test(text.trim()));
 
     if (isSaveArtifactToWorkspaceIntent && chatArtifacts.length > 0) {
       let targetArtifact: (typeof chatArtifacts)[number] | undefined;
@@ -848,14 +894,22 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
       let toolResultSummary = "";
 
       try {
-        const result = await this.harness.executeTool(toolCall, runId);
-        toolResultSummary = JSON.stringify(result.result);
+        if ((toolCall as any).tool === "retrieve_sop") {
+          const q = (toolCall.args as any)?.query || text;
+          this.tool(runId, "retrieve_sop", `Agent querying SOP knowledge base: ${q}`);
+          const prep = await this.grounding?.prepare({ runId, text: q });
+          toolResultSummary = JSON.stringify(prep?.chunks ?? []);
+          this.result(runId, "retrieve_sop", `Retrieved ${prep?.chunks?.length ?? 0} excerpts`);
+        } else {
+          const result = await this.harness.executeTool(toolCall, runId);
+          toolResultSummary = JSON.stringify(result.result);
 
-        // If a file was written, register as artifact so user can view/open it in ArtifactPane
-        if (toolCall.tool === "write_file") {
-          try {
-            this.harness.createWorkspaceArtifact(runId, toolCall.args.path);
-          } catch {}
+          // If a file was written, register as artifact so user can view/open it in ArtifactPane
+          if (toolCall.tool === "write_file") {
+            try {
+              this.harness.createWorkspaceArtifact(runId, toolCall.args.path);
+            } catch {}
+          }
         }
       } catch (err: any) {
         toolResultSummary = `Error: ${err?.message ?? String(err)}`;

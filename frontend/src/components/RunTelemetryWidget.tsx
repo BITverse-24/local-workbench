@@ -25,6 +25,7 @@ function iconFor(e: RunEvent): string {
     case "confirmation_required": return "◉";
     case "artifact_ready": return "⬢";
     case "assistant_message": return "✎";
+    case "grounding_context": return "📖";
     case "error": return "✕";
     default: return "·";
   }
@@ -40,6 +41,7 @@ function labelFor(e: RunEvent): string {
     case "confirmation_required": return `${e.action.prompt} [${e.action.kind}]`;
     case "artifact_ready": return `${e.artifact.filename} (${e.artifact.kind})`;
     case "assistant_message": return e.text.slice(0, 120);
+    case "grounding_context": return e.status === "injected" ? `SOP Grounding: ${e.chunkCount ?? 0} chunk(s) injected` : e.status === "retrieving" ? "SOP Grounding: retrieving..." : "SOP Grounding: skipped";
     case "error": return `${e.code}: ${e.message}`;
     default: return "";
   }

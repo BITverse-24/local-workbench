@@ -1,3 +1,5 @@
+import { EmbeddingConfig } from "./types.js";
+
 interface EmbeddingRequest {
   model: string;
   input: string | string[];
@@ -9,7 +11,7 @@ interface EmbeddingResponse {
 }
 
 export class EmbeddingService {
-  constructor(private modelConfig: any) {}
+  constructor(private modelConfig: EmbeddingConfig | any) {}
 
   async embed(text: string): Promise<number[]> {
     const results = await this.embedBatch([text]);
@@ -17,23 +19,25 @@ export class EmbeddingService {
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
-    const apiKey = process.env[this.modelConfig.apiKeyEnv || ""] || "";
-    if (!apiKey) {
-      throw new Error(`Missing API key for ${this.modelConfig.id}`);
-    }
+    const apiKey = this.modelConfig.apiKey || process.env[this.modelConfig.apiKeyEnv || ""] || "";
 
     const payload: EmbeddingRequest = {
       model: this.modelConfig.model,
       input: texts
     };
 
-    const url = `${this.modelConfig.baseUrl}/embeddings`;
+    const baseUrl = (this.modelConfig.baseUrl || "http://localhost:1234/v1").replace(/\/+$/, "");
+    const url = `${baseUrl}/embeddings`;
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json"
+    };
+    if (apiKey) {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
+
     const res = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
-      },
+      headers,
       body: JSON.stringify(payload)
     });
 

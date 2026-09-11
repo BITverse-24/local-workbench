@@ -115,9 +115,46 @@ export async function startRun(input: {
   runId?: string;
   chatId?: string;
   temperature?: number;
+  groundingEnabled?: boolean;
 }): Promise<{ runId: string }> {
   return bridge().startRun(input);
 }
+
+// Knowledge Base APIs
+
+export async function kbListDocs(): Promise<DocumentRecord[]> {
+  return bridge().kbListDocs();
+}
+
+export async function kbIngestDoc(input: {
+  doc_id: string;
+  title: string;
+  source_path: string;
+  doc_type?: string;
+  department?: string;
+  effective_date?: string;
+  page_count?: number;
+  ocr_used?: boolean;
+}): Promise<{ ok: boolean; docId: string; chunkCount: number }> {
+  return bridge().kbIngestDoc(input);
+}
+
+export async function kbDeleteDoc(docId: string): Promise<{ ok: boolean; docId: string }> {
+  return bridge().kbDeleteDoc(docId);
+}
+
+export async function kbReindex(docId?: string): Promise<{ ok: boolean; chunksIndexed: number }> {
+  return bridge().kbReindex(docId);
+}
+
+export async function kbQuery(text: string, topK?: number): Promise<{ ok: boolean; results: RetrievalResult[] }> {
+  return bridge().kbQuery(text, topK);
+}
+
+export async function kbStats(): Promise<RAGStats> {
+  return bridge().kbStats();
+}
+
 
 export async function confirmAction(input: { runId: string; actionId: string; approved: boolean }): Promise<void> {
   await bridge().confirmAction(input);

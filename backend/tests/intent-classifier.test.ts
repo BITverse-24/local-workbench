@@ -287,4 +287,35 @@ describe("Intelligent Intent Classifier", () => {
       expect(decision.isWorkspaceAction).toBe(true);
     });
   });
+
+  describe("Coding Assistance vs File Creation", () => {
+    it("routes 'Write the code for the following problem ... in C++' to chat instead of creating files on disk", () => {
+      const decision = classifyIntent({
+        userText: "Write the code for the following problem: Given a string s, return the longest palindromic substring in s. in C++",
+        isWorkspaceActive: true,
+      });
+      expect(decision.actionTarget).toBe("chat");
+      expect(decision.isWorkspaceAction).toBe(false);
+    });
+
+    it("routes meta-inquiry 'I didnt tell u to save it in the directory/workspace, why did you do so' to chat", () => {
+      const decision = classifyIntent({
+        userText: "I didnt tell u to save it in the directory/workspace, why did you do so",
+        isWorkspaceActive: true,
+      });
+      expect(decision.actionTarget).toBe("chat");
+      expect(decision.isWorkspaceAction).toBe(false);
+      expect(decision.reason).toBe("meta-conversational inquiry");
+    });
+
+    it("routes 'why did you create that file' to chat", () => {
+      const decision = classifyIntent({
+        userText: "why did you create that file?",
+        isWorkspaceActive: true,
+      });
+      expect(decision.actionTarget).toBe("chat");
+      expect(decision.isWorkspaceAction).toBe(false);
+      expect(decision.reason).toBe("meta-conversational inquiry");
+    });
+  });
 });

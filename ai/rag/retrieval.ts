@@ -13,7 +13,7 @@ export class RetrievalPipeline {
 
   async query(text: string, topK: number = 5): Promise<RetrievalResult[]> {
     const sqlite = RAGDatabase.getSqlite();
-    const chroma = RAGDatabase.getChroma();
+    const vectra = RAGDatabase.getVectra();
 
     // 1. Keyword search (SQLite FTS5)
     // We fetch top 10 results from SQLite
@@ -56,35 +56,30 @@ export class RetrievalPipeline {
       }
     }));
 
-    // 2. Vector search (Chroma)
-    const queryEmbedding = await this.embeddingService.embed(text);
-
+    // 2. Vector search (Vectra)
     let vectorScored: ScoredItem[] = [];
     try {
-      const chromaResults = await chroma.query({
-        queryEmbeddings: [queryEmbedding],
-        nResults: 10
-      });
+      const queryEmbedding = await this.embeddingService.embed(text);
+      const vectraResults = await vectra.queryItems(queryEmbedding, text, 10);
 
-      if (chromaResults.ids[0]) {
-        vectorScored = chromaResults.ids[0].map((id, i) => {
-          const meta = chromaResults.metadatas[0][i] as any;
-          return {
-            id,
-            score: 1 / (60 + i + 1), // RRF score
-            data: {
-              chunk_id: id,
-              text: chromaResults.documents[0][i] as string,
-              doc_id: meta.doc_id,
-              section_label: meta.section_label,
-              page: meta.page
-            }
-          };
-        });
-      }
+      vectorScored = vectraResults.map((r, i) => {
+        const meta = r.item.metadata as any;
+        return {
+          id: r.item.id,
+          score: 1 / (60 + i + 1), // RRF score
+          data: {
+            chunk_id: r.item.id,
+            text: meta.text,
+            doc_id: meta.doc_id,
+            section_label: meta.section_label,
+            page: meta.page
+          }
+        };
+      });
     } catch (e) {
-      console.warn("Chroma query failed:", e);
+      console.warn("Vectra query failed (is embedding model available?):", e);
     }
+
 
     // 3. Reciprocal Rank Fusion (RRF)
     const fusedScores = new Map<string, ScoredItem>();

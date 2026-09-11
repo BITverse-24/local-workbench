@@ -32,7 +32,7 @@ contextBridge.exposeInMainWorld("workbench", {
     ipcRenderer.invoke("workbench:setSetting", { key, value }),
 
   // run protocol
-  startRun: (input: { userText: string; attachmentToken?: string; runId?: string; chatId?: string; temperature?: number }) =>
+  startRun: (input: { userText: string; attachmentToken?: string; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean }) =>
     ipcRenderer.invoke("workbench:startRun", input),
   registerAttachment: (input: {
     chatId?: string;
@@ -60,6 +60,28 @@ contextBridge.exposeInMainWorld("workbench", {
   getRunLogFile: (input: { runId: string; filename: string }) =>
     ipcRenderer.invoke("workbench:getRunLogFile", input),
 
+  // knowledge base protocol
+  kbListDocs: () =>
+    ipcRenderer.invoke("kb:listDocs"),
+  kbIngestDoc: (input: {
+    doc_id: string;
+    title: string;
+    source_path: string;
+    doc_type?: string;
+    department?: string;
+    effective_date?: string;
+    page_count?: number;
+    ocr_used?: boolean;
+  }) => ipcRenderer.invoke("kb:ingestDoc", input),
+  kbDeleteDoc: (docId: string) =>
+    ipcRenderer.invoke("kb:deleteDoc", { docId }),
+  kbReindex: (docId?: string) =>
+    ipcRenderer.invoke("kb:reindex", { docId }),
+  kbQuery: (text: string, topK?: number) =>
+    ipcRenderer.invoke("kb:query", { text, topK }),
+  kbStats: () =>
+    ipcRenderer.invoke("kb:stats"),
+
   // workspace harness protocol
   pickWorkspaceFolder: () =>
     ipcRenderer.invoke("workspace:pickFolder"),
@@ -79,6 +101,7 @@ contextBridge.exposeInMainWorld("workbench", {
     ipcRenderer.invoke("workspace:writeFile", { path, content }),
   runWorkspaceCommand: (command: string) =>
     ipcRenderer.invoke("workspace:runCommand", { command }),
+
 
   // push events — returns unsubscribe
   onRunEvent: (listener: (event: unknown) => void) => {

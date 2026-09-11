@@ -22,6 +22,9 @@ import type { IpcRegistrar } from "./ipc/handlers.js";
 import { RunManager } from "./run/manager.js";
 import type { RunEvent } from "../shared/contracts.js";
 import { HarnessManager } from "./harness/harness-manager.js";
+import { registerKnowledgeBaseHandlers } from "./ipc/handlers.js";
+import { RAGService } from "./rag/rag-service.js";
+import { RAGGroundingProvider } from "./grounding/rag-grounding-provider.js";
 
 export { CHAT_CHANNELS, IPC_CHAT, type ChatChannel } from "./ipc/channels.js";
 export {
@@ -34,17 +37,29 @@ export {
   IPC_WORKSPACE,
   WORKSPACE_CHANNELS,
   type WorkspaceChannel,
+  IPC_KB,
+  KB_CHANNELS,
+  type KBChannel,
 } from "./ipc/channels.js";
 export { HarnessManager } from "./harness/harness-manager.js";
+export { registerKnowledgeBaseHandlers } from "./ipc/handlers.js";
+export { RAGService } from "./rag/rag-service.js";
+export { RAGGroundingProvider } from "./grounding/rag-grounding-provider.js";
 
 export interface BackendConfig {
   dataDir: string;
   modelsPath: string;
   schemaPath: string;
+  embeddingConfig?: {
+    baseUrl: string;
+    model: string;
+    apiKey?: string;
+  };
 }
 
 export type BackendInstance = RunManager & {
   harness: HarnessManager;
+  ragService: RAGService;
 };
 
 /** Open SQLite (idempotent migrate + seed) and register chat, run, and workspace IPC handlers. */
@@ -71,6 +86,21 @@ export function initBackend(
     console.warn("Failed to restore previous workspace on startup:", err);
   }
 
+  const dataDir = config?.dataDir ?? "./data";
+  const embeddingConfig = config?.embeddingConfig ?? {
+    baseUrl: "http://localhost:1234/v1",
+    model: "nomic-embed-text:v1.5",
+  };
+  const ragService = new RAGService(dataDir, embeddingConfig);
+  registerKnowledgeBaseHandlers(ipcMain, ragService);
+  const grounding = new RAGGroundingProvider(ragService);
+  manager.setGrounding(grounding);
+  void ragService.init().catch((err) => {
+    console.warn("Failed to initialize RAG subsystem on startup:", err);
+  });
+
   (manager as any).harness = harness;
+  (manager as any).ragService = ragService;
   return manager as BackendInstance;
 }
+

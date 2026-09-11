@@ -14,7 +14,10 @@ type Props = {
   onAttachFiles?: (files: File[]) => { added: number; rejected: File[] };
   onRemoveFile?: (index: number) => void;
   disabled?: boolean;
+  groundingEnabled?: boolean;
+  setGroundingEnabled?: (v: boolean | ((p: boolean) => boolean)) => void;
 };
+
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -56,7 +59,7 @@ function FileTypeIcon({ file }: { file: File }) {
   return <span className="w-8 h-8 rounded-lg neu-pressed grid place-items-center shrink-0 text-[8px] font-bold opacity-70">{label.slice(0, 4)}</span>;
 }
 
-export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusBtnRef, searchActive, setSearchActive, onVoice, onSend, attachedFiles = [], onAttachFiles, onRemoveFile, disabled }: Props) {
+export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusBtnRef, searchActive, setSearchActive, onVoice, onSend, attachedFiles = [], onAttachFiles, onRemoveFile, disabled, groundingEnabled = true, setGroundingEnabled }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -227,6 +230,28 @@ export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusB
               e.target.value = '';
             }}
           />
+
+          {/* SOP Grounding toggle button */}
+          {setGroundingEnabled && (
+            <button
+              type="button"
+              onClick={() => setGroundingEnabled((prev: boolean) => !prev)}
+              className={`h-9 px-2.5 rounded-full inline-flex items-center gap-1.5 text-xs font-medium shrink-0 transition-all ${
+                groundingEnabled
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25'
+                  : 'neu-button opacity-50 hover:opacity-80 text-white/50'
+              }`}
+              title={groundingEnabled ? 'SOP Grounding active (click to disable)' : 'SOP Grounding disabled (click to enable)'}
+              aria-label={groundingEnabled ? 'Disable SOP Grounding' : 'Enable SOP Grounding'}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={groundingEnabled ? 'text-emerald-400' : 'opacity-60'}>
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
+              <span className="hidden sm:inline">Grounding</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${groundingEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-white/30'}`} />
+            </button>
+          )}
 
           {searchActive && (
             <span className="group inline-flex items-center gap-0 group-hover:gap-1.5 pl-2 pr-2 group-hover:pr-1 py-1 rounded-full neu-card text-xs shrink-0 animate-apple-scaleIn transition-all duration-200">

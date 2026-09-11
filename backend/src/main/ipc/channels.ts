@@ -43,3 +43,17 @@ export const IPC_WORKSPACE = {
 export type WorkspaceChannel = (typeof IPC_WORKSPACE)[keyof typeof IPC_WORKSPACE];
 
 export const WORKSPACE_CHANNELS: readonly string[] = Object.values(IPC_WORKSPACE);
+
+export const IPC_KB = {
+  LIST_DOCS: "kb:listDocs",
+  INGEST_DOC: "kb:ingestDoc",
+  DELETE_DOC: "kb:deleteDoc",
+  REINDEX: "kb:reindex",
+  QUERY: "kb:query",
+  STATS: "kb:stats",
+} as const;
+
+export type KBChannel = (typeof IPC_KB)[keyof typeof IPC_KB];
+
+export const KB_CHANNELS: readonly string[] = Object.values(IPC_KB);
+

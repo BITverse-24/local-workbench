@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { formatRelativeTime } from '../lib/time';
 import WorkspacePicker from './WorkspacePicker';
 import FileTree from './FileTree';
+import KnowledgeBase from './KnowledgeBase';
 
 export type SidebarChat = {
   id: string;
@@ -59,7 +60,7 @@ export default function LeftSidebar({
   onSelectWorkspaceFile,
   workspaceLoading = false,
 }: Props) {
-  const [sidebarTab, setSidebarTab] = useState<'chats' | 'files'>('chats');
+  const [sidebarTab, setSidebarTab] = useState<'chats' | 'files' | 'knowledge'>('chats');
   // Local-only UI state: pin has no backend column. Rename edits flow up via onRename
   // (persisted through workbench:renameChat) so the chat-box header updates too.
   const [pinned, setPinned] = useState<Record<string, boolean>>({});
@@ -185,26 +186,33 @@ export default function LeftSidebar({
       </div>
 
       <div className="flex items-center justify-between mb-2 shrink-0">
-        <div className="text-[11px] font-semibold tracking-[0.16em] uppercase opacity-50 whitespace-nowrap">
-          {workspace ? (
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setSidebarTab('chats')}
-                className={`transition-colors ${sidebarTab === 'chats' ? 'text-white opacity-100' : 'opacity-40 hover:opacity-75'}`}
-              >
-                Chats ({chats.length})
-              </button>
-              <span className="opacity-30">/</span>
-              <button
-                onClick={() => setSidebarTab('files')}
-                className={`transition-colors ${sidebarTab === 'files' ? 'text-white opacity-100' : 'opacity-40 hover:opacity-75'}`}
-              >
-                Files ({workspaceTree.filter((e) => e.type === 'file').length})
-              </button>
-            </div>
-          ) : (
-            'History'
-          )}
+        <div className="text-xs font-semibold tracking-wider text-white/50 uppercase">
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setSidebarTab('chats')}
+              className={`transition-colors ${sidebarTab === 'chats' ? 'text-white opacity-100 font-bold' : 'opacity-40 hover:opacity-75'}`}
+            >
+              Chats
+            </button>
+            <span className="opacity-20">/</span>
+            {workspace && (
+              <>
+                <button
+                  onClick={() => setSidebarTab('files')}
+                  className={`transition-colors ${sidebarTab === 'files' ? 'text-white opacity-100 font-bold' : 'opacity-40 hover:opacity-75'}`}
+                >
+                  Files ({workspaceTree.filter((e) => e.type === 'file').length})
+                </button>
+                <span className="opacity-20">/</span>
+              </>
+            )}
+            <button
+              onClick={() => setSidebarTab('knowledge')}
+              className={`transition-colors ${sidebarTab === 'knowledge' ? 'text-emerald-400 opacity-100 font-bold' : 'opacity-40 hover:opacity-75'}`}
+            >
+              Knowledge
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-1.5">
           <button onClick={onCollapse} className="w-7 h-7 rounded-full neu-button grid place-items-center text-xs shrink-0" title="Collapse">
@@ -214,7 +222,11 @@ export default function LeftSidebar({
         </div>
       </div>
 
-      {sidebarTab === 'files' && workspace ? (
+      {sidebarTab === 'knowledge' ? (
+        <div className="flex-1 overflow-hidden mt-1">
+          <KnowledgeBase />
+        </div>
+      ) : sidebarTab === 'files' && workspace ? (
         <div className="flex-1 overflow-hidden mt-1">
           <FileTree
             entries={workspaceTree}

@@ -57,10 +57,29 @@ export interface ValidationFailure { kind: "validation-failure"; code: "wrong-ty
 export type AIWorkflowError = AIError | ValidationFailure;
 export type AIResult<T> = { ok: true; value: T } | { ok: false; error: AIWorkflowError };
 export type RunState = "created" | "classifying" | "planning" | "acting" | "awaiting_confirmation" | "completed" | "failed" | "cancelled";
-export type ToolName = "read_file" | "draft_note" | "draft_code" | "execute_python" | "generate_xlsx";
+export type ToolName = "read_file" | "draft_note" | "draft_code" | "execute_python" | "generate_xlsx" | "retrieve_sop";
 export interface PendingAction { actionId: string; runId: string; kind: "generate_docx" | "execute_python" | "generate_xlsx"; prompt: string; createdAt: string; expiresAt: string; preview?: string; }
 export interface ArtifactRef { artifactId: string; runId: string; kind: ArtifactKind; filename: string; relativePath: string; sizeBytes: number; createdAt: string; }
-export type RunEvent = { type: "run_state"; runId: string; state: RunState } | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string } | { type: "plan_step"; runId: string; index: number; text: string } | { type: "tool_call"; runId: string; tool: ToolName; summary: string } | { type: "tool_result"; runId: string; tool: ToolName; summary: string } | { type: "confirmation_required"; runId: string; action: PendingAction } | { type: "artifact_ready"; runId: string; artifact: ArtifactRef } | { type: "assistant_message"; runId: string; messageId: string; text: string; modelId: ModelId } | { type: "error"; runId: string; code: string; message: string; retryable?: boolean };
+export interface GroundingChunk {
+  chunkId: string;
+  docId: string;
+  sectionLabel: string;
+  sectionTitle?: string;
+  text: string;
+  page: number;
+  score: number;
+}
+export type RunEvent =
+  | { type: "run_state"; runId: string; state: RunState }
+  | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string }
+  | { type: "plan_step"; runId: string; index: number; text: string }
+  | { type: "tool_call"; runId: string; tool: ToolName; summary: string }
+  | { type: "tool_result"; runId: string; tool: ToolName; summary: string }
+  | { type: "confirmation_required"; runId: string; action: PendingAction }
+  | { type: "artifact_ready"; runId: string; artifact: ArtifactRef }
+  | { type: "assistant_message"; runId: string; messageId: string; text: string; modelId: ModelId }
+  | { type: "error"; runId: string; code: string; message: string; retryable?: boolean }
+  | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] };
 export interface RunSummary { runId: string; chatId: string; state: RunState; createdAt: string; completedAt: string | null; }
 export interface ModelHealth { modelId: ModelId; available: boolean; checkedAt: string; latencyMs?: number; message?: string; }
 

@@ -74,6 +74,44 @@ interface ModelHealth {
   message?: string;
 }
 
+interface GroundingChunk {
+  chunkId: string;
+  docId: string;
+  sectionLabel: string;
+  sectionTitle?: string;
+  text: string;
+  page: number;
+  score: number;
+}
+
+interface DocumentRecord {
+  doc_id: string;
+  title: string;
+  source_path: string;
+  doc_type: string;
+  department: string;
+  effective_date: string;
+  indexed_at: string;
+  page_count: number;
+  ocr_used: boolean;
+  chunk_count?: number;
+}
+
+interface RetrievalResult {
+  chunk_id: string;
+  text: string;
+  doc_id: string;
+  section_label: string;
+  page: number;
+  score: number;
+}
+
+interface RAGStats {
+  docCount: number;
+  chunkCount: number;
+  initialized: boolean;
+}
+
 type RunEvent =
   | { type: "run_state"; runId: string; state: RunState }
   | { type: "routing"; runId: string; taskType: "vision" | "draft" | "code"; modelId: string; reason: string }
@@ -83,7 +121,9 @@ type RunEvent =
   | { type: "confirmation_required"; runId: string; action: PendingAction }
   | { type: "artifact_ready"; runId: string; artifact: ArtifactRef }
   | { type: "assistant_message"; runId: string; messageId: string; text: string; modelId: string }
-  | { type: "error"; runId: string; code: string; message: string; retryable?: boolean };
+  | { type: "error"; runId: string; code: string; message: string; retryable?: boolean }
+  | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] };
+
 
 interface WorkspaceInfo {
   root: string;
@@ -127,7 +167,7 @@ interface WorkbenchBridge {
   renameChat: (chatId: string, title: string) => Promise<void>;
   getSetting: (key: string) => Promise<{ value: unknown }>;
   setSetting: (key: string, value: unknown) => Promise<void>;
-  startRun: (input: { userText: string; attachmentToken?: string; runId?: string; chatId?: string; temperature?: number }) => Promise<{ runId: string }>;
+  startRun: (input: { userText: string; attachmentToken?: string; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean }) => Promise<{ runId: string }>;
   registerAttachment: (input: {
     chatId?: string;
     filename: string;
@@ -145,6 +185,24 @@ interface WorkbenchBridge {
   getRunLogs: (input: { runId: string; limit?: number }) => Promise<{ runId: string; entries: unknown[]; files: string[]; recentFull: unknown }>;
   getRunLogFile: (input: { runId: string; filename: string }) => Promise<{ runId: string; filename: string; content: unknown }>;
   onRunEvent: (listener: (event: RunEvent) => void) => () => void;
+
+  // Knowledge base APIs
+  kbListDocs: () => Promise<DocumentRecord[]>;
+  kbIngestDoc: (input: {
+    doc_id: string;
+    title: string;
+    source_path: string;
+    doc_type?: string;
+    department?: string;
+    effective_date?: string;
+    page_count?: number;
+    ocr_used?: boolean;
+  }) => Promise<{ ok: boolean; docId: string; chunkCount: number }>;
+  kbDeleteDoc: (docId: string) => Promise<{ ok: boolean; docId: string }>;
+  kbReindex: (docId?: string) => Promise<{ ok: boolean; chunksIndexed: number }>;
+  kbQuery: (text: string, topK?: number) => Promise<{ ok: boolean; results: RetrievalResult[] }>;
+  kbStats: () => Promise<RAGStats>;
+
 
   // Workspace harness APIs
   pickWorkspaceFolder: () => Promise<string | null>;

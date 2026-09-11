@@ -1,21 +1,36 @@
-import { ChromaClient, Collection } from "chromadb";
+import { LocalIndex } from "vectra";
 import Database from "better-sqlite3";
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 
 export class RAGDatabase {
-  private static chroma: ChromaClient;
+  private static vectraIndex: LocalIndex;
   private static sqlite: Database.Database;
-  private static chromaCollection: Collection;
 
   static async init(dataDir: string = "./data/rag"): Promise<void> {
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
 
-    // Initialize SQLite for Keyword (FTS5) Search
+    // Initialize SQLite for Keyword (FTS5) Search and document tracking
     const sqlitePath = path.join(dataDir, "keyword.db");
     this.sqlite = new Database(sqlitePath);
+
+    // Create documents tracking table
+    this.sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS documents (
+        doc_id TEXT PRIMARY KEY,
+        title TEXT,
+        source_path TEXT,
+        doc_type TEXT,
+        department TEXT,
+        effective_date TEXT,
+        indexed_at TEXT,
+        page_count INTEGER,
+        ocr_used INTEGER,
+        chunk_count INTEGER
+      );
+    `);
 
     // Create FTS5 virtual table if it doesn't exist
     this.sqlite.exec(`
@@ -28,23 +43,12 @@ export class RAGDatabase {
       );
     `);
 
-    // Initialize Chroma for Vector Search
-    const dummyEmbeddingFunction = {
-      generate: async (texts: string[]) => {
-        return texts.map(() => []);
-      }
-    };
+    // Initialize Vectra LocalIndex for vector embeddings
+    const vectraDir = path.join(dataDir, "vectra-index");
+    this.vectraIndex = new LocalIndex(vectraDir);
 
-    this.chroma = new ChromaClient({ path: "http://localhost:8000" });
-
-    try {
-      this.chromaCollection = await this.chroma.getOrCreateCollection({
-        name: "sop_chunks",
-        metadata: { "hnsw:space": "cosine" },
-        embeddingFunction: dummyEmbeddingFunction
-      });
-    } catch (e) {
-      console.warn("Failed to connect to ChromaDB, is it running?", e);
+    if (!(await this.vectraIndex.isIndexCreated())) {
+      await this.vectraIndex.createIndex();
     }
   }
 
@@ -52,7 +56,16 @@ export class RAGDatabase {
     return this.sqlite;
   }
 
-  static getChroma(): Collection {
-    return this.chromaCollection;
+  static getVectra(): LocalIndex {
+    return this.vectraIndex;
+  }
+
+  static close(): void {
+    if (this.sqlite) {
+      try {
+        this.sqlite.close();
+      } catch {}
+    }
   }
 }
+
