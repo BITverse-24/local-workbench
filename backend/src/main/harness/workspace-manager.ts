@@ -15,24 +15,6 @@ export interface WorkspaceInfo {
 export class WorkspaceManager {
   private active: WorkspaceInfo | null = null;
 
-  constructor() {
-    this.hydrateFromSettings();
-  }
-
-  private hydrateFromSettings(): void {
-    try {
-      const saved = getSetting<string>("active_workspace_root");
-      if (saved && typeof saved === "string" && existsSync(saved) && statSync(saved).isDirectory()) {
-        this.active = {
-          root: realpathSync(saved),
-          registeredAt: new Date().toISOString(),
-        };
-      }
-    } catch {
-      // Database may not be initialized yet in early startup or isolated unit tests
-    }
-  }
-
   register(dirPath: string): WorkspaceInfo {
     if (!dirPath || typeof dirPath !== "string") {
       throw new Error("directory path must be a non-empty string");
@@ -60,22 +42,18 @@ export class WorkspaceManager {
   }
 
   current(): WorkspaceInfo | null {
-    if (!this.active) {
-      this.hydrateFromSettings();
-    }
     return this.active;
   }
 
   isRegistered(): boolean {
-    return this.current() !== null;
+    return this.active !== null;
   }
 
   requireActive(): WorkspaceInfo {
-    const current = this.current();
-    if (!current) {
+    if (!this.active) {
       throw new Error("no workspace is registered — select a directory first");
     }
-    return current;
+    return this.active;
   }
 
   deregister(): void {
@@ -83,5 +61,20 @@ export class WorkspaceManager {
     try {
       setSetting("active_workspace_root", null);
     } catch {}
+  }
+
+  restoreWorkspace(): WorkspaceInfo | null {
+    if (this.active) return this.active;
+    try {
+      const saved = getSetting<string>("active_workspace_root");
+      if (saved && typeof saved === "string" && existsSync(saved) && statSync(saved).isDirectory()) {
+        this.active = {
+          root: realpathSync(saved),
+          registeredAt: new Date().toISOString(),
+        };
+        return this.active;
+      }
+    } catch {}
+    return null;
   }
 }

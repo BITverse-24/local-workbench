@@ -65,6 +65,11 @@ export function initBackend(
   const harness = new HarnessManager(undefined, emit);
   registerWorkspaceHandlers(ipcMain, harness);
   manager.setHarness(harness);
+  try {
+    harness.restoreWorkspace();
+  } catch (err) {
+    console.warn("Failed to restore previous workspace on startup:", err);
+  }
 
   (manager as any).harness = harness;
   return manager as BackendInstance;

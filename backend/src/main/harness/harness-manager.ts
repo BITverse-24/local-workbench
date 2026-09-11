@@ -1,5 +1,5 @@
 import path from "node:path";
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { WorkspaceManager } from "./workspace-manager.js";
 import { resolveSafe } from "./path-guard.js";
@@ -8,6 +8,9 @@ import { readFile } from "./tools/read-file.js";
 import { search, type SearchMatch } from "./tools/search.js";
 import { writeFile, type WriteResult } from "./tools/write-file.js";
 import { runCommand, type CommandResult } from "./tools/run-command.js";
+import { getDb } from "../persistence/db.js";
+import { writeRunFile } from "../run/filesystem.js";
+import { logArtifactReady } from "../logger.js";
 import type {
   HarnessToolCall,
   HarnessToolResult,
@@ -62,11 +65,21 @@ export class HarnessManager {
   }
 
   currentWorkspace(): WorkspaceInfo | null {
-    return this.workspace.current();
+    return this.workspace.current() ?? this.restoreWorkspace();
+  }
+
+  restoreWorkspace(): WorkspaceInfo | null {
+    const info = this.workspace.restoreWorkspace();
+    if (info) {
+      const tree = listDir(info.root);
+      this.emitWorkspace({ type: "workspace_registered", workspace: info });
+      this.emitWorkspace({ type: "workspace_tree", entries: tree });
+    }
+    return info;
   }
 
   isWorkspaceActive(): boolean {
-    return this.workspace.isRegistered();
+    return this.currentWorkspace() !== null;
   }
 
   requireActiveWorkspace(): WorkspaceInfo {
@@ -181,22 +194,60 @@ export class HarnessManager {
     const target = resolveSafe(ws.root, relativePath);
 
     let size = 0;
+    let content: Buffer | string = "";
     try {
-      size = statSync(target).size;
-    } catch {}
+      content = readFileSync(target);
+      size = content.length;
+    } catch {
+      try {
+        size = statSync(target).size;
+      } catch {}
+    }
 
     const filename = path.basename(target);
     const kind = inferKind(filename);
+
+    let storedRel = path.relative(ws.root, target);
+
+    // If runId is a valid UUID, mirror snapshot into run output directory
+    const isValidRunId = /^[0-9a-f-]{36}$/i.test(runId);
+    if (isValidRunId) {
+      try {
+        storedRel = writeRunFile(runId, "output", filename, content, true);
+      } catch {
+        // Fallback to workspace-relative path if run directories not initialized
+      }
+    }
 
     const artifact: ArtifactRef = {
       artifactId: randomUUID(),
       runId,
       kind,
       filename,
-      relativePath: path.relative(ws.root, target),
+      relativePath: storedRel,
       sizeBytes: size,
       createdAt: new Date().toISOString(),
     };
+
+    // Persist to SQLite artifacts table
+    try {
+      getDb()
+        .prepare(
+          "INSERT INTO artifacts(artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          artifact.artifactId,
+          artifact.runId,
+          artifact.kind,
+          artifact.filename,
+          artifact.relativePath,
+          artifact.sizeBytes,
+          artifact.createdAt,
+        );
+      logArtifactReady(artifact);
+    } catch {
+      // Database might not be initialized in isolated unit tests
+    }
 
     if (this.emitRun) {
       this.emitRun({

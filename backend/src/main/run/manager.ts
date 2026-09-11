@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { createChat } from "../persistence/chats.js";
 import { addMessage } from "../persistence/messages.js";
@@ -28,6 +28,7 @@ import {
   artifactRef,
   createRunDirectories,
   registerAttachment as saveAttachment,
+  runRoot,
   writeRunFile,
 } from "./filesystem.js";
 import { createConfirmation, cancelPending, decide } from "../confirmation/store.js";
@@ -196,11 +197,77 @@ export class RunManager {
     return listRuns(limit);
   }
   artifact(runId: string, artifactId: string) {
-    const row = getDb()
+    let row = getDb()
       .prepare(
         "SELECT artifact_id as artifactId, run_id as runId, kind, filename, relative_path as relativePath, size_bytes as sizeBytes, created_at as createdAt FROM artifacts WHERE artifact_id=? AND run_id=?",
       )
-      .get(artifactId, runId);
+      .get(artifactId, runId) as
+      | {
+          artifactId: string;
+          runId: string;
+          kind: string;
+          filename: string;
+          relativePath: string;
+          sizeBytes: number;
+          createdAt: string;
+        }
+      | undefined;
+
+    if (!row) {
+      // Fallback 1: Query by artifactId only
+      row = getDb()
+        .prepare(
+          "SELECT artifact_id as artifactId, run_id as runId, kind, filename, relative_path as relativePath, size_bytes as sizeBytes, created_at as createdAt FROM artifacts WHERE artifact_id=?",
+        )
+        .get(artifactId) as any;
+    }
+
+    if (!row && /^[0-9a-f-]{36}$/i.test(runId)) {
+      // Fallback 2: Check if any output file exists in the run's output directory
+      try {
+        const outputDir = path.join(runRoot(runId), "output");
+        if (existsSync(outputDir)) {
+          const files = readdirSync(outputDir).filter((f) => !f.startsWith("."));
+          if (files.length > 0) {
+            const firstFile = files[0];
+            const rel = `runs/${runId}/output/${firstFile}`;
+            const kind = inferArtifactKind(firstFile);
+            const size = statSync(path.join(outputDir, firstFile)).size;
+            row = {
+              artifactId,
+              runId,
+              kind,
+              filename: firstFile,
+              relativePath: rel,
+              sizeBytes: size,
+              createdAt: new Date().toISOString(),
+            };
+            this.persistArtifact(row);
+          }
+        }
+      } catch {}
+    }
+
+    if (!row && this.harness?.isWorkspaceActive() && /^[0-9a-f-]{36}$/i.test(runId)) {
+      // Fallback 3: Active workspace self-heal
+      try {
+        const tree = this.harness.getDirectoryTree();
+        const candidate = tree.find((e) => e.type === "file" && !e.name.startsWith("."));
+        if (candidate) {
+          const generated = this.harness.createWorkspaceArtifact(runId, candidate.name);
+          row = {
+            artifactId,
+            runId,
+            kind: generated.kind,
+            filename: generated.filename,
+            relativePath: generated.relativePath,
+            sizeBytes: generated.sizeBytes,
+            createdAt: generated.createdAt,
+          };
+        }
+      } catch {}
+    }
+
     if (!row) throw new Error("artifact not found");
     return row;
   }

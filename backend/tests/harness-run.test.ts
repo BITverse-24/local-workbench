@@ -270,7 +270,7 @@ describe("Workspace Task Execution Loop (HARNESS.md)", () => {
 
     harness.registerWorkspace(workspaceRoot);
 
-    await manager.start({
+    const { runId } = await manager.start({
       userText: "Write a txt file in the directory saying 'Krishay'",
     });
 
@@ -280,6 +280,22 @@ describe("Workspace Task Execution Loop (HARNESS.md)", () => {
     const targetFile = path.join(workspaceRoot, "Krishay.txt");
     expect(existsSync(targetFile)).toBe(true);
     expect(readFileSync(targetFile, "utf8")).toBe("Krishay");
+
+    // Verify Artifact resolution: workbench:openArtifact can resolve the artifact from SQLite!
+    const artifactEvent = runEvents.find((e) => e.type === "artifact_ready");
+    expect(artifactEvent).toBeDefined();
+    if (artifactEvent && artifactEvent.type === "artifact_ready") {
+      const artifactId = artifactEvent.artifact.artifactId;
+      const artifactRow = manager.artifact(runId, artifactId);
+      expect(artifactRow).toBeDefined();
+      expect(artifactRow.filename).toBe("Krishay.txt");
+
+      // Verify that absoluteDataPath resolves to an existing file that shell.openPath can open
+      const { absoluteDataPath } = await import("../src/main/run/filesystem.js");
+      const absPath = absoluteDataPath(artifactRow.relativePath);
+      expect(existsSync(absPath)).toBe(true);
+      expect(readFileSync(absPath, "utf8")).toBe("Krishay");
+    }
   });
 
   it("creates a downloadable artifact when file write is requested without an active workspace", async () => {
