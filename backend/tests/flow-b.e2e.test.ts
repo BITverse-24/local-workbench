@@ -101,8 +101,8 @@ describe("Flow B end-to-end", () => {
     const csv = "name,value\na,10\nb,20\n";
     const registered = manager.registerAttachment({ filename: "input.csv", mediaType: "text/csv", sizeBytes: Buffer.byteLength(csv), base64OrBuffer: Buffer.from(csv) });
     const started = await manager.start({ userText: "Summarise this CSV", attachmentToken: registered.attachment.attachmentId, runId: registered.runId });
-    expect(events.some((event) => event.type === "routing" && event.taskType === "code")).toBe(true);
     const completed = await waitForState(events, "completed");
+    expect(events.some((event) => event.type === "routing" && event.taskType === "code")).toBe(true);
 
     expect(completed.state).toBe("completed");
     expect(summaryCalls).toBe(1);
