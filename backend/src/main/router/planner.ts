@@ -24,7 +24,7 @@ export async function generatePlan(
   userText: string,
   gateway: ModelGateway,
   temperature?: number,
-  attachment?: { mediaType: string; filename: string }
+  attachment?: { mediaType: string; filename: string } | Array<{ mediaType: string; filename: string }>
 ): Promise<SubtaskPlan> {
   // Fast Path: Cut latency to 0ms for standard, single-phase prompts.
   // Only multi-stage pipeline sequences spanning separate steps or modalities warrant LLM planning.
@@ -40,7 +40,8 @@ export async function generatePlan(
   }
 
   // Complex Path: Use the planning model
-  const contextText = attachment ? `\n\n[Attachment: ${attachment.filename}]` : "";
+  const attachments = Array.isArray(attachment) ? attachment : attachment ? [attachment] : [];
+  const contextText = attachments.map((a) => `\n\n[Attachment: ${a.filename}]`).join("");
   const prompt = `${userText}${contextText}\n\nPlease generate the JSON subtask plan.`;
 
   const base = requestBase(

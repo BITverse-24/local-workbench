@@ -52,6 +52,14 @@ CREATE TABLE IF NOT EXISTS message_attachments (
   PRIMARY KEY (message_id, attachment_id)
 );
 
+-- run ↔ attachment join (one run can reference many files)
+CREATE TABLE IF NOT EXISTS run_attachments (
+  run_id        TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  attachment_id TEXT NOT NULL REFERENCES attachments(attachment_id) ON DELETE CASCADE,
+  PRIMARY KEY (run_id, attachment_id)
+);
+CREATE INDEX IF NOT EXISTS idx_run_attachments_run ON run_attachments(run_id);
+
 -- ── 2.4 Runs: agentic executions (from BACKEND_PLANS §7.3) ─────────────
 CREATE TABLE IF NOT EXISTS runs (
   id              TEXT PRIMARY KEY,        -- runId uuid4

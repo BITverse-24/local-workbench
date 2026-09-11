@@ -19,6 +19,7 @@ export interface IntentDecision {
 export interface ClassifyIntentInput {
   userText: string;
   attachment?: { mediaType: string; filename?: string };
+  attachments?: Array<{ mediaType: string; filename?: string }>;
   isWorkspaceActive?: boolean;
 }
 
@@ -264,8 +265,15 @@ function inferLanguageExtension(text: string): string | undefined {
  * - "chat": Conversational assistant with markdown formatting.
  */
 export function classifyIntent(input: ClassifyIntentInput): IntentDecision {
-  const { userText, attachment, isWorkspaceActive = false } = input;
+  const { userText, attachment, attachments, isWorkspaceActive = false } = input;
   const lower = userText.toLowerCase();
+
+  const allAttachments =
+    attachments && attachments.length > 0
+      ? attachments
+      : attachment
+      ? [attachment]
+      : [];
 
   const needsGrounding =
     DRAFTING_INTENT_PATTERNS.test(userText) ||
@@ -283,22 +291,42 @@ export function classifyIntent(input: ClassifyIntentInput): IntentDecision {
     groundingReason: d.groundingReason ?? groundingReason,
   });
 
-  // 1. Vision Intent (Absolute precedence when media attached)
-  if (attachment && (attachment.mediaType === "application/pdf" || attachment.mediaType.startsWith("image/"))) {
+  // 1. Python script + CSV / log repair intent (Flow B)
+  const hasPythonAttachment = allAttachments.some(
+    (a) => a.filename?.endsWith(".py") || a.mediaType === "text/x-python" || a.mediaType === "application/x-python-code",
+  );
+  const hasCsvAttachment = allAttachments.some((a) => a.mediaType === "text/csv" || a.filename?.endsWith(".csv"));
+  if (hasPythonAttachment && (hasCsvAttachment || /\b(fix|crash|broken|parser|error|traceback)\b/i.test(lower))) {
     return withGrounding({
-      taskType: "vision",
-      modelId: "vision-qwen25vl",
-      actionTarget: "vision",
-      reason: "scanned report",
+      taskType: "code",
+      modelId: "code-qwen25coder",
+      actionTarget: "data",
+      reason: "Python repair and verification",
       isWorkspaceAction: false,
       confidence: 1.0,
     });
   }
 
-  // 2. Data Intent (CSV attachment or explicit CSV/data processing with attachment)
+  // 2. Vision Intent (Absolute precedence when media attached)
+  const mediaAttachments = allAttachments.filter(
+    (a) => a.mediaType === "application/pdf" || a.mediaType.startsWith("image/"),
+  );
+  if (mediaAttachments.length > 0) {
+    const isBundle = mediaAttachments.length > 1 || /\b(reports|bundle|both)\b/i.test(lower);
+    return withGrounding({
+      taskType: "vision",
+      modelId: "vision-qwen25vl",
+      actionTarget: "vision",
+      reason: isBundle ? "scanned inspection bundle" : "scanned report",
+      isWorkspaceAction: false,
+      confidence: 1.0,
+    });
+  }
+
+  // 3. Data Intent (CSV attachment or explicit CSV/data processing with attachment)
   if (
-    attachment?.mediaType === "text/csv" ||
-    (attachment && DATA_ANALYSIS_KEYWORDS.test(lower))
+    hasCsvAttachment ||
+    (allAttachments.length > 0 && DATA_ANALYSIS_KEYWORDS.test(lower))
   ) {
     return withGrounding({
       taskType: "code",

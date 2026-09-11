@@ -60,9 +60,17 @@ export async function setSetting(key: string, value: unknown): Promise<void> {
 
 // Run protocol
 
-const ALLOWED_MEDIA = new Set(["application/pdf", "text/csv"]);
+const ALLOWED_MEDIA = new Set([
+  "application/pdf",
+  "text/csv",
+  "text/plain",
+  "text/x-python",
+  "application/x-python-code",
+  "application/json",
+  "text/markdown",
+]);
 function isAllowedMedia(mediaType: string): boolean {
-  return ALLOWED_MEDIA.has(mediaType) || mediaType.startsWith("image/");
+  return ALLOWED_MEDIA.has(mediaType) || mediaType.startsWith("image/") || mediaType.startsWith("text/");
 }
 
 export async function registerAttachment(input: {
@@ -74,7 +82,21 @@ export async function registerAttachment(input: {
     // fallback: infer from extension for files with empty type
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
     const inferred =
-      ext === "pdf" ? "application/pdf" : ext === "csv" ? "text/csv" : ext.match(/^(png|jpg|jpeg|webp|gif|svg|heic)$/) ? "image/" + ext : "";
+      ext === "pdf"
+        ? "application/pdf"
+        : ext === "csv"
+        ? "text/csv"
+        : ext === "py"
+        ? "text/x-python"
+        : ext === "txt"
+        ? "text/plain"
+        : ext === "json"
+        ? "application/json"
+        : ext === "md"
+        ? "text/markdown"
+        : ext.match(/^(png|jpg|jpeg|webp|gif|svg|heic)$/)
+        ? "image/" + ext
+        : "";
     if (!inferred || !isAllowedMedia(inferred)) throw new Error(`unsupported file type: ${file.type || ext}`);
   }
   if (file.size > 25 * 1024 * 1024) throw new Error("file too large (limit 25MB)");
@@ -92,6 +114,10 @@ function guessMediaType(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (ext === "pdf") return "application/pdf";
   if (ext === "csv") return "text/csv";
+  if (ext === "py") return "text/x-python";
+  if (ext === "json") return "application/json";
+  if (ext === "md") return "text/markdown";
+  if (ext === "txt") return "text/plain";
   if (["png", "jpg", "jpeg", "webp", "gif", "svg", "heic"].includes(ext)) return `image/${ext === "jpg" ? "jpeg" : ext}`;
   return "application/octet-stream";
 }
@@ -112,6 +138,7 @@ function fileToBase64(file: File): Promise<string> {
 export async function startRun(input: {
   userText: string;
   attachmentToken?: string;
+  attachmentTokens?: string[];
   runId?: string;
   chatId?: string;
   temperature?: number;

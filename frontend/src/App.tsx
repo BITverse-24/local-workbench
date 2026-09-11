@@ -469,14 +469,13 @@ export default function App() {
     const hasFiles = attachedFiles.length > 0;
     if (!hasText && !hasFiles) return;
     if (isRunning) return;
-    if (attachedFiles.length > 1) {
-      setRunError({ code: "too_many_attachments", message: "Only one attachment per run is supported. Remove extra files and try again." });
+    if (attachedFiles.length > 10) {
+      setRunError({ code: "too_many_attachments", message: "Maximum 10 attachments per run supported." });
       return;
     }
     const text = input;
-    const file = attachedFiles[0] ?? null;
-    // Clear composer only after validation; for file path clear after register succeeds.
-    if (!file) setInput("");
+    const currentFiles = [...attachedFiles];
+    if (currentFiles.length === 0) setInput("");
 
     // Persistent chat + backend run path
     if (persistent) {
@@ -485,7 +484,7 @@ export default function App() {
         try {
           // Persist user message first (visible immediately)
           const { messageId } = await wb.sendMessage(cid, "user", text);
-          setMessages((prev) => [...prev, { id: messageId, role: "user", text, files: file ? [file] : undefined }]);
+          setMessages((prev) => [...prev, { id: messageId, role: "user", text, files: currentFiles.length > 0 ? currentFiles : undefined }]);
           setHistory((prev) => prev.map((c) => (c.id === cid ? { ...c, updated_at: new Date().toISOString() } : c)));
 
           // Reset run UI
@@ -497,12 +496,14 @@ export default function App() {
           setGroundingStatus(null);
           setRunState("created");
 
-          let attachmentToken: string | undefined;
+          const attachmentTokens: string[] = [];
           let runIdForAttachment: string | undefined;
-          if (file) {
-            const reg = await wb.registerAttachment({ chatId: cid, file });
-            attachmentToken = reg.attachment.attachmentId;
-            runIdForAttachment = reg.runId;
+          if (currentFiles.length > 0) {
+            for (const f of currentFiles) {
+              const reg = await wb.registerAttachment({ chatId: cid, file: f });
+              attachmentTokens.push(reg.attachment.attachmentId);
+              if (!runIdForAttachment) runIdForAttachment = reg.runId;
+            }
             setInput("");
             setAttachedFiles([]);
           } else {
@@ -515,7 +516,8 @@ export default function App() {
 
           const { runId } = await wb.startRun({
             userText: text,
-            attachmentToken,
+            attachmentToken: attachmentTokens[0],
+            attachmentTokens,
             runId: clientRunId,
             chatId: cid,
             temperature,
@@ -543,7 +545,7 @@ export default function App() {
         } catch (e) {
           setRunError({ code: "send_failed", message: e instanceof Error ? e.message : String(e) });
           // keep composer content if register/start failed
-          if (file) {
+          if (currentFiles.length > 0) {
             // do not clear on failure — keep file for retry
           }
           return;
@@ -552,9 +554,9 @@ export default function App() {
     }
 
     // Fallback / non-persistent: in-memory only, no backend run
-    const fallbackFiles = file ? [file] : undefined;
-    if (!file) { setInput(""); setAttachedFiles([]); }
-    else { setInput(""); setAttachedFiles([]); }
+    const fallbackFiles = currentFiles.length > 0 ? currentFiles : undefined;
+    setInput("");
+    setAttachedFiles([]);
     const newMsg: ChatMessage = { id: Date.now().toString(), role: "user", text, files: fallbackFiles };
     setMessages((prev) => [...prev, newMsg]);
     if (chatId) {

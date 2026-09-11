@@ -9,10 +9,17 @@ export interface RouteDecision {
 
 export function routeTask(
   userText: string,
-  attachment?: { mediaType: string },
+  attachment?: { mediaType: string; filename?: string } | Array<{ mediaType: string; filename?: string }>,
   isWorkspaceActive?: boolean,
 ): RouteDecision {
-  const decision = classifyIntent({ userText, attachment, isWorkspaceActive });
+  const attachments = Array.isArray(attachment) ? attachment : attachment ? [attachment] : undefined;
+  const singleAttachment = Array.isArray(attachment) ? attachment[0] : attachment;
+  const decision = classifyIntent({
+    userText,
+    attachment: singleAttachment,
+    attachments,
+    isWorkspaceActive,
+  });
   return {
     taskType: decision.taskType,
     modelId: decision.modelId,

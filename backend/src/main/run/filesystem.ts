@@ -5,7 +5,16 @@ import { assertSafeRelativePath } from "../persistence/paths.js";
 import type { ArtifactRef, AttachmentReference } from "../../shared/contracts.js";
 
 const MAX_ATTACHMENT = 25 * 1024 * 1024;
-const allowed = (mediaType: string) => mediaType === "application/pdf" || mediaType === "text/csv" || mediaType.startsWith("image/");
+const allowed = (mediaType: string) =>
+  mediaType === "application/pdf" ||
+  mediaType === "text/csv" ||
+  mediaType === "text/plain" ||
+  mediaType === "text/x-python" ||
+  mediaType === "application/x-python-code" ||
+  mediaType === "text/markdown" ||
+  mediaType === "application/json" ||
+  mediaType.startsWith("image/") ||
+  mediaType.startsWith("text/");
 
 let configuredDataDir: string | null = null;
 
