@@ -64,7 +64,12 @@ export default function App() {
   activeRunRef.current = activeRunId;
   const isRunning = runState !== null && !["completed", "failed", "cancelled"].includes(runState);
 
-  // Launch: restore history, last chat, temperature
+  // Workspace state
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceInfo | null>(null);
+  const [workspaceTree, setWorkspaceTree] = useState<HarnessDirEntry[]>([]);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
+
+  // Launch: restore history, last chat, temperature, workspace
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -89,6 +94,17 @@ export default function App() {
         try {
           const h = await wb.getHealth();
           if (!cancelled) setServiceHealth(h);
+        } catch {
+          void 0;
+        }
+        // Check if a workspace is already active
+        try {
+          const ws = await wb.getCurrentWorkspace();
+          if (!cancelled && ws) {
+            setActiveWorkspace(ws);
+            const treeRes = await wb.listWorkspaceDir();
+            if (!cancelled && treeRes?.result) setWorkspaceTree(treeRes.result);
+          }
         } catch {
           void 0;
         }
@@ -166,6 +182,82 @@ export default function App() {
         void 0;
       }
     };
+  }, []);
+
+  // Single workspace-event subscription
+  useEffect(() => {
+    if (!wb.isWorkbenchAvailable()) return;
+    let unsub: (() => void) | undefined;
+    try {
+      unsub = wb.onWorkspaceEvent((event: any) => {
+        if (event?.type === "workspace_registered") {
+          setActiveWorkspace(event.workspace);
+        } else if (event?.type === "workspace_deregistered") {
+          setActiveWorkspace(null);
+          setWorkspaceTree([]);
+        } else if (event?.type === "workspace_tree") {
+          setWorkspaceTree(event.entries ?? []);
+        }
+      });
+    } catch {
+      void 0;
+    }
+    return () => {
+      try {
+        unsub?.();
+      } catch {
+        void 0;
+      }
+    };
+  }, []);
+
+  const handlePickWorkspace = useCallback(async () => {
+    if (!wb.isWorkbenchAvailable()) return;
+    setWorkspaceLoading(true);
+    try {
+      const folder = await wb.pickWorkspaceFolder();
+      if (folder) {
+        const info = await wb.registerWorkspace(folder);
+        setActiveWorkspace(info);
+        const treeRes = await wb.listWorkspaceDir();
+        if (treeRes?.result) setWorkspaceTree(treeRes.result);
+      }
+    } catch (e) {
+      console.error("Failed to register workspace:", e);
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  }, []);
+
+  const handleCloseWorkspace = useCallback(async () => {
+    if (!wb.isWorkbenchAvailable()) return;
+    setWorkspaceLoading(true);
+    try {
+      await wb.deregisterWorkspace();
+      setActiveWorkspace(null);
+      setWorkspaceTree([]);
+    } catch (e) {
+      console.error("Failed to deregister workspace:", e);
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  }, []);
+
+  const handleRefreshWorkspaceTree = useCallback(async () => {
+    if (!wb.isWorkbenchAvailable() || !activeWorkspace) return;
+    setWorkspaceLoading(true);
+    try {
+      const treeRes = await wb.listWorkspaceDir();
+      if (treeRes?.result) setWorkspaceTree(treeRes.result);
+    } catch (e) {
+      console.error("Failed to refresh workspace tree:", e);
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  }, [activeWorkspace]);
+
+  const handleSelectWorkspaceFile = useCallback((relPath: string) => {
+    setInput((prev) => (prev ? `${prev} ${relPath}` : `@${relPath} `));
   }, []);
 
   const loadMessages = useCallback(async (id: string) => {
@@ -501,6 +593,13 @@ export default function App() {
           onNewChat={handleNewChat}
           onDeleteChat={handleDeleteChat}
           onRename={handleRenameChat}
+          workspace={activeWorkspace}
+          workspaceTree={workspaceTree}
+          onPickWorkspace={handlePickWorkspace}
+          onCloseWorkspace={handleCloseWorkspace}
+          onRefreshTree={handleRefreshWorkspaceTree}
+          onSelectWorkspaceFile={handleSelectWorkspaceFile}
+          workspaceLoading={workspaceLoading}
         />
 
         <ChatPanel title={activeTitle} leftCollapsed={leftCollapsed} rightCollapsed={rightCollapsed} onToggleLeft={() => setLeftCollapsed(!leftCollapsed)} onToggleRight={() => setRightCollapsed(!rightCollapsed)}>

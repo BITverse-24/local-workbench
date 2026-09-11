@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { formatRelativeTime } from '../lib/time';
+import WorkspacePicker from './WorkspacePicker';
+import FileTree from './FileTree';
 
 export type SidebarChat = {
   id: string;
@@ -21,6 +23,13 @@ type Props = {
   onRename: (id: string, title: string) => void;
   /** Archive in backend (soft-delete); parent drops it from the list. */
   onDeleteChat: (id: string) => void;
+  workspace?: WorkspaceInfo | null;
+  workspaceTree?: HarnessDirEntry[];
+  onPickWorkspace?: () => void;
+  onCloseWorkspace?: () => void;
+  onRefreshTree?: () => void;
+  onSelectWorkspaceFile?: (path: string) => void;
+  workspaceLoading?: boolean;
 };
 
 function DotsIcon({ size = 14 }: { size?: number }) {
@@ -33,7 +42,24 @@ function DotsIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-export default function LeftSidebar({ collapsed, onCollapse, chats, activeId, onSelect, onNewChat, onDeleteChat, onRename }: Props) {
+export default function LeftSidebar({
+  collapsed,
+  onCollapse,
+  chats,
+  activeId,
+  onSelect,
+  onNewChat,
+  onDeleteChat,
+  onRename,
+  workspace = null,
+  workspaceTree = [],
+  onPickWorkspace,
+  onCloseWorkspace,
+  onRefreshTree,
+  onSelectWorkspaceFile,
+  workspaceLoading = false,
+}: Props) {
+  const [sidebarTab, setSidebarTab] = useState<'chats' | 'files'>('chats');
   // Local-only UI state: pin has no backend column. Rename edits flow up via onRename
   // (persisted through workbench:renameChat) so the chat-box header updates too.
   const [pinned, setPinned] = useState<Record<string, boolean>>({});
@@ -148,8 +174,38 @@ export default function LeftSidebar({ collapsed, onCollapse, chats, activeId, on
         willChange: 'width, transform, opacity',
       } as React.CSSProperties}
     >
-      <div className="flex items-center justify-between mb-4 shrink-0">
-        <div className="text-[11px] font-semibold tracking-[0.16em] uppercase opacity-50 whitespace-nowrap">History</div>
+      {/* Workspace Section */}
+      <div className="mb-3 shrink-0">
+        <WorkspacePicker
+          workspace={workspace ?? null}
+          onPickWorkspace={onPickWorkspace ?? (() => {})}
+          onCloseWorkspace={onCloseWorkspace ?? (() => {})}
+          loading={workspaceLoading}
+        />
+      </div>
+
+      <div className="flex items-center justify-between mb-2 shrink-0">
+        <div className="text-[11px] font-semibold tracking-[0.16em] uppercase opacity-50 whitespace-nowrap">
+          {workspace ? (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setSidebarTab('chats')}
+                className={`transition-colors ${sidebarTab === 'chats' ? 'text-white opacity-100' : 'opacity-40 hover:opacity-75'}`}
+              >
+                Chats ({chats.length})
+              </button>
+              <span className="opacity-30">/</span>
+              <button
+                onClick={() => setSidebarTab('files')}
+                className={`transition-colors ${sidebarTab === 'files' ? 'text-white opacity-100' : 'opacity-40 hover:opacity-75'}`}
+              >
+                Files ({workspaceTree.filter((e) => e.type === 'file').length})
+              </button>
+            </div>
+          ) : (
+            'History'
+          )}
+        </div>
         <div className="flex items-center gap-1.5">
           <button onClick={onCollapse} className="w-7 h-7 rounded-full neu-button grid place-items-center text-xs shrink-0" title="Collapse">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
@@ -158,7 +214,17 @@ export default function LeftSidebar({ collapsed, onCollapse, chats, activeId, on
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-2 mt-1 pr-1">
+      {sidebarTab === 'files' && workspace ? (
+        <div className="flex-1 overflow-hidden mt-1">
+          <FileTree
+            entries={workspaceTree}
+            onSelectFile={onSelectWorkspaceFile}
+            onRefresh={onRefreshTree}
+            loading={workspaceLoading}
+          />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto space-y-2 mt-1 pr-1">
         {(() => {
           const sortedChats = [...chats].sort((a, b) => Number(!!pinned[b.id]) - Number(!!pinned[a.id]));
           return sortedChats.map((chat, idx) => {
@@ -230,6 +296,7 @@ export default function LeftSidebar({ collapsed, onCollapse, chats, activeId, on
           <div className="text-xs opacity-40 text-center py-6">No chats yet</div>
         )}
       </div>
+      )}
       {openMenuId && menuPos && (() => {
         const isPinned = !!pinned[openMenuId];
         return createPortal(

@@ -85,6 +85,38 @@ type RunEvent =
   | { type: "assistant_message"; runId: string; messageId: string; text: string; modelId: string }
   | { type: "error"; runId: string; code: string; message: string; retryable?: boolean };
 
+interface WorkspaceInfo {
+  root: string;
+  registeredAt: string;
+}
+
+interface HarnessDirEntry {
+  name: string;
+  type: "file" | "directory";
+  size: number;
+}
+
+interface HarnessSearchMatch {
+  file: string;
+  lineNumber: number;
+  matchingLine: string;
+}
+
+interface HarnessWriteResult {
+  written: string;
+  backedUp: boolean;
+  backupPath?: string;
+  diff?: string;
+}
+
+interface HarnessCommandResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  timedOut: boolean;
+  durationMs: number;
+}
+
 interface WorkbenchBridge {
   createChat: (input?: { title?: string }) => Promise<{ chatId: string }>;
   getChatHistory: (input?: { limit?: number }) => Promise<{ chats: ChatSummary[] }>;
@@ -113,6 +145,18 @@ interface WorkbenchBridge {
   getRunLogs: (input: { runId: string; limit?: number }) => Promise<{ runId: string; entries: unknown[]; files: string[]; recentFull: unknown }>;
   getRunLogFile: (input: { runId: string; filename: string }) => Promise<{ runId: string; filename: string; content: unknown }>;
   onRunEvent: (listener: (event: RunEvent) => void) => () => void;
+
+  // Workspace harness APIs
+  pickWorkspaceFolder: () => Promise<string | null>;
+  registerWorkspace: (dirPath: string) => Promise<WorkspaceInfo>;
+  deregisterWorkspace: () => Promise<{ ok: boolean }>;
+  getCurrentWorkspace: () => Promise<WorkspaceInfo | null>;
+  listWorkspaceDir: (path?: string) => Promise<{ tool: "list_dir"; result: HarnessDirEntry[] }>;
+  readWorkspaceFile: (path: string) => Promise<{ tool: "read_file"; result: string }>;
+  searchWorkspace: (query: string, path?: string) => Promise<{ tool: "search"; result: HarnessSearchMatch[] }>;
+  writeWorkspaceFile: (path: string, content: string) => Promise<{ tool: "write_file"; result: HarnessWriteResult }>;
+  runWorkspaceCommand: (command: string) => Promise<{ tool: "run_command"; result: HarnessCommandResult }>;
+  onWorkspaceEvent: (listener: (event: any) => void) => () => void;
 }
 
 interface Window {

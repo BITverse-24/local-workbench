@@ -161,3 +161,45 @@ export async function getRunLogFile(input: { runId: string; filename: string }):
 export function onRunEvent(listener: (event: RunEvent) => void): () => void {
   return bridge().onRunEvent(listener);
 }
+
+// Workspace harness APIs
+
+export async function pickWorkspaceFolder(): Promise<string | null> {
+  return bridge().pickWorkspaceFolder();
+}
+
+export async function registerWorkspace(dirPath: string): Promise<WorkspaceInfo> {
+  return bridge().registerWorkspace(dirPath);
+}
+
+export async function deregisterWorkspace(): Promise<{ ok: boolean }> {
+  return bridge().deregisterWorkspace();
+}
+
+export async function getCurrentWorkspace(): Promise<WorkspaceInfo | null> {
+  return bridge().getCurrentWorkspace();
+}
+
+export async function listWorkspaceDir(path?: string): Promise<{ tool: "list_dir"; result: HarnessDirEntry[] }> {
+  return bridge().listWorkspaceDir(path);
+}
+
+export async function readWorkspaceFile(path: string): Promise<{ tool: "read_file"; result: string }> {
+  return bridge().readWorkspaceFile(path);
+}
+
+export async function searchWorkspace(query: string, path?: string): Promise<{ tool: "search"; result: HarnessSearchMatch[] }> {
+  return bridge().searchWorkspace(query, path);
+}
+
+export async function writeWorkspaceFile(path: string, content: string): Promise<{ tool: "write_file"; result: HarnessWriteResult }> {
+  return bridge().writeWorkspaceFile(path, content);
+}
+
+export async function runWorkspaceCommand(command: string): Promise<{ tool: "run_command"; result: HarnessCommandResult }> {
+  return bridge().runWorkspaceCommand(command);
+}
+
+export function onWorkspaceEvent(listener: (event: any) => void): () => void {
+  return bridge().onWorkspaceEvent(listener);
+}
