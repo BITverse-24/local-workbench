@@ -56,3 +56,60 @@ export interface Subtask {
 export interface SubtaskPlan {
   tasks: Subtask[];
 }
+
+// ── Harness types (HARNESS.md) ──────────────────────────────────────────
+
+export type HarnessToolName = "list_dir" | "read_file" | "search" | "write_file" | "run_command";
+
+export interface WorkspaceInfo {
+  root: string;
+  registeredAt: string;
+}
+
+export interface HarnessDirEntry {
+  name: string;
+  type: "file" | "directory";
+  size: number;
+}
+
+export interface HarnessSearchMatch {
+  file: string;
+  lineNumber: number;
+  matchingLine: string;
+}
+
+export interface HarnessWriteResult {
+  written: string;
+  backedUp: boolean;
+  backupPath?: string;
+  diff?: string;
+}
+
+export interface HarnessCommandResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  timedOut: boolean;
+  durationMs: number;
+}
+
+export type HarnessToolCall =
+  | { tool: "list_dir"; args: { path?: string } }
+  | { tool: "read_file"; args: { path: string } }
+  | { tool: "search"; args: { query: string; path?: string } }
+  | { tool: "write_file"; args: { path: string; content: string } }
+  | { tool: "run_command"; args: { command: string } };
+
+export type HarnessToolResult =
+  | { tool: "list_dir"; result: HarnessDirEntry[] }
+  | { tool: "read_file"; result: string }
+  | { tool: "search"; result: HarnessSearchMatch[] }
+  | { tool: "write_file"; result: HarnessWriteResult }
+  | { tool: "run_command"; result: HarnessCommandResult };
+
+export type WorkspaceEvent =
+  | { type: "workspace_registered"; workspace: WorkspaceInfo }
+  | { type: "workspace_deregistered" }
+  | { type: "workspace_tree"; entries: HarnessDirEntry[] }
+  | { type: "harness_tool_call"; runId: string; tool: HarnessToolName; summary: string }
+  | { type: "harness_tool_result"; runId: string; tool: HarnessToolName; summary: string; detail?: string };

@@ -86,3 +86,38 @@ export const getArtifactSchema = z.object({ runId: z.string().uuid(), artifactId
 export const getRunHistorySchema = z.object({ limit: z.number().int().min(1).max(200).optional() }).strict();
 export const registerAttachmentSchema = z.object({ chatId: z.string().uuid().optional(), filename: z.string().min(1).max(255), mediaType: z.string().min(1).max(100), sizeBytes: z.number().int().nonnegative(), base64OrBuffer: z.union([z.string(), z.instanceof(Buffer)]) }).strict();
 export const openArtifactSchema = getArtifactSchema;
+
+// ── Harness / workspace validators ──────────────────────────────────────
+
+export const registerWorkspaceSchema = z.object({
+  dirPath: z.string().min(1).max(4096),
+}).strict();
+
+export const harnessListDirSchema = z.object({
+  path: z.string().max(1024).optional(),
+}).strict();
+
+export const harnessReadFileSchema = z.object({
+  path: z.string().min(1).max(1024),
+}).strict();
+
+export const harnessSearchSchema = z.object({
+  query: z.string().min(1).max(1000),
+  path: z.string().max(1024).optional(),
+}).strict();
+
+export const harnessWriteFileSchema = z.object({
+  path: z.string().min(1).max(1024),
+  content: z.string().max(1024 * 1024), // 1MB max
+}).strict();
+
+export const harnessRunCommandSchema = z.object({
+  command: z.string().min(1).max(4096),
+}).strict();
+
+export type RegisterWorkspaceInput = z.infer<typeof registerWorkspaceSchema>;
+export type HarnessListDirInput = z.infer<typeof harnessListDirSchema>;
+export type HarnessReadFileInput = z.infer<typeof harnessReadFileSchema>;
+export type HarnessSearchInput = z.infer<typeof harnessSearchSchema>;
+export type HarnessWriteFileInput = z.infer<typeof harnessWriteFileSchema>;
+export type HarnessRunCommandInput = z.infer<typeof harnessRunCommandSchema>;

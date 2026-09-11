@@ -27,3 +27,19 @@ export type ChatChannel = (typeof IPC_CHAT)[keyof typeof IPC_CHAT];
 
 export const CHAT_CHANNELS: readonly string[] = Object.values(IPC_CHAT);
 export const RUN_CHANNELS: readonly string[] = Object.values(IPC_RUN);
+
+export const IPC_WORKSPACE = {
+  REGISTER: "workspace:register",
+  DEREGISTER: "workspace:deregister",
+  GET_CURRENT: "workspace:getCurrent",
+  LIST_DIR: "workspace:listDir",
+  READ_FILE: "workspace:readFile",
+  SEARCH: "workspace:search",
+  WRITE_FILE: "workspace:writeFile",
+  RUN_COMMAND: "workspace:runCommand",
+  WORKSPACE_EVENT: "workspace:event",
+} as const;
+
+export type WorkspaceChannel = (typeof IPC_WORKSPACE)[keyof typeof IPC_WORKSPACE];
+
+export const WORKSPACE_CHANNELS: readonly string[] = Object.values(IPC_WORKSPACE);

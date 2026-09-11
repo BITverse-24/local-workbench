@@ -13,14 +13,29 @@
 import { setDataDir } from "./run/filesystem.js";
 import { configurePersistence, initDb } from "./persistence/db.js";
 import { configureModels } from "./gateway/registry.js";
-import { registerChatHandlers, registerRunHandlers } from "./ipc/handlers.js";
+import {
+  registerChatHandlers,
+  registerRunHandlers,
+  registerWorkspaceHandlers,
+} from "./ipc/handlers.js";
 import type { IpcRegistrar } from "./ipc/handlers.js";
 import { RunManager } from "./run/manager.js";
 import type { RunEvent } from "../shared/contracts.js";
+import { HarnessManager } from "./harness/harness-manager.js";
 
 export { CHAT_CHANNELS, IPC_CHAT, type ChatChannel } from "./ipc/channels.js";
-export { registerChatHandlers, registerRunHandlers } from "./ipc/handlers.js";
+export {
+  registerChatHandlers,
+  registerRunHandlers,
+  registerWorkspaceHandlers,
+} from "./ipc/handlers.js";
 export type { IpcRegistrar, MinimalIpcMain } from "./ipc/handlers.js";
+export {
+  IPC_WORKSPACE,
+  WORKSPACE_CHANNELS,
+  type WorkspaceChannel,
+} from "./ipc/channels.js";
+export { HarnessManager } from "./harness/harness-manager.js";
 
 export interface BackendConfig {
   dataDir: string;
@@ -28,12 +43,16 @@ export interface BackendConfig {
   schemaPath: string;
 }
 
-/** Open SQLite (idempotent migrate + seed) and register chat IPC handlers. */
+export type BackendInstance = RunManager & {
+  harness: HarnessManager;
+};
+
+/** Open SQLite (idempotent migrate + seed) and register chat, run, and workspace IPC handlers. */
 export function initBackend(
   ipcMain: IpcRegistrar,
   emit?: (event: RunEvent) => void,
   config?: BackendConfig,
-): RunManager {
+): BackendInstance {
   if (config) {
     setDataDir(config.dataDir);
     configureModels({ modelsPath: config.modelsPath });
@@ -43,5 +62,9 @@ export function initBackend(
   registerChatHandlers(ipcMain);
   const manager = new RunManager(undefined, emit);
   registerRunHandlers(ipcMain, manager);
-  return manager;
+  const harness = new HarnessManager(undefined, emit);
+  registerWorkspaceHandlers(ipcMain, harness);
+
+  (manager as any).harness = harness;
+  return manager as BackendInstance;
 }

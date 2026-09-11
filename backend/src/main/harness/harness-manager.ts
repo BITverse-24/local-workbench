@@ -1,0 +1,243 @@
+import path from "node:path";
+import { statSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { WorkspaceManager } from "./workspace-manager.js";
+import { resolveSafe } from "./path-guard.js";
+import { listDir, type DirEntry } from "./tools/list-dir.js";
+import { readFile } from "./tools/read-file.js";
+import { search, type SearchMatch } from "./tools/search.js";
+import { writeFile, type WriteResult } from "./tools/write-file.js";
+import { runCommand, type CommandResult } from "./tools/run-command.js";
+import type {
+  HarnessToolCall,
+  HarnessToolResult,
+  HarnessToolName,
+  WorkspaceEvent,
+  WorkspaceInfo,
+  RunEvent,
+  ArtifactRef,
+  ArtifactKind,
+} from "../../shared/contracts.js";
+
+function inferKind(filename: string): ArtifactKind {
+  const ext = path.extname(filename).toLowerCase().replace(/^\./, "");
+  if (["xlsx", "xls"].includes(ext)) return "xlsx";
+  if (["csv"].includes(ext)) return "csv";
+  if (["txt"].includes(ext)) return "txt";
+  if (["json"].includes(ext)) return "json";
+  if (["md", "markdown"].includes(ext)) return "md";
+  if (["docx", "doc"].includes(ext)) return "docx";
+  if (["pdf"].includes(ext)) return "pdf";
+  return "txt";
+}
+
+/**
+ * Harness orchestrator — dispatches tool calls to the five harness tools.
+ *
+ * Integrates with the existing RunEvent pipeline:
+ * - Tool calls and results are emitted as WorkspaceEvents
+ * - When runId is supplied, tool execution also emits RunEvent-compatible
+ *   events (tool_call / tool_result) so they stream into the live transcript.
+ * - Supports creating workspace artifact references for chat-level display.
+ */
+export class HarnessManager {
+  private readonly workspace = new WorkspaceManager();
+
+  constructor(
+    private readonly emitWorkspace: (event: WorkspaceEvent) => void = () => undefined,
+    private readonly emitRun: ((event: RunEvent) => void) | undefined = undefined,
+  ) {}
+
+  registerWorkspace(dirPath: string): WorkspaceInfo {
+    const info = this.workspace.register(dirPath);
+    const tree = listDir(info.root);
+    this.emitWorkspace({ type: "workspace_registered", workspace: info });
+    this.emitWorkspace({ type: "workspace_tree", entries: tree });
+    return info;
+  }
+
+  deregisterWorkspace(): void {
+    this.workspace.deregister();
+    this.emitWorkspace({ type: "workspace_deregistered" });
+  }
+
+  currentWorkspace(): WorkspaceInfo | null {
+    return this.workspace.current();
+  }
+
+  isWorkspaceActive(): boolean {
+    return this.workspace.isRegistered();
+  }
+
+  requireActiveWorkspace(): WorkspaceInfo {
+    return this.workspace.requireActive();
+  }
+
+  /**
+   * Execute a single harness tool call.
+   * Every tool validates path containment via resolveSafe().
+   *
+   * When runId is provided, emits tool_call/tool_result into the
+   * RunEvent stream so the call appears in the chat transcript.
+   */
+  async executeTool(
+    call: HarnessToolCall,
+    runId?: string,
+  ): Promise<HarnessToolResult> {
+    const ws = this.workspace.requireActive();
+
+    // 1. Emit tool_call event (appears in transcript if runId provided)
+    const toolName = call.tool as HarnessToolName;
+    const callSummary = this.summarizeCall(call);
+
+    this.emitWorkspace({
+      type: "harness_tool_call",
+      runId: runId ?? "",
+      tool: toolName,
+      summary: callSummary,
+    });
+
+    if (runId && this.emitRun) {
+      this.emitRun({
+        type: "tool_call",
+        runId,
+        tool: toolName as any,
+        summary: callSummary,
+      });
+    }
+
+    // 2. Dispatch to the specific tool handler
+    let result: HarnessToolResult;
+
+    switch (call.tool) {
+      case "list_dir": {
+        const entries = listDir(ws.root, call.args.path ?? ".");
+        result = { tool: "list_dir", result: entries };
+        break;
+      }
+
+      case "read_file": {
+        const content = readFile(ws.root, call.args.path);
+        result = { tool: "read_file", result: content };
+        break;
+      }
+
+      case "search": {
+        const matches = search(ws.root, call.args.query, call.args.path ?? ".");
+        result = { tool: "search", result: matches };
+        break;
+      }
+
+      case "write_file": {
+        const writeRes = writeFile(ws.root, call.args.path, call.args.content);
+        result = { tool: "write_file", result: writeRes };
+        break;
+      }
+
+      case "run_command": {
+        const cmdRes = await runCommand(ws.root, call.args.command);
+        result = { tool: "run_command", result: cmdRes };
+        break;
+      }
+    }
+
+    // 3. Emit tool_result event (appears in transcript if runId provided)
+    const resultSummary = this.summarizeResult(result);
+
+    this.emitWorkspace({
+      type: "harness_tool_result",
+      runId: runId ?? "",
+      tool: toolName,
+      summary: resultSummary,
+    });
+
+    if (runId && this.emitRun) {
+      this.emitRun({
+        type: "tool_result",
+        runId,
+        tool: toolName as any,
+        summary: resultSummary,
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Get the initial directory tree for context injection.
+   * This is the "lazy context" from HARNESS.md §2 — names, types, sizes only.
+   */
+  getDirectoryTree(relativePath: string = "."): DirEntry[] {
+    const ws = this.workspace.requireActive();
+    return listDir(ws.root, relativePath);
+  }
+
+  /**
+   * Create an ArtifactRef for a file inside the active workspace.
+   * Useful when a workspace file needs to be displayed in the artifact pane.
+   */
+  createWorkspaceArtifact(runId: string, relativePath: string): ArtifactRef {
+    const ws = this.workspace.requireActive();
+    const target = resolveSafe(ws.root, relativePath);
+
+    let size = 0;
+    try {
+      size = statSync(target).size;
+    } catch {}
+
+    const filename = path.basename(target);
+    const kind = inferKind(filename);
+
+    const artifact: ArtifactRef = {
+      artifactId: randomUUID(),
+      runId,
+      kind,
+      filename,
+      relativePath: path.relative(ws.root, target),
+      sizeBytes: size,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (this.emitRun) {
+      this.emitRun({
+        type: "artifact_ready",
+        runId,
+        artifact,
+      });
+    }
+
+    return artifact;
+  }
+
+  // ── Private helpers ──────────────────────────────────────────
+
+  private summarizeCall(call: HarnessToolCall): string {
+    switch (call.tool) {
+      case "list_dir":
+        return `listing directory: ${call.args.path ?? "."}`;
+      case "read_file":
+        return `reading file: ${call.args.path}`;
+      case "search":
+        return `searching for: "${call.args.query}" in ${call.args.path ?? "."}`;
+      case "write_file":
+        return `writing file: ${call.args.path}`;
+      case "run_command":
+        return `running command: ${call.args.command.slice(0, 80)}`;
+    }
+  }
+
+  private summarizeResult(result: HarnessToolResult): string {
+    switch (result.tool) {
+      case "list_dir":
+        return `${result.result.length} entries listed`;
+      case "read_file":
+        return `${result.result.split(/\r?\n/).length} lines read`;
+      case "search":
+        return `${result.result.length} matches found`;
+      case "write_file":
+        return result.result.diff ?? "file written";
+      case "run_command":
+        return `exit code ${result.result.exitCode}${result.result.timedOut ? " (timed out)" : ""}`;
+    }
+  }
+}
