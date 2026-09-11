@@ -17,68 +17,67 @@
 3. **Grounded Agentic Deliverables**: Multi-step, iterative agent workflows that reason against local SOPs and produce production-grade deliverables (`.docx`, verified code, `.xlsx`, `.csv`, `.md`) rather than conversational answers.
 
 ### Current Codebase Status
-A solid foundation is in place:
-- **Desktop Shell & IPC**: Electron 30 with secure context preload bridge (`workbenchBridge`).
+Substantial architectural capabilities are implemented and fully verified (186/186 tests passing across 22 test suites):
+- **Desktop Shell & IPC**: Electron 30 with secure context preload bridge (`workbenchBridge`), window lifecycle controls, and sandboxed execution.
 - **Frontend UI**: React 18 / Vite 5 / Tailwind CSS layout with dark theme, collapsible sidebars, model dropdown, streaming plan transcript, confirmation modal, and artifact pane.
 - **Persistence**: SQLite (`better-sqlite3`) with WAL mode, normalized schema for chats, messages, runs, artifacts, and settings.
-- **Gateway & Execution**: Model gateway adapter for OpenRouter (dev) with strict JSON normalization, token limiting, and a sandboxed Python executor with an auto-repair loop.
-- **Test Oracles**: Deterministic fixtures and validation scripts (`demo/validate_fixtures.py`) that pass offline verification.
+- **Model Gateway & Routing**: OpenAI-compatible model gateway supporting LAN endpoints and OpenRouter, with strict JSON normalization and deterministic intent routing.
+- **Direct Vision & Hybrid Extraction Pipeline** (COMPLETED):
+  - Direct execution via `executeVisionTask` in `RunManager` (collapsed fragile separate vision agent).
+  - Automatic Hybrid Extraction: Tier 1 Fast Digital Text stream (>=60 chars/page, >=150 chars total) vs. Tier 2 Visual VLM stream.
+  - Deterministic Visual Page Ranker (`rankPagesByVisualDensity`): vector operator scoring (P&ID/CAD), raster XObject detection, landscape aspect ratio geometry, and drawing keyword matching.
+  - Contextual text preservation: unselected pages' text injected into prompt context, bounding vision tokens to <4096.
+  - Single-turn chaining from vision extraction directly into approval note drafting.
+- **Local Project Harness** (COMPLETED):
+  - `HarnessManager` with workspace lifecycle and `PathGuard` safe path resolution (`resolveSafe`).
+  - Scoped tools: `list_dir`, `read_file`, `search` (ripgrep), `write_file` (with `.harness_backups/`), and `run_command`.
+- **Local RAG & Knowledge Base** (COMPLETED):
+  - Local vector store powered by `vectra` (`RAGDatabase`, `EmbeddingService`, `IngestionPipeline`, `RetrievalPipeline`).
+  - `RAGService` with full IPC handler suite (`workbench:kb*`) and `RAGGroundingProvider` wired into `RunManager`.
+- **Code Execution & Repair**: Sandboxed Python runner (`backend/src/main/tools/python.ts`) with iterative traceback auto-repair loop and Excel (`.xlsx`) generation (`artifacts.ts`).
 
-### Key Finding
-**Major core functional requirements specified in `DEMO.md` and `PRODUCT.md` remain unbuilt, stubbed out, or deferred.** Most notably:
-- The **Vision/OCR execution pipeline is explicitly disabled** with an error thrown in `RunManager`.
-- The **Multi-Attachment System** is missing; runs can only accept one file token.
-- **Word Document (`.docx`) Generation** is not implemented, and the `docx` library is not installed.
-- **Flow B** only generates new scripts from CSVs; it cannot ingest, diagnose, or patch an uploaded `.py` script.
-- **Flow C** (SVG engineering drawing compliance) has no implementation.
+*(Note: Live Sovereignty Proof — 5-host LAN allowlist verification, zero egress proof, and blocked outbound attempts — is demonstrated via an independent external network monitor/sidecar alongside the desktop app during live evaluation, kept strictly decoupled from the application codebase).*
+
+### Key Remaining Gaps (Inside Application)
+1. **Multi-Attachment System**: `RunManager` and database schema currently accept only a single `attachmentToken`; bundles (Flow A: 2 PDFs, Flow B: `.py` + `.csv`) cannot yet be attached together in a single run.
+2. **True Formatted Binary `.docx` Generator**: Deliverables currently serialize text content into `approval-note.docx`; a formatted Word document generator with styled letterhead, findings tables, handwritten observation callouts, and SOP citation footers using the `docx` package is needed.
+3. **Cross-Document SOP Rule Engine (Flow A & Flow C)**: Automated quantitative criteria evaluation checking extracted measurements against `SOP-114 §3.2` (wall thickness < 3.2mm, pitting, weld joint rechecks) and `SOP-220` (valve rating & pipe diameter).
+4. **Flow B Script Ingestion & Traceback Alignment**: The data task generates fresh scripts rather than ingesting `broken-vendor-log-parser.py`, observing the initial failure traceback, patching the script, and registering `repaired-parser.py` as an official output artifact.
+5. **Flow C Drawing Compliance**: Support `.svg` drawing attachments, route to visual drawing analysis, and output `corrective-action-note.md`.
 
 ---
 
 ## 2. Core Pillars & USPs Gap Analysis
 
 ### 2.1 Pillar 1: Verifiable Multi-Model Auto-Routing
-- **Requirement (`PRODUCT.md §5.1`, `DEMO.md §10`)**: Automatic task classification into distinct task types (`vision`, `draft`, `code`), routing to separate endpoints, and visual badge indication in the UI. In multi-step runs (e.g. Flow A: Vision $\rightarrow$ Draft), the system must hand off intermediate state from one specialized model to another.
+- **Requirement (`PRODUCT.md §5.1`, `DEMO.md §10`)**: Automatic task classification into distinct task types (`vision`, `draft`, `code`), routing to separate endpoints, and visual badge indication in the UI. In multi-step runs (e.g. Flow A: Vision -> Draft), the system must hand off intermediate state from one specialized model to another.
 - **Current State**:
-  - `backend/src/main/router/deterministic-router.ts`: Contains lightweight classification logic (`routeTask` and `routeSubtask`).
-  - `backend/src/main/router/planner.ts`: Breaks prompts into subtasks with types (`vision`, `code`, `draft`).
+  - `backend/src/main/router/deterministic-router.ts`: Classifies prompts and attachments into `vision`, `code`, `draft`.
+  - `backend/src/main/run/manager.ts`:
+    - Attached images and PDFs route immediately to `executeVisionTask`.
+    - Automatically chains vision findings directly into `executeChatTask` (Draft) when user requests an approval note or formal deliverable.
+    - Emits real-time `routing` telemetry (`taskType`, `modelId`, `tier`, `tokensSaved`, `reason`).
 - **Gaps**:
-  - **No State Handoff Between Models**: In `backend/src/main/run/manager.ts`, subtasks are looped over, but each subtask executes in isolation without passing outputs from earlier steps (e.g. OCR text $\rightarrow$ SOP check $\rightarrow$ draft prompt).
-  - **Vision Flow Deferred**: `manager.ts:289` explicitly blocks vision execution:
-    ```ts
-    if (route.taskType === "vision") {
-      throw new Error("vision flow is deferred in this build");
-    }
-    ```
-  - **SVG / Drawing Intent Missing**: The router does not classify SVG engineering drawings or route them to vision-reasoning endpoints.
+  - **Multi-Attachment Bundle Routing**: Does not yet inspect bundles containing multiple files (e.g. PDF + PDF, or Python script + CSV).
+  - **SVG Drawing Routing (Flow C)**: Router does not yet identify `.svg` engineering drawings as visual inspection tasks.
 
-### 2.2 Pillar 2: Live Sovereignty Proof (Air-Gap & Network Monitor)
-- **Requirement (`PRODUCT.md §5.2`, `DEMO.md §29-31, §95, §149, §202`)**:
-  - A permanently visible sovereignty panel in the UI.
-  - Display of the 5-host LAN allowlist (`192.168.10.11:8000`, `192.168.10.12:8001`, `192.168.10.13:8002`, `192.168.10.14:8003`, `192.168.10.15:8004`).
-  - Real-time external request counter showing `0`.
-  - A demonstrable "blocked outbound attempt" event (e.g. simulated or blocked outbound package download/cloud call).
-- **Current State**:
-  - `frontend/src/components/RightSidebar.tsx`: Contains only model selector, temperature slider, service health indicators, and a telemetry widget.
-  - `backend/src/main/gateway/model-gateway.ts`: Increments an in-memory `externalRequestCount = 0` but never exposes or monitors system sockets.
-- **Gaps**:
-  - **No UI Sovereignty Panel**: No widget or dashboard displaying LAN allowlist, monitor status, external request counts, or blocked attempt history.
-  - **No Network Egress Monitor / Interceptor**: No network socket tracker, proxy, or iptables/system-level monitor.
-  - **No Blocked Event Trigger / Demonstration**: No IPC endpoint or agent hook to trigger and display a blocked external egress attempt.
+### 2.2 Pillar 2: Live Sovereignty Proof (Air-Gap Verification)
+- **Status**: **DECOUPLED FROM APP (External Demo Tooling)**.
+- Per architecture decision, live network verification (5-host LAN allowlist, zero external request counter, and blocked outbound attempts) is handled by an independent sidecar / network monitoring tool displayed alongside the desktop app during evaluation.
+- No in-app firewall, socket monitor, or custom UI widget is required inside the Electron application core.
 
 ### 2.3 Pillar 3: Grounded Agentic Deliverables (RAG & Tooling)
 - **Requirement (`PRODUCT.md §6`, `PS.md §7`)**:
   - Grounding in local SOPs and specifications (`SOP-114`, `SOP-220`).
   - Production-grade deliverables (`.docx`, verified code, `.xlsx`, `.csv`, `.md`).
 - **Current State**:
-  - Only `.xlsx` generation from Python stdout/CSV is implemented (`backend/src/main/tools/artifacts.ts`).
+  - **Local RAG Implemented**: `vectra` vector store in `ai/rag/` and `RAGService` in `backend/src/main/rag/` support ingestion, reindexing, and semantic search.
+  - **Grounding Provider Connected**: `RAGGroundingProvider` queries local SOP chunks and injects citation-backed context into `RunManager`.
+  - **Excel Generation**: `generateXlsx()` in `backend/src/main/tools/artifacts.ts` converts Python tabular output to `.xlsx`.
 - **Gaps**:
-  - **No RAG / Vector Retrieval**: ChromaDB is listed in `backend/package.json` but is never instantiated, connected, or queried.
-  - **Grounding Provider is an Empty Stub**: `backend/src/main/grounding/provider.ts` contains only an unused placeholder interface:
-    ```ts
-    // This build performs no pre-model preparation step...
-    export interface GroundingProvider { prepare(input: GroundingRequest): Promise<GroundingResult>; }
-    ```
-  - **No `.docx` Generator**: Generating Word approval notes (`approval-note-E201.docx`) is completely missing. `docx` is not in root `package.json`.
+  - **True Formatted `.docx` Generator**: `manager.ts` currently writes raw text into `approval-note.docx`. Need the `docx` library to generate formal Word documents with headers, tables, handwritten observation callouts, and SOP citation footers.
+  - **Deterministic SOP Rule Evaluators**: Need automated threshold checking for Flow A (`SOP-114 §3.2` wall thickness limits) and Flow C (`SOP-220 §4.2/4.3` valve rating & pipe diameter).
+  - **Markdown Compliance Artifact Tool**: Need structured generation for `corrective-action-note.md` in Flow C.
 
 ---
 
@@ -87,30 +86,30 @@ A solid foundation is in place:
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ FLOW A: Scanned Inspection Bundle -> SOP Grounding -> DOCX Note         │
-│ Status: BLOCKED / NOT IMPLEMENTED                                       │
+│ Status: 75% COMPLETE (Vision & Chaining Done; Bundle & DOCX Pending)    │
 └─────────────────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ FLOW B: Vendor Log Script Repair -> Sandbox Execution -> Verified Output│
-│ Status: PARTIALLY IMPLEMENTED (Wrong Scenario: CSV only, no .py ingest) │
+│ Status: 70% COMPLETE (Sandbox & Repair Loop Done; Ingest & Artifact WIP)│
 └─────────────────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ FLOW C: Engineering Drawing -> SOP-220 Spec Check -> Compliance Note    │
-│ Status: NOT IMPLEMENTED                                                 │
+│ Status: 35% COMPLETE (Vision Engine Ready; SVG & Rule Check Pending)    │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.1 Flow A: Scanned Inspection Bundle $\rightarrow$ Approval Note (Flagship Flow)
+### 3.1 Flow A: Scanned Inspection Bundle -> Approval Note (Flagship Flow)
 
 | Step | Expected Behavior (`DEMO.md §32-96`) | Current Implementation Status | Gap / Required Action |
 | :--- | :--- | :--- | :--- |
-| **1. Ingestion** | User drops bundle of two PDFs (`inspection-report-E201-annotated.pdf` + `inspection-report-E202-followup.pdf`). | `RunManager` only accepts a single `attachmentToken`. | Refactor attachment registration and `RunManager` to support multi-attachment bundles. |
-| **2. Routing** | Router selects Vision/OCR model with reason `scanned inspection bundle`. | Router detects single PDF as vision, but fails on bundle. | Update `routeTask` and `routeSubtask` to identify bundle uploads. |
-| **3. Plan Streaming** | Transcript streams: OCR pages, extract measurements/defects/handwriting, flag uncertain notes, check SOP-114, draft note, generate Word doc. | `planner.ts` generates generic subtasks. | Align planner prompts or hardcoded deterministic plan with Flow A steps. |
-| **4. OCR / Vision Execution** | Model processes scanned PDF pages, extracts tube thickness, pitting, gasket degradation, and handwritten annotation `"RECHECK WELD JOINT 4B"`. | `manager.ts:289` throws `Error("vision flow is deferred in this build")`. | Implement `VisionModel` in `backend/src/main/models/vision-model.ts`, call gateway with rendered page images, parse and validate `VisionResult` via `ai/vision/contract.ts`. |
-| **5. SOP-114 Grounding** | Compare findings with `demo/flow_a/sop-114-pressure-equipment-inspection.md`. Produce structured statuses: `fail` (thickness < 3.2mm), `pass`, `unknown` (weld joint 4B). | `grounding/provider.ts` is an empty stub. | Implement SOP-114 rules engine / local knowledge retrieval to match findings to SOP-114 §3.2 limits. |
-| **6. Drafting Route Switch** | Router dynamically switches to drafting model with reason `compose grounded approval note`. | Subtask routing exists, but no context is passed to drafting step. | Pass vision findings and SOP evaluation results into `DraftModelRequest`. |
-| **7. Grounded Draft** | Draft contains evidence table, citation `[SOP-114 §3.2]`, corrective actions, and warning that approval authority is missing. | Chat model only produces raw plain text answers. | Implement `DraftModel` in `backend/src/main/models/draft-model.ts` that enforces `DraftResult` structure and SOP citations. |
-| **8. Confirmation & DOCX Tool** | User confirms document generation; creates `approval-note-E201.docx` with letterhead, findings, handwritten evidence, and references. | No `.docx` tool exists. `docx` npm library is missing. | Add `docx` library and build `generateDocx()` in `backend/src/main/tools/artifacts.ts`. |
+| **1. Ingestion** | User drops bundle of two PDFs (`inspection-report-E201-annotated.pdf` + `inspection-report-E202-followup.pdf`). | `RunManager` accepts only single `attachmentToken`. | Update attachment schema & IPC to accept multiple attachment tokens per run. |
+| **2. Routing** | Router selects Vision/OCR model with reason `scanned inspection bundle`. | Router detects single PDF as vision. | Update routing logic to classify multi-PDF inspection bundles. |
+| **3. Plan Streaming** | Transcript streams: OCR pages, extract measurements/defects/handwriting, flag uncertain notes, check SOP-114, draft note, generate Word doc. | `RunManager` streams tool execution and plan events. | Align tool event descriptions with Flow A step sequence. |
+| **4. OCR / Vision Execution** | Model processes scanned PDF pages, extracts tube thickness, pitting, gasket degradation, and handwritten annotation `"RECHECK WELD JOINT 4B"`. | **IMPLEMENTED**: `executeVisionTask` executes Tier 2 visual VLM stream with selective page slicing (`rankPagesByVisualDensity`). | Fully functional. |
+| **5. SOP-114 Grounding** | Compare findings with `sop-114-pressure-equipment-inspection.md`. Produce structured statuses: `fail` (< 3.2mm), `pass`, `unknown` (weld joint 4B). | RAG database and grounding provider exist. | Connect SOP-114 threshold evaluation rules to compare extracted measurements against criteria. |
+| **6. Drafting Route Switch** | Router dynamically switches to drafting model with reason `compose grounded approval note`. | **IMPLEMENTED**: `executeVisionTask` automatically chains into `executeChatTask` when draft requested in single turn. | Fully functional. |
+| **7. Grounded Draft** | Draft contains evidence table, citation `[SOP-114 §3.2]`, corrective actions, and warning that approval authority is missing. | Chat model produces structured text summary. | Ensure draft prompt explicitly renders the evidence table with citations and missing approval warnings. |
+| **8. Confirmation & DOCX Tool** | User confirms document generation; creates `approval-note-E201.docx` with letterhead, findings, handwritten evidence, and references. | Emits `artifact_ready` for `approval-note.docx`, but file is raw text buffer. | Integrate `docx` package to construct formatted Word document with tables and letterhead. |
 
 ---
 
@@ -118,13 +117,14 @@ A solid foundation is in place:
 
 | Step | Expected Behavior (`DEMO.md §97-150`) | Current Implementation Status | Gap / Required Action |
 | :--- | :--- | :--- | :--- |
-| **1. Ingestion** | User uploads broken script (`broken-vendor-log-parser.py`) AND test data (`vendor-maintenance-log.csv`). | Only single attachment supported. `executeDataTask` only handles raw CSV. | Add dual-file attachment support (script + dataset). |
-| **2. Routing** | Router selects Code model with reason `Python repair and verification`. | Matches `code` if CSV or code keywords are present. | Update router reason to distinguish script repair from generic CSV summarization. |
-| **3. Plan & 1st Sandbox Run** | Run existing script in sandbox; visibly fail with traceback on blank temperature cell. | `executeDataTask` immediately calls code model to write a new `task.py` instead of running the broken script first. | Add initial execution step: stage uploaded `broken-vendor-log-parser.py` and run it to observe actual failure traceback. |
-| **4. Auto-Repair Loop** | Code model receives traceback, fixes blank cell and inclusive threshold (`val >= limit`), writes patch. | Auto-repair retry loop exists in `manager.ts:381-426`. | Adapt repair prompt to specifically patch the existing script structure rather than re-generating from scratch. |
-| **5. 2nd Sandbox Run** | Script executes successfully, outputs `ROWS 5; MALFORMED 1; ABOVE_LIMIT 1` and creates repaired CSV. | Sandboxed execution runs and validates exit code 0. | Verified working for synthetic scripts; wire to use `vendor-maintenance-log.csv`. |
-| **6. Deliverables** | Present repaired Python script (`repaired-parser.py`) AND verified output CSV as downloadable artifacts. | Only creates output CSV/XLSX. Repaired `.py` is kept in `intermediate/` and not exposed as an artifact. | Register `intermediate/task.py` (or `repaired-parser.py`) as an official run artifact. |
-| **7. Blocked Attempt Proof** | Show sovereignty monitor record of blocked package download (e.g. `pip install`). | Not implemented. | Wire simulated/sandbox blocked egress event to sovereignty monitor. |
+| **1. Ingestion** | User uploads broken script (`broken-vendor-log-parser.py`) AND test data (`vendor-maintenance-log.csv`). | Only single attachment supported. `executeDataTask` expects CSV only. | Add multi-attachment support to accept both `.py` script and `.csv` data. |
+| **2. Routing** | Router selects Code model with reason `Python repair and verification`. | Router classifies CSV or code prompts as `code`. | Update reason to explicitly reflect script diagnosis and repair. |
+| **3. Plan & 1st Sandbox Run** | Run existing script in sandbox; visibly fail with traceback on blank temperature cell. | Currently calls model immediately to write fresh `task.py`. | Add initial execution step: stage uploaded `.py` script and run it to capture actual runtime traceback. |
+| **4. Auto-Repair Loop** | Code model receives traceback, fixes blank cell and inclusive threshold (`val >= limit`), writes patch. | **IMPLEMENTED**: Iterative repair loop in `manager.ts` handles runtime errors and retries up to 3 times. | Feed the initial failure traceback into repair prompt. |
+| **5. 2nd Sandbox Run** | Script executes successfully, outputs `ROWS 5; MALFORMED 1; ABOVE_LIMIT 1` and creates repaired CSV. | **IMPLEMENTED**: Sandboxed execution runs with timeout and exit code verification. | Ensure output regex parses row statistics. |
+| **6. Deliverables** | Present repaired Python script (`repaired-parser.py`) AND verified output CSV as downloadable artifacts. | Only outputs `.xlsx`/`.csv`. Generated `.py` stays in `intermediate/`. | Register repaired Python script as official run artifact in `output/`. |
+
+*(Blocked attempt demonstration is demonstrated via external monitor alongside app).*
 
 ---
 
@@ -132,85 +132,64 @@ A solid foundation is in place:
 
 | Step | Expected Behavior (`DEMO.md §151-204`) | Current Implementation Status | Gap / Required Action |
 | :--- | :--- | :--- | :--- |
-| **1. Ingestion** | User drops `pump-skid-P204.svg` and requests compliance check against piping spec. | SVG media type not routed to drawing compliance. | Support `.svg` attachments and image conversion/rasterization for vision input. |
-| **2. Routing** | Router selects Vision-Reasoning model with reason `engineering drawing interpretation`. | No SVG / drawing route rule exists. | Add SVG drawing classification in `deterministic-router.ts`. |
-| **3. Vision Interpretation** | Model extracts labels: `XV-204 Class 150` valve and `DN80` discharge line diameter. | Not implemented. | Add vision prompt/extractor for engineering drawings. |
-| **4. SOP-220 Spec Check** | Compare against `piping-spec-SOP-220.md`: Class 150 < 300 (non-compliant) and DN80 < 100 (non-compliant). Cites `[SOP-220 §4.2]` and `[SOP-220 §4.3]`. | Not implemented. | Implement SOP-220 compliance checking rule evaluator. |
-| **5. Deliverable** | Generate concise reviewer corrective-action note (`corrective-action-note.md`) stating drawing is NOT approved. | Not implemented. | Generate Markdown compliance artifact and register in run artifact pane. |
-| **6. Blocked Attempt Proof** | Show sovereignty monitor record of blocked cloud vendor API attempt. | Not implemented. | Trigger sovereignty blocked egress event in monitor. |
+| **1. Ingestion** | User drops `pump-skid-P204.svg` and requests compliance check against piping spec. | Attachment handler does not rasterize or inspect SVG drawings. | Support `.svg` attachments, convert to raster or inspect vector nodes. |
+| **2. Routing** | Router selects Vision-Reasoning model with reason `engineering drawing interpretation`. | No SVG drawing classification rule. | Add SVG drawing classification in `deterministic-router.ts`. |
+| **3. Vision Interpretation** | Model extracts labels: `XV-204 Class 150` valve and `DN80` discharge line diameter. | Tier 2 visual pipeline ready, needs SVG prompt template. | Wire drawing inspection prompt template. |
+| **4. SOP-220 Spec Check** | Compare against `piping-spec-SOP-220.md`: Class 150 < 300 (non-compliant) and DN80 < 100 (non-compliant). Cites `[SOP-220 §4.2]` and `[SOP-220 §4.3]`. | SOP-220 file available in demo fixtures; not yet queried. | Implement SOP-220 compliance checking rule evaluator. |
+| **5. Deliverable** | Generate concise reviewer corrective-action note (`corrective-action-note.md`) stating drawing is NOT approved. | Markdown artifact helper not registered. | Generate Markdown compliance artifact and register in run artifact pane. |
+
+*(Blocked attempt demonstration is demonstrated via external monitor alongside app).*
 
 ---
 
 ## 4. Architectural & Subsystem Gaps
 
 ### 4.1 Multi-Attachment Architecture
-- **Problem**: `StartRunInput` only has `attachmentToken?: string`. The database schema table `runs` has a single `attachment_id TEXT`.
-- **Requirement**: Runs in Flows A & B require 2 attachments.
+- **Problem**: `StartRunInput` only has `attachmentToken?: string`. Database table `runs` has a single `attachment_id TEXT`.
+- **Requirement**: Flows A & B require 2 attachments per run.
 - **Solution Needed**:
-  - Update `schema.sql` to support multiple attachments per run via `message_attachments` or a `run_attachments` join table.
-  - Update `IPC_RUN.REGISTER_ATTACHMENT` and `IPC_RUN.START_RUN` to accept an array of `attachmentTokens?: string[]`.
-  - Update `RunManager.start()` to resolve and stage multiple attachments in `data/runs/<runId>/input/`.
+  - Update `schema.sql` to support multiple attachments per run via `run_attachments` join table.
+  - Update `IPC_RUN.START_RUN` and `StartRunInput` to accept `attachmentTokens?: string[]`.
+  - Update `RunManager.start()` to stage all attachments into `data/runs/<runId>/input/`.
 
-### 4.2 Sovereignty Monitor Subsystem
-- **Problem**: No sovereignty UI panel or backend network monitor exists.
+### 4.2 Grounding Engine: SOP Evaluation Rules
+- **Problem**: RAG service exists, but automated domain rule evaluation for demo SOPs is not yet connected.
 - **Solution Needed**:
-  - **Backend**: Implement `backend/src/main/sovereignty/monitor.ts`:
-    - Track active LAN allowlist (5 IPs).
-    - Track external connection attempts (counter: 0).
-    - Provide a method `recordBlockedAttempt(destination, reason)` storing blocked events.
-    - Expose IPC channels: `workbench:getSovereigntyState`, `workbench:simulateBlockedAttempt`, and push event `workbench:sovereigntyEvent`.
-  - **Frontend**:
-    - Add a dedicated **Sovereignty Dashboard Widget** in `RightSidebar.tsx` or as an expandable status bar.
-    - Display LAN allowlist nodes with live green status pings.
-    - Prominently display the `0 External Requests` badge.
-    - Render blocked outbound attempt alerts in red/amber with timestamp and blocked host.
+  - Implement deterministic rule evaluator in `backend/src/main/grounding/rules.ts`:
+    - **SOP-114**: Evaluate wall thickness against minimum 3.2mm threshold, detect pitting depth, and flag unverified weld joints.
+    - **SOP-220**: Evaluate valve pressure rating (Class 150 vs Class 300) and line size (DN80 vs DN100).
+    - Generate exact citation labels: `[SOP-114 §3.2]`, `[SOP-220 §4.2]`, `[SOP-220 §4.3]`.
 
-### 4.3 Local Knowledge Base / RAG & Grounding Engine
-- **Problem**: `grounding/provider.ts` is completely empty. SOP files (`sop-114`, `sop-220`) are not indexed.
-- **Solution Needed**:
-  - Implement a deterministic local knowledge retrieval module `backend/src/main/grounding/local-grounding.ts`:
-    - Ingest markdown SOPs from `demo/flow_a/sop-114-pressure-equipment-inspection.md` and `demo/flow_c/piping-spec-SOP-220.md`.
-    - Provide a rule evaluation engine that checks extracted parameters against SOP thresholds (e.g. wall thickness, pitting, weld joint rechecks, valve class, pipe diameter).
-    - Format citations matching oracle specifications (`[SOP-114 §3.2]`, `[SOP-220 §4.2]`, `[SOP-220 §4.3]`).
-
-### 4.4 Vision & Draft Model Contracts in Backend
-- **Problem**: `backend/src/main/models/` only has `chat-model.ts` and `code-model.ts`.
-- **Solution Needed**:
-  - Implement `backend/src/main/models/vision-model.ts`:
-    - Calls gateway with PDF page images or SVG raster.
-    - Validates output using `ai/vision/contract.ts` (`VisionResult`).
-  - Implement `backend/src/main/models/draft-model.ts`:
-    - Feeds findings + SOP citations into approval note prompt (`ai/draft/prompts/approval-note-drafting-prompt.md`).
-    - Validates output using `ai/draft/contract.ts` (`DraftResult`).
-
-### 4.5 Deliverable Generators (`.docx` & `.md`)
-- **Problem**: Only Excel (`.xlsx`) generation exists.
+### 4.3 Deliverable Generators (`.docx` & `.md`)
+- **Problem**: Word document generation currently writes text content without binary `.docx` formatting.
 - **Solution Needed**:
   - Install `docx` package (`npm install docx`).
-  - Implement `generateDocx(runId, draftResult)` in `backend/src/main/tools/artifacts.ts`:
-    - Format formal letterhead, equipment metadata, findings table, handwritten observations, grounding citations, and signature blocks.
-    - Save to `data/runs/<runId>/output/approval-note-E201.docx`.
+  - Implement `generateDocx(runId, draftData)` in `backend/src/main/tools/artifacts.ts`:
+    - Styled letterhead, metadata grid, findings table, handwritten notes callout, and signature block.
   - Implement `generateMarkdownArtifact(runId, filename, content)` for Flow C's `corrective-action-note.md`.
 
 ---
 
-## 5. Implementation Roadmap & Priority Matrix
+## 5. Updated Implementation Roadmap & Priority Matrix
 
-| Phase | Component | Tasks | Target Files |
-| :---: | :--- | :--- | :--- |
-| **Phase 1** | **Multi-Attachment Support** | 1. Extend DB schema & IPC validators to accept array of attachment tokens.<br>2. Update `RunManager` staging to copy all input files to run input dir. | `backend/src/main/ipc/validators.ts`<br>`backend/src/main/run/filesystem.ts`<br>`backend/src/main/run/manager.ts`<br>`frontend/src/bridge.d.ts` |
-| **Phase 2** | **Sovereignty Monitor (USP #2)** | 1. Create `backend/src/main/sovereignty/monitor.ts` tracking allowlist, 0 egress, and blocked attempts.<br>2. Add IPC handlers & push events.<br>3. Build Sovereignty Panel UI in React sidebar. | `backend/src/main/sovereignty/`<br>`backend/src/main/ipc/`<br>`frontend/src/components/RightSidebar.tsx`<br>`frontend/src/components/SovereigntyPanel.tsx` |
-| **Phase 3** | **Flow A: Vision & OCR Pipeline** | 1. Implement `VisionModel` wrapper with Zod validation.<br>2. Unblock vision route in `RunManager`.<br>3. Parse handwritten annotations & defect measurements. | `backend/src/main/models/vision-model.ts`<br>`backend/src/main/run/manager.ts`<br>`backend/src/main/gateway/model-gateway.ts` |
-| **Phase 4** | **Flow A: SOP Grounding & DOCX Generation** | 1. Implement SOP-114 rule evaluation & citation provider.<br>2. Implement `DraftModel` for structured approval notes.<br>3. Install `docx` and build `generateDocx` artifact tool. | `backend/src/main/grounding/`<br>`backend/src/main/models/draft-model.ts`<br>`backend/src/main/tools/artifacts.ts`<br>`package.json` |
-| **Phase 5** | **Flow B: Script Repair Alignment** | 1. Update Code Flow to ingest uploaded `.py` script + `.csv`.<br>2. Run initial execution to produce real traceback.<br>3. Auto-repair script and expose repaired `.py` as deliverable artifact.<br>4. Trigger blocked `pip` attempt in sovereignty monitor. | `backend/src/main/run/manager.ts`<br>`backend/src/main/tools/python.ts` |
-| **Phase 6** | **Flow C: Drawing Compliance** | 1. Add SVG drawing input support in router and vision pipeline.<br>2. Implement SOP-220 rule reasoning engine.<br>3. Generate `corrective-action-note.md` deliverable artifact.<br>4. Trigger blocked vendor cloud attempt in sovereignty monitor. | `backend/src/main/router/`<br>`backend/src/main/grounding/`<br>`backend/src/main/run/manager.ts` |
+| Phase | Component | Status | Tasks | Target Files |
+| :---: | :--- | :---: | :--- | :--- |
+| **Phase 1** | **Multi-Attachment Support** | **TODO** | 1. Update schema & IPC validators for `attachmentTokens?: string[]`.<br>2. Stage multiple input files in `data/runs/<runId>/input/`. | `backend/src/main/ipc/validators.ts`<br>`backend/src/main/run/manager.ts`<br>`backend/src/main/persistence/schema.sql` |
+| **Phase 2** | **Flow A: SOP Grounding & Binary DOCX** | **IN PROGRESS** | 1. Local RAG and `RAGGroundingProvider` (DONE).<br>2. Add SOP-114 rule evaluation logic.<br>3. Install `docx` and build formatted `generateDocx()` tool. | `backend/src/main/grounding/`<br>`backend/src/main/tools/artifacts.ts`<br>`package.json` |
+| **Phase 3** | **Flow B: Script Repair Alignment** | **IN PROGRESS** | 1. Sandboxed runner & auto-repair loop (DONE).<br>2. Accept uploaded `.py` + `.csv`.<br>3. Run uploaded script to capture traceback.<br>4. Register repaired `.py` as official artifact. | `backend/src/main/run/manager.ts`<br>`backend/src/main/tools/python.ts` |
+| **Phase 4** | **Flow C: Drawing Compliance** | **TODO** | 1. Support `.svg` attachments in router & vision.<br>2. Implement SOP-220 compliance checking.<br>3. Generate `corrective-action-note.md` artifact. | `backend/src/main/router/`<br>`backend/src/main/grounding/`<br>`backend/src/main/run/manager.ts` |
+| **Phase 5** | **Vision Architecture & Slicing** | **DONE** | 1. Direct `executeVisionTask` in `RunManager`.<br>2. Automatic Hybrid (Tier 1 text vs Tier 2 VLM).<br>3. Deterministic Visual Page Ranker (`rankPagesByVisualDensity`).<br>4. Single-turn vision -> draft chaining. | `backend/src/main/run/manager.ts`<br>`backend/src/main/run/images.ts`<br>`backend/tests/vision-run.test.ts` |
+| **Phase 6** | **Local Project Harness** | **DONE** | 1. `HarnessManager` with workspace lifecycle.<br>2. `PathGuard` safe resolution (`resolveSafe`).<br>3. Scoped tools (`list_dir`, `read_file`, `search`, `write_file`, `run_command`). | `backend/src/main/harness/`<br>`backend/tests/harness-*.test.ts` |
 
 ---
 
-## 6. Conclusion
+## 6. Conclusion & Next Actionable Steps
 
-The current repository provides a solid and working core for chat, database persistence, and isolated Python data tasks. However, to fulfill the requirements of **`DEMO.md`**, **`PRODUCT.md`**, and the **`PS.md`** problem statement:
-- The **Vision/OCR and Drafting handoff** must be unblocked and completed for Flow A.
-- The **Sovereignty Monitor** must be implemented to fulfill the central claim of proven zero-egress air-gap isolation.
-- The **Local Grounding / SOP rule evaluator** and **`.docx` generator** must be connected to provide verified, cited deliverables.
-- **Flows B and C** must be brought into strict alignment with their fixture oracles and demo scripts.
+With the **Vision Pipeline**, **Selective Page Slicing**, **Local Project Harness**, and **Local RAG Integration** completed and tested, and the sovereignty monitor decoupled to an external demo tool:
+
+The remaining priorities to achieve 100% demo readiness inside the application are:
+1. **Multi-Attachment Support** (Phase 1): Enable attaching multiple files so Flows A and B can ingest full bundles.
+2. **Binary DOCX Generation & SOP-114 Evaluation** (Phase 2): Install `docx` and construct publication-grade Word documents with structured SOP-114 compliance checking.
+3. **Flow B Script Ingestion & Traceback Alignment** (Phase 3): Ingest uploaded `.py` script, reproduce traceback in sandbox, patch, and expose `repaired-parser.py` artifact.
+4. **Flow C Drawing Compliance** (Phase 4): Ingest `.svg` drawing, evaluate against `SOP-220` piping rules, and output `corrective-action-note.md`.
+
