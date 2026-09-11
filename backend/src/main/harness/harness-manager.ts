@@ -10,7 +10,7 @@ import { writeFile, type WriteResult } from "./tools/write-file.js";
 import { runCommand, type CommandResult } from "./tools/run-command.js";
 import { getDb } from "../persistence/db.js";
 import { writeRunFile } from "../run/filesystem.js";
-import { logArtifactReady } from "../logger.js";
+import { logArtifactReady, logHarnessToolCall, logHarnessToolResult } from "../logger.js";
 import type {
   HarnessToolCall,
   HarnessToolResult,
@@ -103,6 +103,13 @@ export class HarnessManager {
     const toolName = call.tool as HarnessToolName;
     const callSummary = this.summarizeCall(call);
 
+    logHarnessToolCall({
+      tool: toolName,
+      args: call.args as Record<string, unknown>,
+      runId,
+      workspaceRoot: ws.root,
+    });
+
     this.emitWorkspace({
       type: "harness_tool_call",
       runId: runId ?? "",
@@ -156,6 +163,11 @@ export class HarnessManager {
 
     // 3. Emit tool_result event (appears in transcript if runId provided)
     const resultSummary = this.summarizeResult(result);
+
+    logHarnessToolResult(
+      { tool: toolName, args: call.args as Record<string, unknown> },
+      result,
+    );
 
     this.emitWorkspace({
       type: "harness_tool_result",

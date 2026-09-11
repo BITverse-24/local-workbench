@@ -263,4 +263,28 @@ describe("Intelligent Intent Classifier", () => {
       expect(decision.modelId).toBe("draft-qwen3");
     });
   });
+
+  describe("Workspace File & Command Execution Intent", () => {
+    it("routes file execution with stdin inputs to harness", () => {
+      const decision = classifyIntent({
+        userText: "Okay cool. Now execute the file for the input: nums = [3,2,4], target = 6 You must execute and provide the stdin, not answer from ur own memory",
+        isWorkspaceActive: true,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.taskType).toBe("code");
+      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.isWorkspaceAction).toBe(true);
+      expect(decision.reason).toBe("workspace command execution");
+    });
+
+    it("routes compiling and executing C++ files to harness", () => {
+      const decision = classifyIntent({
+        userText: "compile two_sum.cpp and run the executable with 4 9 2 7 11 15",
+        isWorkspaceActive: true,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.taskType).toBe("code");
+      expect(decision.isWorkspaceAction).toBe(true);
+    });
+  });
 });

@@ -82,10 +82,11 @@ const LANGUAGE_EXTENSIONS: Record<string, string> = {
   java: "java",
   c: "c",
   cpp: "cpp",
+  "c++": "cpp",
 };
 
 const COMMAND_ACTION_VERBS = /\b(run|execute|test|build|compile|install|start|deploy)\b/i;
-const COMMAND_TARGET_NOUNS = /\b(command|cmd|terminal|shell|test suite|npm|pnpm|yarn|pip|git|pytest|vitest|cargo|make)\b/i;
+const COMMAND_TARGET_NOUNS = /\b(command|cmd|terminal|shell|test suite|npm|pnpm|yarn|pip|git|pytest|vitest|cargo|make|file|files|script|scripts|program|programs|binary|binaries|executable|executables|code|solution|app|target|stdin|input|arg|args|arguments)\b/i;
 
 const EXPLORATION_PHRASES = /\b(list\s+files|show\s+files|browse\s+(?:directory|folder|repo|workspace)|search\s+in\s+(?:codebase|files|project|repo)|find\s+in\s+files|view\s+files|tree)\b/i;
 
@@ -239,9 +240,10 @@ function detectStandaloneHint(tokens: string[], rawText: string): boolean {
  * Infer file extension from language mentions in text (e.g. "python file", "py script" -> "py").
  */
 function inferLanguageExtension(text: string): string | undefined {
-  const match = text.match(/\b(python|py|typescript|ts|javascript|js|json|html|css|markdown|md|text|txt|csv|sql|shell|bash|sh|rust|rs|golang|go|java|cpp)\b/i);
+  const match = text.match(/\b(python|py|typescript|ts|javascript|js|json|html|css|markdown|md|text|txt|csv|sql|shell|bash|sh|rust|rs|golang|go|java|cpp)\b|c\+\+/i);
   if (!match) return undefined;
-  return LANGUAGE_EXTENSIONS[match[1].toLowerCase()];
+  const key = match[1] ? match[1].toLowerCase() : match[0].toLowerCase();
+  return LANGUAGE_EXTENSIONS[key];
 }
 
 /**
@@ -315,7 +317,11 @@ export function classifyIntent(input: ClassifyIntentInput): IntentDecision {
   const extractedFilename = filenameMatch ? filenameMatch[1] : undefined;
 
   const hasCommandAction =
-    COMMAND_ACTION_VERBS.test(lower) && (COMMAND_TARGET_NOUNS.test(lower) || hasDirectoryContext);
+    COMMAND_ACTION_VERBS.test(lower) &&
+    (COMMAND_TARGET_NOUNS.test(lower) ||
+      hasDirectoryContext ||
+      extractedFilename !== undefined ||
+      FILE_EXTENSION_PATTERN.test(lower));
 
   const hasExplorationAction = EXPLORATION_PHRASES.test(lower);
 

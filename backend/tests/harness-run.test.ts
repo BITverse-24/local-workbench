@@ -545,5 +545,48 @@ describe("Workspace Task Execution Loop (HARNESS.md)", () => {
     expect(turn2Req.history?.length).toBeGreaterThanOrEqual(1);
     expect(turn2Req.history?.some((m) => m.content.includes("SOP-114"))).toBe(true);
   });
+
+  it("handles start with client-provided runId and executes cleanly", async () => {
+    const mockGateway = createMockGateway(() => ({
+      text: "Hello from test!",
+    }));
+
+    manager = new RunManager(mockGateway as any, (event) => runEvents.push(event));
+    const customRunId = "11111111-2222-3333-4444-555555555555";
+    const res = await manager.start({
+      userText: "Say hi",
+      runId: customRunId,
+    });
+
+    expect(res.runId).toBe(customRunId);
+    await waitForCompletion(runEvents);
+
+    const completeEvent = runEvents.find((e) => e.type === "run_state" && (e as any).state === "completed");
+    expect(completeEvent).toBeDefined();
+    expect((completeEvent as any).runId).toBe(customRunId);
+  });
+
+  it("executes 'Give me the solution for LC: Two Sum Problem in C++' cleanly", async () => {
+    const mockGateway = createMockGateway(() => ({
+      text: "```cpp\n#include <vector>\n#include <unordered_map>\nusing namespace std;\n\nvector<int> twoSum(vector<int>& nums, int target) {\n    unordered_map<int, int> seen;\n    for (int i = 0; i < nums.size(); ++i) {\n        int complement = target - nums[i];\n        if (seen.count(complement)) return {seen[complement], i};\n        seen[nums[i]] = i;\n    }\n    return {};\n}\n```",
+    }));
+
+    manager = new RunManager(mockGateway as any, (event) => runEvents.push(event));
+    const prompt = "Give me the solution for LC: Two Sum Problem in C++";
+    await manager.start({
+      userText: prompt,
+    });
+
+    await waitForCompletion(runEvents);
+
+    const assistantMsg = runEvents.find((e) => e.type === "assistant_message");
+    expect(assistantMsg).toBeDefined();
+    if (assistantMsg && assistantMsg.type === "assistant_message") {
+      expect(assistantMsg.text).toContain("vector<int> twoSum");
+    }
+
+    const completeEvent = runEvents.find((e) => e.type === "run_state" && (e as any).state === "completed");
+    expect(completeEvent).toBeDefined();
+  });
 });
 

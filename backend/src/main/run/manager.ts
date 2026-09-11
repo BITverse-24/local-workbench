@@ -37,7 +37,14 @@ import { routeTask } from "../router/deterministic-router.js";
 import { classifyIntent, type IntentDecision } from "../router/intent-classifier.js";
 import { executePython } from "../tools/python.js";
 import { generateXlsx } from "../tools/artifacts.js";
-import { logArtifactReady, logPythonExecution, logRunTransition, logScriptRepair } from "../logger.js";
+import {
+  logArtifactReady,
+  logHarnessToolCall,
+  logHarnessToolResult,
+  logPythonExecution,
+  logRunTransition,
+  logScriptRepair,
+} from "../logger.js";
 
 function inferArtifactKind(filename: string, declaredKind?: string): ArtifactKind {
   if (declaredKind && ["docx", "pdf", "xlsx", "csv", "txt", "json", "md"].includes(declaredKind)) {
@@ -129,7 +136,12 @@ export class RunManager {
     // Follow-up questions in the same chat retain the latest uploaded file.
     // A newly uploaded attachment always takes precedence.
     let attachment = requestedAttachment ?? this.latestAttachment(effectiveChatId);
-    const runId = input.runId ?? requestedAttachment?.runId ?? createRun(effectiveChatId, input.userText);
+    const runId = createRun(
+      effectiveChatId,
+      input.userText ?? "",
+      requestedAttachment?.attachmentId,
+      input.runId ?? requestedAttachment?.runId,
+    );
     createRunDirectories(runId);
     const temp = typeof input.temperature === "number" ? input.temperature : getSetting<number>("temperature");
     if (typeof temp === "number" && !isNaN(temp)) {
@@ -314,6 +326,7 @@ export class RunManager {
     return route;
   }
   private tool(runId: string, tool: unknown, summary: string) {
+    logHarnessToolCall({ tool: String(tool), args: { summary }, runId });
     this.emit({ type: "tool_call", runId, tool: tool as never, summary });
   }
   private result(runId: string, tool: unknown, summary: string) {
@@ -447,11 +460,11 @@ export class RunManager {
       if (route.taskType === "vision") {
         throw new Error("vision flow is deferred in this build");
       } else if (route.taskType === "code") {
-        // Execute code task (requires attachment for now, or fallback)
-        if (!attachment) {
-          throw new Error("an attachment is required for the code task flow");
+        if (attachment) {
+          await this.executeDataTask(runId, text, attachment);
+        } else {
+          await this.executeChatTask(runId, text);
         }
-        await this.executeDataTask(runId, text, attachment);
       } else {
         await this.executeChatTask(runId, text);
       }
@@ -682,6 +695,12 @@ export class RunManager {
           const destRel = explicitNameMatch && !/^(workspace|directory|project|folder|root)$/i.test(explicitNameMatch[1])
             ? explicitNameMatch[1]
             : targetArtifact.filename;
+          logHarnessToolCall({
+            tool: "write_file",
+            args: { path: destRel, source: targetArtifact.filename },
+            runId,
+            workspaceRoot: ws.root,
+          });
           this.emit({
             type: "tool_call",
             runId,
@@ -689,6 +708,10 @@ export class RunManager {
             summary: `Saving ${destRel} into workspace`,
           });
           const savedRef = this.harness.copyArtifactToWorkspace(absPath, destRel, runId);
+          logHarnessToolResult(
+            { tool: "write_file", args: { path: destRel } },
+            { tool: "write_file", result: { written: true, path: destRel } },
+          );
           this.emit({
             type: "tool_result",
             runId,
@@ -1213,7 +1236,9 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
       recordError(runId, "invalid_model_response", message);
       transition(runId, "failed");
       this.emit({ type: "error", runId, code: "invalid_model_response", message, retryable: false });
-    } catch {}
+    } catch (e) {
+      console.error(`[run:${runId.slice(0, 8)}] failure reporting error:`, e);
+    }
   }
   private persistArtifact(artifact: {
     artifactId: string;
