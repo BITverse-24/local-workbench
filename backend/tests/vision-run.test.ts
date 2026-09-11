@@ -5,6 +5,7 @@ import os from "node:os";
 import { RunManager } from "../src/main/run/manager.js";
 import { closeDb, initDb } from "../src/main/persistence/db.js";
 import { createChat } from "../src/main/persistence/chats.js";
+import { rankPagesByVisualDensity } from "../src/main/run/images.js";
 import type { ModelRequest, RunEvent, VisionResult } from "../src/shared/contracts.js";
 
 describe("Vision Task Execution (Architecture Collapse)", () => {
@@ -185,4 +186,235 @@ describe("Vision Task Execution (Architecture Collapse)", () => {
     expect(artifactEvt).toBeDefined();
     expect((artifactEvt as any).artifact.filename).toBe("approval-note.docx");
   });
+
+  it("automatically uses Tier 1 Fast Text extraction for clean digital PDF, saving vision tokens", async () => {
+    const mockFindings: VisionResult = {
+      sourceText: "",
+      findings: [],
+      pageReferences: [],
+      warnings: [],
+    };
+    const mockGateway = createMockGateway(mockFindings);
+    manager = new RunManager(mockGateway, (evt) => runEvents.push(evt));
+
+    const chatId = createChat("Tier 1 Text Run");
+    // Synthetic PDF with text stream Tj operators (>= 150 chars)
+    const pdfContent = `%PDF-1.4
+1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj
+2 0 obj <</Type /Pages /Kids [3 0 R] /Count 1>> endobj
+3 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R>> endobj
+4 0 obj <</Length 200>>
+stream
+BT
+/F1 12 Tf
+(This is a clean typed digital engineering specification report detailing equipment parameters and operational limits for refinery steam boiler units across Section A and Section B.) Tj
+ET
+endstream
+endobj
+xref
+0 5
+trailer <</Root 1 0 R>>
+%%EOF`;
+
+    const buffer = Buffer.from(pdfContent);
+    const { attachment } = manager.registerAttachment({
+      chatId,
+      filename: "digital_spec.pdf",
+      mediaType: "application/pdf",
+      sizeBytes: buffer.length,
+      base64OrBuffer: buffer,
+    });
+
+    await manager.start({
+      chatId,
+      userText: "Summarize this boiler specification document",
+      attachmentToken: attachment.attachmentId,
+    });
+
+    await vi.waitFor(
+      () => {
+        expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
+      },
+      { timeout: 3000, interval: 50 },
+    );
+
+    // Should have routed to draft-qwen3 via Tier 1, burning ZERO vision tokens
+    const routingEvt = runEvents.find((e) => e.type === "routing") as any;
+    expect(routingEvt).toBeDefined();
+    expect(routingEvt.taskType).toBe("draft");
+    expect(routingEvt.modelId).toBe("draft-qwen3");
+    expect(routingEvt.tier).toBe("text");
+    expect(routingEvt.tokensSaved).toBeGreaterThan(1000);
+
+    // Gateway should only have received a draft request, NO vision model request
+    expect(capturedRequests.length).toBe(1);
+    expect(capturedRequests[0].taskType).toBe("draft");
+    expect(capturedRequests[0].userPrompt).toContain("clean typed digital engineering specification");
+  });
+
+  it("forces Tier 2 Vision model when user prompt specifically mentions engineering drawing / P&ID", async () => {
+    const mockFindings: VisionResult = {
+      sourceText: "Drawing schematic values: pump P-101 suction pressure 4.5 bar",
+      findings: [
+        {
+          findingId: "f-drawing-1",
+          title: "Pump suction line",
+          value: "4.5 bar",
+          pageReferenceIds: ["p-1"],
+          confidence: "high",
+          evidence: "P&ID tag P-101",
+        },
+      ],
+      pageReferences: [{ id: "p-1", page: 1, text: "P-101 4.5 bar", location: "suction line" }],
+      warnings: [],
+    };
+    const mockGateway = createMockGateway(mockFindings);
+    manager = new RunManager(mockGateway, (evt) => runEvents.push(evt));
+
+    const chatId = createChat("Tier 2 Drawing Run");
+    // Synthetic PDF with text stream, but prompt explicitly asks for drawing / P&ID
+    const pdfContent = `%PDF-1.4
+1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj
+2 0 obj <</Type /Pages /Kids [3 0 R] /Count 1>> endobj
+3 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R>> endobj
+4 0 obj <</Length 200>>
+stream
+BT
+/F1 12 Tf
+(Drawing label: P&ID layout for cooling water recirculation loop and pump skid system.) Tj
+ET
+endstream
+endobj
+xref
+0 5
+trailer <</Root 1 0 R>>
+%%EOF`;
+
+    const buffer = Buffer.from(pdfContent);
+    const { attachment } = manager.registerAttachment({
+      chatId,
+      filename: "pump_skid_pid.pdf",
+      mediaType: "application/pdf",
+      sizeBytes: buffer.length,
+      base64OrBuffer: buffer,
+    });
+
+    await manager.start({
+      chatId,
+      userText: "Inspect this engineering drawing and check the pump skid P&ID layout",
+      attachmentToken: attachment.attachmentId,
+    });
+
+    await vi.waitFor(
+      () => {
+        expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
+      },
+      { timeout: 3000, interval: 50 },
+    );
+
+    // Should have routed to vision-qwen25vl via Tier 2 because of visual keywords
+    const routingEvt = runEvents.find((e) => e.type === "routing") as any;
+    expect(routingEvt).toBeDefined();
+    expect(routingEvt.taskType).toBe("vision");
+    expect(routingEvt.modelId).toBe("vision-qwen25vl");
+    expect(routingEvt.tier).toBe("vision");
+
+    // Gateway should have received a vision request
+    expect(capturedRequests.length).toBe(1);
+    expect(capturedRequests[0].taskType).toBe("vision");
+  });
+
+  it("selectively slices multi-page documents, sending only top visual pages and preserving text context", async () => {
+    const mockFindings: VisionResult = {
+      sourceText: "Extracted P&ID diagram findings for Feed Pump P-201",
+      findings: [
+        {
+          findingId: "f-p201",
+          title: "Pump P-201 bypass valve",
+          value: "Normally closed",
+          pageReferenceIds: ["p-2"],
+          confidence: "high",
+          evidence: "Schematic block on Page 2 shows valve NC",
+        },
+      ],
+      pageReferences: [{ id: "p-2", page: 2, text: "valve NC", location: "bypass line" }],
+      warnings: [],
+    };
+    const mockGateway = createMockGateway(mockFindings);
+    manager = new RunManager(mockGateway, (evt) => runEvents.push(evt));
+
+    const chatId = createChat("Selective Slicing Run");
+    // 3-page synthetic PDF: Page 1 is generic intro, Page 2 is P&ID drawing with pump P-201, Page 3 is warranty
+    const pdfContent = `%PDF-1.4
+1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj
+2 0 obj <</Type /Pages /Kids [3 0 R 5 0 R 7 0 R] /Count 3>> endobj
+3 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R>> endobj
+4 0 obj <</Length 120>>
+stream
+BT
+/F1 12 Tf
+(Introduction and general equipment overview. This vendor package describes feed pump systems.) Tj
+ET
+endstream
+endobj
+5 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 1191 842] /Contents 6 0 R>> endobj
+6 0 obj <</Length 180>>
+stream
+BT
+/F1 12 Tf
+(P&ID SCHEMATIC: PUMP P-201 SUCTION AND DISCHARGE PIPING LAYOUT WITH CONTROL VALVES AND BYPASS.) Tj
+ET
+endstream
+endobj
+7 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 8 0 R>> endobj
+8 0 obj <</Length 100>>
+stream
+BT
+/F1 12 Tf
+(Warranty terms and conditions. Maintenance schedule requires quarterly inspections.) Tj
+ET
+endstream
+endobj
+xref
+0 9
+trailer <</Root 1 0 R>>
+%%EOF`;
+
+    const buffer = Buffer.from(pdfContent);
+    const { attachment } = manager.registerAttachment({
+      chatId,
+      filename: "vendor_manual_p201.pdf",
+      mediaType: "application/pdf",
+      sizeBytes: buffer.length,
+      base64OrBuffer: buffer,
+    });
+
+    await manager.start({
+      chatId,
+      userText: "Inspect the drawing for pump P-201 and check bypass valve status",
+      attachmentToken: attachment.attachmentId,
+    });
+
+    await vi.waitFor(
+      () => {
+        expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
+      },
+      { timeout: 3000, interval: 50 },
+    );
+
+    // Verify vision request was generated
+    expect(capturedRequests.length).toBe(1);
+    const vReq = capturedRequests[0] as any;
+    expect(vReq.taskType).toBe("vision");
+
+    // Page 2 should be selected because it has landscape format (1191x842), P&ID keywords, and matches P-201!
+    expect(vReq.attachment.selectedPages).toBeDefined();
+    expect(vReq.attachment.selectedPages).toContain(2);
+
+    // Unselected pages text (Page 1 or 3) should be injected as context in userPrompt
+    expect(vReq.userPrompt).toContain("vendor_manual_p201.pdf");
+    expect(vReq.userPrompt).toContain("Context from other pages");
+  });
 });
+
+

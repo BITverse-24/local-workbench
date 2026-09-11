@@ -3,7 +3,7 @@ export type ModelRuntime = "mlx-lm" | "llama-server" | "openrouter" | "ollama";
 export type ModelId = "vision-qwen25vl" | "draft-qwen3" | "code-qwen25coder" | "plan-qwen3-8b";
 export type ModelCapability = "text" | "image-input" | "structured-output" | "code-generation";
 export interface ModelRegistryEntry { id: ModelId; taskTypes: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; maxOutputTokens?: number; }
-export interface AttachmentReference { attachmentId: string; filename: string; mediaType: string; sizeBytes: number; relativePath: string; }
+export interface AttachmentReference { attachmentId: string; filename: string; mediaType: string; sizeBytes: number; relativePath: string; selectedPages?: number[]; }
 export interface InputFileReference { attachmentId: string; filename: string; mediaType: string; columns?: string[]; rowCount?: number; }
 export type OutputMode = "chat" | "artifact" | "chat_and_artifact";
 export type ArtifactKind = "docx" | "pdf" | "xlsx" | "csv" | "txt" | "json" | "md";
@@ -71,7 +71,7 @@ export interface GroundingChunk {
 }
 export type RunEvent =
   | { type: "run_state"; runId: string; state: RunState }
-  | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string }
+  | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number }
   | { type: "plan_step"; runId: string; index: number; text: string }
   | { type: "tool_call"; runId: string; tool: ToolName; summary: string }
   | { type: "tool_result"; runId: string; tool: ToolName; summary: string }

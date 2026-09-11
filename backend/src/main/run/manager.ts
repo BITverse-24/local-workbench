@@ -27,6 +27,7 @@ import { buildHarnessSystemPrompt, formatTreeForPrompt } from "../harness/harnes
 import type { HarnessToolCall } from "../../shared/contracts.js";
 import type { GroundingProvider } from "../grounding/provider.js";
 import { CODE_SYSTEM_PROMPT, VISION_SYSTEM_PROMPT } from "./prompts.js";
+import { analyzePdf, rankPagesByVisualDensity } from "./images.js";
 import { createRun, getState, listRuns, recordError, recordRouting, transition } from "./store.js";
 import {
   absoluteDataPath,
@@ -613,22 +614,45 @@ export class RunManager {
   ): Promise<void> {
     this.state(runId, "classifying");
 
-    const route = {
-      taskType: "vision" as const,
-      modelId: "vision-qwen25vl" as const,
-      reason: `multimodal analysis: ${attachment.filename}`,
-    };
+    // Inspect document if it's a PDF to determine whether Fast Text (Tier 1) or Visual VLM (Tier 2) applies
+    const rawBuffer = readFileSync(absoluteDataPath(attachment.relativePath));
+    const pdfAnalysis = attachment.mediaType === "application/pdf" ? analyzePdf(rawBuffer, text) : undefined;
+
+    const isTier1Text = pdfAnalysis && pdfAnalysis.tier === "text";
+    const taskType = isTier1Text ? ("draft" as const) : ("vision" as const);
+    const modelId = isTier1Text ? ("draft-qwen3" as const) : ("vision-qwen25vl" as const);
+    const reason = isTier1Text
+      ? `Fast Digital Text Stream: ${attachment.filename} (${pdfAnalysis.charCount} chars, saved ~${pdfAnalysis.estimatedTokensSaved} vision tokens)`
+      : `Visual / Drawing Inspection: ${attachment.filename} (${pdfAnalysis?.reason ?? "image format"})`;
+
     const requestId = randomUUID();
-    recordRouting(runId, requestId, route.taskType, route.modelId, route.reason);
-    this.emit({ type: "routing", runId, ...route });
+    recordRouting(runId, requestId, taskType, modelId, reason);
+    this.emit({
+      type: "routing",
+      runId,
+      taskType,
+      modelId,
+      reason,
+      tier: isTier1Text ? "text" : "vision",
+      tokensSaved: pdfAnalysis?.estimatedTokensSaved,
+    });
 
     this.state(runId, "planning");
-    this.emit({
-      type: "plan_step",
-      runId,
-      index: 0,
-      text: `Extract findings and content from ${attachment.filename} using vision model`,
-    });
+    if (isTier1Text) {
+      this.emit({
+        type: "plan_step",
+        runId,
+        index: 0,
+        text: `Extract digital text from ${attachment.filename} without rasterization (saved ~${pdfAnalysis.estimatedTokensSaved} vision tokens)`,
+      });
+    } else {
+      this.emit({
+        type: "plan_step",
+        runId,
+        index: 0,
+        text: `Extract findings and visual features from ${attachment.filename} using vision model`,
+      });
+    }
 
     const isDraftChainingRequested =
       /\b(approval note|draft (?:an? )?(?:note|memo|letter|report|document|brief|summary|proposal)|write (?:an? )?(?:approval note|memo|formal note|letter|recommendation)|word document|\.docx|docx\b|executive summary|formal note|compliance note|clearance note|incident report|briefing note)\b/i.test(
@@ -645,9 +669,43 @@ export class RunManager {
     }
 
     this.state(runId, "acting");
-    this.tool(runId, "read_file", `Reading ${attachment.filename} (${attachment.mediaType})`);
 
-    const userPrompt = text.trim().length > 0 ? text : `Extract all findings, evidence, and values from ${attachment.filename}.`;
+    // Tier 1: Fast Digital Text Path (0 vision tokens burned, 0ms image rasterization)
+    if (isTier1Text && pdfAnalysis) {
+      this.tool(runId, "read_file", `Extracting digital text from ${attachment.filename}`);
+      this.result(runId, "read_file", `Extracted ${pdfAnalysis.charCount} characters (saved ~${pdfAnalysis.estimatedTokensSaved} vision tokens)`);
+
+      const chainedPrompt = isDraftChainingRequested
+        ? `${text}\n\n[Extracted document text from ${attachment.filename} (${pdfAnalysis.charCount} chars)]:\n${pdfAnalysis.extractedText.slice(0, 7000)}`
+        : `User request: "${text || "Summarize this document"}"\n\n[Document content from ${attachment.filename}]:\n${pdfAnalysis.extractedText.slice(0, 7000)}`;
+
+      await this.executeChatTask(runId, chainedPrompt, intent);
+      return;
+    }
+
+    let selectedPages: number[] | undefined;
+    let enrichedUserPrompt = text.trim().length > 0 ? text : `Extract all findings, evidence, and values from ${attachment.filename}.`;
+
+    if (attachment.mediaType === "application/pdf") {
+      const ranking = await rankPagesByVisualDensity(rawBuffer, text, 2);
+      selectedPages = ranking.selectedPages;
+
+      if (ranking.unselectedPages.length > 0) {
+        this.tool(
+          runId,
+          "read_file",
+          `Selective visual slicing: rendering pages [${selectedPages.join(", ")}] for visual diagram inspection (saved ~${ranking.estimatedTokensSaved} vision tokens on pages [${ranking.unselectedPages.join(", ")}])`,
+        );
+        if (ranking.unselectedText && ranking.unselectedText.trim()) {
+          enrichedUserPrompt = `${enrichedUserPrompt}\n\n[Context from other pages of ${attachment.filename} (Pages ${ranking.unselectedPages.join(", ")}):\n${ranking.unselectedText.slice(0, 3500)}]`;
+        }
+      } else {
+        this.tool(runId, "read_file", `Reading ${attachment.filename} (rendering pages [${selectedPages.join(", ")}])`);
+      }
+    } else {
+      this.tool(runId, "read_file", `Reading ${attachment.filename} (${attachment.mediaType})`);
+    }
+
     const temperature = this.runTemperatures.get(runId) ?? 0.2;
 
     const base = requestBase(
@@ -656,7 +714,7 @@ export class RunManager {
       "vision-qwen25vl",
       "vision-result",
       VISION_SYSTEM_PROMPT,
-      userPrompt,
+      enrichedUserPrompt,
       60000,
       4096,
       temperature,
@@ -674,6 +732,7 @@ export class RunManager {
         mediaType: attachment.mediaType,
         sizeBytes: attachment.sizeBytes,
         relativePath: attachment.relativePath,
+        selectedPages,
       },
       inputMode: "typed-scan",
     };

@@ -62,7 +62,7 @@ export class ModelGateway implements ModelClient {
     try { model = resolveModel(this.registry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType); } catch { return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } }; }
     const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
     if (model.runtime === "openrouter" && !key) return { ok: false, error: { kind: "ai-error", code: "model_rejected_request", message: `missing environment credential ${model.apiKeyEnv}`, retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
-    const maybeVision = request as unknown as { taskType: string; attachment?: { mediaType: string; relativePath: string; filename?: string } };
+    const maybeVision = request as unknown as { taskType: string; attachment?: { mediaType: string; relativePath: string; filename?: string; selectedPages?: number[] } };
     const isVision = maybeVision.taskType === "vision" && !!maybeVision.attachment;
     // PDFs are now parsed into per-page compressed JPEGs (1024px max edge, JPEG 80)
     // and sent as multiple image_url parts to keep total tokens <4096.
@@ -91,7 +91,7 @@ export class ModelGateway implements ModelClient {
             ];
           }
           if (att.mediaType === "application/pdf") {
-            const pdfImages = await renderPdfToImages(raw);
+            const pdfImages = await renderPdfToImages(raw, att.selectedPages);
             if (pdfImages.length) {
               const parts = [];
               let totalBytes = 0;
