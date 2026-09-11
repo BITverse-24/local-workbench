@@ -15,6 +15,9 @@ import type {
   PendingAction,
   RunEvent,
   RunState,
+  VisionModelRequest,
+  VisionModelResponse,
+  VisionResult,
 } from "../../shared/contracts.js";
 import { ModelGateway, requestBase } from "../gateway/model-gateway.js";
 import { CodeModel } from "../models/code-model.js";
@@ -23,7 +26,7 @@ import { HarnessManager } from "../harness/harness-manager.js";
 import { buildHarnessSystemPrompt, formatTreeForPrompt } from "../harness/harness-prompt.js";
 import type { HarnessToolCall } from "../../shared/contracts.js";
 import type { GroundingProvider } from "../grounding/provider.js";
-import { CODE_SYSTEM_PROMPT } from "./prompts.js";
+import { CODE_SYSTEM_PROMPT, VISION_SYSTEM_PROMPT } from "./prompts.js";
 import { createRun, getState, listRuns, recordError, recordRouting, transition } from "./store.js";
 import {
   absoluteDataPath,
@@ -435,6 +438,12 @@ export class RunManager {
       }
     }
 
+    // 3. Vision action branch (PDF / image multimodal attachment)
+    if (intent.actionTarget === "vision" && attachment) {
+      await this.executeVisionTask(runId, text, attachment, intent);
+      return;
+    }
+
     this.state(runId, "classifying");
     
     // Dynamically generate the plan
@@ -468,9 +477,7 @@ export class RunManager {
       this.emit({ type: "routing", runId, ...route });
 
       // 3. Execute subtask
-      if (route.taskType === "vision") {
-        throw new Error("vision flow is deferred in this build");
-      } else if (route.taskType === "code") {
+      if (route.taskType === "code") {
         if (attachment) {
           await this.executeDataTask(runId, text, attachment);
         } else {
@@ -595,6 +602,158 @@ export class RunManager {
       ? `Created file **${targetFilename}** in run artifacts.`
       : `Created file **${targetFilename}** in run artifacts.\n\n*(Tip: To write files directly to your project on disk, open a local project folder from the Left Sidebar).*`;
     this.persistAssistant(runId, message, "code-qwen25coder");
+    this.complete(runId);
+  }
+
+  private async executeVisionTask(
+    runId: string,
+    text: string,
+    attachment: AttachmentRow,
+    intent?: IntentDecision,
+  ): Promise<void> {
+    this.state(runId, "classifying");
+
+    const route = {
+      taskType: "vision" as const,
+      modelId: "vision-qwen25vl" as const,
+      reason: `multimodal analysis: ${attachment.filename}`,
+    };
+    const requestId = randomUUID();
+    recordRouting(runId, requestId, route.taskType, route.modelId, route.reason);
+    this.emit({ type: "routing", runId, ...route });
+
+    this.state(runId, "planning");
+    this.emit({
+      type: "plan_step",
+      runId,
+      index: 0,
+      text: `Extract findings and content from ${attachment.filename} using vision model`,
+    });
+
+    const isDraftChainingRequested =
+      /\b(approval note|draft (?:an? )?(?:note|memo|letter|report|document|brief|summary|proposal)|write (?:an? )?(?:approval note|memo|formal note|letter|recommendation)|word document|\.docx|docx\b|executive summary|formal note|compliance note|clearance note|incident report|briefing note)\b/i.test(
+        text,
+      );
+
+    if (isDraftChainingRequested) {
+      this.emit({
+        type: "plan_step",
+        runId,
+        index: 1,
+        text: "Synthesize extracted evidence into requested draft deliverable",
+      });
+    }
+
+    this.state(runId, "acting");
+    this.tool(runId, "read_file", `Reading ${attachment.filename} (${attachment.mediaType})`);
+
+    const userPrompt = text.trim().length > 0 ? text : `Extract all findings, evidence, and values from ${attachment.filename}.`;
+    const temperature = this.runTemperatures.get(runId) ?? 0.2;
+
+    const base = requestBase(
+      runId,
+      "vision",
+      "vision-qwen25vl",
+      "vision-result",
+      VISION_SYSTEM_PROMPT,
+      userPrompt,
+      60000,
+      4096,
+      temperature,
+    );
+
+    const visionRequest: VisionModelRequest = {
+      ...base,
+      requestId,
+      taskType: "vision",
+      modelId: "vision-qwen25vl",
+      responseFormat: "vision-result",
+      attachment: {
+        attachmentId: attachment.attachmentId,
+        filename: attachment.filename,
+        mediaType: attachment.mediaType,
+        sizeBytes: attachment.sizeBytes,
+        relativePath: attachment.relativePath,
+      },
+      inputMode: "typed-scan",
+    };
+
+    let visionResultText = "";
+    const result = await this.gateway.execute(visionRequest);
+
+    if (result.ok) {
+      this.result(runId, "read_file", `Successfully extracted findings from ${attachment.filename}`);
+      const modelResp = result.value as VisionModelResponse;
+      const visionRes = modelResp.result as VisionResult;
+
+      if (visionRes && typeof visionRes === "object") {
+        const sections: string[] = [];
+
+        if (Array.isArray(visionRes.findings) && visionRes.findings.length > 0) {
+          sections.push("### Key Findings\n");
+          for (const f of visionRes.findings) {
+            const conf = f.confidence ? ` *(confidence: ${f.confidence})*` : "";
+            sections.push(`- **${f.title}**: ${f.value}${conf}`);
+            if (f.evidence) {
+              sections.push(`  > Evidence: ${f.evidence}`);
+            }
+          }
+          sections.push("");
+        }
+
+        if (Array.isArray(visionRes.warnings) && visionRes.warnings.length > 0) {
+          sections.push("### Observations & Warnings\n");
+          for (const w of visionRes.warnings) {
+            sections.push(`- ⚠️ ${w}`);
+          }
+          sections.push("");
+        }
+
+        if (visionRes.sourceText && visionRes.sourceText.trim()) {
+          sections.push("### Extracted Text Preview\n");
+          const preview = visionRes.sourceText.trim().slice(0, 1500);
+          sections.push(preview.length < visionRes.sourceText.trim().length ? `${preview}\n\n*(truncated)*` : preview);
+          sections.push("");
+        }
+
+        visionResultText = sections.length > 0 ? sections.join("\n") : JSON.stringify(visionRes, null, 2);
+      } else {
+        visionResultText = typeof modelResp.result === "string" ? modelResp.result : JSON.stringify(modelResp.result);
+      }
+    } else {
+      // Graceful fallback if vision model is offline/unavailable:
+      // Try local text extraction if PDF, then delegate to draft model
+      const isUnavailable = result.error.code === "model_unavailable" || /connect|fetch|network/i.test(result.error.message);
+      if (isUnavailable && attachment.mediaType === "application/pdf") {
+        this.tool(runId, "read_file", "Vision endpoint unreachable; attempting local text extraction fallback");
+        try {
+          const { extractPdfText } = await import("./images.js");
+          const raw = readFileSync(absoluteDataPath(attachment.relativePath));
+          const extractedText = extractPdfText(raw);
+          if (extractedText.trim().length > 0) {
+            this.result(runId, "read_file", `Extracted ${extractedText.length} characters locally from PDF`);
+            visionResultText = `### Document Content (Extracted Locally)\n\n${extractedText.slice(0, 3000)}`;
+          } else {
+            throw new Error(result.error.message);
+          }
+        } catch {
+          throw new Error(result.error.message);
+        }
+      } else {
+        throw new Error(result.error.message);
+      }
+    }
+
+    // Single-turn chaining: If the user also requested an approval note / draft / docx deliverable,
+    // seamlessly continue into the drafting pipeline with the extracted vision findings injected
+    if (isDraftChainingRequested) {
+      const chainedPrompt = `${text}\n\n[Extracted findings and evidence from ${attachment.filename}]:\n${visionResultText}`;
+      await this.executeChatTask(runId, chainedPrompt, intent);
+      return;
+    }
+
+    // Default: Present findings directly to the user
+    this.persistAssistant(runId, visionResultText, "vision-qwen25vl");
     this.complete(runId);
   }
 

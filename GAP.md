@@ -27,8 +27,6 @@ A solid foundation is in place:
 ### Key Finding
 **Major core functional requirements specified in `DEMO.md` and `PRODUCT.md` remain unbuilt, stubbed out, or deferred.** Most notably:
 - The **Vision/OCR execution pipeline is explicitly disabled** with an error thrown in `RunManager`.
-- The **Sovereignty Monitor** (USP #2) does not exist in either frontend UI or backend.
-- The **Local Knowledge Base / SOP Grounding Engine (RAG)** is completely unbuilt; the grounding provider is an empty dummy file.
 - The **Multi-Attachment System** is missing; runs can only accept one file token.
 - **Word Document (`.docx`) Generation** is not implemented, and the `docx` library is not installed.
 - **Flow B** only generates new scripts from CSVs; it cannot ingest, diagnose, or patch an uploaded `.py` script.

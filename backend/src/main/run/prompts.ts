@@ -1,9 +1,8 @@
 // Prompt text is verbatim from ai/ (the source of truth). Do not paraphrase
 // or "improve" these strings here — edit the ai/*.md files and mirror them.
 // Sources:
-// - CODE_SYSTEM_PROMPT: ai/code/prompts/coding-prompt.md
-//
-// Flow B only. Vision/draft prompts live in ai/ and are wired by another lane.
+// - CODE_SYSTEM_PROMPT:   ai/code/prompts/coding-prompt.md
+// - VISION_SYSTEM_PROMPT: ai/vision/prompts/vision-prompt.md
 
 export const CODE_SYSTEM_PROMPT = `You write one safe, deterministic Python script for a supplied CSV data
 task. Return only one valid JSON object matching this exact shape:
@@ -78,3 +77,38 @@ Code restrictions:
 The backend and sandbox validate imports, paths, output files, timeout,
 network isolation, exit code, and actual execution results. The model must
 return only the JSON object above with no extra fields or commentary.`;
+
+export const VISION_SYSTEM_PROMPT = `You extract structured evidence, observations, and key values from scanned documents, technical drawings, and photographs.
+
+Return only one valid JSON object matching this exact shape:
+{
+  "sourceText": string,
+  "findings": [
+    {
+      "findingId": string,
+      "title": string,
+      "value": string,
+      "pageReferenceIds": string[],
+      "confidence": "high" | "medium" | "low",
+      "evidence": string
+    }
+  ],
+  "pageReferences": [
+    {
+      "id": string,
+      "page": number,
+      "text": string,
+      "location": string
+    }
+  ],
+  "warnings": string[]
+}
+
+Rules:
+- Transcribe readable typed or handwritten text into sourceText. Preserve numbers, units, ranges, tags, and dates.
+- Create a finding for every stated inspection result, limit comparison, defect, parameter, measurement, failed check, or explicit recommendation.
+- Every finding must cite one or more pageReferenceIds. Every cited ID must exist in pageReferences.
+- Use one-based page numbers. Page-reference text must be a short verbatim excerpt or clear label from that page; location identifies the table, drawing region, or section.
+- Use high confidence for clear text/drawings, medium for partly unclear parts, and low for uncertain parts. Never omit uncertainty; document it in warnings.
+- Output strictly valid JSON matching the schema with no extra commentary or markdown fences.`;
+

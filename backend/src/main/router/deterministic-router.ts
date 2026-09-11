@@ -22,8 +22,6 @@ export function routeTask(
 
 export function routeSubtask(taskType: TaskType): RouteDecision {
   switch (taskType) {
-    case "vision":
-      return { taskType: "vision", modelId: "vision-qwen25vl", reason: "vision subtask execution" };
     case "code":
       return { taskType: "code", modelId: "code-qwen25coder", reason: "code subtask execution" };
     case "draft":
