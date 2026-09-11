@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { createChat } from "../persistence/chats.js";
-import { addMessage } from "../persistence/messages.js";
+import { addMessage, listMessages } from "../persistence/messages.js";
 import { getDb } from "../persistence/db.js";
 import { getSetting } from "../persistence/settings-store.js";
 import type {
@@ -11,6 +11,7 @@ import type {
   ChatModelRequest,
   CodeModelRequest,
   CodeSummarizeRequest,
+  ModelConversationMessage,
   PendingAction,
   RunEvent,
   RunState,
@@ -33,7 +34,7 @@ import {
 } from "./filesystem.js";
 import { createConfirmation, cancelPending, decide } from "../confirmation/store.js";
 import { routeTask } from "../router/deterministic-router.js";
-import { classifyIntent } from "../router/intent-classifier.js";
+import { classifyIntent, type IntentDecision } from "../router/intent-classifier.js";
 import { executePython } from "../tools/python.js";
 import { generateXlsx } from "../tools/artifacts.js";
 import { logArtifactReady, logPythonExecution, logRunTransition, logScriptRepair } from "../logger.js";
@@ -162,7 +163,9 @@ export class RunManager {
         );
       getDb().prepare("UPDATE runs SET attachment_id=? WHERE id=?").run(attachment.attachmentId, runId);
     }
-    void this.execute(runId, input.userText, attachment).catch((error) => this.fail(runId, error));
+    setTimeout(() => {
+      void this.execute(runId, input.userText, attachment).catch((error) => this.fail(runId, error));
+    }, 0);
     return { runId };
   }
   async confirm(input: ConfirmInput): Promise<void> {
@@ -329,6 +332,53 @@ export class RunManager {
     this.emit({ type: "assistant_message", runId, messageId: id, text, modelId: modelId as never });
     return id;
   }
+
+  private getRecentChatHistory(chatId: string, currentPrompt?: string): ModelConversationMessage[] {
+    try {
+      const all = listMessages(chatId);
+      let prior = all;
+      if (all.length > 0 && currentPrompt) {
+        const last = all[all.length - 1];
+        if (last.role === "user" && last.content.trim() === currentPrompt.trim()) {
+          prior = all.slice(0, all.length - 1);
+        }
+      }
+      return prior
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .slice(-10)
+        .map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }));
+    } catch {
+      return [];
+    }
+  }
+
+  private getChatArtifacts(chatId: string): Array<{
+    artifactId: string;
+    runId: string;
+    kind: string;
+    filename: string;
+    relativePath: string;
+    sizeBytes: number;
+    createdAt: string;
+  }> {
+    try {
+      return getDb()
+        .prepare(
+          `SELECT a.artifact_id as artifactId, a.run_id as runId, a.kind, a.filename, a.relative_path as relativePath, a.size_bytes as sizeBytes, a.created_at as createdAt
+           FROM artifacts a
+           JOIN runs r ON a.run_id = r.id
+           WHERE r.chat_id = ?
+           ORDER BY a.created_at ASC`,
+        )
+        .all(chatId) as any[];
+    } catch {
+      return [];
+    }
+  }
+
   private async execute(runId: string, text: string, attachment?: AttachmentRow): Promise<void> {
     const isWorkspaceActive = this.harness?.isWorkspaceActive() ?? false;
     const intent = classifyIntent({
@@ -337,10 +387,16 @@ export class RunManager {
       isWorkspaceActive,
     });
 
-    // 1. Workspace action branch
+    // 1. Standalone file deliverable branch (negative workspace constraint or isolated deliverable requested)
+    if (intent.actionTarget === "standalone_file") {
+      await this.executeStandaloneFileCreation(runId, text, intent);
+      return;
+    }
+
+    // 2. Workspace action branch
     if (intent.actionTarget === "harness") {
       if (isWorkspaceActive && !attachment) {
-        await this.executeWorkspaceTask(runId, text);
+        await this.executeWorkspaceTask(runId, text, intent);
         return;
       }
 
@@ -350,7 +406,7 @@ export class RunManager {
         /\b(create|write|save|make|add|generate)\b/i.test(text) &&
         /\b(file|\.txt|\.js|\.ts|\.json|\.md|\.py|\.csv|\.html)\b/i.test(text)
       ) {
-        await this.executeStandaloneFileCreation(runId, text);
+        await this.executeStandaloneFileCreation(runId, text, intent);
         return;
       }
     }
@@ -402,12 +458,17 @@ export class RunManager {
     }
   }
 
-  private async executeStandaloneFileCreation(runId: string, text: string): Promise<void> {
+  private async executeStandaloneFileCreation(runId: string, text: string, intent?: IntentDecision): Promise<void> {
     this.state(runId, "classifying");
+    const isWorkspaceActive = this.harness?.isWorkspaceActive() ?? false;
     const route = {
       taskType: "code" as const,
       modelId: "code-qwen25coder" as const,
-      reason: "standalone file generation (no active workspace)",
+      reason: isWorkspaceActive && intent?.isNegativeWorkspaceConstraint
+        ? "standalone file generation (negative workspace constraint)"
+        : isWorkspaceActive
+        ? "standalone file generation (isolated from active workspace)"
+        : "standalone file generation (no active workspace)",
     };
     const requestId = randomUUID();
     recordRouting(runId, requestId, route.taskType, route.modelId, route.reason);
@@ -429,16 +490,34 @@ export class RunManager {
 
     this.state(runId, "acting");
 
-    // Extract filename from prompt or default
-    const fileMatch = text.match(/\b([a-zA-Z0-9_\-.]+\.(?:txt|json|md|py|js|ts|csv|html))\b/i);
-    let targetFilename = fileMatch ? fileMatch[1] : "output.txt";
+    // Extract filename from intent, or explicit regex, or inferred language, or default
+    let explicitFilename = intent?.extractedFilename;
+    if (!explicitFilename) {
+      const fileMatch = text.match(/\b([a-zA-Z0-9_\-.]+\.(?:txt|json|md|py|js|ts|csv|html|sh|yaml|yml|sql))\b/i);
+      if (fileMatch) {
+        explicitFilename = fileMatch[1];
+      }
+    }
+
+    let targetFilename = explicitFilename;
+    if (!targetFilename) {
+      if (intent?.suggestedExtension) {
+        targetFilename = `script.${intent.suggestedExtension}`;
+      } else {
+        const langMatch = text.match(/\b(python|javascript|typescript|json|html|css|markdown|text|csv|sql|shell|bash)\b/i);
+        const ext = langMatch ? inferArtifactKind(langMatch[1]) : "txt";
+        targetFilename = `output.${ext}`;
+      }
+    }
 
     // Extract content if prompt matches "saying '...'" or 'saying "..."'
     const sayingMatch = text.match(/saying\s+(?:'([^']+)'|"([^"]+)"|([^\s\n]+))/i);
     let initialContent = sayingMatch ? (sayingMatch[1] ?? sayingMatch[2] ?? sayingMatch[3] ?? "") : "";
 
-    if (!fileMatch || !initialContent) {
-      const prompt = `The user asked: "${text}". Extract the filename and file content requested. Return JSON strictly matching: {"filename": string, "content": string}.`;
+    if (!explicitFilename || !initialContent) {
+      const chatId = this.chatIdForRun(runId);
+      const history = this.getRecentChatHistory(chatId, text);
+      const prompt = `The user asked: "${text}". Extract or generate the requested file content and confirm the filename. Return JSON strictly matching: {"filename": string, "content": string}. Default filename: "${targetFilename}".`;
       const temperature = this.runTemperatures.get(runId) ?? 0.2;
       const base = requestBase(
         runId,
@@ -450,6 +529,7 @@ export class RunManager {
         30000,
         2048,
         temperature,
+        history,
       );
       const req: CodeModelRequest = {
         ...base,
@@ -485,16 +565,22 @@ export class RunManager {
     this.persistArtifact(artifact as never);
     this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
 
-    const message = `Created file **${targetFilename}** in run artifacts.\n\n*(Tip: To write files directly to your project on disk, open a local project folder from the Left Sidebar).*`;
+    const message = isWorkspaceActive && intent?.isNegativeWorkspaceConstraint
+      ? `Created standalone file **${targetFilename}** in run artifacts (kept isolated from workspace per instruction).\n\nYou can view and download it directly from the Artifacts panel.`
+      : isWorkspaceActive
+      ? `Created file **${targetFilename}** in run artifacts.`
+      : `Created file **${targetFilename}** in run artifacts.\n\n*(Tip: To write files directly to your project on disk, open a local project folder from the Left Sidebar).*`;
     this.persistAssistant(runId, message, "code-qwen25coder");
     this.complete(runId);
   }
 
   private async executeChatTask(runId: string, text: string): Promise<void> {
     this.tool(runId, "draft_note", "drafting response");
+    const chatId = this.chatIdForRun(runId);
+    const history = this.getRecentChatHistory(chatId, text);
     const temperature = this.runTemperatures.get(runId);
     const systemPrompt = "You are a helpful assistant. If providing code, always wrap it in standard markdown code blocks with language identifiers (e.g. ```python). Provide your answer strictly as a JSON object with a single key 'text': {\"text\": \"your markdown-formatted answer\"}. Do NOT add any other fields such as 'displayed_text' or 'display_time'. Never return an empty JSON object.";
-    const base = requestBase(runId, "draft", "draft-qwen3", "chat-result", systemPrompt, text, 45000, 1024, temperature);
+    const base = requestBase(runId, "draft", "draft-qwen3", "chat-result", systemPrompt, text, 45000, 1024, temperature, history);
     const request: ChatModelRequest = {
       ...base,
       taskType: "draft",
@@ -505,7 +591,7 @@ export class RunManager {
     if (!chat.ok) {
       this.tool(runId, "draft_note", "retrying response with explicit format");
       const retryPrompt = `${text}\n\nPlease output your response in JSON format: {"text": "<your answer>"}. Ensure the "text" key contains your answer.`;
-      const retryBase = requestBase(runId, "draft", "draft-qwen3", "chat-result", systemPrompt, retryPrompt, 45000, 1024, temperature);
+      const retryBase = requestBase(runId, "draft", "draft-qwen3", "chat-result", systemPrompt, retryPrompt, 45000, 1024, temperature, history);
       const retryRequest: ChatModelRequest = {
         ...retryBase,
         taskType: "draft",
@@ -519,11 +605,23 @@ export class RunManager {
     }
     if (!chat.ok) throw new Error(chat.error.message);
     this.result(runId, "draft_note", "draft validated");
+
+    // If user requested saving as a Word document or docx deliverable, register an artifact in output
+    if (/\b(word document|\.docx|docx\b|save (?:it )?as (?:a )?document)\b/i.test(text)) {
+      try {
+        const docFilename = "approval-note.docx";
+        const rel = writeRunFile(runId, "output", docFilename, Buffer.from(chat.value.text, "utf8"), true);
+        const artifact = artifactRef(runId, "docx", docFilename, rel);
+        this.persistArtifact(artifact as never);
+        this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
+      } catch {}
+    }
+
     this.persistAssistant(runId, chat.value.text, "draft-qwen3");
     this.complete(runId);
   }
 
-  private async executeWorkspaceTask(runId: string, text: string): Promise<void> {
+  private async executeWorkspaceTask(runId: string, text: string, intent?: IntentDecision): Promise<void> {
     if (!this.harness) throw new Error("harness not initialized");
     const ws = this.harness.requireActiveWorkspace();
 
@@ -554,6 +652,60 @@ export class RunManager {
     });
 
     this.state(runId, "acting");
+
+    const chatId = this.chatIdForRun(runId);
+    const history = this.getRecentChatHistory(chatId, text);
+    const chatArtifacts = this.getChatArtifacts(chatId);
+
+    // Check if user specifically requested saving/transferring an existing chat artifact to the workspace
+    const isSaveArtifactToWorkspaceIntent =
+      /\b(save|copy|move|put|place|transfer|write)\b.*\b(workspace|project|directory|folder|repo|root)\b/i.test(text) ||
+      /\b(the artifact|the artefact|the deliverable|which you just|generated earlier)\b/i.test(text) ||
+      /\bsave\s+(?:it|this|that|artifact|document|file)\b/i.test(text);
+
+    if (isSaveArtifactToWorkspaceIntent && chatArtifacts.length > 0) {
+      let targetArtifact: (typeof chatArtifacts)[number] | undefined;
+      for (const art of chatArtifacts) {
+        if (text.toLowerCase().includes(art.filename.toLowerCase())) {
+          targetArtifact = art;
+          break;
+        }
+      }
+      if (!targetArtifact) {
+        targetArtifact = chatArtifacts[chatArtifacts.length - 1];
+      }
+
+      if (targetArtifact) {
+        const absPath = absoluteDataPath(targetArtifact.relativePath);
+        if (existsSync(absPath)) {
+          const explicitNameMatch = text.match(/\b([a-zA-Z0-9_\-.]+\.[a-zA-Z0-9]+)\b/);
+          const destRel = explicitNameMatch && !/^(workspace|directory|project|folder|root)$/i.test(explicitNameMatch[1])
+            ? explicitNameMatch[1]
+            : targetArtifact.filename;
+          this.emit({
+            type: "tool_call",
+            runId,
+            tool: "write_file" as any,
+            summary: `Saving ${destRel} into workspace`,
+          });
+          const savedRef = this.harness.copyArtifactToWorkspace(absPath, destRel, runId);
+          this.emit({
+            type: "tool_result",
+            runId,
+            tool: "write_file" as any,
+            summary: `Saved ${destRel} to workspace root`,
+          });
+          this.emit({ type: "artifact_ready", runId, artifact: savedRef });
+          this.persistAssistant(
+            runId,
+            `Saved **${destRel}** directly to your active workspace (${path.basename(ws.root)}).`,
+            "code-qwen25coder",
+          );
+          this.complete(runId);
+          return;
+        }
+      }
+    }
 
     const tree = this.harness.getDirectoryTree();
     const treeFormatted = formatTreeForPrompt(tree);
@@ -591,7 +743,20 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
 
     const MAX_TURNS = 10;
     let turn = 0;
-    let conversationHistory = `User Task: ${text}`;
+    let conversationHistory = "";
+    if (history.length > 0) {
+      const formattedHistory = history
+        .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+        .join("\n\n");
+      conversationHistory += `=== Prior Conversation Context ===\n${formattedHistory}\n=== End Prior Context ===\n\n`;
+    }
+    if (chatArtifacts.length > 0) {
+      const artifactList = chatArtifacts
+        .map((a) => `- ${a.filename} (${a.kind}, ${a.sizeBytes} bytes)`)
+        .join("\n");
+      conversationHistory += `=== Available Chat Deliverables ===\n${artifactList}\n=== End Deliverables ===\n\n`;
+    }
+    conversationHistory += `User Task: ${text}`;
     let finalAnswer = "";
 
     while (turn < MAX_TURNS) {
@@ -609,6 +774,7 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
         60000,
         4096,
         temperature,
+        history,
       );
 
       const req: CodeModelRequest = {
@@ -637,10 +803,11 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
       const action = this.parseWorkspaceAction(parsed);
 
       // Guardrail: if on turn 1 the model returned final_answer but the user explicitly requested
-      // writing/creating a file, nudge the model to call write_file
+      // writing/creating a file, nudge the model to call write_file (unless negative workspace constraint present)
       if (
         turn === 1 &&
         action.type === "final_answer" &&
+        !intent?.isNegativeWorkspaceConstraint &&
         /\b(create|write|save|make|add|generate)\b/i.test(text) &&
         /\b(file|\.txt|\.js|\.ts|\.json|\.md|\.py|\.csv|\.html)\b/i.test(text)
       ) {
@@ -697,11 +864,19 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
     const obj = raw as Record<string, unknown>;
 
     // 1. Explicit tool_call action
-    const toolName = (obj.tool ?? obj.name ?? (obj.action === "tool_call" ? obj.tool : undefined)) as string | undefined;
+    const VALID_HARNESS_TOOLS = ["list_dir", "read_file", "search", "write_file", "run_command"] as const;
+    let toolName = (obj.tool ?? obj.name) as string | undefined;
+    if (!toolName && typeof obj.action === "string") {
+      if (VALID_HARNESS_TOOLS.includes(obj.action as any)) {
+        toolName = obj.action;
+      } else if (obj.action === "tool_call" && obj.tool) {
+        toolName = String(obj.tool);
+      }
+    }
 
     if (
       toolName &&
-      ["list_dir", "read_file", "search", "write_file", "run_command"].includes(toolName)
+      VALID_HARNESS_TOOLS.includes(toolName as any)
     ) {
       let args = (obj.args ?? obj.arguments ?? obj.parameters) as Record<string, any> | undefined;
       if (!args || typeof args !== "object") {

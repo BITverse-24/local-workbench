@@ -9,7 +9,24 @@ export type OutputMode = "chat" | "artifact" | "chat_and_artifact";
 export type ArtifactKind = "docx" | "pdf" | "xlsx" | "csv" | "txt" | "json" | "md";
 export type ResponseFormat = "vision-result" | "draft-result" | "code-result" | "code-summary" | "chat-result";
 export interface ChatResult { text: string; }
-export interface ModelRequestBase { requestId: string; runId: string; taskType: TaskType; modelId: ModelId; systemPrompt: string; userPrompt: string; responseFormat: ResponseFormat; timeoutMs: number; temperature?: number; maxTokens?: number; }
+export interface ModelConversationMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export interface ModelRequestBase {
+  requestId: string;
+  runId: string;
+  taskType: TaskType;
+  modelId: ModelId;
+  systemPrompt: string;
+  userPrompt: string;
+  history?: ModelConversationMessage[];
+  responseFormat: ResponseFormat;
+  timeoutMs: number;
+  temperature?: number;
+  maxTokens?: number;
+}
 export interface VisionModelRequest extends ModelRequestBase { taskType: "vision"; modelId: "vision-qwen25vl"; responseFormat: "vision-result"; attachment: AttachmentReference; inputMode: "typed-scan"; }
 export interface CodeModelRequest extends ModelRequestBase { taskType: "code"; modelId: "code-qwen25coder"; responseFormat: "code-result"; task: string; inputFile: InputFileReference; allowedLanguage: "python"; executionRules: string[]; }
 export interface CodeSummarizeRequest extends ModelRequestBase { taskType: "code"; modelId: "code-qwen25coder"; responseFormat: "code-summary"; phase: "summarize"; execution: PythonExecutionResult; task: string; }

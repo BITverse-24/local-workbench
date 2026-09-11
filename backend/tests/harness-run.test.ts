@@ -12,6 +12,8 @@ import os from "node:os";
 import { RunManager } from "../src/main/run/manager.js";
 import { HarnessManager } from "../src/main/harness/harness-manager.js";
 import { closeDb, initDb } from "../src/main/persistence/db.js";
+import { createChat } from "../src/main/persistence/chats.js";
+import { addMessage } from "../src/main/persistence/messages.js";
 import type { ModelRequest, ModelResponse, RunEvent } from "../src/shared/contracts.js";
 
 describe("Workspace Task Execution Loop (HARNESS.md)", () => {
@@ -328,6 +330,220 @@ describe("Workspace Task Execution Loop (HARNESS.md)", () => {
     if (assistantMsg && assistantMsg.type === "assistant_message") {
       expect(assistantMsg.text).toContain("Krishay.txt");
     }
+  });
+
+  it("creates a standalone artifact without touching the active workspace when user specifies negative workspace constraint", async () => {
+    const mockGateway = createMockGateway(() => ({
+      filename: "task.py",
+      content: "print('isolated')",
+    }));
+
+    manager = new RunManager(mockGateway as any, (event) => runEvents.push(event));
+    harness = new HarnessManager(undefined, (event) => runEvents.push(event));
+    manager.setHarness(harness);
+
+    harness.registerWorkspace(workspaceRoot);
+    expect(harness.isWorkspaceActive()).toBe(true);
+
+    const { runId } = await manager.start({
+      userText: "generate a python file saying 'print(123)' but not save it in the workspace directory",
+    });
+
+    await waitForCompletion(runEvents);
+
+    // 1. Verify workspace directory was NOT touched
+    const { readdirSync } = await import("node:fs");
+    const wsFiles = readdirSync(workspaceRoot);
+    expect(wsFiles.filter((f) => !f.startsWith("."))).toHaveLength(0);
+
+    // 2. Verify artifact_ready event WAS emitted
+    const artifactEvent = runEvents.find((e) => e.type === "artifact_ready");
+    expect(artifactEvent).toBeDefined();
+    if (artifactEvent && artifactEvent.type === "artifact_ready") {
+      expect(artifactEvent.artifact.filename).toBe("task.py");
+
+      const artifactRow = manager.artifact(runId, artifactEvent.artifact.artifactId);
+      expect(artifactRow).toBeDefined();
+      expect(artifactRow.filename).toBe("task.py");
+
+      const { absoluteDataPath } = await import("../src/main/run/filesystem.js");
+      const absPath = absoluteDataPath(artifactRow.relativePath);
+      expect(existsSync(absPath)).toBe(true);
+      expect(readFileSync(absPath, "utf8")).toBe("print('isolated')");
+    }
+
+    // 3. Verify assistant message confirms isolation
+    const assistantMsg = runEvents.find((e) => e.type === "assistant_message");
+    expect(assistantMsg).toBeDefined();
+    if (assistantMsg && assistantMsg.type === "assistant_message") {
+      expect(assistantMsg.text).toContain("isolated from workspace");
+    }
+  });
+
+  it("handles model returning action as tool name (e.g. action: list_dir) without dumping raw JSON", async () => {
+    const mockGateway = createMockGateway((_req, count) => {
+      if (count === 1) {
+        return {
+          thought: "checking directory",
+          action: "list_dir",
+          args: { path: "." },
+        };
+      }
+      return {
+        thought: "finished",
+        action: "final_answer",
+        text: "Exploration completed successfully.",
+      };
+    });
+
+    manager = new RunManager(mockGateway as any, (event) => runEvents.push(event));
+    harness = new HarnessManager(undefined, (event) => runEvents.push(event));
+    manager.setHarness(harness);
+
+    harness.registerWorkspace(workspaceRoot);
+    expect(harness.isWorkspaceActive()).toBe(true);
+
+    await manager.start({
+      userText: "list files in this directory",
+    });
+
+    await waitForCompletion(runEvents);
+
+    // Verify tool was called
+    const toolCall = runEvents.find((e) => e.type === "tool_call" && (e as any).tool === "list_dir");
+    expect(toolCall).toBeDefined();
+
+    // Verify assistant message contains final answer and NOT raw JSON
+    const assistantMsg = runEvents.find((e) => e.type === "assistant_message");
+    expect(assistantMsg).toBeDefined();
+    if (assistantMsg && assistantMsg.type === "assistant_message") {
+      expect(assistantMsg.text).toBe("Exploration completed successfully.");
+      expect(assistantMsg.text).not.toContain('"action": "list_dir"');
+    }
+  });
+
+  it("routes approval note drafting with Word document request to draft model and creates document artifact", async () => {
+    const mockGateway = createMockGateway(() => ({
+      text: "# Approval Note: Proposed Reactor Maintenance Shutdown\n\n**Status:** Conditional Approval\n\nAll safety limits verified.",
+    }));
+
+    manager = new RunManager(mockGateway as any, (event) => runEvents.push(event));
+    harness = new HarnessManager(undefined, (event) => runEvents.push(event));
+    manager.setHarness(harness);
+
+    harness.registerWorkspace(workspaceRoot);
+    expect(harness.isWorkspaceActive()).toBe(true);
+
+    const { runId } = await manager.start({
+      userText: "Draft an approval note for a proposed maintenance nuclear reactor shutdown and save it as a Word document.",
+    });
+
+    await waitForCompletion(runEvents);
+
+    // 1. Verify workspace was NOT touched
+    const { readdirSync } = await import("node:fs");
+    const wsFiles = readdirSync(workspaceRoot);
+    expect(wsFiles.filter((f) => !f.startsWith("."))).toHaveLength(0);
+
+    // 2. Verify routing was draft-qwen3
+    const routingEvent = runEvents.find((e) => e.type === "routing");
+    expect(routingEvent).toBeDefined();
+    if (routingEvent && routingEvent.type === "routing") {
+      expect(routingEvent.modelId).toBe("draft-qwen3");
+      expect(routingEvent.taskType).toBe("draft");
+    }
+
+    // 3. Verify assistant message has formatted approval note text
+    const assistantMsg = runEvents.find((e) => e.type === "assistant_message");
+    expect(assistantMsg).toBeDefined();
+    if (assistantMsg && assistantMsg.type === "assistant_message") {
+      expect(assistantMsg.text).toContain("Approval Note: Proposed Reactor Maintenance Shutdown");
+      expect(assistantMsg.modelId).toBe("draft-qwen3");
+    }
+
+    // 4. Verify artifact was created in run output
+    const artifactEvent = runEvents.find((e) => e.type === "artifact_ready");
+    expect(artifactEvent).toBeDefined();
+    if (artifactEvent && artifactEvent.type === "artifact_ready") {
+      expect(artifactEvent.artifact.kind).toBe("docx");
+      expect(artifactEvent.artifact.filename).toBe("approval-note.docx");
+    }
+  });
+
+  it("handles multi-turn conversation: drafting approval note then saving it to active workspace on follow-up turn", async () => {
+    const mockGateway = createMockGateway(() => ({
+      text: "# Approval Note: Reactor Maintenance Shutdown\nApproved.",
+    }));
+
+    manager = new RunManager(mockGateway as any, (event) => runEvents.push(event));
+    harness = new HarnessManager(undefined, (event) => runEvents.push(event));
+    manager.setHarness(harness);
+
+    harness.registerWorkspace(workspaceRoot);
+    const chatId = createChat("Nuclear Reactor Review");
+
+    // Turn 1: User asks to draft an approval note and save as Word document
+    const turn1Text = "Draft an approval note for a proposed maintenance nuclear reactor shutdown and save it as a Word document.";
+    addMessage({ chat_id: chatId, role: "user", content: turn1Text });
+    await manager.start({ userText: turn1Text, chatId });
+    await waitForCompletion(runEvents);
+
+    // Verify Turn 1 generated approval-note.docx artifact in run output
+    const turn1Artifact = runEvents.find((e) => e.type === "artifact_ready");
+    expect(turn1Artifact).toBeDefined();
+
+    // Turn 2: User says "Save it in the workspace"
+    runEvents = [];
+    const turn2Text = "Save it in the workspace";
+    addMessage({ chat_id: chatId, role: "user", content: turn2Text });
+    await manager.start({ userText: turn2Text, chatId });
+    await waitForCompletion(runEvents);
+
+    // Verify Turn 2 saved approval-note.docx directly into workspace root
+    const wsTarget = path.join(workspaceRoot, "approval-note.docx");
+    expect(existsSync(wsTarget)).toBe(true);
+
+    // Verify assistant confirmed saving to workspace
+    const turn2Assistant = runEvents.find((e) => e.type === "assistant_message");
+    expect(turn2Assistant).toBeDefined();
+    if (turn2Assistant && turn2Assistant.type === "assistant_message") {
+      expect(turn2Assistant.text).toContain("Saved **approval-note.docx** directly to your active workspace");
+    }
+
+    // Verify run completed
+    const stateEvent = runEvents.find((e) => e.type === "run_state" && (e as any).state === "completed");
+    expect(stateEvent).toBeDefined();
+  });
+
+  it("preserves multi-turn conversation history across consecutive runs", async () => {
+    const interceptedRequests: ModelRequest[] = [];
+    const mockGateway = createMockGateway((req) => {
+      interceptedRequests.push(req);
+      return { text: "Step 2 involves cooling loop inspection." };
+    });
+
+    manager = new RunManager(mockGateway as any, (event) => runEvents.push(event));
+    const chatId = createChat("Multi Turn Chat");
+
+    // Turn 1
+    const prompt1 = "What is SOP-114?";
+    addMessage({ chat_id: chatId, role: "user", content: prompt1 });
+    await manager.start({ userText: prompt1, chatId });
+    await waitForCompletion(runEvents);
+
+    // Turn 2
+    runEvents = [];
+    const prompt2 = "Summarize step 2 of it";
+    addMessage({ chat_id: chatId, role: "user", content: prompt2 });
+    await manager.start({ userText: prompt2, chatId });
+    await waitForCompletion(runEvents);
+
+    // Check that Turn 2 request contained history from Turn 1
+    const turn2Req = interceptedRequests[interceptedRequests.length - 1];
+    expect(turn2Req).toBeDefined();
+    expect(turn2Req.history).toBeDefined();
+    expect(turn2Req.history?.length).toBeGreaterThanOrEqual(1);
+    expect(turn2Req.history?.some((m) => m.content.includes("SOP-114"))).toBe(true);
   });
 });
 

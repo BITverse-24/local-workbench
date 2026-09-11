@@ -1,5 +1,5 @@
 import path from "node:path";
-import { readFileSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { WorkspaceManager } from "./workspace-manager.js";
 import { resolveSafe } from "./path-guard.js";
@@ -258,6 +258,25 @@ export class HarnessManager {
     }
 
     return artifact;
+  }
+
+  /**
+   * Safely copy an external file (e.g. from run output) into the active workspace.
+   * Path containment is enforced via resolveSafe().
+   */
+  copyArtifactToWorkspace(
+    sourceAbsPath: string,
+    destinationRelPath: string,
+    runId: string,
+  ): ArtifactRef {
+    const ws = this.workspace.requireActive();
+    const target = resolveSafe(ws.root, destinationRelPath);
+    const parentDir = path.dirname(target);
+    if (!existsSync(parentDir)) {
+      mkdirSync(parentDir, { recursive: true });
+    }
+    copyFileSync(sourceAbsPath, target);
+    return this.createWorkspaceArtifact(runId, destinationRelPath);
   }
 
   // ── Private helpers ──────────────────────────────────────────

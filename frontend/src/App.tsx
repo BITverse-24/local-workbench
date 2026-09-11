@@ -136,12 +136,16 @@ export default function App() {
     try {
       unsub = wb.onRunEvent((event: RunEvent) => {
         // Ignore events for other runs when we have an active run filter
-        // but still accept routing/assistant for history coherence.
+        // but never drop assistant_message or routing for chat coherence.
         const rid = (event as { runId?: string }).runId;
-        if (activeRunRef.current && rid && rid !== activeRunRef.current) {
-          // Only skip UI-spam; keep routing visible if needed.
-          // For now ignore foreign run entirely.
-          return;
+        if (event.type !== "assistant_message") {
+          if (activeRunRef.current && rid && rid !== activeRunRef.current) {
+            return;
+          }
+        }
+        if (rid && !activeRunRef.current) {
+          activeRunRef.current = rid;
+          setActiveRunId(rid);
         }
         setRunEvents((prev) => [...prev, event]);
         switch (event.type) {
@@ -496,14 +500,34 @@ export default function App() {
             setAttachedFiles([]);
           }
 
+          const clientRunId = runIdForAttachment ?? crypto.randomUUID();
+          activeRunRef.current = clientRunId;
+          setActiveRunId(clientRunId);
+
           const { runId } = await wb.startRun({
             userText: text,
             attachmentToken,
-            runId: runIdForAttachment,
+            runId: clientRunId,
             chatId: cid,
             temperature,
           });
           setActiveRunId(runId);
+          activeRunRef.current = runId;
+
+          // Re-sync messages from SQLite in case fast background run finished
+          try {
+            const latest = await wb.getMessages(cid);
+            if (latest && latest.length > 0) {
+              setMessages(
+                latest.map((m) => ({
+                  id: m.id,
+                  role: m.role as "user" | "assistant",
+                  text: m.content,
+                })),
+              );
+            }
+          } catch {}
+
           // Chat stays on cid; run is linked via DB.
           return;
         } catch (e) {

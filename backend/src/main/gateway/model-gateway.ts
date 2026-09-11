@@ -188,8 +188,24 @@ export class ModelGateway implements ModelClient {
       };
     }
 
+    const messagesPayload: Array<{ role: string; content: any }> = [
+      { role: "system", content: systemPrompt },
+    ];
+    if (request.history && request.history.length > 0) {
+      for (const h of request.history) {
+        messagesPayload.push({ role: h.role, content: h.content });
+      }
+    }
+    messagesPayload.push({ role: "user", content: userContent });
+
     const maxTokens = request.maxTokens ?? model.maxOutputTokens ?? 2048;
-    const body = JSON.stringify({ model: model.model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }], response_format: responseFormatPayload, temperature: request.temperature ?? 0.2, max_tokens: maxTokens });
+    const body = JSON.stringify({
+      model: model.model,
+      messages: messagesPayload,
+      response_format: responseFormatPayload,
+      temperature: request.temperature ?? 0.2,
+      max_tokens: maxTokens,
+    });
     // Log outgoing request (without leaking key, with vision metadata instead of full base64)
     const outboundLog = {
       phase: "request" as const,
@@ -354,4 +370,42 @@ export class ModelGateway implements ModelClient {
     }
   }
 }
-export function requestBase(runId: string, taskType: ModelRequest["taskType"], modelId: ModelRequest["modelId"], responseFormat: ModelRequest["responseFormat"], systemPrompt: string, userPrompt: string, timeoutMs: number, maxTokens?: number, temperature?: number): Pick<ModelRequest, "requestId" | "runId" | "taskType" | "modelId" | "responseFormat" | "systemPrompt" | "userPrompt" | "timeoutMs" | "maxTokens" | "temperature"> { return { requestId: randomUUID(), runId, taskType, modelId, responseFormat, systemPrompt, userPrompt, timeoutMs, maxTokens, temperature }; }
+export function requestBase(
+  runId: string,
+  taskType: ModelRequest["taskType"],
+  modelId: ModelRequest["modelId"],
+  responseFormat: ModelRequest["responseFormat"],
+  systemPrompt: string,
+  userPrompt: string,
+  timeoutMs: number,
+  maxTokens?: number,
+  temperature?: number,
+  history?: ModelRequest["history"],
+): Pick<
+  ModelRequest,
+  | "requestId"
+  | "runId"
+  | "taskType"
+  | "modelId"
+  | "responseFormat"
+  | "systemPrompt"
+  | "userPrompt"
+  | "timeoutMs"
+  | "maxTokens"
+  | "temperature"
+  | "history"
+> {
+  return {
+    requestId: randomUUID(),
+    runId,
+    taskType,
+    modelId,
+    responseFormat,
+    systemPrompt,
+    userPrompt,
+    timeoutMs,
+    maxTokens,
+    temperature,
+    history,
+  };
+}

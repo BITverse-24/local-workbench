@@ -1,134 +1,250 @@
-# AGENTS.md
+# AGENTS.md — Codebase Architecture & Reference
 
-## File Access Policy
+> **Purpose of this file**: This document serves as the single source of truth for the codebase architecture, module responsibilities, file hierarchy, IPC channels, and execution lifecycles of **Sovereign Workbench**.
+> AI coding assistants should read this reference to locate files, understand contracts, and make changes across any directory without needing token-expensive file system searches.
 
-The agent must follow these filesystem access rules for every task.
+---
 
-### Write Access
+## 1. System Overview
 
-* The agent may have **write access to exactly one directory per task**.
-* The writable directory must be selected based on the task-specific instructions.
-* The agent must determine the writable directory **before making any file changes**.
-* Once selected, that directory is the agent's **sole writable location**, except for the `PROPOSALS.md` exception defined below.
-* The agent must not create, modify, delete, rename, or move anything outside the selected writable directory, **except when creating or updating `PROPOSALS.md` in an external target directory as specified below**.
-* Parent directories, sibling directories, and other project directories remain read-only.
-* If the writable directory is ambiguous, ask for clarification rather than assuming multiple writable locations.
+**Sovereign Workbench** is a self-hosted, air-gapped, multi-model agentic AI desktop application tailored for industrial, PSU, and defence engineering knowledge work. It enables offline document inspection, code generation/repair, engineering drawing compliance, and local workspace interactions with verifiable model routing and zero external egress.
 
-### Read Access
+### High-Level Architecture
 
-The agent may read files outside the writable directory when necessary.
-
-Treat all other directories as **read-only**, except for the specific `PROPOSALS.md` exception below.
-
-* Do not modify files merely because they contain stale, incorrect, incomplete, or inconvenient information.
-* Do not create temporary files in read-only directories.
-* Do not rename, move, delete, or overwrite files in read-only directories.
-* Reading source code, configuration, documentation, tests, schemas, and other reference material is permitted when needed.
-* Prefer reading only the files necessary to complete the task.
-
-## Proposals for External Changes
-
-If the agent identifies a concrete change that should be made outside the selected writable directory, it must **not make that change directly**.
-
-Instead, the agent may create or update a `PROPOSALS.md` file at the **root of the external directory where the proposed change belongs**.
-
-This is the **sole exception** to the one-writable-directory rule.
-
-For example:
-
-```text
-Selected writable directory: src/foo/
-External target directory:   src/shared/
-
-Proposal location:
-src/shared/PROPOSALS.md
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        ELECTRON RENDERER (Vite / React)                 │
+│  ChatPanel │ LeftSidebar │ RightSidebar │ FileTree │ ArtifactPane      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ IPC (window.workbenchBridge)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                        ELECTRON SHELL (electron/main.ts)                │
+│  Window Lifecycle │ CSP Security │ Preload Bridge │ Vite Dev Spawn     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ initBackend()
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                     BACKEND RUNTIME (backend/src/main/)                 │
+│                                                                        │
+│   IPC Handlers ────▶ RunManager ────▶ DeterministicRouter / Classifier │
+│         │                  │                      │                    │
+│         │                  ▼                      ▼                    │
+│         │            HarnessManager          ModelGateway              │
+│         │                  │                      │                    │
+│         │           ┌──────┴──────┐         ┌─────┴────────┐           │
+│         │           ▼             ▼         ▼              ▼           │
+│         │       PathGuard    HarnessTools  OpenRouter    LAN Models    │
+│         │                                                              │
+│         ▼                                                              │
+│   SQLite Persistence (workbench.db) & Scoped Run Files (data/runs/)    │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-The agent may only create or update that `PROPOSALS.md`. No other file or directory in the external location may be modified.
+### Core Tech Stack
+- **Desktop Shell**: Electron 30, TypeScript, esbuild
+- **Frontend Renderer**: React 18, Vite 5, Tailwind CSS v4, Lucide icons
+- **Backend Orchestrator**: Node.js, TypeScript
+- **Persistence**: SQLite via `better-sqlite3` with WAL mode
+- **Model Gateway**: OpenAI-compatible REST endpoints (OpenRouter for dev, LAN `mlx-lm` / `llama-server` / `ollama` for air-gapped production)
+- **Local RAG & Vector**: ChromaDB (`chromadb`), local chunking & embeddings
+- **Document & Data Processing**: `pdfjs-dist`, `canvas`, `exceljs`
+- **Testing**: Vitest 3
 
-### When to Create `PROPOSALS.md`
+---
 
-Create or update `PROPOSALS.md` only when there is at least one concrete, task-relevant proposal.
+## 2. Directory Hierarchy
 
-Do not create proposals for inconsequential stylistic preferences, speculative improvements, or unrelated cleanup.
+```
+agent/
+├── AGENTS.md                      # Codebase architecture and navigation guide (this file)
+├── BACKEND_HANDOFF.md             # Backend architecture requirements and specifications
+├── DEMO.md                        # Scripted demonstration flows (Flow A, B, C)
+├── HARNESS.md                     # Local project harness spec (workspace-scoped tool execution)
+├── MIGRATION.md                   # Legacy codebase migration reference
+├── PRODUCT.md                     # Product vision, user personas, and acceptance criteria
+├── PROPOSALS.md                   # Project-level proposed improvements
+├── PS.md                          # Problem statement reference
+├── RAG.md                         # Retrieval-Augmented Generation implementation spec
+├── TASKS.md                       # High-level task tracking and milestones
+├── package.json                   # Root workspace scripts and dependencies
+├── tsconfig.json                  # Root TypeScript configuration
+├── vitest.config.ts               # Test configuration
+│
+├── electron/                      # Privileged desktop shell
+│   ├── main.ts                    # Main process lifecycle, BrowserWindow, Vite spawner, IPC init
+│   ├── preload.ts                 # Secure contextBridge exposing window.workbenchBridge
+│   ├── tsconfig.json              # Electron TypeScript config
+│   ├── electron-builder.json5     # Native application packaging configuration
+│   └── dist-electron/             # Bundled output (main.cjs, preload.cjs)
+│
+├── backend/                       # Core orchestration, agent loop, tools, and persistence
+│   ├── index.ts                   # Backend barrel re-export
+│   ├── tsconfig.json              # Backend TypeScript config
+│   ├── BACKEND_PLANS.md           # Backend IPC routes and implementation blueprints
+│   ├── DATABASE.md                # Persistence and SQLite schema documentation
+│   ├── TASKS.md                   # Backend-specific implementation task log
+│   ├── src/
+│   │   ├── shared/                # Shared contracts and type definitions
+│   │   │   └── contracts.ts       # Canonical data contracts (TaskType, ModelId, RunEvent, etc.)
+│   │   └── main/                  # Backend implementation
+│   │       ├── index.ts           # initBackend() entry point
+│   │       ├── logger.ts          # Structured event and transition logger
+│   │       ├── ipc/               # IPC registration, channel constants, and validators
+│   │       ├── run/               # Agent execution lifecycle, filesystem, prompts, store
+│   │       ├── harness/           # Scoped workspace file tools, path containment, system prompt
+│   │       ├── gateway/           # Multi-model gateway, registry loader, output normalizer
+│   │       ├── router/            # Deterministic task router, intent classifier, planner
+│   │       ├── persistence/       # SQLite database, schema, chat/message/settings stores
+│   │       ├── tools/             # Standalone Python and artifact generation tools
+│   │       ├── models/            # Model interfaces and wrappers (chat, code)
+│   │       ├── grounding/         # Local SOP criteria and grounding verification
+│   │       ├── confirmation/      # Sensitive action confirmation store
+│   │       └── validators/        # Model response Zod validators
+│   └── tests/                     # Unit and integration test suites
+│
+├── frontend/                      # User interface (React + Vite)
+│   ├── index.html                 # HTML shell
+│   ├── vite.config.ts             # Vite configuration
+│   ├── tsconfig.json              # Frontend TypeScript config
+│   ├── tailwind.config.js         # Tailwind configuration
+│   ├── postcss.config.js          # PostCSS configuration
+│   └── src/
+│       ├── main.tsx               # React entry point
+│       ├── App.tsx                # Central state container and layout coordinator
+│       ├── App.css / index.css    # Global stylesheet and CSS variables
+│       ├── bridge.d.ts            # Type declarations for window.workbenchBridge
+│       ├── components/            # UI components (chat, sidebars, modals, telemetry)
+│       └── lib/                   # Typed bridge callers, model list, custom hooks, utils
+│
+├── ai/                            # AI prompts, contracts, vision/code/draft specs, RAG
+│   ├── validation.ts              # AI contract validation utilities
+│   ├── shared/                    # Shared types, errors, and service contracts
+│   ├── vision/                    # Vision/OCR contracts, prompts, and tests
+│   ├── code/                      # Coding contracts, prompts, and mocks
+│   ├── draft/                     # Approval note drafting contracts and prompts
+│   ├── rag/                       # ChromaDB ingestion, chunking, embedding, retrieval
+│   ├── tools/                     # Shared AI tool contracts
+│   └── mock-responses/            # Fixture responses for offline testing
+│
+├── config/                        # Runtime configurations
+│   ├── models.json                # Active model registry (vision, draft, code, plan)
+│   └── models.ollama.example.json # Example configuration for local Ollama endpoints
+│
+├── data/                          # Runtime data (gitignored / persistent)
+│   ├── workbench.db               # SQLite database file
+│   └── runs/                      # Scoped directory per run: runs/<runId>/{input,intermediate,output,logs}
+│
+├── demo/                          # Pre-packaged demo fixtures
+│   ├── flow_a/                    # Scanned inspection report bundle & SOP-114
+│   ├── flow_b/                    # Reactor logs, vendor log parser, CSVs
+│   ├── flow_c/                    # Pump skid SVG drawing & SOP-220
+│   ├── manifest.json              # Fixture manifest
+│   ├── build_fixtures.py          # Fixture generator script
+│   └── validate_fixtures.py       # Fixture verification script
+│
+└── scripts/                       # Development and build tooling
+    ├── dev.cjs                    # Spawns Vite and Electron concurrently in dev
+    ├── build-electron.cjs         # Esbuild bundler for electron main & preload
+    └── test.cjs                   # Test runner wrapper
+```
 
-### Proposal Contents
+---
 
-Each proposal should contain enough information for another person or agent to implement the change without rediscovering the issue.
+### 3.3 Electron Shell (`electron/`)
 
-Include, where applicable:
+- **`electron/main.ts`**:
+  - Initializes Electron app lifecycle (`app.whenReady()`, `app.on("window-all-closed")`).
+  - In development, spawns the Vite development server (`npm run dev:frontend`) on port 5173 and waits for readiness before creating `BrowserWindow`.
+  - In production, serves built assets from `frontend/dist/`.
+  - Configures security headers and Content Security Policy (CSP).
+  - Calls `initBackend(ipcMain, emit, config)` to connect backend modules to IPC.
+  - Handles window control IPC (`window-minimize`, `window-maximize`, `window-close`, `window-open-dev-tools`).
+- **`electron/preload.ts`**:
+  - Uses `contextBridge.exposeInMainWorld("workbenchBridge", {...})` to safely expose IPC channels to the renderer without exposing Node's `require`, `process`, or `fs`.
+---
 
-* **Target:** the file or directory to change.
-* **Issue:** what is incorrect or missing.
-* **Evidence:** what was observed.
-* **Suggested change:** what should be changed.
-* **Reason:** why the change is needed.
-* **Impact:** relevant consequences or considerations.
+### 3.5 Runtime Data Layout (`data/`)
 
-Use concrete paths whenever possible.
+```
+data/
+├── workbench.db              # SQLite persistence database (WAL enabled)
+└── runs/
+    └── <runId>/              # Unique UUID directory per execution run
+        ├── input/            # User-uploaded files and original attachments
+        ├── intermediate/     # Generated code, raw model outputs, scratch files
+        ├── output/           # Final deliverables (approval-note.docx, output.xlsx)
+        └── logs/             # Step traces and execution logs
+```
 
-### Existing `PROPOSALS.md`
+---
 
-If one already exists:
+## 5. Core Execution Lifecycles
 
-* Read it before adding proposals.
-* Preserve existing proposals.
-* Avoid duplicates.
-* Update an existing proposal when the new information concerns the same issue.
+### 5.1 Agent Task Execution Loop (`RunManager`)
+```
+1. User enters prompt (and optional attachment) in InputBar
+2. Frontend calls workbench:startRun(input)
+3. RunManager creates Run ID and directory data/runs/<runId>/
+4. Intent Classifier & Deterministic Router analyze prompt + attachment
+   - Emits 'routing' event (TaskType + ModelId + Reason) to UI
+5. RunManager transitions to 'planning' -> queries plan model
+   - Emits 'plan_step' events to UI transcript
+6. RunManager transitions to 'acting' -> executes tools or invokes model
+   - If tool requires approval (e.g. execute_python), creates PendingAction
+   - Emits 'confirmation_required' -> UI shows ConfirmationModal
+   - User approves -> workbench:confirmAction() -> execution proceeds
+7. Generated files written to data/runs/<runId>/output/
+   - Emits 'artifact_ready' event -> UI renders artifact chip in ArtifactPane
+8. RunManager transitions to 'completed' -> writes assistant summary to chat
+```
 
-## Selecting the Writable Directory
+### 5.2 Workspace Harness Loop (`HarnessManager`)
+```
+1. User selects local project folder via WorkspacePicker
+2. Backend validates path and checks for directory existence
+3. HarnessManager canonicalizes path and persists it as active workspace
+4. PathGuard (resolveSafe) wraps all future tool calls:
+   - path.resolve(workspaceRoot, requestedPath) must start with workspaceRoot
+   - Any escaping path (e.g. ../../etc/passwd) throws PermissionError
+5. Tools available to the agent:
+   - list_dir: returns filtered directory tree
+   - read_file: reads file content up to 200KB limit
+   - search: executes fast ripgrep scoped to workspace
+   - write_file: copies existing file to .harness_backups/ before writing new content
+   - run_command: runs sandboxed process with cwd set to workspace root
+```
 
-The writable directory should be chosen according to the task instructions.
+---
 
-For example:
+## 6. Developer & Build Workflows
 
-* If the task asks to modify `src/foo/`, select `src/foo/`.
-* If the task asks to generate an artifact under `output/`, select `output/`.
-* If the task explicitly names a destination directory, that directory takes precedence.
-* If multiple candidate directories are mentioned, select **one** based on the intended output location.
+### Primary Commands
+```bash
+# Start full development environment (Vite frontend + Electron main concurrently)
+npm run dev
 
-Do not interpret access to multiple directories as permission to write to multiple directories.
+# Start frontend dev server only (Vite on http://localhost:5173)
+npm run dev:frontend
 
-## Boundary Rule
+# Start Electron pointing to existing dev server
+npm run dev:electron
 
-Maintain this invariant:
+# Build both frontend and Electron main/preload
+npm run build
 
-> **One task → one writable directory, with the sole exception of `PROPOSALS.md` in the external directory where a proposed change belongs.**
+# Run TypeScript type check across all subprojects (backend, electron, frontend)
+npm run typecheck
 
-Before every write operation, verify that:
+# Run test suite (Vitest)
+npm test
 
-1. The target is inside the selected writable directory; **or**
-2. The target is exactly `PROPOSALS.md` at the root of an external directory where a concrete proposal belongs.
+# Package native desktop application (electron-builder)
+npm run package
+```
 
-Otherwise, do not perform the operation.
-
-## Deletion and Renaming
-
-Deletion and renaming are write operations.
-
-* Files may only be deleted or renamed within the selected writable directory.
-* `PROPOSALS.md` in an external directory may not be deleted, renamed, or moved.
-* Moving files into or out of the writable directory is not permitted if it modifies a location outside the writable boundary.
-
-## Generated and Temporary Content
-
-Generated files, build artifacts, patches, scripts, backups, and temporary data must stay within the selected writable directory.
-
-The only exception is `PROPOSALS.md` as described above.
-
-## Safety Check
-
-Before every write operation, establish:
-
-1. **What directory is writable?**
-2. **Is the target inside it?**
-3. If not, is it the permitted external `PROPOSALS.md`?
-4. **Does the operation modify anything else?**
-
-If the operation fails these checks, do not perform it.
-
-## Priority
-
-Task-specific instructions determine the writable directory but do not expand write access to additional directories.
-
-When instructions conflict or leave the writable location ambiguous, preserve the more restrictive rule and ask for clarification.
+### Key Rules for AI Coding Assistants
+1. **Full Workspace Write Access**: AI assistants have standard read and write permissions across the codebase (`backend/`, `frontend/`, `electron/`, `ai/`, `config/`, `scripts/`, etc.) to implement requested features and bug fixes.
+2. **Path Containment Integrity**: Never bypass `resolveSafe` in `backend/src/main/harness/path-guard.ts`. All workspace harness tools must strictly remain within the registered workspace root.
+3. **IPC Boundary**: Do not import Electron or Node.js filesystem modules directly into `frontend/src/`. All OS interactions must go through the typed `window.workbenchBridge` IPC API.
+4. **Testing & Verification**: Always run `npm run typecheck` and `npm test` after making structural changes to ensure contracts and type signatures remain intact.
