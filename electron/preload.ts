@@ -60,10 +60,35 @@ contextBridge.exposeInMainWorld("workbench", {
   getRunLogFile: (input: { runId: string; filename: string }) =>
     ipcRenderer.invoke("workbench:getRunLogFile", input),
 
+  // workspace harness protocol
+  pickWorkspaceFolder: () =>
+    ipcRenderer.invoke("workspace:pickFolder"),
+  registerWorkspace: (dirPath: string) =>
+    ipcRenderer.invoke("workspace:register", { dirPath }),
+  deregisterWorkspace: () =>
+    ipcRenderer.invoke("workspace:deregister"),
+  getCurrentWorkspace: () =>
+    ipcRenderer.invoke("workspace:getCurrent"),
+  listWorkspaceDir: (path?: string) =>
+    ipcRenderer.invoke("workspace:listDir", { path }),
+  readWorkspaceFile: (path: string) =>
+    ipcRenderer.invoke("workspace:readFile", { path }),
+  searchWorkspace: (query: string, path?: string) =>
+    ipcRenderer.invoke("workspace:search", { query, path }),
+  writeWorkspaceFile: (path: string, content: string) =>
+    ipcRenderer.invoke("workspace:writeFile", { path, content }),
+  runWorkspaceCommand: (command: string) =>
+    ipcRenderer.invoke("workspace:runCommand", { command }),
+
   // push events — returns unsubscribe
   onRunEvent: (listener: (event: unknown) => void) => {
     const wrapped = (_event: unknown, data: unknown) => listener(data);
     ipcRenderer.on("workbench:runEvent", wrapped);
     return () => ipcRenderer.removeListener("workbench:runEvent", wrapped);
+  },
+  onWorkspaceEvent: (listener: (event: unknown) => void) => {
+    const wrapped = (_event: unknown, data: unknown) => listener(data);
+    ipcRenderer.on("workspace:event", wrapped);
+    return () => ipcRenderer.removeListener("workspace:event", wrapped);
   },
 });

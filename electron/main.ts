@@ -254,6 +254,25 @@ app.whenReady().then(async () => {
       copyFileSync(source, chosen.filePath);
       return { saved: true as const, filename: path.basename(chosen.filePath) };
     });
+
+    // Workspace directory picker — desktop folder selection dialog.
+    ipcMain.handle("workspace:pickFolder", async () => {
+      const result = win
+        ? await dialog.showOpenDialog(win, {
+            properties: ["openDirectory", "createDirectory"],
+            title: "Select Project Workspace",
+            buttonLabel: "Select Folder",
+          })
+        : await dialog.showOpenDialog({
+            properties: ["openDirectory", "createDirectory"],
+            title: "Select Project Workspace",
+            buttonLabel: "Select Folder",
+          });
+      if (result.canceled || result.filePaths.length === 0) {
+        return null;
+      }
+      return result.filePaths[0];
+    });
   } catch (err) {
     // Do not create a renderer with a half-registered IPC surface. It causes
     // misleading follow-up errors such as "No handler registered" while the
