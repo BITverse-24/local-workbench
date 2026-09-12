@@ -47,7 +47,7 @@ import { createConfirmation, cancelPending, decide } from "../confirmation/store
 import { routeTask } from "../router/deterministic-router.js";
 import { classifyIntent, type IntentDecision } from "../router/intent-classifier.js";
 import { executePython } from "../tools/python.js";
-import { generateXlsx } from "../tools/artifacts.js";
+import { generateDocx, generateXlsx } from "../tools/artifacts.js";
 import {
   logArtifactReady,
   logHarnessToolCall,
@@ -1259,9 +1259,7 @@ export class RunManager {
     // If user requested saving as a Word document or docx deliverable, register an artifact in output
     if (/\b(word document|\.docx|docx\b|save (?:it )?as (?:a )?document)\b/i.test(text)) {
       try {
-        const explicitDocMatch = text.match(/\b([a-zA-Z0-9_\-]+\.docx)\b/i);
-        const docFilename = explicitDocMatch ? explicitDocMatch[1] : "approval-note.docx";
-        const { generateDocx } = await import("../tools/artifacts.js");
+        const docFilename = text.match(/\b([A-Za-z0-9._-]+\.docx)\b/i)?.[1] || "approval-note.docx";
         const artifact = await generateDocx(runId, chat.value.text, docFilename);
         this.persistArtifact(artifact as never);
         this.emit({ type: "artifact_ready", runId, artifact: artifact as never });

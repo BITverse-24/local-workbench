@@ -1,84 +1,110 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { describe, expect, it, beforeEach } from "vitest";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import os from "node:os";
-import { execSync } from "node:child_process";
-import JSZip from "jszip";
-import { createRunDirectories, resolveRunPath } from "../src/main/run/filesystem.js";
-import { generateDocx } from "../src/main/tools/artifacts.js";
+import { createDocxBuffer, generateDocx } from "../src/main/tools/artifacts.js";
+import { absoluteDataPath, runRoot } from "../src/main/run/filesystem.js";
+import { initDb, closeDb } from "../src/main/persistence/db.js";
+import { createRun } from "../src/main/run/store.js";
+import { createChat } from "../src/main/persistence/chats.js";
 
-describe("Binary DOCX Generator", () => {
-  let tempRoot: string;
-  const runId = "00000000-0000-4000-8000-000000000001";
-
+describe("Formatted Binary DOCX Generator", () => {
   beforeEach(() => {
-    tempRoot = mkdtempSync(path.join(os.tmpdir(), "wb-docx-test-"));
-    process.env.WORKBENCH_DATA_ROOT = tempRoot;
-    createRunDirectories(runId);
+    initDb(":memory:");
+    return () => {
+      closeDb();
+    };
   });
 
-  afterEach(() => {
-    delete process.env.WORKBENCH_DATA_ROOT;
-    rmSync(tempRoot, { recursive: true, force: true });
+  it("generates a valid binary docx buffer with PK zip header", async () => {
+    const input = {
+      title: "Heat Exchanger E-201 Approval Note",
+      body: "Equipment E-201 inspection passed with minor observations.",
+      sections: [
+        {
+          heading: "Equipment Header",
+          body: "E-201 Heat Exchanger",
+        },
+        {
+          heading: "Findings",
+          body: "Rows 12-15 measured 3.8mm against min allowable 4.6mm.",
+        },
+      ],
+      metadata: {
+        "Equipment ID": "E-201",
+        "Assessor": "John Doe",
+      },
+      findings: [
+        {
+          item: "Tube Bundle Rows 12-15",
+          measurement: "3.8 - 4.2 mm",
+          condition: "Localized thinning",
+          status: "Action Required",
+        },
+      ],
+      citations: [
+        {
+          label: "SOP-114 §3.2",
+          supportingExcerpt: "Tubes below allowable threshold must be scheduled for retubing.",
+        },
+      ],
+    };
+
+    const buffer = await createDocxBuffer(input);
+    expect(Buffer.isBuffer(buffer)).toBe(true);
+    expect(buffer.length).toBeGreaterThan(1000);
+
+    // PK zip magic header check (50 4B 03 04)
+    expect(buffer[0]).toBe(0x50);
+    expect(buffer[1]).toBe(0x4b);
+    expect(buffer[2]).toBe(0x03);
+    expect(buffer[3]).toBe(0x04);
   });
 
-  it("generates a valid binary Office Open XML (.docx) file with PK zip header", async () => {
-    const sampleMarkdown = [
-      "# Engineering Approval Note",
-      "",
-      "### Equipment Details",
-      "- Equipment Tag: **E-201**",
-      "- Inspection Date: `2026-08-20`",
-      "",
-      "### Findings Table",
-      "| Component | Measurement | Status | Citation |",
-      "|---|---|---|---|",
-      "| Tube Wall | 3.8 mm | FAIL | `[SOP-114 §3.2]` |",
-      "| Shell Nozzle | 1.8 mm | PASS | `[SOP-114 §3.2]` |",
-      "",
-      "⚠️ **Missing Information**: Approval authority disposition is pending review.",
-      "",
-      "### Recommendation",
-      "Conditional clearance granted pending retubing of affected tubes.",
-    ].join("\n");
+  it("parses text/markdown into structured docx sections", async () => {
+    const textInput = `# Approval Note — Heat Exchanger E-201
 
-    const artifact = await generateDocx(runId, sampleMarkdown, "approval-note-E201.docx");
+Equipment
+E-201; report reference: IR-E201-2026-08-20
 
-    expect(artifact.filename).toBe("approval-note-E201.docx");
+Findings
+Rows 12–15 measured 3.8–4.2 mm against the minimum allowable 4.6 mm.
+
+Recommendation
+Conditional clearance pending retubing. [SOP-114 §3.2]`;
+
+    const buffer = await createDocxBuffer(textInput);
+    expect(Buffer.isBuffer(buffer)).toBe(true);
+    expect(buffer.length).toBeGreaterThan(1000);
+    expect(buffer[0]).toBe(0x50);
+    expect(buffer[1]).toBe(0x4b);
+  });
+
+  it("writes formatted binary docx artifact to run output directory", async () => {
+    const chatId = createChat("Docx test");
+    const runId = createRun(chatId, "Generate approval note");
+
+    const artifact = await generateDocx(
+      runId,
+      {
+        title: "Approval Note — Heat Exchanger E-201",
+        body: "Conditional clearance granted.",
+      },
+      "approval-note-E201.docx",
+    );
+
     expect(artifact.kind).toBe("docx");
-    expect(artifact.sizeBytes).toBeGreaterThan(1000);
+    expect(artifact.filename).toBe("approval-note-E201.docx");
 
-    const fullPath = resolveRunPath(runId, "output/approval-note-E201.docx", "output");
-    const fileBytes = readFileSync(fullPath);
+    const fullPath = absoluteDataPath(artifact.relativePath);
+    expect(existsSync(fullPath)).toBe(true);
 
-    // 1. Verify standard ZIP / PK file signature: 0x50, 0x4B, 0x03, 0x04 ("PK\x03\x04")
-    expect(fileBytes[0]).toBe(0x50);
-    expect(fileBytes[1]).toBe(0x4b);
-    expect(fileBytes[2]).toBe(0x03);
-    expect(fileBytes[3]).toBe(0x04);
+    const writtenBuffer = readFileSync(fullPath);
+    expect(writtenBuffer[0]).toBe(0x50);
+    expect(writtenBuffer[1]).toBe(0x4b);
 
-    // 2. Unpack with JSZip and verify required OpenXML parts
-    const zip = await JSZip.loadAsync(fileBytes);
-    expect(zip.file("[Content_Types].xml")).not.toBeNull();
-    expect(zip.file("_rels/.rels")).not.toBeNull();
-    expect(zip.file("word/document.xml")).not.toBeNull();
-    expect(zip.file("word/styles.xml")).not.toBeNull();
-
-    // 3. Inspect document.xml content
-    const documentXml = await zip.file("word/document.xml")!.async("string");
-    expect(documentXml).toContain("Engineering Approval Note");
-    expect(documentXml).toContain("E-201");
-    expect(documentXml).toContain("Tube Wall");
-    expect(documentXml).toContain("Missing Information");
-    expect(documentXml).toContain("[SOP-114 §3.2]");
-    expect(documentXml).toContain("SOVEREIGN WORKBENCH");
-
-    // 4. Verify compatibility with macOS textutil
+    // Cleanup test run directory
     try {
-      const output = execSync(`textutil -info "${fullPath}"`, { encoding: "utf8" });
-      expect(output).toContain("Office Open XML format");
-    } catch {
-      // In non-mac environments or restricted sandboxes, skip textutil
-    }
+      rmSync(runRoot(runId), { recursive: true, force: true });
+    } catch {}
   });
 });

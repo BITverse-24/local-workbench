@@ -1,5 +1,18 @@
 import { existsSync, readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
+import {
+  AlignmentType,
+  BorderStyle,
+  Document,
+  HeadingLevel,
+  Packer,
+  Paragraph,
+  Table,
+  TableCell,
+  TableRow,
+  TextRun,
+  WidthType,
+} from "docx";
 import { artifactRef, resolveRunPath, writeRunFile } from "../run/filesystem.js";
 import type { ArtifactRef, PythonExecutionResult } from "../../shared/contracts.js";
 
@@ -76,421 +89,359 @@ export async function generateXlsx(runId: string, execution: PythonExecutionResu
   return artifactRef(runId, "xlsx", name, rel);
 }
 
-function escapeXml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+export interface DocxDraftInput {
+  title?: string;
+  body?: string;
+  sections?: Array<{ id?: string; heading?: string; body?: string }>;
+  citations?: Array<{ label?: string; supportingExcerpt?: string; inlineText?: string }>;
+  metadata?: Record<string, string>;
+  findings?: Array<{ item?: string; measurement?: string; condition?: string; status?: string }>;
 }
 
-function parseFormattedRuns(text: string): string {
-  const tokens: Array<{ text: string; bold?: boolean; code?: boolean; italic?: boolean }> = [];
-  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
+export async function createDocxBuffer(input: DocxDraftInput | string): Promise<Buffer> {
+  let data: DocxDraftInput;
+  if (typeof input === "string") {
+    data = parseDocxText(input);
+  } else {
+    data = input;
+  }
 
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      tokens.push({ text: text.slice(lastIndex, match.index) });
+  const children: any[] = [];
+
+  // Header / Enterprise Letterhead
+  children.push(
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 120 },
+      children: [
+        new TextRun({
+          text: "SOVEREIGN ENGINEERING & DEFENCE SERVICES",
+          bold: true,
+          size: 28,
+        }),
+      ],
+    }),
+  );
+
+  children.push(
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 360 },
+      children: [
+        new TextRun({
+          text: "TECHNICAL INSPECTION & COMPLIANCE DIVISION",
+          bold: true,
+          size: 20,
+        }),
+      ],
+    }),
+  );
+
+  // Document Title
+  const docTitle = data.title || "Technical Inspection Approval Note";
+  children.push(
+    new Paragraph({
+      heading: HeadingLevel.HEADING_1,
+      spacing: { before: 200, after: 240 },
+      children: [
+        new TextRun({
+          text: docTitle,
+          bold: true,
+          size: 24,
+        }),
+      ],
+    }),
+  );
+
+  // Metadata Grid Table
+  const metaRows: TableRow[] = [];
+  const currentDate = new Date().toISOString().split("T")[0];
+  const metadataMap: Record<string, string> = {
+    "Document Ref": "AN-E201-2026-01",
+    "Date": currentDate,
+    "Classification": "OFFICIAL / SENSITIVE",
+    "Governing Standard": "SOP-114 §3.2",
+    ...(data.metadata || {}),
+  };
+
+  const metaEntries = Object.entries(metadataMap);
+  for (let i = 0; i < metaEntries.length; i += 2) {
+    const [k1, v1] = metaEntries[i];
+    const pair2 = metaEntries[i + 1];
+
+    metaRows.push(
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 20, type: WidthType.PERCENTAGE },
+            children: [new Paragraph({ children: [new TextRun({ text: k1, bold: true, size: 18 })] })],
+          }),
+          new TableCell({
+            width: { size: 30, type: WidthType.PERCENTAGE },
+            children: [new Paragraph({ children: [new TextRun({ text: v1, size: 18 })] })],
+          }),
+          new TableCell({
+            width: { size: 20, type: WidthType.PERCENTAGE },
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: pair2 ? pair2[0] : "", bold: true, size: 18 })],
+              }),
+            ],
+          }),
+          new TableCell({
+            width: { size: 30, type: WidthType.PERCENTAGE },
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: pair2 ? pair2[1] : "", size: 18 })],
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+  }
+
+  if (metaRows.length > 0) {
+    children.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: metaRows,
+      }),
+    );
+    children.push(new Paragraph({ spacing: { after: 240 } }));
+  }
+
+  // Sections or Body Content
+  if (data.sections && data.sections.length > 0) {
+    for (const sec of data.sections) {
+      if (sec.heading) {
+        children.push(
+          new Paragraph({
+            heading: HeadingLevel.HEADING_2,
+            spacing: { before: 240, after: 120 },
+            children: [
+              new TextRun({
+                text: sec.heading,
+                bold: true,
+                size: 20,
+              }),
+            ],
+          }),
+        );
+      }
+
+      if (sec.body) {
+        const lines = sec.body.split(/\r?\n/).filter((l) => l.trim().length > 0);
+        for (const line of lines) {
+          children.push(
+            new Paragraph({
+              spacing: { after: 120 },
+              children: [new TextRun({ text: line, size: 20 })],
+            }),
+          );
+        }
+      }
     }
-    const chunk = match[0];
-    if (chunk.startsWith("**") && chunk.endsWith("**")) {
-      tokens.push({ text: chunk.slice(2, -2), bold: true });
-    } else if (chunk.startsWith("`") && chunk.endsWith("`")) {
-      tokens.push({ text: chunk.slice(1, -1), code: true });
-    } else if (chunk.startsWith("*") && chunk.endsWith("*")) {
-      tokens.push({ text: chunk.slice(1, -1), italic: true });
+  } else if (data.body) {
+    const lines = data.body.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    for (const line of lines) {
+      children.push(
+        new Paragraph({
+          spacing: { after: 120 },
+          children: [new TextRun({ text: line, size: 20 })],
+        }),
+      );
+    }
+  }
+
+  // Findings Table (if present)
+  if (data.findings && data.findings.length > 0) {
+    children.push(
+      new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 240, after: 120 },
+        children: [new TextRun({ text: "Inspection Findings Summary", bold: true, size: 20 })],
+      }),
+    );
+
+    const tableHeader = new TableRow({
+      tableHeader: true,
+      children: [
+        new TableCell({
+          width: { size: 25, type: WidthType.PERCENTAGE },
+          children: [new Paragraph({ children: [new TextRun({ text: "Item / Location", bold: true, size: 18 })] })],
+        }),
+        new TableCell({
+          width: { size: 25, type: WidthType.PERCENTAGE },
+          children: [new Paragraph({ children: [new TextRun({ text: "Measurement", bold: true, size: 18 })] })],
+        }),
+        new TableCell({
+          width: { size: 30, type: WidthType.PERCENTAGE },
+          children: [new Paragraph({ children: [new TextRun({ text: "Condition / Obs", bold: true, size: 18 })] })],
+        }),
+        new TableCell({
+          width: { size: 20, type: WidthType.PERCENTAGE },
+          children: [new Paragraph({ children: [new TextRun({ text: "Status", bold: true, size: 18 })] })],
+        }),
+      ],
+    });
+
+    const findingRows = data.findings.map(
+      (f) =>
+        new TableRow({
+          children: [
+            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: f.item || "-", size: 18 })] })] }),
+            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: f.measurement || "-", size: 18 })] })] }),
+            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: f.condition || "-", size: 18 })] })] }),
+            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: f.status || "-", size: 18 })] })] }),
+          ],
+        }),
+    );
+
+    children.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [tableHeader, ...findingRows],
+      }),
+    );
+    children.push(new Paragraph({ spacing: { after: 240 } }));
+  }
+
+  // Grounding / Citations Footer Section
+  if (data.citations && data.citations.length > 0) {
+    children.push(
+      new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 240, after: 120 },
+        children: [new TextRun({ text: "Grounding & Standard Citations", bold: true, size: 20 })],
+      }),
+    );
+
+    for (const cit of data.citations) {
+      children.push(
+        new Paragraph({
+          spacing: { after: 120 },
+          children: [
+            new TextRun({ text: `${cit.label || cit.inlineText || "Citation"}: `, bold: true, size: 18 }),
+            new TextRun({ text: cit.supportingExcerpt || "", size: 18, italics: true }),
+          ],
+        }),
+      );
+    }
+  }
+
+  // Signature Block
+  children.push(new Paragraph({ spacing: { before: 360, after: 120 } }));
+  children.push(
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              width: { size: 50, type: WidthType.PERCENTAGE },
+              borders: {
+                top: { style: BorderStyle.NONE },
+                bottom: { style: BorderStyle.NONE },
+                left: { style: BorderStyle.NONE },
+                right: { style: BorderStyle.NONE },
+              },
+              children: [
+                new Paragraph({ children: [new TextRun({ text: "Prepared By:", bold: true, size: 18 })] }),
+                new Paragraph({ children: [new TextRun({ text: "___________________________", size: 18 })] }),
+                new Paragraph({ children: [new TextRun({ text: "Inspection Engineer / Assessor", size: 18 })] }),
+                new Paragraph({ children: [new TextRun({ text: `Date: ${currentDate}`, size: 18 })] }),
+              ],
+            }),
+            new TableCell({
+              width: { size: 50, type: WidthType.PERCENTAGE },
+              borders: {
+                top: { style: BorderStyle.NONE },
+                bottom: { style: BorderStyle.NONE },
+                left: { style: BorderStyle.NONE },
+                right: { style: BorderStyle.NONE },
+              },
+              children: [
+                new Paragraph({ children: [new TextRun({ text: "Approved By:", bold: true, size: 18 })] }),
+                new Paragraph({ children: [new TextRun({ text: "___________________________", size: 18 })] }),
+                new Paragraph({ children: [new TextRun({ text: "Chief Technical Authority", size: 18 })] }),
+                new Paragraph({ children: [new TextRun({ text: `Date: ${currentDate}`, size: 18 })] }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    }),
+  );
+
+  const doc = new Document({
+    sections: [
+      {
+        properties: {},
+        children,
+      },
+    ],
+  });
+
+  return await Packer.toBuffer(doc);
+}
+
+function parseDocxText(text: string): DocxDraftInput {
+  try {
+    const jsonParsed = JSON.parse(text);
+    if (jsonParsed && typeof jsonParsed === "object") {
+      return jsonParsed as DocxDraftInput;
+    }
+  } catch {}
+
+  // Parse markdown / key-value format
+  const sections: Array<{ heading: string; body: string }> = [];
+  const lines = text.split(/\r?\n/);
+
+  let currentHeading = "Summary";
+  let currentBodyLines: string[] = [];
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^#+\s+(.*)$/) || line.match(/^\[section:([^\]]+)\]\s*(.*)$/);
+    if (headingMatch) {
+      if (currentBodyLines.length > 0 || currentHeading !== "Summary") {
+        sections.push({ heading: currentHeading, body: currentBodyLines.join("\n").trim() });
+        currentBodyLines = [];
+      }
+      currentHeading = headingMatch[1].trim() || headingMatch[2].trim();
     } else {
-      tokens.push({ text: chunk });
+      currentBodyLines.push(line);
     }
-    lastIndex = match.index + chunk.length;
-  }
-  if (lastIndex < text.length) {
-    tokens.push({ text: text.slice(lastIndex) });
   }
 
-  return tokens
-    .map((t) => {
-      const rPr = [
-        t.bold ? "<w:b/><w:bCs/>" : "",
-        t.italic ? "<w:i/><w:iCs/>" : "",
-        t.code
-          ? '<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/><w:shd w:val="clear" w:color="auto" w:fill="F1F5F9"/><w:color w:val="0F172A"/>'
-          : "",
-      ].filter(Boolean).join("");
+  if (currentBodyLines.length > 0 || sections.length === 0) {
+    sections.push({ heading: currentHeading, body: currentBodyLines.join("\n").trim() });
+  }
 
-      return `<w:r>${rPr ? `<w:rPr>${rPr}</w:rPr>` : ""}<w:t xml:space="preserve">${escapeXml(t.text)}</w:t></w:r>`;
-    })
-    .join("");
+  let title = "Approval Note";
+  if (sections.length > 0 && sections[0].heading.toLowerCase().includes("approval")) {
+    title = sections[0].heading;
+  }
+
+  return {
+    title,
+    sections,
+    body: text,
+  };
 }
 
-function parseMarkdownTable(rows: string[]): string {
-  const parsedRows = rows
-    .map((r) =>
-      r
-        .trim()
-        .replace(/^\||\|$/g, "")
-        .split("|")
-        .map((cell) => cell.trim())
-    )
-    .filter((cells) => !cells.every((c) => /^:?-+:?$/.test(c)));
-
-  if (parsedRows.length === 0) return "";
-
-  const colCount = Math.max(...parsedRows.map((r) => r.length));
-  const colWidth = Math.floor(9000 / colCount);
-
-  const trXml = parsedRows
-    .map((row, rowIdx) => {
-      const isHeader = rowIdx === 0;
-      const tcXml = row
-        .map((cell) => {
-          const shd = isHeader ? '<w:shd w:val="clear" w:color="auto" w:fill="1E293B"/>' : '<w:shd w:val="clear" w:color="auto" w:fill="FFFFFF"/>';
-          return `
-            <w:tc>
-              <w:tcPr>
-                <w:tcW w:w="${colWidth}" w:type="dxa"/>
-                ${shd}
-                <w:tcMar>
-                  <w:top w:w="120" w:type="dxa"/>
-                  <w:left w:w="160" w:type="dxa"/>
-                  <w:bottom w:w="120" w:type="dxa"/>
-                  <w:right w:w="160" w:type="dxa"/>
-                </w:tcMar>
-              </w:tcPr>
-              <w:p>
-                ${isHeader
-                  ? `<w:r><w:rPr><w:color w:val="FFFFFF"/><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">${escapeXml(cell)}</w:t></w:r>`
-                  : parseFormattedRuns(cell)}
-              </w:p>
-            </w:tc>
-          `;
-        })
-        .join("");
-
-      return `
-        <w:tr>
-          <w:trPr>
-            ${isHeader ? "<w:tblHeader/>" : ""}
-          </w:trPr>
-          ${tcXml}
-        </w:tr>
-      `;
-    })
-    .join("");
-
-  return `
-    <w:tbl>
-      <w:tblPr>
-        <w:tblW w:w="9000" w:type="dxa"/>
-        <w:tblBorders>
-          <w:top w:val="single" w:sz="6" w:space="0" w:color="94A3B8"/>
-          <w:left w:val="none"/>
-          <w:bottom w:val="single" w:sz="6" w:space="0" w:color="94A3B8"/>
-          <w:right w:val="none"/>
-          <w:insideH w:val="single" w:sz="4" w:space="0" w:color="E2E8F0"/>
-          <w:insideV w:val="none"/>
-        </w:tblBorders>
-      </w:tblPr>
-      ${trXml}
-    </w:tbl>
-  `;
-}
-
-/**
- * Generates an authoritative, publication-grade binary Office Open XML (.docx) Word document.
- */
 export async function generateDocx(
   runId: string,
-  content: string,
+  input: DocxDraftInput | string,
   requestedFilename?: string,
 ): Promise<ArtifactRef> {
-  const JSZip = (await import("jszip")).default;
-  const zip = new JSZip();
-
-  zip.file(
-    "[Content_Types].xml",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
-</Types>`,
-  );
-
-  zip.file(
-    "_rels/.rels",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>`,
-  );
-
-  zip.file(
-    "word/_rels/document.xml.rels",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>`,
-  );
-
-  zip.file(
-    "word/styles.xml",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:docDefaults>
-    <w:rPrDefault>
-      <w:rPr>
-        <w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>
-        <w:sz w:val="22"/>
-        <w:szCs w:val="22"/>
-        <w:color w:val="1E293B"/>
-      </w:rPr>
-    </w:rPrDefault>
-    <w:pPrDefault>
-      <w:pPr>
-        <w:spacing w:after="160" w:line="276" w:lineRule="auto"/>
-      </w:pPr>
-    </w:pPrDefault>
-  </w:docDefaults>
-  <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
-    <w:name w:val="Normal"/>
-  </w:style>
-  <w:style w:type="paragraph" w:styleId="Heading1">
-    <w:name w:val="heading 1"/>
-    <w:pPr>
-      <w:spacing w:before="360" w:after="140"/>
-    </w:pPr>
-    <w:rPr>
-      <w:b/><w:bCs/>
-      <w:color w:val="0F172A"/>
-      <w:sz w:val="32"/>
-      <w:szCs w:val="32"/>
-    </w:rPr>
-  </w:style>
-  <w:style w:type="paragraph" w:styleId="Heading2">
-    <w:name w:val="heading 2"/>
-    <w:pPr>
-      <w:spacing w:before="260" w:after="100"/>
-    </w:pPr>
-    <w:rPr>
-      <w:b/><w:bCs/>
-      <w:color w:val="1E293B"/>
-      <w:sz w:val="26"/>
-      <w:szCs w:val="26"/>
-    </w:rPr>
-  </w:style>
-  <w:style w:type="paragraph" w:styleId="Heading3">
-    <w:name w:val="heading 3"/>
-    <w:pPr>
-      <w:spacing w:before="200" w:after="80"/>
-    </w:pPr>
-    <w:rPr>
-      <w:b/><w:bCs/>
-      <w:color w:val="334155"/>
-      <w:sz w:val="24"/>
-      <w:szCs w:val="24"/>
-    </w:rPr>
-  </w:style>
-</w:styles>`,
-  );
-
-  // Parse lines into Word XML elements
-  const lines = content.split(/\r?\n/);
-  const bodyXml: string[] = [];
-
-  // Top Formal Engineering Letterhead
-  bodyXml.push(`
-    <w:p>
-      <w:pPr>
-        <w:pBdr>
-          <w:bottom w:val="single" w:sz="16" w:space="8" w:color="0284C7"/>
-        </w:pBdr>
-        <w:spacing w:after="240"/>
-      </w:pPr>
-      <w:r>
-        <w:rPr>
-          <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>
-          <w:b/><w:bCs/>
-          <w:sz w:val="28"/><w:szCs w:val="28"/>
-          <w:color w:val="0369A1"/>
-        </w:rPr>
-        <w:t>SOVEREIGN WORKBENCH</w:t>
-      </w:r>
-      <w:r>
-        <w:rPr>
-          <w:sz w:val="18"/><w:szCs w:val="18"/>
-          <w:color w:val="64748B"/>
-        </w:rPr>
-        <w:t xml:space="preserve">   |   AIR-GAPPED COMPLIANCE DELIVERABLE   |   ZERO NETWORK EGRESS</w:t>
-      </w:r>
-    </w:p>
-  `);
-
-  let inTable = false;
-  let tableBuffer: string[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const rawLine = lines[i];
-    const trimmed = rawLine.trim();
-
-    // Check table rows
-    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
-      inTable = true;
-      tableBuffer.push(trimmed);
-      continue;
-    } else if (inTable) {
-      bodyXml.push(parseMarkdownTable(tableBuffer));
-      tableBuffer = [];
-      inTable = false;
-    }
-
-    if (!trimmed) {
-      bodyXml.push('<w:p><w:pPr><w:spacing w:after="80"/></w:pPr></w:p>');
-      continue;
-    }
-
-    // Heading 1 (# ...)
-    if (trimmed.startsWith("# ")) {
-      const text = trimmed.slice(2);
-      bodyXml.push(`
-        <w:p>
-          <w:pPr>
-            <w:pStyle w:val="Heading1"/>
-          </w:pPr>
-          ${parseFormattedRuns(text)}
-        </w:p>
-      `);
-      continue;
-    }
-
-    // Heading 2 (## ...)
-    if (trimmed.startsWith("## ")) {
-      const text = trimmed.slice(3);
-      bodyXml.push(`
-        <w:p>
-          <w:pPr>
-            <w:pStyle w:val="Heading2"/>
-          </w:pPr>
-          ${parseFormattedRuns(text)}
-        </w:p>
-      `);
-      continue;
-    }
-
-    // Heading 3 (### ...)
-    if (trimmed.startsWith("### ")) {
-      const text = trimmed.slice(4);
-      bodyXml.push(`
-        <w:p>
-          <w:pPr>
-            <w:pStyle w:val="Heading3"/>
-          </w:pPr>
-          ${parseFormattedRuns(text)}
-        </w:p>
-      `);
-      continue;
-    }
-
-    // Bullet points (- ... or * ...)
-    if (/^[-*]\s+/.test(trimmed)) {
-      const text = trimmed.replace(/^[-*]\s+/, "");
-      bodyXml.push(`
-        <w:p>
-          <w:pPr>
-            <w:ind w:left="400"/>
-            <w:spacing w:after="100"/>
-          </w:pPr>
-          <w:r>
-            <w:rPr>
-              <w:color w:val="0284C7"/>
-              <w:b/>
-            </w:rPr>
-            <w:t xml:space="preserve">•  </w:t>
-          </w:r>
-          ${parseFormattedRuns(text)}
-        </w:p>
-      `);
-      continue;
-    }
-
-    // Callout box / Warnings (lines with ⚠️, WARNING, Missing Information)
-    if (trimmed.includes("⚠️") || /\b(warning|missing information|alert)\b/i.test(trimmed)) {
-      bodyXml.push(`
-        <w:p>
-          <w:pPr>
-            <w:pBdr>
-              <w:left w:val="single" w:sz="24" w:space="12" w:color="F59E0B"/>
-            </w:pBdr>
-            <w:shd w:val="clear" w:color="auto" w:fill="FFFBEB"/>
-            <w:spacing w:before="120" w:after="120"/>
-            <w:ind w:left="200" w:right="200"/>
-          </w:pPr>
-          ${parseFormattedRuns(trimmed)}
-        </w:p>
-      `);
-      continue;
-    }
-
-    // Standard paragraph
-    bodyXml.push(`
-      <w:p>
-        <w:pPr>
-          <w:spacing w:after="160" w:line="276" w:lineRule="auto"/>
-        </w:pPr>
-        ${parseFormattedRuns(trimmed)}
-      </w:p>
-    `);
-  }
-
-  if (inTable && tableBuffer.length > 0) {
-    bodyXml.push(parseMarkdownTable(tableBuffer));
-  }
-
-  // Footer / Attestation Block
-  bodyXml.push(`
-    <w:p>
-      <w:pPr>
-        <w:pBdr>
-          <w:top w:val="single" w:sz="6" w:space="8" w:color="CBD5E1"/>
-        </w:pBdr>
-        <w:spacing w:before="360" w:after="120"/>
-      </w:pPr>
-      <w:r>
-        <w:rPr>
-          <w:sz w:val="18"/><w:szCs w:val="18"/>
-          <w:color w:val="94A3B8"/>
-        </w:rPr>
-        <w:t xml:space="preserve">Deliverable generated under air-gapped governance. Verified by Sovereign Workbench.</w:t>
-      </w:r>
-    </w:p>
-  `);
-
-  const docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body>
-    ${bodyXml.join("\n")}
-    <w:sectPr>
-      <w:pgSz w:w="12240" w:h="15840"/>
-      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>
-    </w:sectPr>
-  </w:body>
-</w:document>`;
-
-  zip.file("word/document.xml", docXml);
-
-  const buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+  const buffer = await createDocxBuffer(input);
 
   let candidate = requestedFilename?.trim() || "approval-note.docx";
   if (!/\.docx$/i.test(candidate)) {
     candidate = candidate.replace(/\.[^.]+$/, "") + ".docx";
   }
   const name = /^[A-Za-z0-9][A-Za-z0-9._-]*\.docx$/i.test(candidate) ? candidate : "approval-note.docx";
-
   const rel = writeRunFile(runId, "output", name, buffer, true);
   return artifactRef(runId, "docx", name, rel);
 }
-
