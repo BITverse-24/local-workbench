@@ -338,8 +338,16 @@ export class RunManager {
         const continuation = this.continuations.get(input.actionId);
         if (!continuation) throw new Error("confirmation continuation not found");
         this.continuations.delete(input.actionId);
+        if (input.approved) {
+          this.state(input.runId, "acting");
+        }
         await continuation();
       } catch (error) {
+        if (!input.approved) {
+          this.persistAssistant(input.runId, "Action was rejected by user. Execution stopped.", "draft-qwen3");
+          this.cancel(input.runId);
+          return;
+        }
         this.fail(input.runId, error);
       }
     })();
@@ -2288,6 +2296,7 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
         ]),
       );
 
+      this.tool(runId, "execute_python", `Executing Python sandbox (${effectiveInputs.join(", ") || "no input files"})`);
       let execution = await executePython(runId, currentCode.source, effectiveInputs, getAliases(effectiveInputs));
       logPythonExecution({
         exitCode: execution.exitCode,
@@ -2337,6 +2346,7 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
         writeRunFile(runId, "intermediate", "task.py", currentCode.source, true);
         this.result(runId, "draft_code", `script repaired (attempt ${repairs})`);
 
+        this.tool(runId, "execute_python", `Re-executing repaired script (attempt ${repairs})`);
         execution = await executePython(runId, currentCode.source, currentCode.inputFiles, getAliases(currentCode.inputFiles));
         logPythonExecution({
           exitCode: execution.exitCode,

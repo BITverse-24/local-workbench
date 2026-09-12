@@ -459,12 +459,11 @@ export default function App() {
     if (confirmationBusy) return;
     const { actionId, runId } = pendingConfirmation;
     setConfirmationBusy(true);
+    setPendingConfirmation(null);
     try {
       await wb.confirmAction({ runId, actionId, approved });
-      setPendingConfirmation(null);
     } catch (e) {
       setRunError({ code: "confirm_failed", message: e instanceof Error ? e.message : String(e) });
-      setPendingConfirmation(null);
     } finally {
       setConfirmationBusy(false);
     }
