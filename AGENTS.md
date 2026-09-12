@@ -248,3 +248,12 @@ npm run package
 2. **Path Containment Integrity**: Never bypass `resolveSafe` in `backend/src/main/harness/path-guard.ts`. All workspace harness tools must strictly remain within the registered workspace root.
 3. **IPC Boundary**: Do not import Electron or Node.js filesystem modules directly into `frontend/src/`. All OS interactions must go through the typed `window.workbenchBridge` IPC API.
 4. **Testing & Verification**: Always run `npm run typecheck` and `npm test` after making structural changes to ensure contracts and type signatures remain intact.
+5. **ZERO HARDCODED DEMO / FIXTURE DATA (CRITICAL)**:
+   - **Absolute Prohibition**: NEVER hardcode specific demo fixtures, entity names, synthetic measurements, or scripted findings into runtime production logic (`backend/src/main/`, `frontend/src/`, `electron/`). Examples of prohibited hardcoding: `E-201`, `E201`, `RECHECK WELD JOINT 4B`, `SOP-114` (unless explicitly requested in prompt or retrieved via RAG), synthetic tube wall/pitting measurements, hardcoded filenames like `approval-note-E201.docx`, or pre-canned fallback draft strings.
+   - **Universal Deployment Requirement**: Flows A, B, and C in `DEMO.md` are demonstration scripts/playbooks. The application is deployed for real-world use by judges, PSU/defence engineers, and operators who will upload arbitrary documents, datasets, and scripts.
+   - **Dynamic Architecture**:
+     - All findings must be genuinely extracted from the attached files via the model gateway or document extractors.
+     - Cross-document fusion must dynamically aggregate whatever findings the model returned from each document with real page numbers and source filenames.
+     - Grounding / compliance evaluation must query real knowledge bases via RAG/ChromaDB or user-specified SOPs dynamically, not pre-scripted if-statements.
+     - Generated file deliverables must use descriptive, request-derived names (e.g., `approval-note.docx`, `<basename>-report.docx`), never hardcoded demo IDs.
+     - When a model or tool fails, surface the real error—NEVER substitute fake success data or hardcoded mock text.

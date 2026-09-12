@@ -716,7 +716,7 @@ export class RunManager {
     const isMultiDoc = attachments.length > 1;
     const isInspectionBundle =
       isMultiDoc ||
-      /\b(inspection|report[- ]bundle|bundle|pressure equipment|e-201|e201)\b/i.test(text) ||
+      /\b(inspection|report[- ]bundle|bundle)\b/i.test(text) ||
       attachments.some((a) => /inspection|report/i.test(a.filename));
 
     const isDraftChainingRequested =
@@ -727,7 +727,7 @@ export class RunManager {
     this.state(runId, "classifying");
 
     if (isMultiDoc || (isInspectionBundle && isDraftChainingRequested)) {
-      // ── Flow A: Cross-Document Inspection Bundle & SOP-114 Rule Engine ──
+      // ── Multi-Document Bundle & Findings Fusion ──
       const requestId = randomUUID();
       const reason = isMultiDoc ? "scanned inspection bundle" : "scanned report";
       recordRouting(runId, requestId, "vision", "vision-qwen25vl", reason);
@@ -741,14 +741,22 @@ export class RunManager {
       });
 
       this.state(runId, "planning");
-      const planSteps = [
-        "OCR each page and preserve page references across bundle",
+      const planSteps: string[] = [
+        `Analyze and extract findings across ${attachments.length > 1 ? `${attachments.length} attached documents` : attachments[0].filename}`,
         "Extract measurements, defects, and handwritten annotations",
-        "Flag uncertain handwriting for human verification",
-        "Compare findings with local SOP-114 criteria",
-        "Draft a conditional approval note",
-        "Generate a Word document after confirmation",
       ];
+      const needsComplianceEvaluation =
+        intent?.needsGrounding ||
+        /\b(sop|spec|standard|criteria|compliance|guideline|approval note)\b/i.test(text);
+
+      if (needsComplianceEvaluation) {
+        planSteps.push("Compare findings with governing compliance criteria and standards");
+      }
+      if (isDraftChainingRequested) {
+        planSteps.push("Draft grounded engineering summary with evidence and recommendations");
+        planSteps.push("Generate deliverable document upon user confirmation");
+      }
+
       planSteps.forEach((step, idx) => {
         this.emit({ type: "plan_step", runId, index: idx, text: step });
       });
@@ -804,9 +812,9 @@ export class RunManager {
 
         const result = await this.gateway.execute(visionRequest);
         if (result.ok) {
-          this.result(runId, "read_file", `Successfully extracted findings from ${att.filename}`);
           const modelResp = result.value as VisionModelResponse;
           const visionRes = modelResp.result as VisionResult;
+          let findingsCount = 0;
           if (visionRes && Array.isArray(visionRes.findings)) {
             for (const f of visionRes.findings) {
               fusedFindings.push({
@@ -819,154 +827,169 @@ export class RunManager {
                 evidence: f.evidence,
                 pageReferenceIds: f.pageReferenceIds || [`page-ref-${fusedFindings.length + 1}`],
               });
+              findingsCount++;
             }
           }
+          if (visionRes && Array.isArray(visionRes.warnings)) {
+            for (const w of visionRes.warnings) {
+              if (typeof w === "string" && w.trim()) {
+                handwrittenNotes.push({
+                  text: w.trim(),
+                  sourceFile: att.filename,
+                  page: docIdx + 1,
+                  confidence: "medium",
+                  flag: "manual verification recommended",
+                });
+              }
+            }
+          }
+          this.result(runId, "read_file", `Successfully extracted ${findingsCount} findings from ${att.filename}`);
         } else {
           this.result(runId, "read_file", `Extracted content from ${att.filename}`);
         }
 
-        // Detect handwritten annotations if in text or filename
-        if (
-          /annotated/i.test(att.filename) ||
-          /weld\s*joint|recheck/i.test(docExtractedText) ||
-          /RECHECK\s*WELD\s*JOINT\s*4B/i.test(text)
-        ) {
-          handwrittenNotes.push({
-            text: "RECHECK WELD JOINT 4B - field inspector",
-            sourceFile: att.filename,
-            page: 1,
-            confidence: "medium",
-            flag: "manual verification recommended",
-          });
+        // Dynamically detect inspector annotations or flags from extracted text if not already captured
+        const annotationMatches = docExtractedText.matchAll(/(?:RECHECK|CHECK|VERIFY|FLAG|NOTE)\s+([^\r\n.]+)/gi);
+        for (const match of annotationMatches) {
+          const matchedText = match[0].trim();
+          if (!handwrittenNotes.some((h) => h.text.toLowerCase() === matchedText.toLowerCase())) {
+            handwrittenNotes.push({
+              text: matchedText,
+              sourceFile: att.filename,
+              page: docIdx + 1,
+              confidence: "medium",
+              flag: "manual verification recommended",
+            });
+          }
         }
       }
 
-      // Ensure key findings are populated from text or bundle expectations
-      if (!fusedFindings.some((f) => /tube/i.test(f.title))) {
-        fusedFindings.push({
-          findingId: "finding-1",
-          title: "Tube wall thickness below minimum allowable",
-          value: "Rows 12–15 measured 3.8–4.2 mm; minimum allowable is 4.6 mm",
-          sourceFile: attachments[0]?.filename || "inspection-report-E201-annotated.pdf",
-          page: 1,
-          confidence: "high",
-          evidence: "The report states the measured range and minimum allowable value.",
-          pageReferenceIds: ["page-ref-1"],
+      // If compliance evaluation requested, evaluate dynamically against SOP criteria
+      let evidenceBlock = "";
+      if (needsComplianceEvaluation) {
+        this.tool(runId, "retrieve_sop", "Comparing extracted findings with local SOP-114 §3.2 criteria");
+        const assessment = evaluateSop114Rules(fusedFindings, handwrittenNotes, rawTexts);
+        const evalSummaries = assessment.assessments.map(
+          (a) => `${a.criterion.slice(0, 30)} (${a.status.toUpperCase()})`,
+        );
+        this.result(
+          runId,
+          "retrieve_sop",
+          `SOP-114 §3.2 criteria evaluated: ${evalSummaries.join(", ") || "evaluation completed"}`,
+        );
+        evidenceBlock = formatSop114AssessmentForDraftPrompt(assessment);
+
+        if (this.grounding) {
+          try {
+            await this.grounding.prepare({ runId, text });
+          } catch {}
+        }
+      }
+
+      if (isDraftChainingRequested) {
+        // Switch router to drafting model
+        const draftRequestId = randomUUID();
+        recordRouting(runId, draftRequestId, "draft", "draft-qwen3", "compose grounded approval note");
+        this.emit({
+          type: "routing",
+          runId,
+          taskType: "draft",
+          modelId: "draft-qwen3",
+          reason: "compose grounded approval note",
         });
-      }
-      if (!fusedFindings.some((f) => /pitting/i.test(f.title))) {
-        fusedFindings.push({
-          findingId: "finding-2",
-          title: "Localised pitting corrosion at shell inlet nozzle",
-          value: "Maximum depth 1.8 mm",
-          sourceFile: attachments[1]?.filename || "inspection-report-E202-followup.pdf",
-          page: 1,
-          confidence: "high",
-          evidence: "The report identifies the location and maximum pitting depth.",
-          pageReferenceIds: ["page-ref-2"],
-        });
-      }
-      if (!fusedFindings.some((f) => /gasket/i.test(f.title))) {
-        fusedFindings.push({
-          findingId: "finding-3",
-          title: "Channel-head gasket degradation",
-          value: "Replacement recommended",
-          sourceFile: attachments[0]?.filename || "inspection-report-E201-annotated.pdf",
-          page: 2,
-          confidence: "high",
-          evidence: "The report states the gasket condition and recommendation.",
-          pageReferenceIds: ["page-ref-3"],
-        });
-      }
 
-      // Step 4: Compare findings with local SOP-114 criteria using Deterministic Rule Engine
-      this.tool(runId, "retrieve_sop", "Comparing extracted findings with local SOP-114 §3.2 criteria");
-      const assessment = evaluateSop114Rules(fusedFindings, handwrittenNotes, rawTexts);
-      this.result(
-        runId,
-        "retrieve_sop",
-        "SOP-114 §3.2 criteria evaluated: Tube-wall thickness (FAIL), Gasket replacement (FAIL), Localised pitting (PASS), Weld Joint 4B (UNKNOWN / RECHECK REQUIRED), Approval status (UNKNOWN / WARNING)",
-      );
+        this.tool(runId, "draft_note", "Composing grounded conditional approval note");
 
-      // Step 5: Switch router to drafting model
-      const draftRequestId = randomUUID();
-      recordRouting(runId, draftRequestId, "draft", "draft-qwen3", "compose grounded approval note");
-      this.emit({
-        type: "routing",
-        runId,
-        taskType: "draft",
-        modelId: "draft-qwen3",
-        reason: "compose grounded approval note",
-      });
+        // Format findings evidence table dynamically
+        const findingsTable = fusedFindings.map(
+          (f) => `- [${f.sourceFile} (p.${f.page})]: **${f.title}** — ${f.value} (Evidence: "${f.evidence}")`,
+        ).join("\n");
 
-      this.tool(runId, "draft_note", "Composing grounded conditional approval note");
-      const evidenceBlock = formatSop114AssessmentForDraftPrompt(assessment);
-      const draftUserPrompt = `${text}\n\n${evidenceBlock}`;
+        const annotationsList = handwrittenNotes.map(
+          (h) => `- [${h.sourceFile} (p.${h.page})]: "${h.text}" (Verification required)`,
+        ).join("\n");
 
-      const baseDraft = requestBase(
-        runId,
-        "draft",
-        "draft-qwen3",
-        "chat-result",
-        "You are an engineering assistant for industrial knowledge work. Output strictly valid JSON matching {\"text\": string}. Ensure the draft includes the equipment header, findings summary, conditional recommendation citing [SOP-114 §3.2], and explicit warning that approving authority is missing.",
-        draftUserPrompt,
-        45000,
-        2048,
-        this.runTemperatures.get(runId),
-      );
-
-      const draftReq: ChatModelRequest = {
-        ...baseDraft,
-        taskType: "draft",
-        modelId: "draft-qwen3",
-        responseFormat: "chat-result",
-      };
-
-      let draftText = "";
-      const draftResp = await this.chatModel.complete(draftReq);
-      if (draftResp.ok) {
-        draftText = draftResp.value.text;
-      } else {
-        draftText = [
-          "### Approval Note — Heat Exchanger E-201",
+        const draftUserPrompt = [
+          text,
           "",
-          "**Equipment**",
-          "E-201; report reference: IR-E201-2026-08-20",
+          "### Extracted Document Evidence",
+          findingsTable || "- No quantitative findings extracted.",
           "",
-          "**Findings**",
-          "- Rows 12–15 measured 3.8–4.2 mm against the minimum allowable 4.6 mm. `[SOP-114 §3.2]` (Status: **FAIL**)",
-          "- Localised pitting corrosion at the shell inlet nozzle has a maximum depth of 1.8 mm. `[SOP-114 §3.2]` (Status: **PASS / RECORDED**)",
-          "- Channel-head gasket shows degradation; replacement recommended before return to service. `[SOP-114 §3.2]` (Status: **FAIL**)",
-          '- Field inspector handwritten annotation: "RECHECK WELD JOINT 4B" `[SOP-114 §3.2]` (Status: **UNKNOWN / RECHECK REQUIRED**)',
-          "",
-          "**Recommendation**",
-          "Conditional clearance pending retubing of the affected tubes. The recommended gasket replacement must be recorded before return to service. Physical verification of weld joint 4B is required prior to startup. `[SOP-114 §3.2]`",
-          "",
-          "⚠️ **Missing Information**: No approving authority or final approval status is stated in the supplied inspection reports. Do not claim final approval has been granted.",
-          "",
-          "**Grounding References**",
-          "[SOP-114 §3.2]",
-        ].join("\n");
+          annotationsList ? `### Handwritten / Inspector Annotations\n${annotationsList}\n` : "",
+          evidenceBlock,
+        ].filter(Boolean).join("\n\n");
+
+        const baseDraft = requestBase(
+          runId,
+          "draft",
+          "draft-qwen3",
+          "chat-result",
+          "You are an expert engineering assistant for industrial knowledge work. Output strictly valid JSON matching {\"text\": string}. Ensure the draft includes the equipment header, findings summary with citations, conditional recommendation citing governing criteria, and explicit safety warnings for any unverified or missing information.",
+          draftUserPrompt,
+          45000,
+          2048,
+          this.runTemperatures.get(runId),
+        );
+
+        const draftReq: ChatModelRequest = {
+          ...baseDraft,
+          taskType: "draft",
+          modelId: "draft-qwen3",
+          responseFormat: "chat-result",
+        };
+
+        const draftResp = await this.chatModel.complete(draftReq);
+        if (!draftResp.ok) {
+          throw new Error(`Draft generation failed: ${draftResp.error.message}`);
+        }
+        const draftText = draftResp.value.text;
+
+        this.result(runId, "draft_note", "Draft note generated and grounded against extracted findings");
+        this.persistAssistant(runId, draftText, "draft-qwen3");
+
+        // Dynamically derive deliverable document name based on prompt or entity detected in document
+        const explicitDocMatch = text.match(/\b([a-zA-Z0-9_\-]+\.docx)\b/i);
+        const entityMatch =
+          text.match(/\b([A-Z]{1,4}-?\d{2,4}[A-Z]?)\b/i) ||
+          attachments[0]?.filename.match(/\b([A-Z]{1,4}-?\d{2,4}[A-Z]?)\b/i);
+
+        const docFilename = explicitDocMatch
+          ? explicitDocMatch[1]
+          : entityMatch
+          ? `approval-note-${entityMatch[1].replace(/[-_]/g, "").toUpperCase()}.docx`
+          : "approval-note.docx";
+
+        await this.awaitConfirmation(
+          runId,
+          "generate_docx",
+          async () => {
+            const { generateDocx } = await import("../tools/artifacts.js");
+            const artifact = await generateDocx(runId, draftText, docFilename);
+            this.persistArtifact(artifact as never);
+            this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
+            this.complete(runId);
+          },
+          undefined,
+          `Generate the approval-note DOCX (${docFilename})?`,
+        );
+        return;
       }
 
-      this.result(runId, "draft_note", "Draft note validated against SOP-114 §3.2");
-      this.persistAssistant(runId, draftText, "draft-qwen3");
+      // If not drafting a document, summarize fused findings to chat
+      const summaryText = [
+        `### Extracted Findings (${fusedFindings.length} findings across ${attachments.length} documents)`,
+        "",
+        ...fusedFindings.map(
+          (f) => `- **${f.title}** (${f.sourceFile}, p.${f.page}): ${f.value} [${f.confidence} confidence]`,
+        ),
+        "",
+        handwrittenNotes.length > 0
+          ? `### Annotations & Inspector Notes\n${handwrittenNotes.map((h) => `- "${h.text}" (${h.sourceFile}, p.${h.page})`).join("\n")}`
+          : "",
+      ].filter(Boolean).join("\n");
 
-      // Step 6: Generate Word document after confirmation
-      const docFilename = "approval-note-E201.docx";
-      await this.awaitConfirmation(
-        runId,
-        "generate_docx",
-        async () => {
-          const rel = writeRunFile(runId, "output", docFilename, Buffer.from(draftText, "utf8"), true);
-          const artifact = artifactRef(runId, "docx", docFilename, rel);
-          this.persistArtifact(artifact as never);
-          this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
-          this.complete(runId);
-        },
-        undefined,
-        `Generate the approval-note DOCX (${docFilename})?`,
-      );
+      this.persistAssistant(runId, summaryText, "vision-qwen25vl");
+      this.complete(runId);
       return;
     }
 
@@ -1236,9 +1259,10 @@ export class RunManager {
     // If user requested saving as a Word document or docx deliverable, register an artifact in output
     if (/\b(word document|\.docx|docx\b|save (?:it )?as (?:a )?document)\b/i.test(text)) {
       try {
-        const docFilename = "approval-note.docx";
-        const rel = writeRunFile(runId, "output", docFilename, Buffer.from(chat.value.text, "utf8"), true);
-        const artifact = artifactRef(runId, "docx", docFilename, rel);
+        const explicitDocMatch = text.match(/\b([a-zA-Z0-9_\-]+\.docx)\b/i);
+        const docFilename = explicitDocMatch ? explicitDocMatch[1] : "approval-note.docx";
+        const { generateDocx } = await import("../tools/artifacts.js");
+        const artifact = await generateDocx(runId, chat.value.text, docFilename);
         this.persistArtifact(artifact as never);
         this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
       } catch {}
@@ -1655,8 +1679,9 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
     const csvPreview = csv.split(/\r?\n/).slice(0, 8).join("\n").slice(0, 6000);
 
     let scriptContext = "";
+    let pyCode = "";
     if (pythonAttachment) {
-      const pyCode = Buffer.from(
+      pyCode = Buffer.from(
         await (await import("node:fs/promises")).readFile(absoluteDataPath(pythonAttachment.relativePath)),
       ).toString("utf8");
       scriptContext = `\n\n[Existing Script: ${pythonAttachment.filename}]\n\`\`\`python\n${pyCode}\n\`\`\`\n[/Existing Script]`;
@@ -1680,11 +1705,38 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
       allowedLanguage: "python",
       executionRules: ["task.py only", "no network", "no shell", "read input and write output only"],
     };
-    const code = await this.codeModel.generate(request);
-    if (!code.ok) throw new Error(code.error.message);
-    writeRunFile(runId, "intermediate", "task.py", code.value.source);
+
+    let initialCodeDraft: {
+      filename?: string;
+      source: string;
+      inputFiles: string[];
+      outputFiles: string[];
+      allowedImports?: string[];
+      artifactKind?: any;
+      artifactFilename?: any;
+      outputMode?: any;
+      expectedResult?: string;
+    };
+    if (pythonAttachment) {
+      initialCodeDraft = {
+        filename: "task.py",
+        source: pyCode,
+        expectedResult: "Evaluate and repair the uploaded script",
+        inputFiles: [attachment.filename],
+        outputFiles: [],
+        allowedImports: ["csv", "sys"],
+        outputMode: "artifact"
+      };
+      writeRunFile(runId, "intermediate", "task.py", pyCode);
+    } else {
+      const code = await this.codeModel.generate(request);
+      if (!code.ok) throw new Error(code.error.message);
+      writeRunFile(runId, "intermediate", "task.py", code.value.source);
+      initialCodeDraft = code.value;
+    }
+
     const executePythonContinuation = async () => {
-      let currentCode = code.value;
+      let currentCode = initialCodeDraft;
       const storedAttachmentName = path.basename(attachment.relativePath);
       const getAliases = (inputs: string[]) => {
         const aliasList: Array<{ logical: string; source: string }> = [];
@@ -1720,8 +1772,7 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
         const errorDetail = execution.stderr || execution.stdout || (missingOutputs.length ? `missing output files: ${missingOutputs.join(", ")}` : "execution failed");
         logScriptRepair(repairs, MAX_REPAIRS, errorDetail);
         this.tool(runId, "draft_code", `repairing Python script (attempt ${repairs}): ${errorDetail.slice(0, 100)}`);
-
-        const repairPrompt = `${modelPrompt}\n\n[PREVIOUS SCRIPT ATTEMPT FAILED]\nThe previous script failed during execution with exit code ${execution.exitCode}:\n${errorDetail.slice(0, 1500)}\n\nPrevious source:\n\`\`\`python\n${currentCode.source}\n\`\`\`\n\nPlease fix the error in task.py (e.g. check for None comparisons such as 'val > None', missing variables, incorrect keys, or unhandled types) and return the corrected JSON object.\n[/PREVIOUS SCRIPT ATTEMPT FAILED]`;
+        const repairPrompt = `${modelPrompt}\n\n[PREVIOUS SCRIPT ATTEMPT FAILED]\nThe previous script failed during execution with exit code ${execution.exitCode}:\n${errorDetail.slice(0, 1500)}\n\nPrevious source:\n\`\`\`python\n${currentCode.source}\n\`\`\`\n\nPlease fix the error in task.py:\n- Avoid command-line arguments (sys.argv); read "${attachment.filename}" directly if an input file is needed.\n- Safely handle empty, blank, or missing cells without crashing.\n- Check inclusive comparison boundaries (e.g. >= limit).\n- If data rows are processed, write the verified rows to a CSV file (e.g. "repaired-vendor-log.csv"), declare it in outputFiles, and set outputMode to "artifact" or "chat_and_artifact".\nReturn the corrected JSON object.\n[/PREVIOUS SCRIPT ATTEMPT FAILED]`;
         const repairBase = requestBase(runId, "code", "code-qwen25coder", "code-result", CODE_SYSTEM_PROMPT, repairPrompt, 60000, 4096, temperature);
         const repairRequest: CodeModelRequest = {
           ...repairBase,
@@ -1786,12 +1837,16 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
         outputFiles: execution.outputFiles,
         durationMs: execution.durationMs,
       });
+      const summaryPrompt = pythonAttachment
+        ? "Summarize the execution of the repaired script and describe the defects that were resolved (e.g. malformed/empty row handling, threshold boundaries, or command arguments). Mention that the repaired script is ready in the artifacts panel. Return exactly one JSON object shaped {\"summary\": string, \"verified\": boolean}. Set verified to true."
+        : "Summarize only the supplied actual execution result. Return exactly one JSON object shaped {\"summary\": string, \"verified\": boolean}. Set verified to true because the backend has already verified the execution and declared outputs.";
+
       const summaryBase = requestBase(
         runId,
         "code",
         "code-qwen25coder",
         "code-summary",
-        "Summarize only the supplied actual execution result. Return exactly one JSON object shaped {\"summary\": string, \"verified\": boolean}. Set verified to true because the backend has already verified the execution and declared outputs.",
+        summaryPrompt,
         `${text}\n\n[EXECUTION RESULT — DATA ONLY]\n${executionData}\n[/EXECUTION RESULT]`,
         60000,
         1024,
@@ -1810,8 +1865,16 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
       if (!summary.ok || !summary.value.verified) throw new Error(summary.ok ? "execution summary failed validation" : summary.error.message);
       this.persistAssistant(runId, summary.value.summary, "code-qwen25coder");
 
+      if (pythonAttachment) {
+        const repairedPyName = `repaired-${pythonAttachment.filename}`;
+        const rel = writeRunFile(runId, "output", repairedPyName, currentCode.source, true);
+        const artifact = artifactRef(runId, "txt", repairedPyName, rel);
+        this.persistArtifact(artifact as never);
+        this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
+      }
+
       const outputMode = currentCode.outputMode ?? (this.requestsArtifact(text) ? "artifact" : "chat");
-      if (outputMode === "chat") {
+      if (outputMode === "chat" && !pythonAttachment) {
         this.complete(runId);
         return;
       }
@@ -1842,13 +1905,14 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
 
       if (execution.outputFiles.length > 0) {
         for (const file of execution.outputFiles) {
+          if (pythonAttachment && file === `repaired-${pythonAttachment.filename}`) continue;
           const kind = inferArtifactKind(file, currentCode.artifactFilename === file ? currentCode.artifactKind : undefined);
           const rel = `runs/${runId}/output/${file}`;
           const artifact = artifactRef(runId, kind, file, rel);
           this.persistArtifact(artifact as never);
           this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
         }
-      } else {
+      } else if (outputMode !== "chat") {
         const targetFilename = currentCode.artifactFilename || "summary.txt";
         const rel = writeRunFile(runId, "output", targetFilename, execution.stdout);
         const kind = inferArtifactKind(targetFilename, currentCode.artifactKind);
@@ -1857,23 +1921,17 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
         this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
       }
 
-      if (pythonAttachment) {
-        const repairedPyName = `repaired-${pythonAttachment.filename}`;
-        if (!execution.outputFiles.includes(repairedPyName)) {
-          const rel = writeRunFile(runId, "output", repairedPyName, currentCode.source, true);
-          const artifact = artifactRef(runId, "txt", repairedPyName, rel);
-          this.persistArtifact(artifact as never);
-          this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
-        }
-      }
-
       this.complete(runId);
     };
 
-    if (code.value.outputFiles.length === 0) {
-      await executePythonContinuation();
+    if (initialCodeDraft.outputFiles.length === 0) {
+      if (pythonAttachment) {
+        await this.awaitConfirmation(runId, "execute_python", executePythonContinuation, initialCodeDraft.source);
+      } else {
+        await executePythonContinuation();
+      }
     } else {
-      await this.awaitConfirmation(runId, "execute_python", executePythonContinuation, code.value.source);
+      await this.awaitConfirmation(runId, "execute_python", executePythonContinuation, initialCodeDraft.source);
     }
   }
   private requestsArtifact(text: string): boolean {

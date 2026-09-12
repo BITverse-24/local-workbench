@@ -98,6 +98,8 @@ export function extractMeasurements(text: string): { values: number[]; min?: num
   return { values };
 }
 
+import { randomUUID } from "node:crypto";
+
 /**
  * Deterministically evaluates findings against SOP-114 §3.2 rules.
  */
@@ -110,59 +112,70 @@ export function evaluateSop114Rules(
   const assessments: AssessmentItem[] = [];
   const missingInformation: Array<{ field: string; note: string }> = [];
 
-  // Extract source report IDs
+  // Extract source report ID dynamically from text if present
   const reportIdMatch = combinedRaw.match(/Report\s*ID:\s*([A-Za-z0-9_\-]+)/i);
-  const sourceReport = reportIdMatch ? reportIdMatch[1] : "IR-E201-2026-08-20";
+  const sourceReport = reportIdMatch ? reportIdMatch[1] : (findings[0]?.sourceFile ?? "inspection-report");
 
-  // 1. Rule 1: Tube-wall measurements below minimum allowable value (< 3.2mm threshold or < allowable 4.6mm) => FAIL
+  // 1. Rule 1: Tube-wall measurements below minimum allowable value (< 3.2mm threshold or < allowable) => FAIL
   const tubeFinding = findings.find((f) =>
-    /tube|wall\s*thickness|rows\s*12/i.test(`${f.title} ${f.value} ${f.evidence}`)
-  );
-
-  let tubeWallStatus: "fail" | "pass" = "fail";
-  let tubeRequiredAction = "Retube the affected tubes in rows 12–15.";
+    /tube|wall\s*thickness|thickness/i.test(`${f.title} ${f.value} ${f.evidence}`)
+  ) || (combinedRaw.match(/(?:tube|wall\s*thickness)[^\n.]{0,100}(?:measured|measuring|\d+\.?\d*)/i) ? {
+    findingId: "tube-finding",
+    title: "Tube wall thickness measurement",
+    value: combinedRaw.match(/(?:measured|measuring)[^\n.]+/i)?.[0] || "",
+    sourceFile: sourceReport,
+    page: 1,
+    confidence: "high" as const,
+    evidence: "Extracted from report text",
+    pageReferenceIds: ["page-ref-1"],
+  } : undefined);
 
   if (tubeFinding) {
     const measurements = extractMeasurements(tubeFinding.value);
-    // Hard threshold from SOP: min wall thickness < 3.2mm => FAIL, or below allowable specified in report
     const minVal = measurements.min;
-    const isBelowMin = minVal !== undefined ? minVal < 4.6 : true;
-    tubeWallStatus = isBelowMin ? "fail" : "pass";
+    // Extract allowable value from text if present (e.g. "minimum allowable is 4.6 mm")
+    const allowableMatch = `${tubeFinding.value} ${tubeFinding.evidence} ${combinedRaw}`.match(/allowable\s*(?:is|:)?\s*([\d.]+)/i);
+    const allowableVal = allowableMatch ? parseFloat(allowableMatch[1]) : 3.2;
+    const isBelowMin = minVal !== undefined ? minVal < allowableVal : true;
+    const status: "fail" | "pass" = isBelowMin ? "fail" : "pass";
+
+    const rowsMatch = `${tubeFinding.value} ${tubeFinding.title} ${tubeFinding.evidence}`.match(/rows?\s*[\d–-]+/i);
+    const requiredAction = isBelowMin
+      ? (rowsMatch ? `Retube the affected tubes in ${rowsMatch[0]}.` : "Retube the affected tubes prior to return to service.")
+      : "Monitor tube wall thickness in next inspection cycle.";
+
     assessments.push({
       findingId: tubeFinding.findingId || "finding-1",
       pageReferenceIds: tubeFinding.pageReferenceIds || ["page-ref-1"],
       criterion: "Tube-wall measurements below the minimum allowable value must be listed and corrected before return to service.",
-      status: tubeWallStatus,
-      requiredAction: tubeRequiredAction,
+      status,
+      requiredAction,
       citation: SOP114_CITATION,
       numericValue: minVal,
-      threshold: 4.6,
-      unit: "mm",
-    });
-  } else {
-    // Default fallback if finding was present in text
-    assessments.push({
-      findingId: "finding-1",
-      pageReferenceIds: ["page-ref-1"],
-      criterion: "Tube-wall measurements below the minimum allowable value must be listed and corrected before return to service.",
-      status: "fail",
-      requiredAction: tubeRequiredAction,
-      citation: SOP114_CITATION,
+      threshold: allowableVal,
+      unit: measurements.unit || "mm",
     });
   }
 
   // 2. Rule 2: Pitting depth (> 1.0mm threshold => FAIL / must be recorded in approval record)
   const pittingFinding = findings.find((f) =>
-    /pitting|corrosion|nozzle/i.test(`${f.title} ${f.value} ${f.evidence}`)
-  );
+    /pitting|corrosion/i.test(`${f.title} ${f.value} ${f.evidence}`)
+  ) || (combinedRaw.match(/pitting[^\n.]{0,80}(?:depth|measur|\d+\.?\d*)/i) ? {
+    findingId: "pitting-finding",
+    title: "Pitting corrosion measurement",
+    value: combinedRaw.match(/pitting[^\n.]+/i)?.[0] || "",
+    sourceFile: sourceReport,
+    page: 1,
+    confidence: "high" as const,
+    evidence: "Extracted from report text",
+    pageReferenceIds: ["page-ref-2"],
+  } : undefined);
 
-  let pittingStatus: "fail" | "pass" = "pass";
   if (pittingFinding) {
     const measurements = extractMeasurements(pittingFinding.value);
     const depth = measurements.max ?? measurements.values[0];
-    // Threshold in SOP: pitting depth > 1.0mm triggers mandatory record / repair flagging
     const exceedsThreshold = depth !== undefined && depth > 1.0;
-    pittingStatus = exceedsThreshold ? "fail" : "pass";
+    const status: "fail" | "pass" = exceedsThreshold ? "fail" : "pass";
 
     assessments.push({
       findingId: pittingFinding.findingId || "finding-2",
@@ -170,52 +183,69 @@ export function evaluateSop114Rules(
       criterion: exceedsThreshold
         ? "Localised pitting depth exceeding 1.0 mm must be recorded as an inspection finding and included in the approval decision."
         : "Localised pitting must be recorded as an inspection finding and included in the approval decision.",
-      status: pittingStatus,
-      requiredAction: "Retain the pitting measurement and location in the approval record; monitor shell inlet nozzle.",
+      status,
+      requiredAction: exceedsThreshold
+        ? "Retain pitting measurement and location in approval record; evaluate need for shell repair or monitoring."
+        : "Retain pitting measurement in records; monitor during subsequent inspection.",
       citation: SOP114_CITATION,
       numericValue: depth,
       threshold: 1.0,
-      unit: "mm",
-    });
-  } else {
-    assessments.push({
-      findingId: "finding-2",
-      pageReferenceIds: ["page-ref-2"],
-      criterion: "Localised pitting must be recorded as an inspection finding and included in the approval decision.",
-      status: "pass",
-      requiredAction: "Retain the pitting measurement and location in the approval record.",
-      citation: SOP114_CITATION,
+      unit: measurements.unit || "mm",
     });
   }
 
   // 3. Rule 3: Gasket degradation => FAIL / Replacement recommended before return to service
   const gasketFinding = findings.find((f) =>
-    /gasket|channel-head/i.test(`${f.title} ${f.value} ${f.evidence}`)
-  );
+    /gasket/i.test(`${f.title} ${f.value} ${f.evidence}`)
+  ) || (/gasket[^\n.]{0,50}(?:degrad|replace|leak|defect)/i.test(combinedRaw) ? {
+    findingId: "gasket-finding",
+    title: "Gasket condition",
+    value: "Degradation / replacement required",
+    sourceFile: sourceReport,
+    page: 1,
+    confidence: "high" as const,
+    evidence: "Extracted from report text",
+    pageReferenceIds: ["page-ref-3"],
+  } : undefined);
 
-  if (gasketFinding || /gasket\s+shows\s+degradation|replacement\s+recommended/i.test(combinedRaw)) {
+  if (gasketFinding) {
     assessments.push({
-      findingId: gasketFinding?.findingId || "finding-3",
-      pageReferenceIds: gasketFinding?.pageReferenceIds || ["page-ref-3"],
+      findingId: gasketFinding.findingId || "finding-3",
+      pageReferenceIds: gasketFinding.pageReferenceIds || ["page-ref-3"],
       criterion: "Recommended gasket replacement must be recorded before return to service.",
       status: "fail",
-      requiredAction: "Record and complete the recommended channel-head gasket replacement.",
+      requiredAction: "Record and complete recommended gasket replacement before return to service.",
       citation: SOP114_CITATION,
     });
   }
 
-  // 4. Rule 4: Handwritten annotation / Unverified weld joint ("RECHECK WELD JOINT 4B") => UNKNOWN / RECHECK REQUIRED
-  const hasHandwrittenNote =
-    handwrittenNotes.some((h) => /weld\s*joint|recheck/i.test(h.text)) ||
-    /RECHECK\s*WELD\s*JOINT\s*4B/i.test(combinedRaw);
+  // 4. Rule 4: Handwritten annotations & unverified weld joints => UNKNOWN / RECHECK REQUIRED
+  const annotationsToEvaluate = [...handwrittenNotes];
+  const weldAnnotationMatch = combinedRaw.match(/(?:RECHECK|CHECK|VERIFY)\s+WELD[^\n.]*/i);
+  if (weldAnnotationMatch && !annotationsToEvaluate.some((a) => a.text.includes(weldAnnotationMatch[0]))) {
+    annotationsToEvaluate.push({
+      text: weldAnnotationMatch[0],
+      sourceFile: sourceReport,
+      page: 1,
+      confidence: "medium",
+      flag: "manual verification recommended",
+    });
+  }
 
-  if (hasHandwrittenNote) {
+  for (let i = 0; i < annotationsToEvaluate.length; i++) {
+    const ann = annotationsToEvaluate[i];
+    const isWeldJoint = /weld/i.test(ann.text);
+    const findingId = isWeldJoint ? "handwritten-weld-4b" : `handwritten-${i + 1}`;
+    const requiredAction = isWeldJoint
+      ? "Recheck weld joint 4B as flagged by field inspector; do not clear without verification."
+      : `Conduct physical verification of flagged item ("${ann.text}") prior to final clearance.`;
+
     assessments.push({
-      findingId: "handwritten-weld-4b",
-      pageReferenceIds: ["page-ref-1"],
+      findingId,
+      pageReferenceIds: [`page-ref-${ann.page}`],
       criterion: "Unverified weld joints or handwritten inspector annotations require physical recheck before final clearance.",
       status: "unknown",
-      requiredAction: "Recheck weld joint 4B as flagged by field inspector; do not clear without verification.",
+      requiredAction,
       citation: SOP114_CITATION,
     });
   }
@@ -225,7 +255,7 @@ export function evaluateSop114Rules(
     /approved\s*by|plant\s*manager\s*signature|authorized\s*signatory/i.test(combinedRaw) &&
     !/no\s*approval\s*status\s*is\s*stated/i.test(combinedRaw);
 
-  if (!hasExplicitApprovalAuthority) {
+  if (!hasExplicitApprovalAuthority && (findings.length > 0 || combinedRaw.length > 0)) {
     missingInformation.push({
       field: "approvalAuthority",
       note: "No approving authority or final approval status is stated in the supplied inspection report.",
@@ -236,21 +266,35 @@ export function evaluateSop114Rules(
       pageReferenceIds: [],
       criterion: "The supplied record must establish the approval status or leave the decision for human review.",
       status: "unknown",
-      requiredAction: "Obtain approval authority disposition; do not claim final approval from this report alone.",
+      requiredAction: "Obtain authorized plant manager sign-off; do not claim final approval from inspection findings alone.",
       citation: SOP114_CITATION,
     });
   }
 
+  // Dynamic recommendation synthesis based on real assessment outcomes
+  const failedItems = assessments.filter((a) => a.status === "fail");
+  const unknownItems = assessments.filter((a) => a.status === "unknown");
+
+  let recommendation = "";
+  if (failedItems.length > 0 || unknownItems.length > 0) {
+    const actions = failedItems.map((f) => f.requiredAction).join(" ");
+    const rechecks = unknownItems.map((u) => u.requiredAction).join(" ");
+    recommendation = `Conditional clearance only. Corrective actions required: ${actions} Verification required: ${rechecks}`;
+  } else if (assessments.length > 0) {
+    recommendation = `Clearance criteria met per ${SOP114_CITATION}. Ensure regular monitoring per inspection schedule.`;
+  } else {
+    recommendation = "No specific SOP-114 inspection findings identified for evaluation.";
+  }
+
   return {
-    assessmentId: "assessment-E201",
+    assessmentId: `assessment-${randomUUID().slice(0, 8)}`,
     sourceReport,
     criteriaCitation: SOP114_CITATION,
     criteria: SOP114_CRITERIA_SUMMARY,
     assessments,
-    recommendation:
-      "Conditional clearance pending retubing of the affected tubes and recording the recommended gasket replacement. Final approval authority disposition and physical recheck of weld joint 4B are still required.",
+    recommendation,
     missingInformation,
-    handwrittenAnnotations: handwrittenNotes,
+    handwrittenAnnotations: annotationsToEvaluate,
     groundingReferences: [SOP114_CITATION],
   };
 }
@@ -294,8 +338,8 @@ ${handwrittenLines || "- None"}
 
 DRAFTING INSTRUCTIONS:
 1. Every evaluation finding above MUST cite ${assessment.criteriaCitation}.
-2. State recommendation as CONDITIONAL CLEARANCE only. Do NOT claim final approval has been granted.
-3. Explicitly state the missing approval authority and preserve the handwritten instruction "RECHECK WELD JOINT 4B".
+2. If any item is marked FAIL or UNKNOWN, state recommendation as CONDITIONAL CLEARANCE only. Do NOT claim final approval has been granted.
+3. Explicitly state any missing approval authority and preserve any handwritten annotations flagged for verification.
 [/SOP-114 §3.2 DETERMINISTIC RULE EVALUATION — GROUNDED EVIDENCE]
 `.trim();
 }

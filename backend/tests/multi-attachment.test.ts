@@ -278,7 +278,7 @@ describe("Multi-Attachment Support & Persistence", () => {
 
   it("executes Flow B script repair with python + csv attachments and artifact generation", async () => {
     const chatId = createChat("Flow B chat");
-    const pyCode = Buffer.from("def summarize(path):\n    pass\n");
+    const pyCode = Buffer.from("import sys\nsys.exit(1)\n");
     const csvData = Buffer.from("timestamp,temperature_c\n2026-08-20T00:00:00,320.0\n");
 
     const att1 = manager.registerAttachment({
