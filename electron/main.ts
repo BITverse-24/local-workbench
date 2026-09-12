@@ -104,9 +104,17 @@ function createWindow(): void {
     height: 720,
     minWidth: 1200,
     minHeight: 720,
+    show: false,
+    backgroundColor: "#181818",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
     },
+  });
+
+  win.once("ready-to-show", () => {
+    if (win && !win.isDestroyed()) {
+      win.show();
+    }
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
