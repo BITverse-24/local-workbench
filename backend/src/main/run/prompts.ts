@@ -79,7 +79,11 @@ Code restrictions:
 - safely handle initial values, types, and comparisons: never compare variables
   against None with relational operators (<, >, <=, >=); check if None first
   (e.g. \`if max_val is None or val > max_val:\`) or collect values in lists and
-  use min()/max(); handle missing or empty fields safely.
+  use min()/max(); handle missing or empty fields safely;
+- write strictly standard, valid Python: never write unparenthesized multiline 'with'
+  statements ending with a comma (e.g. 'with open(...) as a,\n open(...) as b:');
+  use nested with blocks (with open(...) as a:\n with open(...) as b:) or write
+  context managers on a single line (with open(...) as a, open(...) as b:).
 
 The backend and sandbox validate imports, paths, output files, timeout,
 network isolation, exit code, and actual execution results. The model must

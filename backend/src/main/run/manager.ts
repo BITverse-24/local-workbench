@@ -57,6 +57,7 @@ import { routeTask } from "../router/deterministic-router.js";
 import { classifyIntent, type IntentDecision } from "../router/intent-classifier.js";
 import { executePython } from "../tools/python.js";
 import { generateDocx, generateXlsx } from "../tools/artifacts.js";
+import { sanitizePythonSource } from "../validators/responses.js";
 import {
   logArtifactReady,
   logHarnessToolCall,
@@ -340,7 +341,6 @@ export class RunManager {
         await continuation();
       } catch (error) {
         this.fail(input.runId, error);
-        throw error;
       }
     })();
     this.confirming.set(input.actionId, operation);
@@ -2248,17 +2248,18 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
     if (isScriptRepairRequest) {
       initialCodeDraft = {
         filename: "task.py",
-        source: pyCode,
+        source: sanitizePythonSource(pyCode),
         expectedResult: "Evaluate and repair the uploaded script",
         inputFiles: [attachment.filename],
         outputFiles: [],
         allowedImports: ["csv", "sys"],
         outputMode: "artifact"
       };
-      writeRunFile(runId, "intermediate", "task.py", pyCode);
+      writeRunFile(runId, "intermediate", "task.py", initialCodeDraft.source);
     } else {
       const code = await this.codeModel.generate(request);
       if (!code.ok) throw new Error(code.error.message);
+      code.value.source = sanitizePythonSource(code.value.source);
       writeRunFile(runId, "intermediate", "task.py", code.value.source);
       initialCodeDraft = code.value;
     }
@@ -2310,7 +2311,7 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
         const errorDetail = execution.stderr || execution.stdout || (missingOutputs.length ? `missing output files: ${missingOutputs.join(", ")}` : "execution failed");
         logScriptRepair(repairs, MAX_REPAIRS, errorDetail);
         this.tool(runId, "draft_code", `repairing Python script (attempt ${repairs}): ${errorDetail.slice(0, 100)}`);
-        const repairPrompt = `${modelPrompt}\n\n[PREVIOUS SCRIPT ATTEMPT FAILED]\nThe previous script failed during execution with exit code ${execution.exitCode}:\n${errorDetail.slice(0, 1500)}\n\nPrevious source:\n\`\`\`python\n${currentCode.source}\n\`\`\`\n\nPlease fix the error in task.py:\n- Avoid command-line arguments (sys.argv); read "${attachment.filename}" directly if an input file is needed.\n- Safely handle empty, blank, or missing cells without crashing.\n- Check inclusive comparison boundaries (e.g. >= limit).\n- If data rows are processed, write the verified rows to a CSV file (e.g. "repaired-vendor-log.csv"), declare it in outputFiles, and set outputMode to "artifact" or "chat_and_artifact".\nReturn the corrected JSON object.\n[/PREVIOUS SCRIPT ATTEMPT FAILED]`;
+        const repairPrompt = `${modelPrompt}\n\n[PREVIOUS SCRIPT ATTEMPT FAILED]\nThe previous script failed during execution with exit code ${execution.exitCode}:\n${errorDetail.slice(0, 1500)}\n\nPrevious source:\n\`\`\`python\n${currentCode.source}\n\`\`\`\n\nPlease fix the error in task.py:\n- Avoid command-line arguments (sys.argv); read "${attachment.filename}" directly if an input file is needed.\n- Safely handle empty, blank, or missing cells without crashing.\n- Check inclusive comparison boundaries (e.g. >= limit).\n- If data rows are processed, write the verified rows to a CSV file (e.g. "repaired-vendor-log.csv"), declare it in outputFiles, and set outputMode to "artifact" or "chat_and_artifact".\n- Output strictly valid Python syntax: never write unparenthesized multiline 'with' statements ending with a comma; use nested 'with' blocks or single-line 'with'.\nReturn the corrected JSON object.\n[/PREVIOUS SCRIPT ATTEMPT FAILED]`;
         const repairBase = requestBase(runId, "code", "code-qwen25coder", "code-result", CODE_SYSTEM_PROMPT, repairPrompt, 60000, 4096, temperature);
         const repairRequest: CodeModelRequest = {
           ...repairBase,
@@ -2332,6 +2333,7 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
         if (!repaired.ok) break;
 
         currentCode = repaired.value;
+        currentCode.source = sanitizePythonSource(currentCode.source);
         writeRunFile(runId, "intermediate", "task.py", currentCode.source, true);
         this.result(runId, "draft_code", `script repaired (attempt ${repairs})`);
 
@@ -2363,9 +2365,24 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
       const finalMissingOutputs = currentCode.outputFiles.filter((file) => !execution.outputFiles.includes(file));
       if (execution.exitCode !== 0 || execution.timedOut) {
         const detail = execution.stderr || execution.stdout || "no execution output";
-        throw new Error(`Python execution failed (exit code ${execution.exitCode}): ${detail.slice(0, 500)}`);
+        this.persistAssistant(
+          runId,
+          `### Script Execution & Repair Analysis\n\nThe script failed during sandbox execution with exit code ${execution.exitCode}.\n\n**Traceback / Output:**\n\`\`\`text\n${detail.slice(0, 2000)}\n\`\`\`\n\nAutomated self-repair attempts exhausted without reaching a clean exit code. Please review the script traceback above.`,
+          "code-qwen25coder",
+        );
+        this.tool(runId, "execute_python", `execution failed (exit code ${execution.exitCode})`);
+        this.state(runId, "failed");
+        return;
       }
-      if (finalMissingOutputs.length) throw new Error(`Python execution completed but did not create declared output file(s): ${finalMissingOutputs.join(", ")}`);
+      if (finalMissingOutputs.length) {
+        this.persistAssistant(
+          runId,
+          `### Script Execution Analysis\n\nPython execution completed but did not create declared output file(s): ${finalMissingOutputs.join(", ")}.`,
+          "code-qwen25coder",
+        );
+        this.state(runId, "failed");
+        return;
+      }
       this.result(runId, "execute_python", `verified Python execution (exit code ${execution.exitCode})`);
       const executionData = JSON.stringify({
         exitCode: execution.exitCode,

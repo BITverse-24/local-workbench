@@ -37,12 +37,49 @@ export function validationMessage(label: string, error: { message: string; path:
 }
 export function validateVision(value: unknown): { ok: true; value: VisionResult } | { ok: false; error: ReturnType<typeof failure> } { const parsed = visionResultSchema.safeParse(value); return parsed.success ? { ok: true, value: parsed.data as VisionResult } : { ok: false, error: failure(parsed.error) }; }
 const SAFE_IMPORTS = new Set(["csv", "datetime", "math"]);
+
+export function sanitizePythonSource(source: string): string {
+  if (!source) return source;
+  const lines = source.split(/\r?\n/);
+  const result: string[] = [];
+  let inWith = false;
+  let parenDepth = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    const trimmed = line.trim();
+
+    if (/^\s*with\b/.test(line)) {
+      inWith = true;
+    }
+
+    for (const ch of line) {
+      if (ch === "(" || ch === "[" || ch === "{") parenDepth++;
+      else if (ch === ")" || ch === "]" || ch === "}") parenDepth = Math.max(0, parenDepth - 1);
+    }
+
+    if (inWith && parenDepth === 0) {
+      // If line ends with a comma without an unclosed parenthesis or trailing backslash, add backslash
+      if (/,\s*$/.test(line) && !/\\\s*$/.test(line)) {
+        line = line.replace(/\s*$/, " \\");
+      }
+      if (trimmed.endsWith(":")) {
+        inWith = false;
+      }
+    }
+
+    result.push(line);
+  }
+  return result.join("\n");
+}
+
 function unsafePython(source: string): boolean { return /(subprocess|socket|requests|urllib|httpx|os\.system|eval\s*\(|exec\s*\(|__import__|https?:\/\/|\b(import|from)\s+(os|sys|pathlib|shutil|ctypes)\b)/i.test(source) || /open\s*\([^)]*(\/|\\\\|\.\.)/i.test(source); }
 function unsafeName(name: string): boolean { return !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name.includes(".."); }
 export function validateCode(value: unknown): { ok: true; value: CodeDraftResult } | { ok: false; error: ReturnType<typeof failure> } {
   const parsed = codeResultSchema.safeParse(value);
   if (!parsed.success) return { ok: false, error: failure(parsed.error) };
   const result = parsed.data;
+  result.source = sanitizePythonSource(result.source);
   const declaredFiles = [...result.inputFiles, ...result.outputFiles];
   const importPattern = /^\s*(?:from|import)\s+([A-Za-z_][A-Za-z0-9_.]*)/gm;
   const imports = [...result.source.matchAll(importPattern)].map((match) => match[1].split(".")[0]);

@@ -79,6 +79,7 @@ export async function executePython(runId: string, source: string, inputFiles: s
       "--bind", staged.outputDir, "/output",
       ...staged.stagedInputs.flatMap((file) => ["--ro-bind", path.join(staged.outputDir, file), path.join("/output", file)]),
       "--chdir", "/output", "--", PYTHON, "/intermediate/task.py",
+      ...staged.stagedInputs,
     ];
   } else if (process.platform === "darwin") {
     // macOS sandbox-exec is deprecated and may be blocked by the host's
@@ -88,11 +89,11 @@ export async function executePython(runId: string, source: string, inputFiles: s
     // output directory and gives Python no network-capable imports.
     if (existsSync("/usr/bin/sandbox-exec") && process.env.WORKBENCH_USE_MAC_SANDBOX === "1") {
       command = "/usr/bin/sandbox-exec";
-      args = ["-p", macSandboxProfile(staged.inputDir, staged.intermediateDir, staged.outputDir, staged.stagedInputs), PYTHON, script];
+      args = ["-p", macSandboxProfile(staged.inputDir, staged.intermediateDir, staged.outputDir, staged.stagedInputs), PYTHON, script, ...staged.stagedInputs];
     } else {
       console.warn("[python-runner] macOS sandbox-exec unavailable or disabled; using validated development runner");
       command = PYTHON;
-      args = [script];
+      args = [script, ...staged.stagedInputs];
     }
   } else {
     throw new Error(`No supported Python sandbox is available on ${process.platform}`);
