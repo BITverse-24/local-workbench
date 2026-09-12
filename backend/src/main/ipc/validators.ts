@@ -32,6 +32,7 @@ export const sendMessageSchema = z.object({
   chatId: chatIdSchema,
   role: z.enum(["user", "assistant"]),
   content: z.string().min(1).max(MAX_CONTENT_CHARS),
+  attachmentIds: z.array(z.string()).optional(),
 });
 
 export const editMessageSchema = z.object({

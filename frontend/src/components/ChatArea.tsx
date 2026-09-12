@@ -1,16 +1,24 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import ArtifactCard from './ArtifactCard';
+
+export type ChatFile = {
+  name: string;
+  size?: number;
+};
 
 export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   text: string;
-  files?: File[];
+  files?: Array<File | ChatFile>;
+  artifacts?: ArtifactRef[];
 };
 
 type Props = {
   messages?: ChatMessage[];
   onEditMessage?: (id: string, newText: string) => void;
   onAttachFiles?: (files: File[]) => { added: number; rejected: File[] };
+  onSaveArtifact?: (artifact: ArtifactRef) => void;
 };
 
 function formatSize(bytes: number): string {
@@ -234,7 +242,7 @@ function BasicMarkdown({ text }: { text: string }) {
   );
 }
 
-export default function ChatArea({ messages = [], onEditMessage, onAttachFiles }: Props) {
+export default function ChatArea({ messages = [], onEditMessage, onAttachFiles, onSaveArtifact }: Props) {
   const hasMessages = messages.length > 0;
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -447,18 +455,33 @@ export default function ChatArea({ messages = [], onEditMessage, onAttachFiles }
                       {isUser ? (
                         msg.text && <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>
                       ) : (
-                        msg.text && <BasicMarkdown text={msg.text} />
+                        <>
+                          {msg.text && <BasicMarkdown text={msg.text} />}
+                          {msg.artifacts && msg.artifacts.length > 0 && (
+                            <div className="w-full space-y-2.5 mt-2">
+                              {msg.artifacts.map((art) => (
+                                <ArtifactCard
+                                  key={art.artifactId}
+                                  artifact={art}
+                                  onSave={onSaveArtifact}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </>
                       )}
                       {msg.files && msg.files.length > 0 && (
-                        <div className={`flex flex-wrap gap-2 ${msg.text ? 'mt-3' : ''}`}>
+                        <div className={`flex flex-wrap gap-2 ${msg.text ? 'mt-2.5' : ''}`}>
                           {msg.files.map((f, i) => (
                             <span
                               key={`${f.name}-${i}`}
-                              className="inline-flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full neu-pressed text-xs max-w-[200px]"
+                              className="inline-flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full neu-pressed text-xs max-w-[240px] border border-white/10"
                             >
-                              <span className="w-6 h-6 rounded-full bg-white/10 grid place-items-center text-[8px] font-bold shrink-0">{fileLabel(f.name).slice(0, 3)}</span>
-                              <span className="truncate font-medium">{f.name}</span>
-                              <span className="opacity-50 shrink-0">{formatSize(f.size)}</span>
+                              <span className="w-6 h-6 rounded-full bg-white/15 grid place-items-center text-[8px] font-bold shrink-0">{fileLabel(f.name).slice(0, 3)}</span>
+                              <span className="truncate font-medium text-white/90">{f.name}</span>
+                              {typeof f.size === "number" && f.size > 0 ? (
+                                <span className="opacity-50 shrink-0 text-[10px]">{formatSize(f.size)}</span>
+                              ) : null}
                             </span>
                           ))}
                         </div>

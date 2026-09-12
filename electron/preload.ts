@@ -20,8 +20,8 @@ contextBridge.exposeInMainWorld("workbench", {
     ipcRenderer.invoke("workbench:archiveChat", { chatId }),
   getMessages: (chatId: string) =>
     ipcRenderer.invoke("workbench:getMessages", { chatId }),
-  sendMessage: (chatId: string, role: "user" | "assistant", content: string) =>
-    ipcRenderer.invoke("workbench:sendMessage", { chatId, role, content }),
+  sendMessage: (chatId: string, role: "user" | "assistant", content: string, attachmentIds?: string[]) =>
+    ipcRenderer.invoke("workbench:sendMessage", { chatId, role, content, attachmentIds }),
   editMessage: (messageId: string, content: string) =>
     ipcRenderer.invoke("workbench:editMessage", { messageId, content }),
   renameChat: (chatId: string, title: string) =>
@@ -53,6 +53,8 @@ contextBridge.exposeInMainWorld("workbench", {
     ipcRenderer.invoke("workbench:openArtifact", input),
   saveArtifact: (input: { runId: string; artifactId: string }) =>
     ipcRenderer.invoke("workbench:saveArtifact", input),
+  copyArtifact: (input: { runId: string; artifactId: string }) =>
+    ipcRenderer.invoke("workbench:copyArtifact", input),
   getHealth: () =>
     ipcRenderer.invoke("workbench:getHealth"),
   getRunLogs: (input: { runId: string; limit?: number }) =>

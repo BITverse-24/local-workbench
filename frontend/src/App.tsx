@@ -12,7 +12,6 @@ import UploadModal from "./components/modals/UploadModal";
 import CameraModal from "./components/modals/CameraModal";
 import VoiceModal from "./components/modals/VoiceModal";
 import ConfirmationModal from "./components/ConfirmationModal";
-import ArtifactPane from "./components/ArtifactPane";
 import RouteBadge from "./components/RouteBadge";
 import { MODELS } from "./lib/models";
 import * as wb from "./lib/workbench";
@@ -27,7 +26,13 @@ function toChatMessages(rows: PersistedMessage[]): ChatMessage[] {
   const out: ChatMessage[] = [];
   for (const r of rows) {
     if (r.role === "user" || r.role === "assistant") {
-      out.push({ id: r.id, role: r.role, text: r.content });
+      out.push({
+        id: r.id,
+        role: r.role,
+        text: r.content,
+        artifacts: r.artifacts,
+        files: r.attachments?.map((a) => ({ name: a.filename, size: a.sizeBytes })),
+      });
     }
   }
   return out;
@@ -56,7 +61,7 @@ export default function App() {
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingAction | null>(null);
   const [confirmationBusy, setConfirmationBusy] = useState(false);
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
-  const [runArtifacts, setRunArtifacts] = useState<ArtifactRef[]>([]);
+  const [, setRunArtifacts] = useState<ArtifactRef[]>([]);
   const [runError, setRunError] = useState<{ code: string; message: string } | null>(null);
   const [serviceHealth, setServiceHealth] = useState<ModelHealth[] | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
@@ -166,9 +171,37 @@ export default function App() {
             break;
           case "artifact_ready":
             setRunArtifacts((prev) => [...prev, event.artifact]);
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === "assistant") {
+                const existing = last.artifacts ?? [];
+                if (!existing.some((a) => a.artifactId === event.artifact.artifactId)) {
+                  return [...prev.slice(0, -1), { ...last, artifacts: [...existing, event.artifact] }];
+                }
+                return prev;
+              }
+              return [
+                ...prev,
+                {
+                  id: `artifact-msg-${event.artifact.artifactId}`,
+                  role: "assistant",
+                  text: "",
+                  artifacts: [event.artifact],
+                },
+              ];
+            });
             break;
           case "assistant_message":
-            setMessages((prev) => [...prev, { id: event.messageId, role: "assistant", text: event.text }]);
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === "assistant" && (!last.text || last.id.startsWith("artifact-msg-"))) {
+                return [
+                  ...prev.slice(0, -1),
+                  { ...last, id: event.messageId, text: event.text },
+                ];
+              }
+              return [...prev, { id: event.messageId, role: "assistant", text: event.text }];
+            });
             break;
           case "grounding_context":
             setGroundingStatus({ status: event.status, chunkCount: event.chunkCount });
@@ -448,14 +481,6 @@ export default function App() {
     }
   }, [activeRunId]);
 
-  const handleOpenArtifact = useCallback(async (artifact: ArtifactRef) => {
-    try {
-      await wb.openArtifact({ runId: artifact.runId, artifactId: artifact.artifactId });
-    } catch (e) {
-      setRunError({ code: "open_failed", message: e instanceof Error ? e.message : String(e) });
-    }
-  }, []);
-
   const handleSaveArtifact = useCallback(async (artifact: ArtifactRef) => {
     try {
       await wb.saveArtifact({ runId: artifact.runId, artifactId: artifact.artifactId });
@@ -482,20 +507,6 @@ export default function App() {
       const cid = await ensureChatId(text);
       if (cid) {
         try {
-          // Persist user message first (visible immediately)
-          const { messageId } = await wb.sendMessage(cid, "user", text);
-          setMessages((prev) => [...prev, { id: messageId, role: "user", text, files: currentFiles.length > 0 ? currentFiles : undefined }]);
-          setHistory((prev) => prev.map((c) => (c.id === cid ? { ...c, updated_at: new Date().toISOString() } : c)));
-
-          // Reset run UI
-          setRunEvents([]);
-          setRunArtifacts([]);
-          setRunError(null);
-          setActiveRoute(null);
-          setPendingConfirmation(null);
-          setGroundingStatus(null);
-          setRunState("created");
-
           const attachmentTokens: string[] = [];
           let runIdForAttachment: string | undefined;
           if (currentFiles.length > 0) {
@@ -509,6 +520,33 @@ export default function App() {
           } else {
             setAttachedFiles([]);
           }
+
+          // Persist user message linked with attachment IDs (visible immediately)
+          const { messageId } = await wb.sendMessage(
+            cid,
+            "user",
+            text,
+            attachmentTokens.length > 0 ? attachmentTokens : undefined,
+          );
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: messageId,
+              role: "user",
+              text,
+              files: currentFiles.length > 0 ? currentFiles.map((f) => ({ name: f.name, size: f.size })) : undefined,
+            },
+          ]);
+          setHistory((prev) => prev.map((c) => (c.id === cid ? { ...c, updated_at: new Date().toISOString() } : c)));
+
+          // Reset run UI
+          setRunEvents([]);
+          setRunArtifacts([]);
+          setRunError(null);
+          setActiveRoute(null);
+          setPendingConfirmation(null);
+          setGroundingStatus(null);
+          setRunState("created");
 
           const clientRunId = runIdForAttachment ?? crypto.randomUUID();
           activeRunRef.current = clientRunId;
@@ -530,13 +568,7 @@ export default function App() {
           try {
             const latest = await wb.getMessages(cid);
             if (latest && latest.length > 0) {
-              setMessages(
-                latest.map((m) => ({
-                  id: m.id,
-                  role: m.role as "user" | "assistant",
-                  text: m.content,
-                })),
-              );
+              setMessages(toChatMessages(latest));
             }
           } catch {}
 
@@ -666,8 +698,12 @@ export default function App() {
               <button onClick={handleCancelRun} className="ml-auto px-3 py-1 rounded-full neu-button text-xs">Cancel</button>
             </div>
           )}
-          <ChatArea messages={messages} onEditMessage={handleEditMessage} onAttachFiles={addFiles} />
-          {runArtifacts.length > 0 && <ArtifactPane artifacts={runArtifacts} onOpen={handleOpenArtifact} onSave={handleSaveArtifact} runId={activeRunId ?? undefined} />}
+          <ChatArea
+            messages={messages}
+            onEditMessage={handleEditMessage}
+            onAttachFiles={addFiles}
+            onSaveArtifact={handleSaveArtifact}
+          />
           <InputBar
             input={input}
             setInput={setInput}

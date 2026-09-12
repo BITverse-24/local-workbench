@@ -85,6 +85,7 @@ export function handleSendMessage(input: unknown): { messageId: string; seq: num
     chat_id: parsed.chatId,
     role: parsed.role,
     content: parsed.content,
+    attachment_ids: parsed.attachmentIds,
   });
   return { messageId: id, seq };
 }

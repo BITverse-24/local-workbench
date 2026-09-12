@@ -37,8 +37,9 @@ export async function sendMessage(
   chatId: string,
   role: "user" | "assistant",
   content: string,
+  attachmentIds?: string[],
 ): Promise<{ messageId: string; seq: number }> {
-  return bridge().sendMessage(chatId, role, content);
+  return bridge().sendMessage(chatId, role, content, attachmentIds);
 }
 
 export async function editPersistedMessage(messageId: string, content: string): Promise<void> {
@@ -208,6 +209,10 @@ export async function openArtifact(input: { runId: string; artifactId: string })
 
 export async function saveArtifact(input: { runId: string; artifactId: string }): Promise<{ saved: boolean; filename?: string }> {
   return bridge().saveArtifact(input);
+}
+
+export async function copyArtifact(input: { runId: string; artifactId: string }): Promise<{ copied: boolean; mode: "text" | "file"; filename: string }> {
+  return bridge().copyArtifact(input);
 }
 
 export async function getHealth(): Promise<ModelHealth[]> {

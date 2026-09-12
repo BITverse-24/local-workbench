@@ -18,6 +18,8 @@ interface PersistedMessage {
   created_at: string;
   edited_at: string | null;
   seq: number;
+  artifacts?: ArtifactRef[];
+  attachments?: AttachmentReference[];
 }
 
 type RunState =
@@ -46,6 +48,8 @@ interface ArtifactRef {
   relativePath: string;
   sizeBytes: number;
   createdAt: string;
+  content?: string;
+  isBinary?: boolean;
 }
 
 interface PendingAction {
@@ -162,7 +166,7 @@ interface WorkbenchBridge {
   getChatHistory: (input?: { limit?: number }) => Promise<{ chats: ChatSummary[] }>;
   archiveChat: (chatId: string) => Promise<void>;
   getMessages: (chatId: string) => Promise<{ messages: PersistedMessage[] }>;
-  sendMessage: (chatId: string, role: "user" | "assistant", content: string) => Promise<{ messageId: string; seq: number }>;
+  sendMessage: (chatId: string, role: "user" | "assistant", content: string, attachmentIds?: string[]) => Promise<{ messageId: string; seq: number }>;
   editMessage: (messageId: string, content: string) => Promise<void>;
   renameChat: (chatId: string, title: string) => Promise<void>;
   getSetting: (key: string) => Promise<{ value: unknown }>;
@@ -181,6 +185,7 @@ interface WorkbenchBridge {
   getArtifact: (input: { runId: string; artifactId: string }) => Promise<ArtifactRef>;
   openArtifact: (input: { runId: string; artifactId: string }) => Promise<{ opened: true; filename: string }>;
   saveArtifact: (input: { runId: string; artifactId: string }) => Promise<{ saved: boolean; filename?: string }>;
+  copyArtifact: (input: { runId: string; artifactId: string }) => Promise<{ copied: boolean; mode: "text" | "file"; filename: string }>;
   getHealth: () => Promise<ModelHealth[]>;
   getRunLogs: (input: { runId: string; limit?: number }) => Promise<{ runId: string; entries: unknown[]; files: string[]; recentFull: unknown }>;
   getRunLogFile: (input: { runId: string; filename: string }) => Promise<{ runId: string; filename: string; content: unknown }>;

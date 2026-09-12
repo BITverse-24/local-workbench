@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -253,6 +253,35 @@ app.whenReady().then(async () => {
       if (chosen.canceled || !chosen.filePath) return { saved: false as const };
       copyFileSync(source, chosen.filePath);
       return { saved: true as const, filename: path.basename(chosen.filePath) };
+    });
+    ipcMain.handle("workbench:copyArtifact", async (_event, input) => {
+      const raw = input as { runId?: string; artifactId?: string };
+      if (!raw?.runId || !raw?.artifactId) throw new Error("runId and artifactId required");
+      if (!manager) throw new Error("backend not initialized");
+      const ref = manager.artifact(raw.runId, raw.artifactId) as { relativePath: string; filename: string };
+      const { absoluteDataPath } = await import("../backend/src/main/run/filesystem.js");
+      const abs = absoluteDataPath(ref.relativePath);
+      if (!existsSync(abs)) throw new Error("Artifact file not found");
+
+      const ext = path.extname(ref.filename).toLowerCase();
+      const textExtensions = [
+        ".txt", ".md", ".py", ".csv", ".json", ".js", ".ts", ".jsx",
+        ".tsx", ".html", ".css", ".yaml", ".yml", ".xml", ".sh", ".sql"
+      ];
+
+      if (textExtensions.includes(ext)) {
+        const text = readFileSync(abs, "utf8");
+        clipboard.writeText(text);
+        return { copied: true as const, kind: "text" as const, content: text, filename: ref.filename };
+      } else {
+        if (process.platform === "darwin") {
+          const plist = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><array><string>${abs}</string></array></plist>`;
+          clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(plist));
+        } else {
+          clipboard.writeText(abs);
+        }
+        return { copied: true as const, kind: "file" as const, filename: ref.filename };
+      }
     });
 
     // Workspace directory picker — desktop folder selection dialog.
