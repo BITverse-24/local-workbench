@@ -17,5 +17,5 @@ Negative fixtures are intentionally untrusted model output.
 
 The OCR fixtures are validated with `validateVisionResult`; the code
 fixtures with `validateCodeDraftResult` (both in `ai/validation.ts`).
-Flow A drafting fixtures were removed with the deferred approval-note flow;
-the old draft mocks now live under `docs/archive/rag-legacy/`.
+Active demonstration fixtures and test oracles live under `demo/flow_a/`,
+`demo/flow_b/`, and `demo/flow_c/`.

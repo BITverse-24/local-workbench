@@ -1,11 +1,10 @@
-# Approval-note drafting prompt (Flow A deferred)
+# Approval-note drafting prompt
 
-This prompt drafts an approval note from verified inspection findings and
-template requirements only. It returns a structured `DraftResult` with no
-external-source coupling: there are no source allowlists and no inline
-source markers. Flow A is strictly deferred, so this prompt has no active
-acceptance test. The pre-migration source-grounded variant is archived
-under `docs/archive/rag-legacy/` for history.
+This prompt drafts an approval note from verified inspection findings,
+dynamic SOP-114 criteria evaluation, and template requirements. It produces a
+formal, citation-backed draft ready for OpenXML binary Word (`.docx`) deliverable
+generation. Active demonstration fixtures and governing criteria live under
+`demo/flow_a/`.
 
 ## System prompt
 

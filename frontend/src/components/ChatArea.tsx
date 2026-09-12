@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import ArtifactCard from './ArtifactCard';
+import RunWaitingIndicator from './RunWaitingIndicator';
 
 export type ChatFile = {
   name: string;
@@ -19,6 +20,10 @@ type Props = {
   onEditMessage?: (id: string, newText: string) => void;
   onAttachFiles?: (files: File[]) => { added: number; rejected: File[] };
   onSaveArtifact?: (artifact: ArtifactRef) => void;
+  isRunning?: boolean;
+  runState?: RunState | null;
+  activeRoute?: { taskType: string; modelId: string; reason: string } | null;
+  runEvents?: RunEvent[];
 };
 
 function formatSize(bytes: number): string {
@@ -242,7 +247,16 @@ function BasicMarkdown({ text }: { text: string }) {
   );
 }
 
-export default function ChatArea({ messages = [], onEditMessage, onAttachFiles, onSaveArtifact }: Props) {
+export default function ChatArea({
+  messages = [],
+  onEditMessage,
+  onAttachFiles,
+  onSaveArtifact,
+  isRunning = false,
+  runState = null,
+  activeRoute = null,
+  runEvents = [],
+}: Props) {
   const hasMessages = messages.length > 0;
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -276,12 +290,12 @@ export default function ChatArea({ messages = [], onEditMessage, onAttachFiles, 
     setShowJump(!isNearBottom && hasMessages);
   }, [hasMessages]);
 
-  // Auto scroll on new messages if user is near bottom
+  // Auto scroll on new messages or running state changes if user is near bottom
   useEffect(() => {
     if (autoScroll) {
       scrollToBottom('smooth');
     }
-  }, [messages, autoScroll, scrollToBottom]);
+  }, [messages, isRunning, runEvents?.length, autoScroll, scrollToBottom]);
 
   // Initial scroll to bottom on mount
   useEffect(() => {
@@ -393,7 +407,7 @@ export default function ChatArea({ messages = [], onEditMessage, onAttachFiles, 
         onScroll={handleScroll}
         className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-2 transition-colors ${isDragOver ? 'bg-[#252525]/60' : ''}`}
       >
-        {!hasMessages ? (
+        {!hasMessages && !isRunning ? (
           <div className="flex flex-col items-center justify-center min-h-[60%] py-16 text-center animate-apple-fade">
             <p className="text-sm text-white/40">Welcome! Ready when you are.</p>
           </div>
@@ -526,6 +540,16 @@ export default function ChatArea({ messages = [], onEditMessage, onAttachFiles, 
             </div>
           );
         })}
+
+        {isRunning && (
+          <RunWaitingIndicator
+            isRunning={isRunning}
+            runState={runState ?? null}
+            activeRoute={activeRoute}
+            runEvents={runEvents}
+          />
+        )}
+
         <div ref={bottomRef} aria-hidden />
       </div>
 

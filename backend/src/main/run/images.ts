@@ -176,6 +176,50 @@ export function extractPdfText(pdfBuffer: Buffer): string {
   return filtered.join("\n").slice(0, 8000);
 }
 
+/**
+ * Generic SVG Vector Text and Label Extractor.
+ * Parses <text>, <tspan>, <title>, and <desc> XML nodes from SVG vector drawings,
+ * stripping internal tags, decoding XML entities, and preserving drawing identifiers.
+ */
+export function extractSvgText(svgBuffer: Buffer): string {
+  const raw = svgBuffer.toString("utf-8");
+  const lines: string[] = [];
+
+  const decodeXml = (s: string) =>
+    s
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&deg;/g, "°")
+      .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/\s+/g, " ")
+      .trim();
+
+  // Match all <text ...> ... </text> elements (including multiline and nested tspans)
+  const textTagMatches = raw.matchAll(/<text\b[^>]*>([\s\S]*?)<\/text>/gi);
+  for (const match of textTagMatches) {
+    const cleanText = decodeXml(match[1]);
+    if (cleanText && !lines.includes(cleanText)) {
+      lines.push(cleanText);
+    }
+  }
+
+  // Also check for <title> and <desc> tags if present
+  const metadataMatches = raw.matchAll(/<(?:title|desc)\b[^>]*>([\s\S]*?)<\/(?:title|desc)>/gi);
+  for (const match of metadataMatches) {
+    const cleanText = decodeXml(match[1]);
+    if (cleanText && !lines.includes(cleanText)) {
+      lines.push(cleanText);
+    }
+  }
+
+  return lines.join("\n").slice(0, 8000);
+}
+
 export async function createPlaceholderImagesFromText(text: string): Promise<PreparedImage[]> {
   // Agreed flow is PDF -> image(s) -> compress -> vision. When pdfjs/canvas not available,
   // create synthetic compressed JPEG(s) from extracted text. Keeps vision image_url path,

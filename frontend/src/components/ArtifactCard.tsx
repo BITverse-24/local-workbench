@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import * as wb from "../lib/workbench";
 
 export type ArtifactCardProps = {
@@ -112,16 +112,259 @@ function parseCsv(raw: string): { headers: string[]; rows: string[][] } {
   return { headers, rows };
 }
 
+function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  const pattern = /\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|`([^`]+?)`|\[(.+?)\]\((.+?)\)/g;
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
+  let idx = 0;
+  while ((m = pattern.exec(text)) !== null) {
+    if (m.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, m.index));
+    }
+    if (m[1]) {
+      nodes.push(<strong key={`${keyPrefix}-b-${idx++}`} className="font-semibold text-white">{m[1]}</strong>);
+    } else if (m[2]) {
+      nodes.push(<strong key={`${keyPrefix}-b2-${idx++}`} className="font-semibold text-white">{m[2]}</strong>);
+    } else if (m[3]) {
+      nodes.push(<em key={`${keyPrefix}-i-${idx++}`} className="italic text-white/90">{m[3]}</em>);
+    } else if (m[4]) {
+      nodes.push(<em key={`${keyPrefix}-i2-${idx++}`} className="italic text-white/90">{m[4]}</em>);
+    } else if (m[5]) {
+      nodes.push(<code key={`${keyPrefix}-c-${idx++}`} className="px-1.5 py-0.5 rounded bg-white/10 border border-white/10 text-[11px] font-mono text-amber-200">{m[5]}</code>);
+    } else if (m[6] && m[7]) {
+      nodes.push(<a key={`${keyPrefix}-a-${idx++}`} href={m[7]} target="_blank" rel="noreferrer" className="underline underline-offset-2 decoration-white/30 hover:decoration-white/60 text-sky-400">{m[6]}</a>);
+    }
+    lastIndex = pattern.lastIndex;
+  }
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  if (nodes.length === 0) return [text];
+  return nodes;
+}
+
+function renderCellContent(text: string, keyPrefix: string): React.ReactNode {
+  const trimmed = text.trim();
+  const upper = trimmed.toUpperCase();
+  if (["APPROVED", "COMPLIANT", "PASS", "PASSED"].includes(upper)) {
+    return <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">{trimmed}</span>;
+  }
+  if (["NOT APPROVED", "REJECTED", "NON-COMPLIANT", "FAIL", "FAILED"].includes(upper)) {
+    return <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-rose-500/15 text-rose-400 border border-rose-500/30">{trimmed}</span>;
+  }
+  if (["UNKNOWN", "FLAGGED", "WARNING", "RECHECK", "REVISIONS REQUIRED"].some((k) => upper.includes(k))) {
+    return <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-amber-500/15 text-amber-400 border border-amber-500/30">{trimmed}</span>;
+  }
+  return renderInline(trimmed, keyPrefix);
+}
+
+function parseMarkdownTable(raw: string): { headers: string[]; rows: string[][] } | null {
+  const lines = raw.trim().split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2) return null;
+  const isTableRow = (l: string) => l.startsWith("|") && l.endsWith("|") && l.includes("|");
+  if (!lines.every(isTableRow)) return null;
+
+  const sepIdx = lines.findIndex((l) => /^\|(\s*:?-+:?\s*\|)+$/.test(l));
+  if (sepIdx <= 0) return null;
+
+  const parseRow = (row: string) =>
+    row
+      .slice(1, -1)
+      .split("|")
+      .map((c) => c.trim());
+
+  const headers = parseRow(lines[0]);
+  const rows: string[][] = [];
+  for (let i = sepIdx + 1; i < lines.length; i++) {
+    rows.push(parseRow(lines[i]));
+  }
+  return { headers, rows };
+}
+
+function InteractiveMarkdown({ text }: { text: string }) {
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+
+  const handleCopyCode = useCallback(async (code: string, idx: number) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(code);
+      }
+      setCopiedIndex(idx);
+      setTimeout(() => setCopiedIndex(null), 1500);
+    } catch {}
+  }, []);
+
+  if (!text) return null;
+  const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
+  const segments: Array<{ type: "text" | "code"; content: string; lang?: string }> = [];
+  let lastIdx = 0;
+  let match: RegExpExecArray | null;
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    if (match.index > lastIdx) segments.push({ type: "text", content: text.slice(lastIdx, match.index) });
+    segments.push({ type: "code", content: match[2], lang: match[1] });
+    lastIdx = codeBlockRegex.lastIndex;
+  }
+  if (lastIdx < text.length) segments.push({ type: "text", content: text.slice(lastIdx) });
+  if (segments.length === 0) segments.push({ type: "text", content: text });
+
+  return (
+    <div className="max-h-96 overflow-y-auto p-4 text-xs leading-relaxed space-y-3 font-sans">
+      {segments.map((seg, si) => {
+        if (seg.type === "code") {
+          const isCopied = copiedIndex === si;
+          return (
+            <div key={`code-${si}`} className="my-2.5 rounded-lg border border-[#2A2A2A] bg-[#0E0E0E] overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-1.5 bg-[#181818] border-b border-[#2A2A2A] text-[10px] text-white/50 font-mono">
+                <span>{seg.lang?.toUpperCase() || "CODE"}</span>
+                <button
+                  onClick={() => handleCopyCode(seg.content.trim(), si)}
+                  className="text-white/60 hover:text-white transition-colors"
+                >
+                  {isCopied ? "Copied!" : "Copy code"}
+                </button>
+              </div>
+              <pre className="p-3 overflow-x-auto font-mono text-xs leading-relaxed">
+                <code>{highlightCode(seg.content.trim())}</code>
+              </pre>
+            </div>
+          );
+        }
+
+        const blocks = seg.content.split(/\n{2,}/);
+        return blocks.map((block, bi) => {
+          const trimmed = block.trim();
+          if (!trimmed) return null;
+
+          // Table check
+          const tableData = parseMarkdownTable(trimmed);
+          if (tableData) {
+            return (
+              <div key={`tbl-${si}-${bi}`} className="my-3 overflow-x-auto rounded-lg border border-[#2E2E2E] bg-[#161616]">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#2C2C2C] bg-[#1F1F1F]">
+                      {tableData.headers.map((h, hi) => (
+                        <th key={hi} className="p-2.5 font-semibold text-white/90 whitespace-nowrap">
+                          {renderInline(h, `th-${si}-${bi}-${hi}`)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableData.rows.map((row, ri) => (
+                      <tr key={ri} className="border-b border-[#222222] hover:bg-white/[0.02] transition-colors">
+                        {row.map((cell, ci) => (
+                          <td key={ci} className="p-2.5 text-white/75 align-top">
+                            {renderCellContent(cell, `td-${si}-${bi}-${ri}-${ci}`)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          }
+
+          // Horizontal rule
+          if (/^(\-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+            return <hr key={`hr-${si}-${bi}`} className="my-4 border-[#2A2A2A]" />;
+          }
+
+          // Heading
+          if (/^#{1,6}\s/.test(trimmed) && !trimmed.includes("\n")) {
+            const level = trimmed.match(/^#+/)![0].length;
+            const headingContent = trimmed.replace(/^#+\s+/, "");
+            const headingStyles: Record<number, string> = {
+              1: "text-base font-bold text-white border-b border-[#2E2E2E] pb-1.5 mt-3 mb-2",
+              2: "text-[15px] font-bold text-white/95 mt-3 mb-1.5",
+              3: "text-sm font-semibold text-white/90 mt-2.5 mb-1",
+              4: "text-xs font-semibold text-white/80 uppercase tracking-wider mt-2 mb-1",
+              5: "text-xs font-semibold text-white/70 uppercase tracking-wider",
+              6: "text-xs font-medium text-white/60 uppercase tracking-wider",
+            };
+            const Tag = `h${Math.min(level, 6)}` as keyof React.JSX.IntrinsicElements;
+            return React.createElement(
+              Tag,
+              { key: `h-${si}-${bi}`, className: `${headingStyles[level] || "text-sm font-bold text-white"} leading-tight` },
+              ...renderInline(headingContent, `h-${si}-${bi}`)
+            );
+          }
+
+          // Unordered list
+          if (/^(\s*[-*]\s+.+(\n\s*[-*]\s+.+)*)$/.test(trimmed)) {
+            const items = trimmed.split("\n").map((l) => l.replace(/^\s*[-*]\s+/, "").trim()).filter(Boolean);
+            return (
+              <ul key={`ul-${si}-${bi}`} className="list-disc pl-5 space-y-1 my-1.5 marker:text-white/40">
+                {items.map((it, i) => (
+                  <li key={i} className="leading-relaxed text-white/80 break-words">
+                    {renderInline(it, `li-${si}-${bi}-${i}`)}
+                  </li>
+                ))}
+              </ul>
+            );
+          }
+
+          // Ordered list
+          if (/^(\s*\d+\.\s+.+(\n\s*\d+\.\s+.+)*)$/.test(trimmed)) {
+            const items = trimmed.split("\n").map((l) => l.replace(/^\s*\d+\.\s+/, "").trim()).filter(Boolean);
+            return (
+              <ol key={`ol-${si}-${bi}`} className="list-decimal pl-5 space-y-1 my-1.5 marker:text-white/40">
+                {items.map((it, i) => (
+                  <li key={i} className="leading-relaxed text-white/80 break-words">
+                    {renderInline(it, `oli-${si}-${bi}-${i}`)}
+                  </li>
+                ))}
+              </ol>
+            );
+          }
+
+          // Blockquote
+          if (/^>\s?/.test(trimmed)) {
+            const quote = trimmed.replace(/^>\s?/gm, "");
+            return (
+              <blockquote key={`q-${si}-${bi}`} className="border-l-2 border-indigo-500/50 bg-indigo-500/5 px-3 py-2 rounded-r my-2 text-xs text-white/80 italic leading-relaxed">
+                {renderInline(quote, `q-${si}-${bi}`)}
+              </blockquote>
+            );
+          }
+
+          // Regular paragraph
+          const paragraphLines = trimmed.split("\n");
+          return (
+            <p key={`p-${si}-${bi}`} className="leading-relaxed text-white/80 my-1.5 whitespace-pre-wrap break-words">
+              {paragraphLines.map((line, li) => (
+                <React.Fragment key={li}>
+                  {renderInline(line, `p-${si}-${bi}-${li}`)}
+                  {li < paragraphLines.length - 1 ? <br /> : null}
+                </React.Fragment>
+              ))}
+            </p>
+          );
+        });
+      })}
+    </div>
+  );
+}
+
 export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
+  const fileExt = (artifact.filename?.split(".").pop() || artifact.kind).toLowerCase();
+  const isMarkdown = fileExt === "md" || artifact.kind === "md";
   const [expanded, setExpanded] = useState(false);
   const [content, setContent] = useState<string | null>(artifact.content ?? null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"code" | "table">(artifact.kind === "csv" ? "table" : "code");
+  const [viewMode, setViewMode] = useState<"code" | "table" | "markdown">(
+    artifact.kind === "csv" ? "table" : isMarkdown ? "markdown" : "code"
+  );
+
+  useEffect(() => {
+    if (artifact.kind === "csv") setViewMode("table");
+    else if (fileExt === "md" || artifact.kind === "md") setViewMode("markdown");
+    else setViewMode("code");
+  }, [artifact.kind, fileExt]);
 
   const badge = useMemo(() => getBadgeStyle(artifact.kind, artifact.filename), [artifact.kind, artifact.filename]);
-  const fileExt = (artifact.filename?.split(".").pop() || artifact.kind).toLowerCase();
   const isTextLike = ["py", "csv", "json", "txt", "md"].includes(fileExt) || artifact.isBinary === false;
 
   const handleToggleExpand = useCallback(async () => {
@@ -296,6 +539,30 @@ export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
                 </div>
               )}
 
+              {/* Markdown view toggle bar if applicable */}
+              {isMarkdown && (
+                <div className="flex items-center justify-between px-3 py-1.5 bg-[#1B1B1B] border-b border-[#262626] text-xs text-white/60">
+                  <span className="flex items-center gap-1.5 font-medium text-white/70">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                    Markdown Deliverable
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setViewMode("markdown")}
+                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${viewMode === "markdown" ? "bg-white/15 text-white font-semibold" : "text-white/40 hover:text-white/70"}`}
+                    >
+                      Markdown
+                    </button>
+                    <button
+                      onClick={() => setViewMode("code")}
+                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${viewMode === "code" ? "bg-white/15 text-white font-semibold" : "text-white/40 hover:text-white/70"}`}
+                    >
+                      Raw Code
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Table View for CSV */}
               {artifact.kind === "csv" && viewMode === "table" && csvData ? (
                 <div className="max-h-80 overflow-auto p-2">
@@ -322,6 +589,8 @@ export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
                     </tbody>
                   </table>
                 </div>
+              ) : isMarkdown && viewMode === "markdown" ? (
+                <InteractiveMarkdown text={content} />
               ) : (
                 /* Line-numbered Code View */
                 <div className="max-h-96 overflow-y-auto font-mono text-xs text-white/85 p-3 flex leading-relaxed">

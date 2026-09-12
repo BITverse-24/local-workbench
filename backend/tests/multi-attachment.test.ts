@@ -344,6 +344,47 @@ describe("Multi-Attachment Support & Persistence", () => {
 
     expect(artifacts).toContain("repaired-vendor-log.csv");
     expect(artifacts).toContain("repaired-broken-vendor-log-parser.py");
+
+    // Turn 2: Follow-up request to execute code and send the result file
+    const turn2StartIndex = runEvents.length;
+    const { runId: turn2RunId } = await manager.start({
+      chatId,
+      userText: "Execute the code and send me the result file",
+    });
+
+    // Wait for Turn 2 confirmation_required
+    await vi.waitFor(
+      () => {
+        expect(
+          runEvents.slice(turn2StartIndex).some((e) => e.type === "confirmation_required"),
+        ).toBe(true);
+      },
+      { timeout: 3000 },
+    );
+
+    const turn2Confirm = runEvents.slice(turn2StartIndex).find(
+      (e) => e.type === "confirmation_required",
+    ) as Extract<RunEvent, { type: "confirmation_required" }>;
+
+    await manager.confirm({
+      runId: turn2RunId,
+      actionId: turn2Confirm.action.actionId,
+      approved: true,
+    });
+
+    await vi.waitFor(
+      () => {
+        expect(runEvents.slice(turn2StartIndex).some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
+      },
+      { timeout: 3000 },
+    );
+
+    const turn2Artifacts = runEvents
+      .slice(turn2StartIndex)
+      .filter((e) => e.type === "artifact_ready")
+      .map((e: any) => e.artifact.filename);
+
+    expect(turn2Artifacts).toContain("repaired-vendor-log.csv");
   });
 });
 

@@ -32,7 +32,7 @@ contextBridge.exposeInMainWorld("workbench", {
     ipcRenderer.invoke("workbench:setSetting", { key, value }),
 
   // run protocol
-  startRun: (input: { userText: string; attachmentToken?: string; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean }) =>
+  startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean }) =>
     ipcRenderer.invoke("workbench:startRun", input),
   registerAttachment: (input: {
     chatId?: string;

@@ -47,15 +47,19 @@ export class IngestionPipeline {
     }
 
     // Embed chunks in batches to not overload the API
-    const batchSize = 10;
-    for (let i = 0; i < rawChunks.length; i += batchSize) {
-      const batch = rawChunks.slice(i, i + batchSize);
-      const texts = batch.map(c => c.text);
-      const embeddings = await this.embeddingService.embedBatch(texts);
+    try {
+      const batchSize = 10;
+      for (let i = 0; i < rawChunks.length; i += batchSize) {
+        const batch = rawChunks.slice(i, i + batchSize);
+        const texts = batch.map(c => c.text);
+        const embeddings = await this.embeddingService.embedBatch(texts);
 
-      batch.forEach((c, idx) => {
-        (c as any).embedding = embeddings[idx];
-      });
+        batch.forEach((c, idx) => {
+          (c as any).embedding = embeddings[idx];
+        });
+      }
+    } catch (err) {
+      // Offline / air-gapped fallback: continue with SQLite FTS indexing
     }
 
     const sqlite = RAGDatabase.getSqlite();
@@ -99,22 +103,27 @@ export class IngestionPipeline {
       rawChunks.length
     );
 
-    // Write to Vectra
-    await vectra.beginUpdate();
-    for (const c of rawChunks) {
-      await vectra.insertItem({
-        id: c.chunk_id,
-        vector: (c as any).embedding,
-        metadata: {
-          doc_id: c.doc_id,
-          section_label: c.section_label,
-          section_title: c.section_title || "",
-          page: c.page,
-          text: c.text
+    // Write to Vectra if embeddings are present
+    const hasEmbeddings = rawChunks.some(c => (c as any).embedding);
+    if (hasEmbeddings) {
+      await vectra.beginUpdate();
+      for (const c of rawChunks) {
+        if ((c as any).embedding) {
+          await vectra.insertItem({
+            id: c.chunk_id,
+            vector: (c as any).embedding,
+            metadata: {
+              doc_id: c.doc_id,
+              section_label: c.section_label,
+              section_title: c.section_title || "",
+              page: c.page,
+              text: c.text
+            }
+          });
         }
-      });
+      }
+      await vectra.endUpdate();
     }
-    await vectra.endUpdate();
 
     return rawChunks.length;
   }

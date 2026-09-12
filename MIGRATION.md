@@ -74,7 +74,7 @@ Do not implement model servers, model weights, GPU startup, or process superviso
 
 Remove active Chroma, embeddings, embedding clients, search_knowledge, retrieval orchestration/contracts, citation validation/persistence, citation prompts, RAG artifact checks, and RAG acceptance tests.
 
-Historical material may remain because removal is runtime-only, but archive it under docs/archive/rag-legacy/, mark it non-authoritative/non-runtime, and ensure no runtime import can reach it.
+Historical migration archive material was retired; active demonstration fixtures and governing criteria live under `demo/flow_a/`.
 
 Introduce only a neutral future seam:
 
@@ -301,7 +301,7 @@ Remove the active ocr_extract → search_knowledge → draft_note path. Do not r
 
 Remove citation tables, corpus metadata, retrieval columns, citation constraints, and RAG-specific seed metadata from the fresh schema. Remove chromadb and unused embedding dependencies.
 
-Move historical RAG plans, corpus docs, and fixture descriptions under docs/archive/rag-legacy/. Add an archive README explaining why they were removed, that they are non-runtime/non-authoritative, and that a future grounding rebuild will define new contracts.
+Historical RAG documentation was retired during codebase migration; active fixtures and specifications live under `demo/flow_a/` and `demo/flow_c/`.
 
 ## 11. Flow B preservation
 

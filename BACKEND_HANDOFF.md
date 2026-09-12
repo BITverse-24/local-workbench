@@ -281,10 +281,10 @@ The backend router must own model selection. The model must not select its own e
 
 Required routing behavior:
 
-- Image/PDF inspection report → vision-qwen25vl.
+- Scanned inspection bundles, documents, and drawings → orchestrated by the reasoning agent (`draft-qwen3`), which executes internal visual extraction tools (`ocr_extract` / `inspect_drawing` / `read_file` via `vision-qwen25vl` or vector text parsers) during the acting phase.
 - CSV, calculation, script, code, execution, or data-transformation request → code-qwen25coder.
-- Other drafting requests → draft-qwen3.
-- After Flow A OCR and retrieval, explicitly route to draft-qwen3.
+- Other drafting & reasoning requests → draft-qwen3.
+- During document review tasks, the system emits the visual extraction phase (`vision-qwen25vl` with reason `scanned inspection bundle` or `scanned report`), performs dynamic RAG retrieval, and transitions to composing the grounded deliverable (`draft-qwen3` with reason `compose grounded approval note`).
 
 Every route change must produce a visible routing event with:
 
@@ -295,9 +295,10 @@ Every route change must produce a visible routing event with:
 
 The locked reasons are:
 
-- Flow A first route: scanned report
-- Flow A second route: compose approval note
-- Flow B route: CSV/code intent
+- Flow A first route: scanned report (or scanned inspection bundle)
+- Flow A second route: compose grounded approval note
+- Flow B route: CSV/code intent (or Python repair and verification)
+- Flow C route: engineering drawing compliance review
 
 ## 8. Backend tool implementations
 

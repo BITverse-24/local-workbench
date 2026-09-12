@@ -188,10 +188,11 @@ data/
 3. RunManager creates Run ID and directory data/runs/<runId>/
 4. Intent Classifier & Deterministic Router analyze prompt + attachment
    - Emits 'routing' event (TaskType + ModelId + Reason) to UI
-5. RunManager transitions to 'planning' -> queries plan model
+5. RunManager transitions to 'planning' -> streams execution plan
    - Emits 'plan_step' events to UI transcript
-6. RunManager transitions to 'acting' -> executes tools or invokes model
-   - If tool requires approval (e.g. execute_python), creates PendingAction
+6. RunManager transitions to 'acting' -> executes tools
+   - Invokes specialized tools: vision extraction tool (vision-qwen25vl for OCR/drawings), RAG grounding (retrieve_sop), sandboxed Python (execute_python), or deliverable tools (.docx / .xlsx / .md)
+   - If tool requires approval (e.g. execute_python, generate_docx), creates PendingAction
    - Emits 'confirmation_required' -> UI shows ConfirmationModal
    - User approves -> workbench:confirmAction() -> execution proceeds
 7. Generated files written to data/runs/<runId>/output/

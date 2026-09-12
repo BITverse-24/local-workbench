@@ -44,6 +44,13 @@ The Python script must:
 - print a concise deterministic result for analysis-only requests;
 - create one or more logical CSV/text outputs only when the user requests a
   generated file, and declare every such output in outputFiles;
+- for dataset processing, transformation, or log execution requests that ask for an output file:
+  deterministically read the input file and write the processed records to the output file
+  using csv.DictReader and csv.DictWriter; preserve all input rows and append or populate
+  evaluation/status columns (e.g. status, validation_result, condition) rather than filtering
+  out rows, unless filtering was specifically requested;
+- never output dataset rows in chat tokens or expectedResult; all row-level data processing
+  must be executed purely in Python code directly to the output file;
 - return exit code 0 on success.
 
 Required result metadata:

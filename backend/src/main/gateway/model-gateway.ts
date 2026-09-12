@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { AIResult, ModelHealth, ModelId, ModelRequest, ModelResponse, ModelRegistryEntry } from "../../shared/contracts.js";
 import type { ModelClient } from "../models/ports.js";
 import { loadRegistry, resolveModel } from "./registry.js";
 import { normalizeResponse, parseProviderContent, providerError } from "./normalizer.js";
 import { absoluteDataPath, createRunDirectories, runRoot } from "../run/filesystem.js";
-import { assertUploadableSize, extractPdfText, prepareImage, renderPdfToImages } from "../run/images.js";
+import { assertUploadableSize, createPlaceholderImagesFromText, extractPdfText, extractSvgText, prepareImage, renderPdfToImages } from "../run/images.js";
 import {
   logGatewayError,
   logGeneratedCode,
@@ -73,7 +74,25 @@ export class ModelGateway implements ModelClient {
     const visionParts = isVision
       ? await (async () => {
           const att = maybeVision.attachment!;
-          const raw = readFileSync(absoluteDataPath(att.relativePath));
+          const raw = await readFile(absoluteDataPath(att.relativePath));
+          if (att.mediaType === "image/svg+xml" || att.filename?.toLowerCase().endsWith(".svg")) {
+            const svgText = extractSvgText(raw);
+            const placeholderImages = await createPlaceholderImagesFromText(svgText || "SVG Vector Drawing");
+            const prepared = placeholderImages[0];
+            assertUploadableSize(prepared.finalBytes);
+            this.lastVisionUpload = {
+              originalBytes: raw.length,
+              finalBytes: prepared.finalBytes,
+              resized: true,
+              mediaType: prepared.mediaType,
+            };
+            return [
+              {
+                type: "image_url",
+                image_url: { url: `data:${prepared.mediaType};base64,${prepared.buffer.toString("base64")}` },
+              },
+            ];
+          }
           if (att.mediaType.startsWith("image/")) {
             const prepared = await prepareImage(raw, att.mediaType);
             assertUploadableSize(prepared.finalBytes);
@@ -348,7 +367,7 @@ export class ModelGateway implements ModelClient {
   async health(modelId: ModelId): Promise<ModelHealth>;
   async health(modelId?: ModelId): Promise<ModelHealth[] | ModelHealth> {
     if (modelId !== undefined) return this.healthOne(modelId);
-    const results: ModelHealth[] = []; for (const model of this.registry.values()) { const started = Date.now(); try { const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined; const response = await this.transport.request(`${model.baseUrl}${model.healthPath}`, { method: "GET", headers: { ...(key ? { authorization: `Bearer ${key}` } : {}) } }, model.requestTimeoutMs); results.push({ modelId: model.id, available: response.status >= 200 && response.status < 300, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started }); } catch (error) { results.push({ modelId: model.id, available: false, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started, message: error instanceof Error ? error.message : "health check failed" }); } } return results;
+    return Promise.all(Array.from(this.registry.values()).map((model) => this.healthOne(model.id)));
   }
   /** Per-model health probe backing the `ModelClient` surface. */
   async healthOne(modelId: ModelId): Promise<ModelHealth> {

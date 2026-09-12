@@ -38,7 +38,7 @@ const REFERENTIAL_FOLLOWUP_PATTERN =
   /\b(the artifact|the artefact|the deliverable|earlier|previous artifact|just generated|which you just|generated earlier)\b/i;
 
 const DRAFTING_INTENT_PATTERNS =
-  /\b(approval note|draft (?:an? )?(?:note|memo|letter|report|document|brief|summary|proposal)|write (?:an? )?(?:approval note|memo|formal note|letter|recommendation)|nuclear reactor shutdown|maintenance shutdown|word document|\.docx|docx\b|executive summary|formal note|compliance note|clearance note|incident report|briefing note)\b/i;
+  /\b(approval note|review note|audit memo|audit note|corrective[- ]action note|draft (?:an? )?(?:note|memo|letter|report|document|brief|summary|proposal)|write (?:an? )?(?:approval note|review note|audit memo|compliance note|memo|formal note|letter|recommendation)|nuclear reactor shutdown|maintenance shutdown|word document|\.docx|docx\b|executive summary|formal note|compliance note|clearance note|incident report|briefing note)\b/i;
 
 const SOP_REFERENCE = /\bSOP[-\s]?\d+/i;
 const GROUNDING_KEYWORDS =
@@ -312,12 +312,54 @@ export function classifyIntent(input: ClassifyIntentInput): IntentDecision {
     });
   }
 
-  // 2. Vision Intent (Absolute precedence when media attached)
+  // 2. Vision / Drawing Intent (media or engineering drawings attached)
   const mediaAttachments = allAttachments.filter(
-    (a) => a.mediaType === "application/pdf" || a.mediaType.startsWith("image/"),
+    (a) =>
+      a.mediaType === "application/pdf" ||
+      a.mediaType.startsWith("image/") ||
+      a.mediaType === "image/svg+xml" ||
+      a.filename?.toLowerCase().endsWith(".svg"),
   );
   if (mediaAttachments.length > 0) {
     const isBundle = mediaAttachments.length > 1 || /\b(reports|bundle|both)\b/i.test(lower);
+    const hasSvgAttachment = mediaAttachments.some(
+      (a) => a.mediaType === "image/svg+xml" || a.filename?.toLowerCase().endsWith(".svg"),
+    );
+    const isDrawing =
+      hasSvgAttachment ||
+      mediaAttachments.some((a) => /\b(drawing|p&id|schematic|diagram|skid|blueprint|pump-skid)\b/i.test(a.filename ?? "")) ||
+      /\b(drawing|p&id|schematic|diagram|skid|blueprint|piping spec|piping)\b/i.test(lower);
+
+    const isDrawingComplianceReview =
+      isDrawing &&
+      /\b(against (?:the |our )?(?:piping )?spec|non[- ]compliant|compliance review|compliance finding|against (?:the |our )?standard|against (?:the |our )?sop|check.+against|piping spec)\b/i.test(
+        lower,
+      );
+
+    if (isDrawingComplianceReview) {
+      return withGrounding({
+        taskType: "draft",
+        modelId: "draft-qwen3",
+        actionTarget: "vision",
+        reason: "engineering drawing compliance review",
+        isWorkspaceAction: false,
+        confidence: 1.0,
+        needsGrounding: true,
+      });
+    }
+
+    if (isDrawing) {
+      return withGrounding({
+        taskType: "vision",
+        modelId: "vision-qwen25vl",
+        actionTarget: "vision",
+        reason: "engineering drawing interpretation",
+        isWorkspaceAction: false,
+        confidence: 1.0,
+        needsGrounding: true,
+      });
+    }
+
     return withGrounding({
       taskType: "vision",
       modelId: "vision-qwen25vl",

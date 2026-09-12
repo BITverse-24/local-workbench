@@ -49,13 +49,13 @@ These are the things a competing "local RAG chatbot" will *not* have. Everything
 ## 7. Primary user flows
 
 ### Flow A — Scanned inspection bundle → approval note (flagship)
-The vision model reads two scanned reports, extracts typed and handwritten evidence, applies local SOP-114 criteria, and hands a cited assessment to the drafting model. The final `.docx` contains findings, anomalies, corrective actions, and a conditional recommendation.
+The orchestrator invokes the vision extraction tool (`vision-qwen25vl`) across two scanned reports to extract typed and handwritten evidence, queries local SOP-114 criteria via RAG, and drafts a cited assessment with the drafting model (`draft-qwen3`). The final `.docx` contains findings, anomalies, corrective actions, and a conditional recommendation.
 
 ### Flow B — Internal tool bug fix → sandbox verification
 The code model repairs a deliberately broken vendor-log parser, runs it against a malformed CSV in the network-disabled sandbox, observes the real traceback, self-corrects, and produces a verified script plus output file.
 
 ### Flow C — Engineering drawing → compliance finding
-The vision model reads a labeled pump-skid drawing, the reasoning model compares numeric values against local SOP-220 requirements, and the workbench produces a concise cited corrective-action note without claiming approval.
+The orchestrator invokes the visual drawing tool to extract component tags and dimensions from an engineering drawing, the reasoning model compares values against governing specifications dynamically via local RAG, and the workbench produces a concise cited corrective-action note without claiming approval.
 
 All three flows run continuously against the visible sovereignty panel, which must show zero external requests and a recorded blocked attempt.
 

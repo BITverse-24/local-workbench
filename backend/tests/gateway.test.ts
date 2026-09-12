@@ -107,3 +107,78 @@ describe("vision attachment payloads (OpenRouter)", () => {
     });
   });
 });
+
+describe("model gateway health checks", () => {
+  it("runs health checks concurrently across all models with Promise.all", async () => {
+    const activeRequests: string[] = [];
+    let maxConcurrent = 0;
+
+    const models: [ModelId, ModelRegistryEntry][] = [
+      [
+        "code-qwen25coder",
+        {
+          id: "code-qwen25coder",
+          taskTypes: ["code"],
+          runtime: "llama-server",
+          baseUrl: "https://model-a.test/v1",
+          model: "test-code",
+          capabilities: ["text", "code-generation"],
+          requestTimeoutMs: 1000,
+          healthPath: "/models",
+          enabled: true,
+        },
+      ],
+      [
+        "draft-qwen3",
+        {
+          id: "draft-qwen3",
+          taskTypes: ["draft"],
+          runtime: "llama-server",
+          baseUrl: "https://model-b.test/v1",
+          model: "test-draft",
+          capabilities: ["text", "structured-output"],
+          requestTimeoutMs: 1000,
+          healthPath: "/models",
+          enabled: true,
+        },
+      ],
+    ];
+
+    const gateway = new ModelGateway(
+      {
+        async request(url) {
+          activeRequests.push(url);
+          maxConcurrent = Math.max(maxConcurrent, activeRequests.length);
+          await new Promise((r) => setTimeout(r, 20));
+          activeRequests.splice(activeRequests.indexOf(url), 1);
+          return { status: 200, async text() { return "ok"; } };
+        },
+      },
+      new Map(models),
+    );
+
+    const results = await gateway.health();
+    expect(results).toHaveLength(2);
+    expect(results[0]?.modelId).toBe("code-qwen25coder");
+    expect(results[0]?.available).toBe(true);
+    expect(results[1]?.modelId).toBe("draft-qwen3");
+    expect(results[1]?.available).toBe(true);
+    // Verified concurrent execution
+    expect(maxConcurrent).toBe(2);
+  });
+
+  it("probes a single model when modelId is passed", async () => {
+    const gateway = new ModelGateway(
+      {
+        async request() {
+          return { status: 200, async text() { return "ok"; } };
+        },
+      },
+      visionRegistry(),
+    );
+
+    const result = await gateway.health("vision-qwen25vl");
+    expect(result.modelId).toBe("vision-qwen25vl");
+    expect(result.available).toBe(true);
+  });
+});

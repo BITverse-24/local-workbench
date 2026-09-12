@@ -36,9 +36,6 @@ No credentials, endpoints, or model weights live here. Runtime routing
   `model_timeout`, `model_rejected_request`, `empty_model_response`,
   `invalid_model_response`, `unsupported_task`, `missing_required_content`,
   `unsafe_generated_code`).
-- `ValidationFailure` covers responses with the wrong shape
-  (`wrong-type`, `missing-field`, `invalid-value`, `extra-field`).
-
-Historical note: retrieval-specific error codes and the old global
-`ai/contracts.ts` dump were removed during the migration; see
-`docs/archive/rag-legacy/`.
+Active typed contracts are maintained in `ai/shared/contracts.ts` and
+re-exported for the backend and desktop shell. Active demo fixtures live
+under `demo/`.

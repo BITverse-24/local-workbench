@@ -287,27 +287,35 @@ Spec `docs/architecture/components-and-contracts.md:77` / `BACKEND_HANDOFF.md:27
 
 | Input signal | `TaskType` | `ModelId` selected | `reason` emitted in `routing` event |
 |---|---|---|---|
-| image/PDF to inspect | `vision` | `vision-qwen25vl` | `scanned report` |
-| text mentions csv/calculation/script/code/execution/data transformation | `code` | `code-qwen25coder` | `CSV/code intent` |
-| after Flow A OCR+retrieval | `draft` | `draft-qwen3` | `compose approval note` |
-| else | `draft` | `draft-qwen3` | (fallback, not used in locked demos) |
+| Scanned PDF / document / drawing | `vision` | `vision-qwen25vl` | `scanned report` / `scanned inspection bundle` (visual tool step) |
+| CSV / script / code / repair request | `code` | `code-qwen25coder` | `CSV/code intent` / `Python repair and verification` |
+| after document OCR + RAG retrieval | `draft` | `draft-qwen3` | `compose grounded approval note` |
+| engineering drawing compliance review | `draft` | `draft-qwen3` | `engineering drawing compliance review` |
+| else | `draft` | `draft-qwen3` | (fallback drafting) |
 
 Every route emits `routing` event `docs/architecture/components-and-contracts.md:126`; UI badges update live per `PRODUCT.md:22`.
 
 ### 6.3 Locked Sequences
 
 **Flow A** `BACKEND_HANDOFF.md:543` + `docs/architecture/flows-and-data.md:16` + `docs/demo-requirements.md:24`:
-1. `startRun` → `run_state:classifying` → `routing:vision/scanned report` → `ocr_extract` validates 3 findings `docs/demo-requirements.md:80`
-2. `search_knowledge` verifies `SOP-114 §3.2`+`TPL-012` top 5 `docs/demo-requirements.md:90`
-3. `routing:draft/compose approval note` → `draft_note` validates 4 sections `ai/contracts.ts:168` + citation membership `ai/contracts.md:48`
-4. `confirmation_required:generate_docx` → approve → `generate_docx` + PDF → `artifact_ready` → `completed` only after both succeed `BACKEND_HANDOFF.md:559`. Note must contain E-201 header, 3 findings, conditional clearance, `SOP-114 §3.2` grounding `docs/demo-requirements.md:96`.
+1. `startRun` → `run_state:classifying` → `routing:vision/scanned inspection bundle` → `ocr_extract` extracts findings across documents
+2. `search_knowledge` retrieves governing criteria dynamically via RAG (`retrieve_sop`)
+3. `routing:draft/compose grounded approval note` → `draft_note` validates sections and citation membership
+4. `confirmation_required:generate_docx` → approve → `generate_docx` + PDF → `artifact_ready` → `completed`. Note contains equipment header, findings table, conditional clearance, and dynamic SOP grounding citations.
 
 **Flow B** `BACKEND_HANDOFF.md:573` + `docs/architecture/flows-and-data.md:57` + `docs/demo-requirements.md:52`:
-1. `startRun` with `reactor-temperature-log.csv` → `routing:code/CSV/code intent` → `read_file` validates 240 rows `docs/demo-requirements.md:19`
-2. `draft_code` validates `task.py` → `confirmation_required:execute_python`
-3. Approve → Bubblewrap runner (ro input, rw output, `--unshare-net`, 60s) → `PythonExecutionResult` exit 0, `OUT_OF_RANGE 7/240 (high=5, low=2)` `docs/demo-requirements.md:122`, 7 rows (5 high,2 low)
-4. Propose `generate_xlsx` → `confirmation_required:generate_xlsx` → approve → `out-of-range-summary.xlsx`
-5. `code summarize` phase `BACKEND_HANDOFF.md:179` with actual `execution` (exitCode, timedOut, capped stdout/stderr, outputFiles) → `completed` only if verified summary consistent `BACKEND_HANDOFF.md:590`.
+1. `startRun` with `vendor-maintenance-log.csv` + `broken-vendor-log-parser.py` → `routing:code/Python repair and verification` → execute script in sandbox to capture traceback
+2. `draft_code` receives traceback, patches parser script
+3. Sandboxed Bubblewrap runner re-executes repaired script → exit 0, outputs row statistics and repaired CSV
+4. Propose repaired script and data deliverable → `artifact_ready` for `repaired-*.py` and `.csv`
+5. Supports multi-turn follow-up execution.
+
+**Flow C** (Engineering Drawing Compliance Review):
+1. `startRun` with engineering drawing (`pump-skid-P204.svg` or CAD diagram) → `routing:draft/engineering drawing compliance review`
+2. Agent executes visual extraction tool (`inspect_drawing`), extracting component tags and dimensions from drawing text/geometry
+3. Agent executes grounding tool (`retrieve_sop`), dynamically retrieving governing specifications from local Knowledge Base
+4. Reasoning model compares observed parameters against retrieved criteria dynamically without hardcoded logic
+5. Generates reviewer deliverable (`corrective-action-note.md`) in `output/` stating drawing is not approved and must be revised, and emits `artifact_ready`.
 
 ---
 

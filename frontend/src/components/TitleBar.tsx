@@ -5,7 +5,11 @@ export default function TitleBar() {
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div className="flex items-center gap-3">
-        <span className="text-[11px] font-semibold tracking-[0.18em] uppercase opacity-60">agent fr</span>
+        <span className="text-[11px] font-semibold tracking-[0.18em] uppercase opacity-70">Sovereign Workbench</span>
+        <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[10px] font-medium text-emerald-400 tracking-wider">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          AIR-GAPPED • ZERO EGRESS
+        </span>
       </div>
       <div className="flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <button

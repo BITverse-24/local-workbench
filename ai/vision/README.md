@@ -43,10 +43,4 @@ claims are `invalid-value` failures.
 
 ## Deployment assumptions
 
-Stateless extraction step. The backend validates the result before any
-downstream use. Flow A (scanned-report-to-approval-note) is deferred, so
-this contract is currently exercised by offline fixtures and tests only.
-
-Historical note: the pre-migration version of this flow fed vision output
-into a retrieval step; that coupling was removed during the migration, see
-`docs/archive/rag-legacy/`.
+Stateless extraction step invoked as an internal tool (`ocr_extract`, `inspect_drawing`, `read_file`) by the orchestrating reasoning agent (`draft-qwen3`). The backend validates the extraction result before any downstream use. Extracted findings are then evaluated dynamically against local SOP criteria via RAG grounding before drafting deliverables.

@@ -43,13 +43,9 @@ Shape problems surface as `ValidationFailure`; transport problems as
 rejections. Runtime validation is owned by the backend.
 
 ## Deployment assumptions
-
-Stateless drafting step. Flow A is strictly deferred: there is no active
-orchestration calling this contract, and no acceptance test pins Flow A
-behavior. The contract is kept so a future flow can define its own
-source-grounding from scratch.
-
-Historical note: the pre-migration draft was coupled to a local-source
-retrieval step (chunk allowlists and inline source markers); that coupling
-was removed during the migration and the old prompt and fixtures now live
-under `docs/archive/rag-legacy/`.
+ 
+Stateless drafting step executed by `draft-qwen3`. Orchestrated by `RunManager`
+during Flow A (inspection bundle -> SOP-114 criteria -> `.docx` approval note)
+and Flow C (engineering drawing review -> SOP-220 criteria -> `.md` compliance note).
+Active demonstration fixtures and governing criteria live under `demo/flow_a/`
+and `demo/flow_c/`.

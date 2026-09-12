@@ -703,6 +703,10 @@ export default function App() {
             onEditMessage={handleEditMessage}
             onAttachFiles={addFiles}
             onSaveArtifact={handleSaveArtifact}
+            isRunning={isRunning}
+            runState={runState}
+            activeRoute={activeRoute}
+            runEvents={runEvents}
           />
           <InputBar
             input={input}

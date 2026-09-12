@@ -1,19 +1,10 @@
 # Proposed follow-up cleanup
 
-## Remove stale retired-RAG references
+## Remove stale retired-RAG references (COMPLETED)
 
 - **Target:** `MIGRATION.md`, `ai/vision/README.md`,
   `ai/draft/prompts/approval-note-drafting-prompt.md`, `ai/draft/README.md`,
   `ai/mock-responses/README.md`, and `ai/shared/README.md`.
-- **Issue:** These files still mention `docs/archive/rag-legacy/`,
-  `expected-retrieval`, or the retired archive as historical material. The
-  archive has now been deleted and Flow A fixtures live under
-  `demo/flow_a/`.
-- **Evidence:** Repository-wide search after archive deletion returns stale
-  references in the listed files.
-- **Suggested change:** Replace obsolete archive links with the active fixture
-  paths and approval-readiness terminology, or remove migration-only archive
-  instructions that no longer describe the repository.
-- **Reason:** Prevent broken links and ensure active documentation consistently
-  reflects the retired retrieval/template workflow.
-- **Impact:** Documentation-only; no runtime behavior changes.
+- **Status:** **RESOLVED / COMPLETED**.
+- **Action Taken:** Obsolete links to `docs/archive/rag-legacy/` and historical archive instructions have been replaced with active fixture paths (`demo/flow_a/`, `demo/flow_b/`, `demo/flow_c/`), and approval-readiness terminology.
+- **Impact:** Documentation-only; verified with clean repository-wide search. All test suites continue to pass.

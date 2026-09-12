@@ -95,12 +95,12 @@ export function initBackend(
   registerKnowledgeBaseHandlers(ipcMain, ragService);
   const grounding = new RAGGroundingProvider(ragService);
   manager.setGrounding(grounding);
+  manager.setRAGService(ragService);
   void ragService.init().catch((err) => {
     console.warn("Failed to initialize RAG subsystem on startup:", err);
   });
 
   (manager as any).harness = harness;
-  (manager as any).ragService = ragService;
   return manager as BackendInstance;
 }
 
