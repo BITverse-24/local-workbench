@@ -21,7 +21,17 @@ export interface ClassifyIntentInput {
   attachment?: { mediaType: string; filename?: string };
   attachments?: Array<{ mediaType: string; filename?: string }>;
   isWorkspaceActive?: boolean;
+  history?: Array<{ role: string; content: string }>;
+  hasRecentArtifacts?: boolean;
 }
+
+// ── Follow-Up & Confirmation Patterns ───────────────────────────────────
+
+const AFFIRMATIVE_FOLLOWUP_PATTERN =
+  /^(?:yes|yep|yeah|y|sure|ok|okay|confirm|confirmed|proceed|do it|go ahead|please do|approved|continue|delete them|delete it|do that|run it)\b[!.?]*$/i;
+
+const EXECUTION_FOLLOWUP_PATTERN =
+  /^(?:please\s+)?(?:execute|run|start)\s+(?:the\s+)?(?:file|script|code|it|this|program|command)\b/i;
 
 // ── Action Verbs & Noun Categories ──────────────────────────────────────
 
@@ -266,10 +276,17 @@ const INTENT_CACHE_MAX_SIZE = 100;
 const intentCache = new Map<string, IntentDecision>();
 
 function buildIntentCacheKey(input: ClassifyIntentInput): string {
-  const { userText, attachment, attachments, isWorkspaceActive = false } = input;
+  const { userText, attachment, attachments, isWorkspaceActive = false, history, hasRecentArtifacts = false } = input;
   const atts = attachments && attachments.length > 0 ? attachments : attachment ? [attachment] : [];
   const attSig = atts.map((a) => `${a.mediaType}:${a.filename ?? ""}`).join("|");
-  return `${isWorkspaceActive ? 1 : 0}::${attSig}::${userText}`;
+  const histSig =
+    history && history.length > 0
+      ? history
+          .slice(-2)
+          .map((h) => `${h.role}:${h.content.slice(0, 40)}`)
+          .join(";")
+      : "";
+  return `${isWorkspaceActive ? 1 : 0}::${hasRecentArtifacts ? 1 : 0}::${attSig}::${histSig}::${userText}`;
 }
 
 /**
@@ -302,8 +319,8 @@ export function classifyIntent(input: ClassifyIntentInput): IntentDecision {
 }
 
 function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
-  const { userText, attachment, attachments, isWorkspaceActive = false } = input;
-  const lower = userText.toLowerCase();
+  const { userText, attachment, attachments, isWorkspaceActive = false, history = [], hasRecentArtifacts = false } = input;
+  const lower = userText.toLowerCase().trim();
 
   const allAttachments =
     attachments && attachments.length > 0
@@ -327,6 +344,65 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     needsGrounding: d.needsGrounding ?? needsGrounding,
     groundingReason: d.groundingReason ?? groundingReason,
   });
+
+  // 0. Multi-Turn Follow-Up & Confirmation Intent (Multi-turn conversations)
+  // Evaluates whether short replies ("Yes", "proceed", "execute the file") are continuations
+  // of prior workspace/file commands rather than standalone conversational chatter.
+  const tokens = normalizeTokens(userText);
+  const priorMessages = history ?? [];
+  const lastAssistantMsg = [...priorMessages].reverse().find((m) => m.role === "assistant")?.content ?? "";
+  const lastUserMsg = [...priorMessages].reverse().find((m) => m.role === "user")?.content ?? "";
+  const priorContext = `${lastUserMsg}\n${lastAssistantMsg}`.toLowerCase();
+
+  const isAffirmative =
+    tokens.length <= 6 &&
+    (AFFIRMATIVE_FOLLOWUP_PATTERN.test(lower) ||
+      /^(?:yes|yep|yeah|y|sure|ok|okay|confirm|confirmed|proceed|do it|go ahead|please do|approved|continue)(?:,\s*|\s+|$)/i.test(lower));
+
+  const isExecutionFollowup = tokens.length <= 6 && EXECUTION_FOLLOWUP_PATTERN.test(lower);
+
+  const priorHadWorkspaceOrFileContext =
+    /\b(workspace|file|files|delete|remove|script|run|execute|dir|directory|folder|codebase|clean|purge|drop|wipe)\b/i.test(priorContext);
+
+  const priorHadConfirmationPrompt =
+    /\b(are you sure|confirm|proceed)\b/i.test(lastAssistantMsg) ||
+    (/\b(would you like|do you want|should i)\b/i.test(lastAssistantMsg) && priorHadWorkspaceOrFileContext);
+
+  if (isAffirmative && isWorkspaceActive && priorMessages.length > 0) {
+    if (priorHadWorkspaceOrFileContext || priorHadConfirmationPrompt) {
+      return withGrounding({
+        taskType: "code",
+        modelId: "code-qwen25coder",
+        actionTarget: "harness",
+        reason: "affirmative follow-up in active workspace",
+        isWorkspaceAction: true,
+        confidence: 0.95,
+      });
+    }
+  }
+
+  if (isExecutionFollowup) {
+    if (isWorkspaceActive) {
+      return withGrounding({
+        taskType: "code",
+        modelId: "code-qwen25coder",
+        actionTarget: "harness",
+        reason: "script/file execution follow-up in workspace",
+        isWorkspaceAction: true,
+        confidence: 0.95,
+      });
+    }
+    if (hasRecentArtifacts) {
+      return withGrounding({
+        taskType: "code",
+        modelId: "code-qwen25coder",
+        actionTarget: "data",
+        reason: "standalone script execution in sandbox",
+        isWorkspaceAction: false,
+        confidence: 0.95,
+      });
+    }
+  }
 
   // 1. Python script + CSV / log repair intent (Flow B)
   const hasPythonAttachment = allAttachments.some(
@@ -430,7 +506,6 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
   }
 
   // 3. Extract Syntactic and Semantic Features
-  const tokens = normalizeTokens(userText);
   const hasNegativeWorkspaceConstraint = detectNegativeWorkspaceConstraint(tokens);
   const hasStandaloneHint = detectStandaloneHint(tokens, userText);
   const hasFileActionVerb = FILE_ACTION_VERBS.test(lower);

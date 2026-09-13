@@ -30,7 +30,8 @@ RULES:
 - Do not hardcode file paths — use search to discover them.
 - Always verify your changes work by running the relevant test/build command.
 - When you write a file, report the diff summary from write_file's output.
-- If a file is >200KB, use search instead of read_file.`;
+- If a file is >200KB, use search instead of read_file.
+- YOU HAVE FULL PERMISSION and tool capability to interact with the filesystem (via write_file/read_file) and execute shell commands (via run_command). NEVER claim that you "cannot directly interact with the filesystem", "cannot run code or execute files", or "lack permissions". Always use your tools.`;
 }
 
 /**

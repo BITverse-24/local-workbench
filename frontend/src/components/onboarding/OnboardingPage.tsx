@@ -380,7 +380,10 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
               LLM Model Endpoint Configuration
             </h1>
             <p className="text-xs sm:text-sm text-[var(--text-secondary)] max-w-4xl leading-relaxed">
-              Industrial multi-model orchestration for defence manufacturing, PSU engineering, and government facilities. Assign offline, OpenAI-compatible model endpoints for each specialized operational role.
+              Industrial multi-model orchestration for defence manufacturing,
+              PSU engineering, and government facilities. Assign offline,
+              OpenAI-compatible model endpoints for each specialized operational
+              role.
             </p>
           </div>
 
@@ -392,7 +395,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
               className="h-9 sm:h-10 px-3.5 sm:px-4 rounded-[var(--radius-sm)] text-xs sm:text-sm font-medium neu-button"
               title="Populate standard local Ollama ports (11434)"
             >
-              Ollama defaults
+              Ollama (11434)
             </button>
             <button
               type="button"
@@ -437,13 +440,19 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                 <span className="text-xs font-semibold text-[var(--text-secondary)]">
                   Local inference server
                 </span>
-                <span className={`text-xs font-mono font-semibold ${step1Done ? "text-[var(--status-success)]" : "text-[var(--text-tertiary)]"}`}>
+                <span
+                  className={`text-xs font-mono font-semibold ${step1Done ? "text-[var(--status-success)]" : "text-[var(--text-tertiary)]"}`}
+                >
                   1
                 </span>
               </div>
-              <h3 className="text-sm font-medium text-[var(--text-primary)]">OpenAI-Compatible REST API</h3>
+              <h3 className="text-sm font-medium text-[var(--text-primary)]">
+                OpenAI-Compatible REST API
+              </h3>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                Ensure an approved local server (Ollama, vLLM, LM Studio, or llama-server) is listening. Sovereign Workbench communicates via standard HTTP JSON payloads.
+                Ensure an approved local server (Ollama, vLLM, LM Studio, or
+                llama-server) is listening. Sovereign Workbench communicates via
+                standard HTTP JSON payloads.
               </p>
             </div>
             <div className="text-[11px] font-mono text-[var(--text-tertiary)] pt-2.5 border-t border-[var(--border-subtle)]">
@@ -458,13 +467,19 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                 <span className="text-xs font-semibold text-[var(--text-secondary)]">
                   Role delegation policy
                 </span>
-                <span className={`text-xs font-mono font-semibold ${step2Done ? "text-[var(--status-success)]" : "text-[var(--text-tertiary)]"}`}>
+                <span
+                  className={`text-xs font-mono font-semibold ${step2Done ? "text-[var(--status-success)]" : "text-[var(--text-tertiary)]"}`}
+                >
                   2
                 </span>
               </div>
-              <h3 className="text-sm font-medium text-[var(--text-primary)]">Deterministic Task Routing</h3>
+              <h3 className="text-sm font-medium text-[var(--text-primary)]">
+                Deterministic Task Routing
+              </h3>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                Workloads are strictly partitioned: Vision handles drawings/OCR, Coding executes Python math, Draft writes technical notes, and Embedding executes local RAG vectors.
+                Workloads are strictly partitioned: Vision handles drawings/OCR,
+                Coding executes Python math, Draft writes technical notes, and
+                Embedding executes local RAG vectors.
               </p>
             </div>
             <div className="text-[11px] font-mono text-[var(--text-tertiary)] pt-2.5 border-t border-[var(--border-subtle)]">
@@ -479,20 +494,28 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                 <span className="text-xs font-semibold text-[var(--text-secondary)]">
                   Air-gap isolation policy
                 </span>
-                <span className={`text-xs font-mono font-semibold ${step3Done ? "text-[var(--status-success)]" : "text-[var(--text-tertiary)]"}`}>
+                <span
+                  className={`text-xs font-mono font-semibold ${step3Done ? "text-[var(--status-success)]" : "text-[var(--text-tertiary)]"}`}
+                >
                   3
                 </span>
               </div>
-              <h3 className="text-sm font-medium text-[var(--text-primary)]">Network Boundary Enforcement</h3>
+              <h3 className="text-sm font-medium text-[var(--text-primary)]">
+                Network Boundary Enforcement
+              </h3>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                By default, all network calls are physically restricted to loopback (127.0.0.1) with zero data egress. Enable external requests only to target air-gapped LAN GPU nodes.
+                By default, all network calls are physically restricted to
+                loopback (127.0.0.1) with zero data egress. Enable external
+                requests only to target air-gapped LAN GPU nodes.
               </p>
             </div>
 
             {/* Flat Toggle Switch */}
             <div className="pt-2.5 border-t border-[var(--border-subtle)] flex items-center justify-between gap-4">
               <div>
-                <div className="text-xs font-medium text-[var(--text-primary)]">Allow external requests</div>
+                <div className="text-xs font-medium text-[var(--text-primary)]">
+                  Allow external requests
+                </div>
                 <div className="text-[11px] text-[var(--text-tertiary)] mt-0.5">
                   {allowExternal
                     ? "LAN access enabled — Host/IP unlocked"
@@ -505,7 +528,9 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                 aria-checked={allowExternal}
                 onClick={handleToggleAllowExternal}
                 className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border border-[var(--border-default)] transition-colors duration-150 ease-in-out focus:outline-none ${
-                  allowExternal ? "bg-[var(--accent)]" : "bg-[var(--bg-surface-raised)]"
+                  allowExternal
+                    ? "bg-[var(--accent)]"
+                    : "bg-[var(--bg-surface-raised)]"
                 }`}
               >
                 <span
@@ -526,7 +551,10 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
         )}
 
         {/* 3. Model Role Endpoints Table */}
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between pt-1">
+        <form
+          onSubmit={handleSubmit}
+          className="flex-1 flex flex-col justify-between pt-1"
+        >
           <div className="flex-1 flex flex-col justify-between space-y-3 sm:space-y-4">
             {/* Table Column Headers */}
             <div className="flex items-center gap-4 px-2">
@@ -536,7 +564,9 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                 <div className="col-span-2">Host / IP address</div>
                 <div className="col-span-1">Port</div>
                 <div className="col-span-1">Context</div>
-                <div className="col-span-2 text-right">Endpoint status & test</div>
+                <div className="col-span-2 text-right">
+                  Endpoint status & test
+                </div>
               </div>
               <div className="w-28 text-xs text-[var(--text-tertiary)] font-medium text-center">
                 Sync row
@@ -558,11 +588,15 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                       {/* Col 1: Role & Description */}
                       <div className="col-span-3 flex items-start gap-3 pr-2">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] text-xs font-mono shrink-0 mt-0.5">
-                          <span className="shrink-0">{getRoleIcon(row.role)}</span>
+                          <span className="shrink-0">
+                            {getRoleIcon(row.role)}
+                          </span>
                           <span>{row.badge}</span>
                         </span>
                         <div>
-                          <div className="font-semibold text-[var(--text-primary)] text-sm">{row.title}</div>
+                          <div className="font-semibold text-[var(--text-primary)] text-sm">
+                            {row.title}
+                          </div>
                           <div className="text-xs text-[var(--text-secondary)] leading-relaxed mt-0.5">
                             {row.description}
                           </div>
@@ -574,7 +608,9 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                         <input
                           type="text"
                           value={row.modelName}
-                          onChange={(e) => updateRow(idx, "modelName", e.target.value)}
+                          onChange={(e) =>
+                            updateRow(idx, "modelName", e.target.value)
+                          }
                           placeholder="e.g. qwen2.5-coder:7b"
                           className={`w-full h-11 px-3.5 rounded-[var(--radius-sm)] text-sm neu-input font-mono outline-none transition-all ${
                             modelErr
@@ -582,7 +618,11 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                               : "border-[var(--border-default)] focus:border-[var(--accent)]"
                           }`}
                         />
-                        {modelErr && <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">{modelErr}</span>}
+                        {modelErr && (
+                          <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">
+                            {modelErr}
+                          </span>
+                        )}
                       </div>
 
                       {/* Col 3: Host / IP Address Input (Locked when !allowExternal) */}
@@ -592,14 +632,16 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                             type="text"
                             disabled={!allowExternal}
                             value={allowExternal ? row.host : "127.0.0.1"}
-                            onChange={(e) => updateRow(idx, "host", e.target.value)}
+                            onChange={(e) =>
+                              updateRow(idx, "host", e.target.value)
+                            }
                             placeholder="127.0.0.1"
                             className={`w-full h-11 px-3.5 rounded-[var(--radius-sm)] text-sm font-mono outline-none transition-all ${
                               !allowExternal
                                 ? "bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--text-tertiary)] cursor-not-allowed select-none"
                                 : hostErr
-                                ? "neu-input border-[var(--status-error)] focus:border-[var(--status-error)] text-[var(--text-primary)]"
-                                : "neu-input border-[var(--border-default)] focus:border-[var(--accent)] text-[var(--text-primary)]"
+                                  ? "neu-input border-[var(--status-error)] focus:border-[var(--status-error)] text-[var(--text-primary)]"
+                                  : "neu-input border-[var(--border-default)] focus:border-[var(--accent)] text-[var(--text-primary)]"
                             }`}
                           />
                           {!allowExternal && (
@@ -608,7 +650,11 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                             </span>
                           )}
                         </div>
-                        {hostErr && <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">{hostErr}</span>}
+                        {hostErr && (
+                          <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">
+                            {hostErr}
+                          </span>
+                        )}
                       </div>
 
                       {/* Col 4: Port Input */}
@@ -618,7 +664,9 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                           min={1}
                           max={65535}
                           value={row.port}
-                          onChange={(e) => updateRow(idx, "port", e.target.value)}
+                          onChange={(e) =>
+                            updateRow(idx, "port", e.target.value)
+                          }
                           placeholder="11434"
                           className={`w-full h-11 px-3 rounded-[var(--radius-sm)] text-sm neu-input font-mono outline-none transition-all ${
                             portErr
@@ -626,7 +674,11 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                               : "border-[var(--border-default)] focus:border-[var(--accent)]"
                           }`}
                         />
-                        {portErr && <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">{portErr}</span>}
+                        {portErr && (
+                          <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">
+                            {portErr}
+                          </span>
+                        )}
                       </div>
 
                       {/* Col 5: Context Length Input */}
@@ -636,7 +688,9 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                           min={512}
                           step={512}
                           value={row.contextLength}
-                          onChange={(e) => updateRow(idx, "contextLength", e.target.value)}
+                          onChange={(e) =>
+                            updateRow(idx, "contextLength", e.target.value)
+                          }
                           placeholder="32768"
                           className={`w-full h-11 px-3 rounded-[var(--radius-sm)] text-sm neu-input font-mono outline-none transition-all ${
                             contextErr
@@ -644,7 +698,11 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                               : "border-[var(--border-default)] focus:border-[var(--accent)]"
                           }`}
                         />
-                        {contextErr && <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">{contextErr}</span>}
+                        {contextErr && (
+                          <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">
+                            {contextErr}
+                          </span>
+                        )}
                       </div>
 
                       {/* Col 6: Status & Test Action */}
@@ -661,7 +719,10 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                             title={row.testMessage}
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-success)]" />
-                            Connected {row.testLatency !== undefined ? `(${row.testLatency}ms)` : ""}
+                            Connected{" "}
+                            {row.testLatency !== undefined
+                              ? `(${row.testLatency}ms)`
+                              : ""}
                           </span>
                         )}
                         {row.testStatus === "warning" && (
@@ -714,7 +775,11 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
             <div className="text-xs sm:text-sm text-[var(--text-secondary)] flex items-center gap-2.5">
               <span className="w-2 h-2 rounded-full bg-[var(--status-success)] shrink-0" />
               <span>
-                Configuration is saved to local SQLite database (<code className="font-mono text-[var(--text-primary)]">workbench.db</code>). Offline operation.
+                Configuration is saved to local SQLite database (
+                <code className="font-mono text-[var(--text-primary)]">
+                  workbench.db
+                </code>
+                ). Offline operation.
               </span>
             </div>
 
@@ -738,7 +803,8 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
 
       {/* Industrial Footer Notice */}
       <div className="pt-4 pb-1 text-center text-xs text-[var(--text-tertiary)] font-sans">
-        Sovereign Workbench · defence & PSU mission-critical intelligence platform · air-gapped verified
+        Sovereign Workbench · defence & PSU mission-critical intelligence
+        platform · air-gapped verified
       </div>
     </div>
   );

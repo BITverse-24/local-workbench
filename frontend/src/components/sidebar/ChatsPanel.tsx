@@ -17,6 +17,8 @@ type Props = {
   onDeleteChat: (id: string) => void;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
+  className?: string;
+  style?: React.CSSProperties;
 };
 
 function DotsIcon({ size = 13 }: { size?: number }) {
@@ -38,6 +40,8 @@ export default function ChatsPanel({
   onDeleteChat,
   isExpanded = true,
   onToggleExpand,
+  className = '',
+  style,
 }: Props) {
   const [pinned, setPinned] = useState<Record<string, boolean>>({});
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -146,8 +150,9 @@ export default function ChatsPanel({
   return (
     <div
       className={`flex flex-col transition-all duration-200 overflow-hidden ${
-        isExpanded ? 'flex-1 min-h-0' : 'shrink-0'
+        isExpanded ? (className || 'flex-1 min-h-0') : 'shrink-0'
       }`}
+      style={isExpanded ? style : undefined}
     >
       {/* Section Header */}
       <div className="flex items-center justify-between py-1.5 px-1 shrink-0 select-none">

@@ -180,8 +180,8 @@ export default function RunWaitingIndicator({
           </div>
         )}
 
-        {/* Streamed Plan Steps (if available) */}
-        {planSteps.length > 0 && (
+        {/* Streamed Plan Steps (if multiple available) */}
+        {planSteps.length > 1 && (
           <div className="mt-4 pt-3.5 border-t border-[var(--border-subtle)] space-y-2">
             <div className="text-xs tracking-[0.02em] font-medium text-[var(--text-tertiary)] mb-1.5">
               Execution plan
@@ -208,7 +208,7 @@ export default function RunWaitingIndicator({
                   <span
                     className={`leading-normal ${
                       isPast
-                        ? "text-[var(--text-secondary)] line-through decoration-white/20"
+                        ? "text-[var(--text-secondary)]"
                         : isCurrent
                         ? "text-[var(--text-primary)] font-medium"
                         : "text-[var(--text-tertiary)]"

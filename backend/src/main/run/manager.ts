@@ -143,6 +143,20 @@ export interface ConfirmInput {
   actionId: string;
   approved: boolean;
 }
+
+function isDestructiveCommand(cmd: string): boolean {
+  const normalized = cmd.trim().toLowerCase();
+  return (
+    /\b(rm\s+-[a-z]*[rf]|rmdir|del\s+[\/a-z]*|unlink|erase)\b/i.test(normalized) ||
+    /\b(git\s+clean\s+-[a-z]*f|git\s+reset\s+--hard)\b/i.test(normalized) ||
+    /\b(find\s+.*-delete)\b/i.test(normalized) ||
+    /\b(format\s+[a-z]:|mkfs)\b/i.test(normalized) ||
+    /^(rm|del)\s+/i.test(normalized) ||
+    /\b(delete|remove|cleanup|wipe|purge)[a-z0-9_-]*\.(py|sh|js|bash)\b/i.test(normalized) ||
+    /python[0-9.]*\s+-c\s+.*(remove|unlink|rmtree|delete)/i.test(normalized)
+  );
+}
+
 export class RunManager {
   private readonly attachments = new Map<string, AttachmentRow>();
   private readonly continuations = new Map<string, Continuation>();
@@ -659,11 +673,16 @@ export class RunManager {
       : [];
     const attachment = attachments[0];
     const isWorkspaceActive = this.harness?.isWorkspaceActive() ?? false;
+    const chatId = this.chatIdForRunIfPresent(runId);
+    const history = chatId ? this.getRecentChatHistory(chatId, text) : [];
+    const chatArtifacts = chatId ? this.getChatArtifacts(chatId) : [];
     const intent = classifyIntent({
       userText: text,
       attachment,
       attachments,
       isWorkspaceActive,
+      history,
+      hasRecentArtifacts: chatArtifacts.length > 0,
     });
 
     // 1. Standalone file deliverable branch (negative workspace constraint or isolated deliverable requested)
@@ -1882,6 +1901,37 @@ export class RunManager {
       }
     }
 
+    // Check if user requested executing a script deliverable from chat (e.g. "execute the file", "run delete_files.py")
+    const isExecuteArtifactIntent =
+      !hasNegationOrInterrogative &&
+      (/\b(?:please\s+)?(?:execute|run|start)\s+(?:the\s+)?(?:file|script|code|it|this|program)\b/i.test(text) ||
+       chatArtifacts.some((a) => text.toLowerCase().includes(a.filename.toLowerCase())));
+
+    let bridgedArtifactFilename: string | undefined;
+    if (isExecuteArtifactIntent && chatArtifacts.length > 0) {
+      let targetArtifact: (typeof chatArtifacts)[number] | undefined;
+      for (const art of chatArtifacts) {
+        if (text.toLowerCase().includes(art.filename.toLowerCase())) {
+          targetArtifact = art;
+          break;
+        }
+      }
+      if (!targetArtifact) {
+        targetArtifact = [...chatArtifacts].reverse().find((a) => /\.(py|sh|js|ts|bash)$/i.test(a.filename));
+      }
+      if (targetArtifact) {
+        const absPath = absoluteDataPath(targetArtifact.relativePath);
+        if (existsSync(absPath)) {
+          const destRel = targetArtifact.filename;
+          const targetWsPath = path.join(ws.root, destRel);
+          if (!existsSync(targetWsPath)) {
+            this.harness.copyArtifactToWorkspace(absPath, destRel, runId);
+          }
+          bridgedArtifactFilename = destRel;
+        }
+      }
+    }
+
     const tree = this.harness.getDirectoryTree();
     const treeFormatted = formatTreeForPrompt(tree);
     const systemPrompt = `${buildHarnessSystemPrompt(treeFormatted)}
@@ -1914,6 +1964,7 @@ Option 2: When you have finished the task and want to report back:
 }
 
 IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST call write_file with the path and content! Never merely output the file content in the text field without calling write_file.
+If the user asks to run, execute, or test code or commands, or to delete/clean files, call run_command! Never claim you lack access or permissions to execute commands or interact with the filesystem.
 `;
 
     const MAX_TURNS = 10;
@@ -1930,6 +1981,9 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
         .map((a) => `- ${a.filename} (${a.kind}, ${a.sizeBytes} bytes)`)
         .join("\n");
       conversationHistory += `=== Available Chat Deliverables ===\n${artifactList}\n=== End Deliverables ===\n\n`;
+    }
+    if (bridgedArtifactFilename) {
+      conversationHistory += `[SYSTEM CONTEXT]: Deliverable script "${bridgedArtifactFilename}" has been copied into your workspace root and is available for execution via run_command.\n\n`;
     }
     conversationHistory += `User Task: ${text}`;
     let finalAnswer = "";
@@ -2007,6 +2061,35 @@ IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST c
           toolResultSummary = JSON.stringify(prep?.chunks ?? []);
           this.result(runId, "retrieve_sop", `Retrieved ${prep?.chunks?.length ?? 0} excerpts`);
         } else {
+          if (toolCall.tool === "run_command" && isDestructiveCommand(toolCall.args.command)) {
+            const destructiveCmd = toolCall.args.command;
+            const prompt = `Execute destructive command in workspace: ${destructiveCmd.length > 60 ? destructiveCmd.slice(0, 57) + "..." : destructiveCmd}?`;
+
+            await this.awaitConfirmation(
+              runId,
+              "execute_python",
+              async () => {
+                try {
+                  this.tool(runId, "run_command", `Executing approved command: ${destructiveCmd}`);
+                  const result = await this.harness!.executeTool(toolCall, runId);
+                  this.result(runId, "run_command", `Executed: ${destructiveCmd}`);
+                  const out = (result.result as any)?.stdout || (result.result as any)?.stderr || "Command executed successfully.";
+                  this.persistAssistant(
+                    runId,
+                    `Action approved and executed: \`${destructiveCmd}\`\n\n\`\`\`\n${out}\n\`\`\``,
+                    "code-qwen25coder",
+                  );
+                  this.complete(runId);
+                } catch (err: any) {
+                  this.fail(runId, err);
+                }
+              },
+              destructiveCmd,
+              prompt,
+            );
+            return;
+          }
+
           const result = await this.harness.executeTool(toolCall, runId);
           toolResultSummary = JSON.stringify(result.result);
 

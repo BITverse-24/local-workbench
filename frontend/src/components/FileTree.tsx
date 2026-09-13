@@ -1,10 +1,13 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 type Props = {
   entries: HarnessDirEntry[];
+  rootPath?: string;
   onSelectFile?: (relativePath: string) => void;
   onRefresh?: () => void;
   loading?: boolean;
+  isFilterActive?: boolean;
+  showFilter?: boolean;
 };
 
 interface TreeNode {
@@ -88,18 +91,20 @@ function getFileIcon(filename: string) {
 function TreeItem({
   node,
   depth,
-  collapsed,
-  toggleCollapse,
+  expanded,
+  toggleExpand,
   onSelectFile,
+  isFilterActive = false,
 }: {
   node: TreeNode;
   depth: number;
-  collapsed: Set<string>;
-  toggleCollapse: (path: string) => void;
+  expanded: Set<string>;
+  toggleExpand: (path: string) => void;
   onSelectFile?: (path: string) => void;
+  isFilterActive?: boolean;
 }) {
   const isDir = node.type === 'directory';
-  const isCollapsed = collapsed.has(node.relativePath);
+  const isExpanded = isFilterActive || expanded.has(node.relativePath);
   const childList = Array.from(node.children.values()).sort((a, b) => {
     if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
     return a.name.localeCompare(b.name);
@@ -110,7 +115,7 @@ function TreeItem({
       <div
         onClick={() => {
           if (isDir) {
-            toggleCollapse(node.relativePath);
+            toggleExpand(node.relativePath);
           } else {
             onSelectFile?.(node.relativePath);
           }
@@ -122,7 +127,7 @@ function TreeItem({
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {isDir ? (
             <span className="text-[var(--text-secondary)] shrink-0 text-xs">
-              {isCollapsed ? '📁' : '📂'}
+              {isExpanded ? '📂' : '📁'}
             </span>
           ) : (
             <span className="shrink-0 w-4 text-center flex items-center justify-center">
@@ -141,16 +146,17 @@ function TreeItem({
         )}
       </div>
 
-      {isDir && !isCollapsed && (
+      {isDir && isExpanded && (
         <div>
           {childList.map((child) => (
             <TreeItem
               key={child.relativePath}
               node={child}
               depth={depth + 1}
-              collapsed={collapsed}
-              toggleCollapse={toggleCollapse}
+              expanded={expanded}
+              toggleExpand={toggleExpand}
               onSelectFile={onSelectFile}
+              isFilterActive={isFilterActive}
             />
           ))}
         </div>
@@ -159,12 +165,26 @@ function TreeItem({
   );
 }
 
-export default function FileTree({ entries, onSelectFile, onRefresh, loading = false }: Props) {
+export default function FileTree({
+  entries,
+  rootPath,
+  onSelectFile,
+  onRefresh,
+  loading = false,
+  isFilterActive: externalFilterActive = false,
+  showFilter = false,
+}: Props) {
   const [filter, setFilter] = useState('');
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const toggleCollapse = (path: string) => {
-    setCollapsed((prev) => {
+  // Reset expanded directories when changing directory or workspace root
+  useEffect(() => {
+    setExpanded(new Set());
+    setFilter('');
+  }, [rootPath]);
+
+  const toggleExpand = (path: string) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
       else next.add(path);
@@ -184,52 +204,56 @@ export default function FileTree({ entries, onSelectFile, onRefresh, loading = f
     return a.name.localeCompare(b.name);
   });
 
+  const activeFilter = Boolean(externalFilterActive || filter.trim());
+
   return (
     <div className="flex flex-col h-full overflow-hidden text-xs">
-      <div className="flex items-center gap-1.5 pb-2 shrink-0">
-        <div className="relative flex-1">
-          <input
-            type="text"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter files..."
-            className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-[var(--radius-sm)] px-2.5 py-1 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--accent)] transition-colors"
-          />
-          {filter && (
+      {showFilter && (
+        <div className="flex items-center gap-1.5 pb-2 shrink-0">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter files..."
+              className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-[var(--radius-sm)] px-2.5 py-1 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--accent)] transition-colors"
+            />
+            {filter && (
+              <button
+                onClick={() => setFilter('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {onRefresh && (
             <button
-              onClick={() => setFilter('')}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+              onClick={onRefresh}
+              disabled={loading}
+              className="w-6 h-6 rounded-[var(--radius-sm)] neu-button flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shrink-0 disabled:opacity-40"
+              title="Refresh tree"
             >
-              ✕
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                className={loading ? 'animate-spin' : ''}
+              >
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+              </svg>
             </button>
           )}
         </div>
-        {onRefresh && (
-          <button
-            onClick={onRefresh}
-            disabled={loading}
-            className="w-6 h-6 rounded-[var(--radius-sm)] neu-button flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shrink-0 disabled:opacity-40"
-            title="Refresh tree"
-          >
-            <svg
-              width="11"
-              height="11"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className={loading ? 'animate-spin' : ''}
-            >
-              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-            </svg>
-          </button>
-        )}
-      </div>
+      )}
 
       <div className="flex-1 overflow-y-auto pr-1 space-y-0.5 min-h-0">
         {topLevelChildren.length === 0 ? (
           <div className="text-xs text-[var(--text-tertiary)] text-center py-4">
-            {filter ? 'No matching files' : 'Empty directory'}
+            {activeFilter ? 'No matching files' : 'Empty directory'}
           </div>
         ) : (
           topLevelChildren.map((node) => (
@@ -237,9 +261,10 @@ export default function FileTree({ entries, onSelectFile, onRefresh, loading = f
               key={node.relativePath}
               node={node}
               depth={0}
-              collapsed={collapsed}
-              toggleCollapse={toggleCollapse}
+              expanded={expanded}
+              toggleExpand={toggleExpand}
               onSelectFile={onSelectFile}
+              isFilterActive={activeFilter}
             />
           ))
         )}

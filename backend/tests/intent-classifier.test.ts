@@ -318,4 +318,83 @@ describe("Intelligent Intent Classifier", () => {
       expect(decision.reason).toBe("meta-conversational inquiry");
     });
   });
+
+  describe("Multi-Turn Follow-Ups & Confirmation", () => {
+    it("routes affirmative 'Yes' following a workspace deletion prompt to harness", () => {
+      const decision = classifyIntent({
+        userText: "Yes",
+        isWorkspaceActive: true,
+        history: [
+          { role: "user", content: "Delete all files in the workspace" },
+          {
+            role: "assistant",
+            content: "Are you sure you want to delete all files in the workspace? Please confirm to proceed.",
+          },
+        ],
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.taskType).toBe("code");
+      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.isWorkspaceAction).toBe(true);
+      expect(decision.reason).toBe("affirmative follow-up in active workspace");
+    });
+
+    it("routes affirmative 'proceed' following confirmation request to harness", () => {
+      const decision = classifyIntent({
+        userText: "proceed",
+        isWorkspaceActive: true,
+        history: [
+          { role: "user", content: "clean the directory" },
+          { role: "assistant", content: "This will remove intermediate build files. Confirm to proceed?" },
+        ],
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.isWorkspaceAction).toBe(true);
+      expect(decision.modelId).toBe("code-qwen25coder");
+    });
+
+    it("routes 'execute the file' in active workspace to harness", () => {
+      const decision = classifyIntent({
+        userText: "execute the file",
+        isWorkspaceActive: true,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.isWorkspaceAction).toBe(true);
+      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.reason).toBe("script/file execution follow-up in workspace");
+    });
+
+    it("routes 'run the script' when workspace is inactive but recent artifacts exist to data sandbox", () => {
+      const decision = classifyIntent({
+        userText: "run the script",
+        isWorkspaceActive: false,
+        hasRecentArtifacts: true,
+      });
+      expect(decision.actionTarget).toBe("data");
+      expect(decision.isWorkspaceAction).toBe(false);
+      expect(decision.modelId).toBe("code-qwen25coder");
+    });
+
+    it("routes affirmative 'Yes' without active workspace to chat", () => {
+      const decision = classifyIntent({
+        userText: "Yes",
+        isWorkspaceActive: false,
+      });
+      expect(decision.actionTarget).toBe("chat");
+      expect(decision.isWorkspaceAction).toBe(false);
+    });
+
+    it("routes casual affirmative 'Yes' in active workspace without file/workspace context to chat", () => {
+      const decision = classifyIntent({
+        userText: "Yes",
+        isWorkspaceActive: true,
+        history: [
+          { role: "user", content: "Do you like philosophy?" },
+          { role: "assistant", content: "I find epistemology interesting. Do you want to discuss logic?" },
+        ],
+      });
+      expect(decision.actionTarget).toBe("chat");
+      expect(decision.isWorkspaceAction).toBe(false);
+    });
+  });
 });

@@ -95,9 +95,9 @@ export default function LeftSidebar({
         </button>
       </div>
 
-      {/* 2-Tier Vertical Panels: Upper (Chats), Lower (Files) */}
+      {/* 2-Tier Vertical Panels: Upper (Chats, 30%), Lower (Files, 70%) */}
       <div className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden">
-        {/* Upper: Conversations / Chats */}
+        {/* Upper: Conversations / Chats (30% when both open) */}
         <ChatsPanel
           chats={chats}
           activeId={activeId}
@@ -107,12 +107,13 @@ export default function LeftSidebar({
           onDeleteChat={onDeleteChat}
           isExpanded={chatsOpen}
           onToggleExpand={() => setChatsOpen((p) => !p)}
+          style={chatsOpen && filesOpen ? { flex: '3 1 0%' } : undefined}
         />
 
         {/* Section Divider */}
         <div className="h-[1px] bg-white/[0.06] shrink-0 mx-0.5" />
 
-        {/* Lower: Workspace Files */}
+        {/* Lower: Workspace Files (70% when both open) */}
         <FilesPanel
           workspace={workspace}
           workspaceTree={workspaceTree}
@@ -123,6 +124,7 @@ export default function LeftSidebar({
           loading={workspaceLoading}
           isExpanded={filesOpen}
           onToggleExpand={() => setFilesOpen((p) => !p)}
+          style={chatsOpen && filesOpen ? { flex: '7 1 0%' } : undefined}
         />
       </div>
     </aside>

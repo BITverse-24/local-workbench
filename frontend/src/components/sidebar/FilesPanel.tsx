@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import FileTree from '../FileTree';
 
 type Props = {
@@ -11,6 +11,8 @@ type Props = {
   loading?: boolean;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
+  className?: string;
+  style?: React.CSSProperties;
 };
 
 export default function FilesPanel({
@@ -23,8 +25,14 @@ export default function FilesPanel({
   loading = false,
   isExpanded = true,
   onToggleExpand,
+  className = '',
+  style,
 }: Props) {
   const [filterQuery, setFilterQuery] = useState('');
+
+  useEffect(() => {
+    setFilterQuery('');
+  }, [workspace?.root]);
 
   const getFolderName = (fullPath: string) => {
     const parts = fullPath.replace(/[\\/]+$/, '').split(/[\\/]/);
@@ -42,8 +50,9 @@ export default function FilesPanel({
   return (
     <div
       className={`flex flex-col transition-all duration-200 overflow-hidden ${
-        isExpanded ? 'flex-1 min-h-0' : 'shrink-0'
+        isExpanded ? (className || 'flex-1 min-h-0') : 'shrink-0'
       }`}
+      style={isExpanded ? style : undefined}
     >
       {/* Section Header */}
       <div className="flex items-center justify-between py-1.5 px-1 shrink-0 select-none">
@@ -196,9 +205,10 @@ export default function FilesPanel({
               <div className="flex-1 min-h-0 overflow-y-auto">
                 <FileTree
                   entries={filteredTree}
+                  rootPath={workspace?.root}
                   onSelectFile={onSelectWorkspaceFile}
-                  onRefresh={onRefreshTree}
                   loading={loading}
+                  isFilterActive={!!filterQuery.trim()}
                 />
               </div>
             </>
