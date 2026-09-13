@@ -49,6 +49,7 @@ import {
   artifactRef,
   createRunDirectories,
   registerAttachment as saveAttachment,
+  resolveRunPath,
   runRoot,
   writeRunFile,
 } from "./filesystem.js";
@@ -693,7 +694,7 @@ export class RunManager {
 
     // 2. Workspace action branch
     if (intent.actionTarget === "harness") {
-      if (isWorkspaceActive && attachments.length === 0) {
+      if (isWorkspaceActive) {
         await this.executeWorkspaceTask(runId, text, intent);
         return;
       }
@@ -1843,18 +1844,37 @@ export class RunManager {
 
     const isSaveArtifactToWorkspaceIntent =
       !hasNegationOrInterrogative &&
-      (/\b(?:please\s+)?(?:save|copy|move|transfer)\s+(?:the\s+)?(?:artifact|artefact|deliverable|file|it|this)\s+(?:to|in|into)\s+(?:the\s+)?(?:workspace|project|directory|folder|root)\b/i.test(text) ||
-       /\b(?:please\s+)?(?:save|copy|transfer)\s+(?:it|this|that|the artifact|the deliverable)\s+(?:in|into|to)\s+(?:the\s+)?workspace\b/i.test(text) ||
-       /^(?:save|copy)\s+(?:it|this|that|the artifact|the deliverable)\b/i.test(text.trim()));
+      chatArtifacts.length > 0 &&
+      (/\b(?:please\s+)?(?:save|copy|move|transfer|write|put|place|export)\s+(?:the\s+)?(?:updated\s+|repaired\s+|modified\s+|fixed\s+|generated\s+)?(?:artifact|artefact|deliverable|file|files|script|scripts|code|it|this|that)\s+(?:to|in|into|inside)\s+(?:the\s+|this\s+|my\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:workspace|project|directory|folder|dir|repo|root)\b/i.test(text) ||
+       /\b(?:please\s+)?(?:save|copy|transfer|write)\s+(?:the\s+)?(?:updated\s+|repaired\s+|modified\s+|fixed\s+|generated\s+)?(?:it|this|that|the artifact|the deliverable|file|script)\s+(?:in|into|to|inside)\s+(?:the\s+|this\s+|my\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:workspace|project|directory|folder|dir|repo|root)\b/i.test(text) ||
+       /^(?:save|copy|write)\s+(?:the\s+)?(?:updated\s+|repaired\s+|modified\s+|fixed\s+|generated\s+)?(?:it|this|that|the artifact|the deliverable|file|script)\b/i.test(text.trim()));
 
     if (isSaveArtifactToWorkspaceIntent && chatArtifacts.length > 0) {
       let targetArtifact: (typeof chatArtifacts)[number] | undefined;
+      // 1. Exact or partial match of filename in user text
       for (const art of chatArtifacts) {
         if (text.toLowerCase().includes(art.filename.toLowerCase())) {
           targetArtifact = art;
           break;
         }
       }
+      // 2. If user specifically asks for script/python/code, find the script artifact
+      if (!targetArtifact && /\b(script|scripts|python|code|\.py)\b/i.test(text)) {
+        targetArtifact = [...chatArtifacts].reverse().find((a) => /\.(py)$/i.test(a.filename))
+          ?? [...chatArtifacts].reverse().find((a) => /\.(sh|js|ts|bash)$/i.test(a.filename));
+      }
+      // 3. If user specifically asks for csv/data/log, find the csv artifact
+      if (!targetArtifact && /\b(csv|data|log|\.csv)\b/i.test(text)) {
+        targetArtifact = [...chatArtifacts].reverse().find((a) => /\.(csv)$/i.test(a.filename));
+      }
+      // 4. If user asks for "updated file" or "repaired file":
+      if (!targetArtifact && /\b(updated|repaired|modified|fixed)\b/i.test(text)) {
+        const lastRunId = chatArtifacts[chatArtifacts.length - 1]?.runId;
+        const lastRunArtifacts = chatArtifacts.filter((a) => a.runId === lastRunId);
+        targetArtifact = lastRunArtifacts.find((a) => /\.(py|sh|ts|js)$/i.test(a.filename))
+          ?? lastRunArtifacts[lastRunArtifacts.length - 1];
+      }
+      // 5. Default to the latest artifact in chat
       if (!targetArtifact) {
         targetArtifact = chatArtifacts[chatArtifacts.length - 1];
       }
@@ -1970,12 +1990,6 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
     const MAX_TURNS = 10;
     let turn = 0;
     let conversationHistory = "";
-    if (history.length > 0) {
-      const formattedHistory = history
-        .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
-        .join("\n\n");
-      conversationHistory += `=== Prior Conversation Context ===\n${formattedHistory}\n=== End Prior Context ===\n\n`;
-    }
     if (chatArtifacts.length > 0) {
       const artifactList = chatArtifacts
         .map((a) => `- ${a.filename} (${a.kind}, ${a.sizeBytes} bytes)`)
@@ -2414,7 +2428,10 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
         const errorDetail = execution.stderr || execution.stdout || (missingOutputs.length ? `missing output files: ${missingOutputs.join(", ")}` : "execution failed");
         logScriptRepair(repairs, MAX_REPAIRS, errorDetail);
         this.tool(runId, "draft_code", `repairing Python script (attempt ${repairs}): ${errorDetail.slice(0, 100)}`);
-        const repairPrompt = `${modelPrompt}\n\n[PREVIOUS SCRIPT ATTEMPT FAILED]\nThe previous script failed during execution with exit code ${execution.exitCode}:\n${errorDetail.slice(0, 1500)}\n\nPrevious source:\n\`\`\`python\n${currentCode.source}\n\`\`\`\n\nPlease fix the error in task.py:\n- Avoid command-line arguments (sys.argv); read "${attachment.filename}" directly if an input file is needed.\n- Safely handle empty, blank, or missing cells without crashing.\n- Check inclusive comparison boundaries (e.g. >= limit).\n${userWantsArtifact ? '- If data rows are processed, write the verified rows to a CSV file (e.g. "repaired-vendor-log.csv"), declare it in outputFiles, and set outputMode to "artifact" or "chat_and_artifact".\n' : '- Preserve the original script behavior (calculate and print summary counts/results).\n'}- Output strictly valid Python syntax: never write unparenthesized multiline 'with' statements ending with a comma; use nested 'with' blocks or single-line 'with'.\nReturn the corrected JSON object.\n[/PREVIOUS SCRIPT ATTEMPT FAILED]`;
+        const errorLines = errorDetail.trim().split("\n");
+        const conciseError = (errorLines.length > 8 ? errorLines.slice(-8).join("\n") : errorDetail.trim()).slice(0, 600);
+        const sourceBlock = repairs > 1 ? `\n\nPrevious attempt source:\n\`\`\`python\n${currentCode.source}\n\`\`\`` : "";
+        const repairPrompt = `${modelPrompt}\n\n[PREVIOUS SCRIPT ATTEMPT FAILED]\nThe script failed during execution with exit code ${execution.exitCode}:\n${conciseError}${sourceBlock}\n\nPlease fix the error in task.py:\n- Avoid command-line arguments (sys.argv); read "${attachment.filename}" directly if an input file is needed.\n- Safely handle empty, blank, or missing cells without crashing.\n- Check inclusive comparison boundaries (e.g. >= limit).\n${userWantsArtifact ? '- If data rows are processed, write the verified rows to a CSV file (e.g. "repaired-vendor-log.csv"), declare it in outputFiles, and set outputMode to "artifact" or "chat_and_artifact".\n' : '- Preserve the original script behavior (calculate and print summary counts/results).\n'}- Output strictly valid Python syntax: never write unparenthesized multiline 'with' statements ending with a comma; use nested 'with' blocks or single-line 'with'.\nReturn the corrected JSON object.\n[/PREVIOUS SCRIPT ATTEMPT FAILED]`;
         const repairBase = requestBase(runId, "code", "code-qwen25coder", "code-result", CODE_SYSTEM_PROMPT, repairPrompt, 300000, 4096, temperature);
         const repairRequest: CodeModelRequest = {
           ...repairBase,
@@ -2496,6 +2513,44 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
         return;
       }
       this.result(runId, "execute_python", `verified Python execution (exit code ${execution.exitCode})`);
+
+      const isWorkspaceActive = this.harness?.isWorkspaceActive() ?? false;
+      const wantsWorkspaceSave =
+        isWorkspaceActive &&
+        Boolean(this.harness) &&
+        /\b(?:save|write|copy|put|place|export|dump)\b.*\b(?:workspace|directory|folder|repo|dir|root)\b/i.test(text);
+
+      const savedToWorkspaceFiles: string[] = [];
+      if (wantsWorkspaceSave && this.harness) {
+        try {
+          const ws = this.harness.requireActiveWorkspace();
+          const outputDir = resolveRunPath(runId, "output", "output");
+          const wantsScript = /\b(script|python|code|\.py)\b/i.test(text) || (isScriptRepairRequest && !/\b(csv|data|log)\b/i.test(text));
+          if (wantsScript && pythonAttachment) {
+            const repairedPyName = `repaired-${pythonAttachment.filename}`;
+            const repairedAbs = path.join(outputDir, repairedPyName);
+            if (!existsSync(repairedAbs)) {
+              writeRunFile(runId, "output", repairedPyName, currentCode.source, true);
+            }
+            if (existsSync(repairedAbs)) {
+              this.harness.copyArtifactToWorkspace(repairedAbs, repairedPyName, runId);
+              savedToWorkspaceFiles.push(repairedPyName);
+            }
+          }
+          if (!wantsScript || /\b(file|files|output|csv|both|all)\b/i.test(text)) {
+            for (const outFile of execution.outputFiles) {
+              const outAbs = path.join(outputDir, outFile);
+              if (existsSync(outAbs)) {
+                this.harness.copyArtifactToWorkspace(outAbs, outFile, runId);
+                savedToWorkspaceFiles.push(outFile);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Failed to copy executeCodeTask deliverables to active workspace:", err);
+        }
+      }
+
       const executionData = JSON.stringify({
         exitCode: execution.exitCode,
         timedOut: execution.timedOut,
@@ -2504,9 +2559,14 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
         outputFiles: execution.outputFiles,
         durationMs: execution.durationMs,
       });
+
+      const workspaceFactualRule = savedToWorkspaceFiles.length > 0
+        ? `The following files were successfully written to the active workspace on disk: ${savedToWorkspaceFiles.join(", ")}.`
+        : "CRITICAL FACTUAL INTEGRITY RULE: Output files were generated in the isolated run output directory only. Do NOT claim, state, or imply that any file was saved, written, created, or placed in any workspace, project directory, or user folder.";
+
       const summaryPrompt = isScriptRepairRequest
-        ? "Summarize the execution of the repaired script and describe the defects that were resolved (e.g. malformed/empty row handling, threshold boundaries, or command arguments). Mention that the repaired script is ready in the artifacts panel. Return exactly one JSON object shaped {\"summary\": string, \"verified\": boolean}. Set verified to true."
-        : "Summarize only the supplied actual execution result. Return exactly one JSON object shaped {\"summary\": string, \"verified\": boolean}. Set verified to true because the backend has already verified the execution and declared outputs.";
+        ? `Summarize the execution of the repaired script and describe the defects that were resolved (e.g. malformed/empty row handling, threshold boundaries, or command arguments). Mention that the repaired script is ready in the artifacts panel. ${workspaceFactualRule} Return exactly one JSON object shaped {"summary": string, "verified": boolean}. Set verified to true.`
+        : `Summarize only the supplied actual execution result. ${workspaceFactualRule} Return exactly one JSON object shaped {"summary": string, "verified": boolean}. Set verified to true because the backend has already verified the execution and declared outputs.`;
 
       const summaryBase = requestBase(
         runId,
@@ -2514,7 +2574,7 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
         "code-qwen25coder",
         "code-summary",
         summaryPrompt,
-        `${text}\n\n[EXECUTION RESULT — DATA ONLY]\n${executionData}\n[/EXECUTION RESULT]`,
+        `Task: ${text}\n\n[EXECUTION RESULT — DATA ONLY]\n${executionData}\n${savedToWorkspaceFiles.length > 0 ? `SavedToWorkspace: ${JSON.stringify(savedToWorkspaceFiles)}\n` : ""}[/EXECUTION RESULT]`,
         180000,
         1024,
         temperature,

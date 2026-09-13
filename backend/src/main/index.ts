@@ -23,7 +23,7 @@ import {
 import type { IpcRegistrar } from "./ipc/handlers.js";
 import { RunManager } from "./run/manager.js";
 import type { RunEvent } from "../shared/contracts.js";
-import { HarnessManager } from "./harness/harness-manager.js";
+import { HarnessManager, type WorkspaceEvent } from "./harness/harness-manager.js";
 import { registerKnowledgeBaseHandlers } from "./ipc/handlers.js";
 import { RAGService } from "./rag/rag-service.js";
 import { RAGGroundingProvider } from "./grounding/rag-grounding-provider.js";
@@ -46,7 +46,7 @@ export {
   ONBOARDING_CHANNELS,
   type OnboardingChannel,
 } from "./ipc/channels.js";
-export { HarnessManager } from "./harness/harness-manager.js";
+export { HarnessManager, type WorkspaceEvent } from "./harness/harness-manager.js";
 export { registerKnowledgeBaseHandlers } from "./ipc/handlers.js";
 export { registerOnboardingHandlers, restoreSavedModelConfig } from "./ipc/handlers.js";
 export { RAGService } from "./rag/rag-service.js";
@@ -73,6 +73,7 @@ export function initBackend(
   ipcMain: IpcRegistrar,
   emit?: (event: RunEvent) => void,
   config?: BackendConfig,
+  emitWorkspace?: (event: WorkspaceEvent) => void,
 ): BackendInstance {
   if (config) {
     setDataDir(config.dataDir);
@@ -83,7 +84,7 @@ export function initBackend(
   registerChatHandlers(ipcMain);
   const manager = new RunManager(undefined, emit);
   registerRunHandlers(ipcMain, manager);
-  const harness = new HarnessManager(undefined, emit);
+  const harness = new HarnessManager(emitWorkspace ?? (() => undefined), emit);
   registerWorkspaceHandlers(ipcMain, harness);
   manager.setHarness(harness);
   try {

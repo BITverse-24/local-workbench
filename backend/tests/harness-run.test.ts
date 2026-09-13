@@ -588,5 +588,57 @@ describe("Workspace Task Execution Loop (HARNESS.md)", () => {
     const completeEvent = runEvents.find((e) => e.type === "run_state" && (e as any).state === "completed");
     expect(completeEvent).toBeDefined();
   });
+
+  it("does not duplicate prior conversation context in userPrompt during workspace harness run", async () => {
+    const interceptedRequests: ModelRequest[] = [];
+    const mockGateway = createMockGateway((req) => {
+      interceptedRequests.push(req);
+      return {
+        thought: "Check workspace files",
+        action: "final_answer",
+        text: "Workspace inspected.",
+      };
+    });
+
+    manager = new RunManager(mockGateway as any, (event) => runEvents.push(event));
+    harness = new HarnessManager(undefined, (event) => runEvents.push(event));
+    manager.setHarness(harness);
+    harness.registerWorkspace(workspaceRoot);
+
+    const chatId = createChat("Workspace Context Test");
+
+    addMessage({ chat_id: chatId, role: "user", content: "Hey!" });
+    addMessage({ chat_id: chatId, role: "assistant", content: "Hello! How can I assist you today?" });
+    addMessage({ chat_id: chatId, role: "user", content: "Please fix the broken script" });
+    addMessage({
+      chat_id: chatId,
+      role: "assistant",
+      content: "The script executed successfully without any errors.",
+    });
+
+    const userPrompt = "Save the new corrected file in the workspace";
+    addMessage({ chat_id: chatId, role: "user", content: userPrompt });
+
+    await manager.start({
+      userText: userPrompt,
+      chatId,
+    });
+    await waitForCompletion(runEvents);
+
+    expect(interceptedRequests.length).toBeGreaterThanOrEqual(1);
+    const harnessReq = interceptedRequests[0];
+
+    // Prior history should be passed as structured history messages
+    expect(harnessReq.history).toBeDefined();
+    expect(harnessReq.history?.length).toBe(4);
+    expect(harnessReq.history?.[0].content).toBe("Hey!");
+    expect(harnessReq.history?.[1].content).toBe("Hello! How can I assist you today?");
+
+    // userPrompt must NOT contain the duplicated stringified prior context
+    expect(harnessReq.userPrompt).not.toContain("=== Prior Conversation Context ===");
+    expect(harnessReq.userPrompt).not.toContain("=== End Prior Context ===");
+    expect(harnessReq.userPrompt).toContain("User Task: Save the new corrected file in the workspace");
+  });
 });
+
 

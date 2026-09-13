@@ -21,6 +21,7 @@ import type {
   ArtifactRef,
   ArtifactKind,
 } from "../../shared/contracts.js";
+export type { WorkspaceEvent };
 
 function inferKind(filename: string): ArtifactKind {
   const ext = path.extname(filename).toLowerCase().replace(/^\./, "");
@@ -176,6 +177,12 @@ export class HarnessManager {
       summary: resultSummary,
     });
 
+    if (toolName === "write_file" || toolName === "run_command") {
+      try {
+        this.emitWorkspace({ type: "workspace_tree", entries: this.getDirectoryTree() });
+      } catch {}
+    }
+
     if (runId && this.emitRun) {
       this.emitRun({
         type: "tool_result",
@@ -288,7 +295,11 @@ export class HarnessManager {
       mkdirSync(parentDir, { recursive: true });
     }
     copyFileSync(sourceAbsPath, target);
-    return this.createWorkspaceArtifact(runId, destinationRelPath);
+    const artifact = this.createWorkspaceArtifact(runId, destinationRelPath);
+    try {
+      this.emitWorkspace({ type: "workspace_tree", entries: this.getDirectoryTree() });
+    } catch {}
+    return artifact;
   }
 
   // ── Private helpers ──────────────────────────────────────────

@@ -168,6 +168,8 @@ app.whenReady().then(async () => {
       schemaPath: app.isPackaged
         ? path.join(process.resourcesPath, "backend", "schema.sql")
         : path.join(REPO_ROOT, "backend", "src", "main", "persistence", "schema.sql"),
+    }, (wsEvent) => {
+      if (win && !win.isDestroyed()) win.webContents.send("workspace:event", wsEvent);
     });
     console.log("[backend] initialized");
 

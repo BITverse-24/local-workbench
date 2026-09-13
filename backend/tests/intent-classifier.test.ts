@@ -397,4 +397,77 @@ describe("Intelligent Intent Classifier", () => {
       expect(decision.isWorkspaceAction).toBe(false);
     });
   });
+
+  describe("Workspace File Write & Save Overrides", () => {
+    it("routes 'Write the updated file into the test directory workspace' to harness even with CSV attachment", () => {
+      const decision = classifyIntent({
+        userText: "Write the updated file into the test directory workspace",
+        isWorkspaceActive: true,
+        attachments: [{ mediaType: "text/csv", filename: "vendor-maintenance-log.csv" }],
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.taskType).toBe("code");
+      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.isWorkspaceAction).toBe(true);
+    });
+
+    it("routes 'write the python script into the directory' to harness with Python and CSV attachments", () => {
+      const decision = classifyIntent({
+        userText: "write the python script into the directory",
+        isWorkspaceActive: true,
+        attachments: [
+          { mediaType: "text/x-python", filename: "vendor_log_parser.py" },
+          { mediaType: "text/csv", filename: "vendor-maintenance-log.csv" },
+        ],
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.taskType).toBe("code");
+      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.isWorkspaceAction).toBe(true);
+    });
+
+    it("routes 'Save the repaired script into my workspace' to harness", () => {
+      const decision = classifyIntent({
+        userText: "Save the repaired script into my workspace",
+        isWorkspaceActive: true,
+        hasRecentArtifacts: true,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.isWorkspaceAction).toBe(true);
+    });
+
+    it("routes 'Copy the artifact to workspace' to harness", () => {
+      const decision = classifyIntent({
+        userText: "Copy the artifact to workspace",
+        isWorkspaceActive: true,
+        hasRecentArtifacts: true,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.isWorkspaceAction).toBe(true);
+    });
+
+    it("still routes 'fix the script' with Python and CSV attachments to data sandbox", () => {
+      const decision = classifyIntent({
+        userText: "fix the script",
+        isWorkspaceActive: true,
+        attachments: [
+          { mediaType: "text/x-python", filename: "vendor_log_parser.py" },
+          { mediaType: "text/csv", filename: "vendor-maintenance-log.csv" },
+        ],
+      });
+      expect(decision.actionTarget).toBe("data");
+      expect(decision.isWorkspaceAction).toBe(false);
+    });
+
+    it("still routes 'flag out-of-range readings' with CSV attachment to data sandbox", () => {
+      const decision = classifyIntent({
+        userText: "flag out-of-range readings",
+        isWorkspaceActive: true,
+        attachments: [{ mediaType: "text/csv", filename: "vendor-maintenance-log.csv" }],
+      });
+      expect(decision.actionTarget).toBe("data");
+      expect(decision.isWorkspaceAction).toBe(false);
+    });
+  });
 });
+

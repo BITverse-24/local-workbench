@@ -259,12 +259,17 @@ export class ModelGateway implements ModelClient {
     const systemPrompt = /json/i.test(request.systemPrompt)
       ? request.systemPrompt
       : `${request.systemPrompt} Respond with valid JSON.`;
-    // OpenRouter pre-checks affordability against (prompt + max_tokens): omitting
-    // max_tokens defaults it to the model's full window (e.g. 32768) and yields
-    // 402 on low-credit keys even for tiny replies. Always cap explicitly.
-    // Map the internal ResponseFormat to a strict JSON schema if applicable
+    const isLocal = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/i.test(model.baseUrl) || model.runtime === "ollama" || model.runtime === "mlx-lm" || model.runtime === "llama-server";
+
+    // Map the internal ResponseFormat to a strict JSON schema if applicable.
+    // For local model servers (LM Studio, mlx-lm, llama-server, Ollama), compiling complex
+    // multi-property JSON schemas into GBNF grammars on the CPU blocks execution for 2-4 seconds
+    // before GPU prefill begins. Using { type: "json_object" } eliminates this CPU grammar stall
+    // completely while local instruct models adhere to the requested JSON shape in the prompt.
     let responseFormatPayload: any = { type: "json_object" };
-    if (request.responseFormat === "chat-result") {
+    if (isLocal && (request.responseFormat === "code-result" || request.responseFormat === "harness-step")) {
+      responseFormatPayload = { type: "json_object" };
+    } else if (request.responseFormat === "chat-result") {
       responseFormatPayload = {
         type: "json_schema",
         json_schema: {
@@ -455,8 +460,6 @@ export class ModelGateway implements ModelClient {
       temperature: request.temperature ?? 0.2,
       max_tokens: maxTokens,
     });
-    // Log outgoing request (without leaking key, with vision metadata instead of full base64)
-    const isLocal = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/i.test(model.baseUrl) || model.runtime === "ollama" || model.runtime === "mlx-lm" || model.runtime === "llama-server";
     const minTimeout = isLocal ? (request.taskType === "code" ? 300000 : 180000) : 0;
     const effectiveTimeout = Math.max(request.timeoutMs ?? 0, model.requestTimeoutMs ?? 0, minTimeout) || 60000;
 

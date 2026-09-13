@@ -64,7 +64,7 @@ const EXPLICIT_FILENAME_PATTERN =
   /\b([a-zA-Z0-9_\-]+\.(?:txt|js|ts|jsx|tsx|json|md|py|csv|html|css|yaml|yml|sh|env|sql|xml|rs|go|java|c|cpp|h|toml|ini))\b/i;
 
 const DIRECTORY_CONTEXT_PHRASES =
-  /\b(?:in|into|to|inside|within)\s+(?:the\s+|this\s+|my\s+)?(?:directory|folder|dir|workspace|project|repo|repository|codebase|root|ws)\b/i;
+  /\b(?:in|into|to|inside|within)\s+(?:the\s+|this\s+|my\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:directory|folder|dir|workspace|project|repo|repository|codebase|root|ws)\b/i;
 
 const PROJECT_PATH_SYNTAX =
   /(?:^|\s)(?:\.\/|\.\.\/|src\/|tests?\/|lib\/|app\/|pkg\/|scripts\/|config\/)[a-zA-Z0-9_\-./]+/i;
@@ -233,6 +233,15 @@ function detectNegativeWorkspaceConstraint(tokens: string[]): boolean {
  * Matches "artifact", "artefact", "artifct", "standalone", "scratch", "temp", "chat only", etc.
  */
 function detectStandaloneHint(tokens: string[], rawText: string): boolean {
+  // If the user explicitly asks to copy/save/transfer the artifact into the workspace/directory,
+  // this is a workspace target action, NOT a standalone isolation constraint.
+  if (
+    /\b(?:copy|save|transfer|write|move)\s+(?:the\s+)?(?:artifact|artefact)\s+(?:to|into|in|inside)\s+(?:the\s+|this\s+|my\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:workspace|directory|folder|dir|repo|root)\b/i.test(rawText) ||
+    /\b(?:copy|save|transfer|write|move)\s+(?:it|this)\s+(?:to|into|in|inside)\s+(?:the\s+|this\s+|my\s+)?(?:workspace|directory|folder|dir|repo|root)\b/i.test(rawText)
+  ) {
+    return false;
+  }
+
   // 1. Any fuzzy token match (e.g. "artifct", "artefact", "standalone", "temp", "scratch")
   for (const token of tokens) {
     if (fuzzyMatches(token, STANDALONE_WORDS)) return true;
@@ -404,23 +413,56 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     }
   }
 
-  // 1. Python script + CSV / log repair intent (Flow B)
-  const hasPythonAttachment = allAttachments.some(
-    (a) => a.filename?.endsWith(".py") || a.mediaType === "text/x-python" || a.mediaType === "application/x-python-code",
-  );
-  const hasCsvAttachment = allAttachments.some((a) => a.mediaType === "text/csv" || a.filename?.endsWith(".csv"));
-  if (hasPythonAttachment && (hasCsvAttachment || /\b(fix|crash|broken|parser|error|traceback)\b/i.test(lower))) {
+  // Extract Syntactic and Semantic Features
+  const hasNegativeWorkspaceConstraint = detectNegativeWorkspaceConstraint(tokens);
+  const hasStandaloneHint = detectStandaloneHint(tokens, userText);
+  const hasFileActionVerb = FILE_ACTION_VERBS.test(lower);
+  const hasFileContainerNoun = FILE_CONTAINER_NOUNS.test(lower);
+  const hasWorkspaceNoun = WORKSPACE_CONTAINER_NOUNS.test(lower);
+  const hasFileExtension = FILE_EXTENSION_PATTERN.test(lower);
+  const hasDirectoryContext = DIRECTORY_CONTEXT_PHRASES.test(lower);
+  const hasProjectPath = PROJECT_PATH_SYNTAX.test(userText);
+  const suggestedExtension = inferLanguageExtension(userText);
+  const hasReferentialNoun = REFERENTIAL_DELIVERABLE_NOUNS.test(lower);
+
+  // Extract explicit filename if present
+  const filenameMatch = userText.match(EXPLICIT_FILENAME_PATTERN);
+  const extractedFilename = filenameMatch ? filenameMatch[1] : undefined;
+
+  // Case A: Meta-conversational inquiry or complaint (e.g. "Why did you save it?", "I didn't tell you to do that")
+  const isMetaQuestion =
+    /\b(why did you|why are you|why would you|did i (?:tell|ask|say)|who told you|why was|why is it|why isnt|why not)\b/i.test(lower) ||
+    /\b(didnt|did not|dont|do not|never|no|not)\b.*\b(tell|ask|want|say)\b/i.test(lower);
+
+  if (isMetaQuestion) {
     return withGrounding({
-      taskType: "code",
-      modelId: "code-qwen25coder",
-      actionTarget: "data",
-      reason: "Python repair and verification",
+      taskType: "draft",
+      modelId: "draft-qwen3",
+      actionTarget: "chat",
+      reason: "meta-conversational inquiry",
       isWorkspaceAction: false,
-      confidence: 1.0,
+      confidence: 0.95,
     });
   }
 
-  // 2. Vision / Drawing Intent (media or engineering drawings attached)
+  // Case B: Explicit standalone file requested OR negative workspace constraint
+  if (hasNegativeWorkspaceConstraint || (hasStandaloneHint && (hasFileActionVerb || hasFileContainerNoun || hasFileExtension))) {
+    return withGrounding({
+      taskType: "code",
+      modelId: "code-qwen25coder",
+      actionTarget: "standalone_file",
+      reason: hasNegativeWorkspaceConstraint
+        ? "standalone file creation (negative workspace constraint)"
+        : "standalone file creation (isolated from workspace)",
+      isWorkspaceAction: false,
+      isNegativeWorkspaceConstraint: hasNegativeWorkspaceConstraint,
+      extractedFilename,
+      suggestedExtension,
+      confidence: 0.95,
+    });
+  }
+
+  // Case C: Vision / Drawing Intent (media or engineering drawings attached)
   const mediaAttachments = allAttachments.filter(
     (a) =>
       a.mediaType === "application/pdf" ||
@@ -478,7 +520,51 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     });
   }
 
-  // 3. Data Intent (CSV attachment or explicit CSV/data processing with attachment)
+  // Case D: Explicit Workspace Targeted Write / Save Action
+  // If the user explicitly asks to write/save/copy/move a file/script into the workspace/directory,
+  // route to harness regardless of whether historical CSV/code attachments exist in the chat!
+  const isWorkspaceTargetedWrite =
+    isWorkspaceActive &&
+    !hasNegativeWorkspaceConstraint &&
+    !hasStandaloneHint &&
+    (
+      hasDirectoryContext ||
+      (hasFileActionVerb && hasWorkspaceNoun) ||
+      /\b(?:write|save|copy|move|transfer|export|dump|put|place)\b.*\b(?:workspace|directory|folder|dir|repo|root)\b/i.test(lower) ||
+      /\b(?:into|in|to|inside)\s+(?:the\s+|this\s+|my\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:workspace|directory|folder|dir|repo|root)\b/i.test(lower)
+    ) &&
+    (hasFileActionVerb || hasReferentialNoun || hasRecentArtifacts || hasFileContainerNoun || hasFileExtension);
+
+  if (isWorkspaceTargetedWrite) {
+    return withGrounding({
+      taskType: "code",
+      modelId: "code-qwen25coder",
+      actionTarget: "harness",
+      reason: "workspace file write/save request",
+      isWorkspaceAction: true,
+      extractedFilename,
+      suggestedExtension,
+      confidence: 0.95,
+    });
+  }
+
+  // Case E: Python script + CSV / log repair intent (Flow B)
+  const hasPythonAttachment = allAttachments.some(
+    (a) => a.filename?.endsWith(".py") || a.mediaType === "text/x-python" || a.mediaType === "application/x-python-code",
+  );
+  const hasCsvAttachment = allAttachments.some((a) => a.mediaType === "text/csv" || a.filename?.endsWith(".csv"));
+  if (hasPythonAttachment && (hasCsvAttachment || /\b(fix|crash|broken|parser|error|traceback)\b/i.test(lower))) {
+    return withGrounding({
+      taskType: "code",
+      modelId: "code-qwen25coder",
+      actionTarget: "data",
+      reason: "Python repair and verification",
+      isWorkspaceAction: false,
+      confidence: 1.0,
+    });
+  }
+
+  // Case F: Data Intent (CSV attachment or explicit CSV/data processing with attachment)
   if (
     hasCsvAttachment ||
     (allAttachments.length > 0 && DATA_ANALYSIS_KEYWORDS.test(lower))
@@ -493,7 +579,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     });
   }
 
-  // 2.5. Approval Note & Document Drafting Intent (routes to draft model draft-qwen3)
+  // Case G: Approval Note & Document Drafting Intent (routes to draft model draft-qwen3)
   if (DRAFTING_INTENT_PATTERNS.test(userText)) {
     return withGrounding({
       taskType: "draft",
@@ -505,21 +591,6 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     });
   }
 
-  // 3. Extract Syntactic and Semantic Features
-  const hasNegativeWorkspaceConstraint = detectNegativeWorkspaceConstraint(tokens);
-  const hasStandaloneHint = detectStandaloneHint(tokens, userText);
-  const hasFileActionVerb = FILE_ACTION_VERBS.test(lower);
-  const hasFileContainerNoun = FILE_CONTAINER_NOUNS.test(lower);
-  const hasWorkspaceNoun = WORKSPACE_CONTAINER_NOUNS.test(lower);
-  const hasFileExtension = FILE_EXTENSION_PATTERN.test(lower);
-  const hasDirectoryContext = DIRECTORY_CONTEXT_PHRASES.test(lower);
-  const hasProjectPath = PROJECT_PATH_SYNTAX.test(userText);
-  const suggestedExtension = inferLanguageExtension(userText);
-
-  // Extract explicit filename if present
-  const filenameMatch = userText.match(EXPLICIT_FILENAME_PATTERN);
-  const extractedFilename = filenameMatch ? filenameMatch[1] : undefined;
-
   const hasCommandAction =
     COMMAND_ACTION_VERBS.test(lower) &&
     (COMMAND_TARGET_NOUNS.test(lower) ||
@@ -529,29 +600,11 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
 
   const hasExplorationAction = EXPLORATION_PHRASES.test(lower);
 
-  // Meta-conversational inquiry or complaint (e.g. "Why did you save it?", "I didn't tell you to do that")
-  const isMetaQuestion =
-    /\b(why did you|why are you|why would you|did i (?:tell|ask|say)|who told you|why was|why is it|why isnt|why not)\b/i.test(lower) ||
-    /\b(didnt|did not|dont|do not|never|no|not)\b.*\b(tell|ask|want|say)\b/i.test(lower);
-
-  if (isMetaQuestion) {
-    return withGrounding({
-      taskType: "draft",
-      modelId: "draft-qwen3",
-      actionTarget: "chat",
-      reason: "meta-conversational inquiry",
-      isWorkspaceAction: false,
-      confidence: 0.95,
-    });
-  }
-
   // 4. Evidence-Based Scoring System
   let scoreHarness = 0;
   let scoreStandalone = 0;
   let scoreData = 0;
   let scoreChat = 10; // Default baseline
-
-  const hasReferentialNoun = REFERENTIAL_DELIVERABLE_NOUNS.test(lower);
 
   // Generic script request without language, filename, directory, or standalone target (e.g. "write me a small script")
   const isGenericScriptInquiry =

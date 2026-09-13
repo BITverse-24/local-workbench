@@ -44,6 +44,17 @@ const SAFE_IMPORTS = new Set(["csv", "datetime", "math"]);
 
 export function sanitizePythonSource(source: string): string {
   if (!source) return source;
+
+  // 1. Unescape double-escaped newlines if real newlines are absent or sparse
+  const realNewlines = (source.match(/\n/g) || []).length;
+  const escapedNewlines = (source.match(/\\n/g) || []).length;
+  if (escapedNewlines > 0 && (realNewlines <= 1 || escapedNewlines >= realNewlines)) {
+    source = source.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "\n");
+  }
+
+  // 2. Strip markdown code fences if model enclosed code inside fences
+  source = source.replace(/^```(?:python|py)?[\r\n\s]*/i, "").replace(/[\r\n\s]*```$/g, "").trim();
+
   const lines = source.split(/\r?\n/);
   const result: string[] = [];
   let inWith = false;
@@ -51,6 +62,31 @@ export function sanitizePythonSource(source: string): string {
 
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
+
+    // Normalize leading tabs / escaped tabs to 4 spaces to prevent TabError and backslash syntax errors
+    line = line.replace(/^([ \t]|\\+t)+/, (indent) => {
+      let spaces = 0;
+      let j = 0;
+      while (j < indent.length) {
+        if (indent[j] === " ") {
+          spaces += 1;
+          j += 1;
+        } else if (indent[j] === "\t") {
+          spaces += 4;
+          j += 1;
+        } else {
+          const m = indent.slice(j).match(/^\\+t/);
+          if (m) {
+            spaces += 4;
+            j += m[0].length;
+          } else {
+            j += 1;
+          }
+        }
+      }
+      return " ".repeat(spaces);
+    });
+
     const trimmed = line.trim();
 
     if (/^\s*with\b/.test(line)) {
