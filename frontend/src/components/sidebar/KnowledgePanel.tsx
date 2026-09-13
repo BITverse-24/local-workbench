@@ -7,9 +7,12 @@ type Props = {
 };
 
 export default function KnowledgePanel({
-  isExpanded = true,
-  onToggleExpand,
+  isExpanded: controlledExpanded,
+  onToggleExpand: controlledToggle,
 }: Props) {
+  const [internalExpanded, setInternalExpanded] = useState(true);
+  const isExpanded = controlledExpanded !== undefined ? controlledExpanded : internalExpanded;
+  const onToggleExpand = controlledToggle || (() => setInternalExpanded((p) => !p));
   const [docs, setDocs] = useState<DocumentRecord[]>([]);
   const [stats, setStats] = useState<RAGStats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -124,8 +127,8 @@ export default function KnowledgePanel({
 
   return (
     <div
-      className={`flex flex-col transition-all duration-200 overflow-hidden ${
-        isExpanded ? 'flex-1 min-h-0' : 'shrink-0'
+      className={`flex flex-col transition-all duration-200 ${
+        isExpanded ? 'min-h-0' : 'shrink-0'
       }`}
     >
       {/* Section Header */}
@@ -210,7 +213,7 @@ export default function KnowledgePanel({
 
       {/* Expanded Content Area */}
       {isExpanded && (
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden pt-1">
+        <div className="flex flex-col overflow-hidden pt-1 space-y-2">
           {/* Summary stats badge */}
           <div className="flex items-center justify-between px-2.5 py-1.5 mb-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] shrink-0">
             <span>Indexed Standards</span>
@@ -251,7 +254,7 @@ export default function KnowledgePanel({
           )}
 
           {/* Standards Document List */}
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-0.5">
+          <div className="max-h-56 overflow-y-auto space-y-1 pr-0.5">
             {filteredDocs.length > 0 ? (
               filteredDocs.map((d) => (
                 <div

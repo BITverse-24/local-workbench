@@ -431,13 +431,6 @@ export default function App() {
     [chatId, persistent],
   );
 
-  const handleTemperature = useCallback(
-    (v: number) => {
-      setTemperature(v);
-      if (persistent) void wb.setSetting("temperature", v).catch(() => undefined);
-    },
-    [persistent],
-  );
 
   const { btnRef: modelBtnRef, pos: dropdownPos } = useDropdownPosition(modelOpen);
 
@@ -757,8 +750,6 @@ export default function App() {
           modelOpen={modelOpen}
           setModelOpen={setModelOpen}
           modelBtnRef={modelBtnRef}
-          temperature={temperature}
-          setTemperature={handleTemperature}
           activeRoute={activeRoute}
           runState={runState}
           health={serviceHealth}

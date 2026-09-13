@@ -1,4 +1,5 @@
 import RunTelemetryWidget from "./RunTelemetryWidget";
+import KnowledgePanel from "./sidebar/KnowledgePanel";
 
 type Model = { id: string; name: string; desc: string };
 
@@ -10,8 +11,6 @@ type Props = {
   modelOpen: boolean;
   setModelOpen: (v: boolean) => void;
   modelBtnRef: React.RefObject<HTMLButtonElement | null>;
-  temperature: number;
-  setTemperature: (n: number) => void;
   activeRoute?: { taskType: string; modelId: string; reason: string } | null;
   runState?: string | null;
   health?: ModelHealth[] | null;
@@ -29,8 +28,6 @@ export default function RightSidebar({
   modelOpen,
   setModelOpen,
   modelBtnRef,
-  temperature,
-  setTemperature,
   activeRoute,
   runState,
   health,
@@ -56,7 +53,7 @@ export default function RightSidebar({
         willChange: "width, transform, opacity",
       } as React.CSSProperties}
     >
-      <div className="p-4 flex items-center justify-between gap-2 border-b border-[var(--border-subtle)]">
+      <div className="p-4 flex items-center justify-between gap-2 border-b border-[var(--border-subtle)] shrink-0">
         <div>
           <h2 className="text-sm font-semibold text-[var(--text-primary)] tracking-normal">Settings</h2>
         </div>
@@ -68,47 +65,7 @@ export default function RightSidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-[var(--text-secondary)]">Model route {isRunning ? "(locked during run)" : "(preference)"}</label>
-          <button
-            ref={modelBtnRef as React.RefObject<HTMLButtonElement>}
-            onClick={() => !isRunning && setModelOpen(!modelOpen)}
-            disabled={isRunning}
-            className={`w-full rounded-[var(--radius-md)] p-3 neu-raised flex items-center justify-between text-left ${isRunning ? "opacity-60 cursor-not-allowed" : ""}`}
-          >
-            <div>
-              <div className="text-sm font-medium text-[var(--text-primary)]">{activeRoute ? `${activeRoute.taskType} → ${activeRoute.modelId}` : selectedModel.name}</div>
-              <div className="text-xs text-[var(--text-tertiary)] mt-0.5">{activeRoute ? `Reason: ${activeRoute.reason}` : selectedModel.desc}</div>
-            </div>
-            <span
-              className={`w-6 h-6 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs transition-transform duration-150 ${modelOpen ? "rotate-180" : "rotate-0"}`}
-            >
-              ▾
-            </span>
-          </button>
-          {activeRoute && <div className="text-xs text-[var(--text-tertiary)]">Backend controls routing for locked flows; this display reflects the active route.</div>}
-        </div>
-
-        <div className="space-y-2 p-3.5 rounded-[var(--radius-md)] neu-card">
-          <div className="flex justify-between items-center">
-            <label className="text-sm font-medium text-[var(--text-secondary)]">Temperature</label>
-            <span className="text-xs px-2 py-0.5 rounded-[var(--radius-sm)] neu-pressed font-mono text-[var(--text-primary)]">{temperature.toFixed(2)}</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={temperature}
-            onChange={(e) => setTemperature(parseFloat(e.target.value))}
-            className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-[var(--bg-surface)] accent-[var(--accent)]"
-          />
-          <div className="flex justify-between text-xs text-[var(--text-tertiary)]">
-            <span>Precise</span>
-            <span>Creative</span>
-          </div>
-        </div>
-
+        {/* Service health (top of right sidebar, above model route preference) */}
         <div className="space-y-2 p-3 rounded-[var(--radius-md)] neu-card">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-[var(--text-secondary)]">Service health</span>
@@ -132,23 +89,36 @@ export default function RightSidebar({
           )}
         </div>
 
+        {/* Model route preference */}
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-[var(--text-secondary)]">Max tokens</label>
-          <input type="number" defaultValue={2048} className="w-full rounded-[var(--radius-sm)] p-2.5 text-sm outline-none neu-input font-mono" />
+          <label className="text-sm font-medium text-[var(--text-secondary)]">Model route {isRunning ? "(locked during run)" : "(preference)"}</label>
+          <button
+            ref={modelBtnRef as React.RefObject<HTMLButtonElement>}
+            onClick={() => !isRunning && setModelOpen(!modelOpen)}
+            disabled={isRunning}
+            className={`w-full rounded-[var(--radius-md)] p-3 neu-raised flex items-center justify-between text-left ${isRunning ? "opacity-60 cursor-not-allowed" : ""}`}
+          >
+            <div>
+              <div className="text-sm font-medium text-[var(--text-primary)]">{activeRoute ? `${activeRoute.taskType} → ${activeRoute.modelId}` : selectedModel.name}</div>
+              <div className="text-xs text-[var(--text-tertiary)] mt-0.5">{activeRoute ? `Reason: ${activeRoute.reason}` : selectedModel.desc}</div>
+            </div>
+            <span
+              className={`w-6 h-6 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs transition-transform duration-150 ${modelOpen ? "rotate-180" : "rotate-0"}`}
+            >
+              ▾
+            </span>
+          </button>
+          {activeRoute && <div className="text-xs text-[var(--text-tertiary)]">Backend controls routing for locked flows; this display reflects the active route.</div>}
         </div>
 
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-[var(--text-secondary)]">System instructions</label>
-          <textarea
-            rows={4}
-            placeholder="You are a helpful assistant…"
-            className="w-full rounded-[var(--radius-sm)] p-2.5 text-sm outline-none resize-none neu-input placeholder:text-[var(--text-tertiary)]"
-          ></textarea>
+        {/* Knowledge panel (below model route preference) */}
+        <div className="p-3 rounded-[var(--radius-md)] neu-card border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+          <KnowledgePanel />
         </div>
 
+        {/* Run diagnostics (bottom of right sidebar) */}
         <RunTelemetryWidget runEvents={runEvents} runId={runId} />
       </div>
     </aside>
   );
 }
-

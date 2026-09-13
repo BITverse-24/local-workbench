@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import ChatsPanel, { type SidebarChat } from './sidebar/ChatsPanel';
 import FilesPanel from './sidebar/FilesPanel';
-import KnowledgePanel from './sidebar/KnowledgePanel';
 
 export type { SidebarChat };
 
@@ -40,10 +39,9 @@ export default function LeftSidebar({
   onSelectWorkspaceFile,
   workspaceLoading = false,
 }: Props) {
-  // Collapsible panel states — all 3 default to expanded (1/3 vertical height each)
+  // Collapsible panel states — both default to expanded
   const [chatsOpen, setChatsOpen] = useState(true);
   const [filesOpen, setFilesOpen] = useState(true);
-  const [knowledgeOpen, setKnowledgeOpen] = useState(true);
 
   return (
     <aside
@@ -97,9 +95,9 @@ export default function LeftSidebar({
         </button>
       </div>
 
-      {/* 3-Tier Vertical Panels: Upper 1/3 (Chats), Middle 1/3 (Files), Lower 1/3 (Knowledge) */}
+      {/* 2-Tier Vertical Panels: Upper (Chats), Lower (Files) */}
       <div className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden">
-        {/* Upper 1/3: Conversations / Chats */}
+        {/* Upper: Conversations / Chats */}
         <ChatsPanel
           chats={chats}
           activeId={activeId}
@@ -114,7 +112,7 @@ export default function LeftSidebar({
         {/* Section Divider */}
         <div className="h-[1px] bg-white/[0.06] shrink-0 mx-0.5" />
 
-        {/* Middle 1/3: Workspace Files */}
+        {/* Lower: Workspace Files */}
         <FilesPanel
           workspace={workspace}
           workspaceTree={workspaceTree}
@@ -125,15 +123,6 @@ export default function LeftSidebar({
           loading={workspaceLoading}
           isExpanded={filesOpen}
           onToggleExpand={() => setFilesOpen((p) => !p)}
-        />
-
-        {/* Section Divider */}
-        <div className="h-[1px] bg-white/[0.06] shrink-0 mx-0.5" />
-
-        {/* Lower 1/3: SOP Knowledge Base */}
-        <KnowledgePanel
-          isExpanded={knowledgeOpen}
-          onToggleExpand={() => setKnowledgeOpen((p) => !p)}
         />
       </div>
     </aside>
