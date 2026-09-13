@@ -638,6 +638,70 @@ export class ModelGateway implements ModelClient {
     if (modelId !== undefined) return this.healthOne(modelId);
     return Promise.all(Array.from(this.registry.values()).map((model) => this.healthOne(model.id)));
   }
+
+  /**
+   * Probe health by distinct port/endpoint to ensure duplicates don't appear.
+   * Keeps PORT as index to eliminate duplicate probes, and model name as display.
+   */
+  async healthDistinct(): Promise<ModelHealth[]> {
+    if (this.isDevRoutingActive()) {
+      const all = await this.health();
+      return all.slice(0, 1).map((h) => ({
+        ...h,
+        modelId: this.registry.get(h.modelId)?.model || h.modelId,
+      }));
+    }
+
+    const distinctByPort = new Map<number, { port: number; model: ModelRegistryEntry }>();
+    for (const model of this.registry.values()) {
+      if (!model.enabled) continue;
+      try {
+        const u = new URL(model.baseUrl);
+        const port = u.port ? parseInt(u.port, 10) : (u.protocol === "https:" ? 443 : 80);
+        if (!distinctByPort.has(port)) {
+          distinctByPort.set(port, {
+            port,
+            model,
+          });
+        }
+      } catch {}
+    }
+
+    if (distinctByPort.size === 0) {
+      return this.health();
+    }
+
+    return Promise.all(
+      Array.from(distinctByPort.values()).map(async ({ model, port }) => {
+        const started = Date.now();
+        try {
+          const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
+          const response = await this.transport.request(
+            `${model.baseUrl}${model.healthPath}`,
+            { method: "GET", headers: { ...(key ? { authorization: `Bearer ${key}` } : {}) } },
+            Math.min(model.requestTimeoutMs || 5000, 4000),
+          );
+          return {
+            modelId: model.model as any,
+            port,
+            available: response.status >= 200 && response.status < 300,
+            checkedAt: new Date().toISOString(),
+            latencyMs: Date.now() - started,
+          };
+        } catch (error) {
+          return {
+            modelId: model.model as any,
+            port,
+            available: false,
+            checkedAt: new Date().toISOString(),
+            latencyMs: Date.now() - started,
+            message: error instanceof Error ? error.message : "health check failed",
+          };
+        }
+      }),
+    );
+  }
+
   /** Per-model health probe backing the `ModelClient` surface. */
   async healthOne(modelId: ModelId): Promise<ModelHealth> {
     const model = this.registry.get(modelId);

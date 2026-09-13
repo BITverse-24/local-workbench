@@ -72,6 +72,7 @@ interface RunSummary {
 
 interface ModelHealth {
   modelId: string;
+  port?: number;
   available: boolean;
   checkedAt: string;
   latencyMs?: number;
@@ -171,7 +172,7 @@ interface WorkbenchBridge {
   renameChat: (chatId: string, title: string) => Promise<void>;
   getSetting: (key: string) => Promise<{ value: unknown }>;
   setSetting: (key: string, value: unknown) => Promise<void>;
-  startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean }) => Promise<{ runId: string }>;
+  startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string }) => Promise<{ runId: string }>;
   registerAttachment: (input: {
     chatId?: string;
     filename: string;

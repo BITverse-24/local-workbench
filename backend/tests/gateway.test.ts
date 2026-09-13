@@ -181,4 +181,52 @@ describe("model gateway health checks", () => {
     expect(result.modelId).toBe("vision-qwen25vl");
     expect(result.available).toBe(true);
   });
+
+  it("healthDistinct deduplicates multiple roles on same port into a single entry indexed by port with model name display", async () => {
+    let probeCount = 0;
+    const baseEntry = (id: ModelId, baseUrl: string): ModelRegistryEntry => ({
+      id,
+      taskTypes: ["code"],
+      runtime: "llama-server",
+      baseUrl,
+      model: "test-model",
+      capabilities: ["text"],
+      requestTimeoutMs: 1000,
+      healthPath: "/models",
+      enabled: true,
+    });
+
+    const models: Array<[string, ModelRegistryEntry]> = [
+      ["vision-qwen25vl", baseEntry("vision-qwen25vl", "http://127.0.0.1:1234/v1")],
+      ["code-qwen25coder", baseEntry("code-qwen25coder", "http://127.0.0.1:1234/v1")],
+      ["draft-qwen3", baseEntry("draft-qwen3", "http://127.0.0.1:1234/v1")],
+      ["plan-qwen3-8b", baseEntry("plan-qwen3-8b" as any, "http://127.0.0.1:1234/v1")],
+      ["embedding", baseEntry("draft-qwen3", "http://127.0.0.1:11434/v1")],
+    ];
+
+    const gateway = new ModelGateway(
+      {
+        async request() {
+          probeCount++;
+          return { status: 200, async text() { return "ok"; } };
+        },
+      },
+      new Map(models),
+    );
+
+    const distinct = await gateway.healthDistinct();
+    // 4 roles on port 1234 deduplicate to 1 probe + 1 role on port 11434 = 2 distinct probes
+    expect(distinct).toHaveLength(2);
+    expect(probeCount).toBe(2);
+
+    const port1234 = distinct.find((h) => h.port === 1234);
+    expect(port1234).toBeDefined();
+    expect(port1234?.modelId).toBe("test-model");
+    expect(port1234?.available).toBe(true);
+
+    const port11434 = distinct.find((h) => h.port === 11434);
+    expect(port11434).toBeDefined();
+    expect(port11434?.modelId).toBe("test-model");
+    expect(port11434?.available).toBe(true);
+  });
 });

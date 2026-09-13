@@ -77,7 +77,7 @@ export default function RightSidebar({
             <div className="text-xs text-[var(--text-tertiary)]">No health data yet.</div>
           ) : (
             <div className="space-y-2">
-              {health.map((h) => (
+              {Array.from(new Map(health.map((h) => [h.modelId, h])).values()).map((h) => (
                 <div key={h.modelId} className="flex items-center gap-2 text-xs">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${h.available ? "bg-[var(--status-success)]" : "bg-[var(--status-error)]"}`} />
                   <span className="font-medium text-[var(--text-primary)] font-mono text-xs">{h.modelId}</span>

@@ -46,6 +46,7 @@ function inferKind(filename: string): ArtifactKind {
  */
 export class HarnessManager {
   private readonly workspace = new WorkspaceManager();
+  private readonly createdArtifactsByRun = new Map<string, ArtifactRef>();
 
   constructor(
     private readonly emitWorkspace: (event: WorkspaceEvent) => void = () => undefined,
@@ -211,6 +212,12 @@ export class HarnessManager {
   createWorkspaceArtifact(runId: string, relativePath: string): ArtifactRef {
     const ws = this.workspace.requireActive();
     const target = resolveSafe(ws.root, relativePath);
+    const filename = path.basename(target);
+    const dedupeKey = `${runId}:${filename}`;
+    const cached = this.createdArtifactsByRun.get(dedupeKey);
+    if (cached) {
+      return cached;
+    }
 
     let size = 0;
     let content: Buffer | string = "";
@@ -223,7 +230,6 @@ export class HarnessManager {
       } catch {}
     }
 
-    const filename = path.basename(target);
     const kind = inferKind(filename);
 
     let storedRel = path.relative(ws.root, target);
@@ -276,6 +282,7 @@ export class HarnessManager {
       });
     }
 
+    this.createdArtifactsByRun.set(dedupeKey, artifact);
     return artifact;
   }
 

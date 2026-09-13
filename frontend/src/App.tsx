@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import "./App.css";
 import TitleBar from "./components/TitleBar";
 import LeftSidebar, { type SidebarChat } from "./components/LeftSidebar";
@@ -13,7 +13,7 @@ import VoiceModal from "./components/modals/VoiceModal";
 import ConfirmationModal from "./components/ConfirmationModal";
 import RouteBadge from "./components/RouteBadge";
 import OnboardingPage from "./components/onboarding/OnboardingPage";
-import { MODELS } from "./lib/models";
+import { getModelRoutes, MODELS } from "./lib/models";
 import * as wb from "./lib/workbench";
 import { useDropdownPosition } from "./lib/hooks/useDropdownPosition";
 import { useCamera } from "./lib/hooks/useCamera";
@@ -72,6 +72,17 @@ export default function App() {
   // Onboarding state
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
   const [cachedModels, setCachedModels] = useState<ModelConfigRow[] | undefined>(undefined);
+
+  const availableModels = useMemo(() => getModelRoutes(cachedModels), [cachedModels]);
+
+  useEffect(() => {
+    if (availableModels.length > 0) {
+      setSelectedModel((prev) => {
+        const match = availableModels.find((m) => m.id === prev.id || m.role === prev.role);
+        return match ?? availableModels[0];
+      });
+    }
+  }, [availableModels]);
 
   // Workspace state
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceInfo | null>(null);
@@ -183,12 +194,29 @@ export default function App() {
             setPendingConfirmation(event.action);
             break;
           case "artifact_ready":
-            setRunArtifacts((prev) => [...prev, event.artifact]);
+            setRunArtifacts((prev) => {
+              if (
+                prev.some(
+                  (a) =>
+                    a.artifactId === event.artifact.artifactId ||
+                    (a.runId === event.artifact.runId && a.filename === event.artifact.filename),
+                )
+              ) {
+                return prev;
+              }
+              return [...prev, event.artifact];
+            });
             setMessages((prev) => {
               const last = prev[prev.length - 1];
               if (last && last.role === "assistant") {
                 const existing = last.artifacts ?? [];
-                if (!existing.some((a) => a.artifactId === event.artifact.artifactId)) {
+                if (
+                  !existing.some(
+                    (a) =>
+                      a.artifactId === event.artifact.artifactId ||
+                      a.filename === event.artifact.filename,
+                  )
+                ) {
                   return [...prev.slice(0, -1), { ...last, artifacts: [...existing, event.artifact] }];
                 }
                 return prev;
@@ -564,6 +592,7 @@ export default function App() {
             chatId: cid,
             temperature,
             groundingEnabled,
+            preferredRoute: selectedModel.role || selectedModel.id,
           });
           setActiveRunId(runId);
           activeRunRef.current = runId;
@@ -658,7 +687,11 @@ export default function App() {
         <div className="flex-1 overflow-hidden relative">
           <OnboardingPage
             initialConfig={cachedModels}
-            onComplete={() => {
+            onComplete={async () => {
+              try {
+                const ob = await wb.getOnboardingStatus();
+                setCachedModels(ob.configuredModels);
+              } catch {}
               setOnboardingCompleted(true);
               void refreshHealth();
             }}
@@ -745,7 +778,7 @@ export default function App() {
         <RightSidebar
           collapsed={rightCollapsed}
           onCollapse={() => setRightCollapsed(true)}
-          models={MODELS}
+          models={availableModels}
           selectedModel={selectedModel}
           modelOpen={modelOpen}
           setModelOpen={setModelOpen}
@@ -760,7 +793,7 @@ export default function App() {
         />
       </div>
 
-      <ModelDropdown open={modelOpen} pos={dropdownPos} models={MODELS} selected={selectedModel} onSelect={(m) => { setSelectedModel(m); setModelOpen(false); }} onClose={() => setModelOpen(false)} />
+      <ModelDropdown open={modelOpen} pos={dropdownPos} models={availableModels} selected={selectedModel} onSelect={(m) => { setSelectedModel(m); setModelOpen(false); }} onClose={() => setModelOpen(false)} />
 
       <UploadModal open={upload.show} dragOver={upload.dragOver} setDragOver={upload.setDragOver} files={upload.files} setFiles={upload.setFiles} onClose={() => upload.setShow(false)} onConfirm={handleUploadConfirm} />
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { createChat } from "../persistence/chats.js";
 import { addMessage, listMessages } from "../persistence/messages.js";
@@ -12,7 +12,9 @@ import type {
   CodeModelRequest,
   CodeSummarizeRequest,
   GroundingChunk,
+  ModelConfigRow,
   ModelConversationMessage,
+  ModelHealth,
   PendingAction,
   RunEvent,
   RunState,
@@ -20,10 +22,12 @@ import type {
   VisionModelResponse,
   VisionResult,
 } from "../../shared/contracts.js";
+import { sanitizeHost } from "../gateway/registry.js";
 import { ModelGateway, requestBase } from "../gateway/model-gateway.js";
 import { CodeModel } from "../models/code-model.js";
 import { ChatModel } from "../models/chat-model.js";
 import { HarnessManager } from "../harness/harness-manager.js";
+import { resolveSafe } from "../harness/path-guard.js";
 import { buildHarnessSystemPrompt, formatTreeForPrompt } from "../harness/harness-prompt.js";
 import type { HarnessToolCall } from "../../shared/contracts.js";
 import type { GroundingProvider } from "../grounding/provider.js";
@@ -490,8 +494,51 @@ export class RunManager {
       isBinary,
     };
   }
-  async health() {
-    return this.gateway.health();
+  async health(): Promise<ModelHealth[]> {
+    const gatewayHealth = await this.gateway.healthDistinct();
+    const existingPorts = new Set(
+      gatewayHealth.map((h) => h.port).filter((p): p is number => typeof p === "number"),
+    );
+
+    const configuredModels = getSetting<ModelConfigRow[]>("configured_models");
+    if (Array.isArray(configuredModels)) {
+      const embeddingRow = configuredModels.find((m) => m.role === "embedding");
+      if (embeddingRow) {
+        const port = embeddingRow.port || 11434;
+        if (!existingPorts.has(port)) {
+          existingPorts.add(port);
+          const host = sanitizeHost(embeddingRow.host);
+          const started = Date.now();
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 4000);
+            const res = await fetch(`http://${host}:${port}/v1/models`, {
+              signal: controller.signal,
+              headers: { Accept: "application/json" },
+            }).catch(() => fetch(`http://${host}:${port}/models`, { signal: controller.signal }));
+            clearTimeout(timer);
+            gatewayHealth.push({
+              modelId: embeddingRow.modelName as any,
+              port,
+              available: res ? (res.status >= 200 && res.status < 300) || res.status === 404 : false,
+              checkedAt: new Date().toISOString(),
+              latencyMs: Date.now() - started,
+            });
+          } catch (e: any) {
+            gatewayHealth.push({
+              modelId: embeddingRow.modelName as any,
+              port,
+              available: false,
+              checkedAt: new Date().toISOString(),
+              latencyMs: Date.now() - started,
+              message: e?.message || "unavailable",
+            });
+          }
+        }
+      }
+    }
+
+    return gatewayHealth;
   }
   private attachment(token: string): AttachmentRow {
     const cached = this.attachments.get(token);
@@ -1845,9 +1892,10 @@ export class RunManager {
     const isSaveArtifactToWorkspaceIntent =
       !hasNegationOrInterrogative &&
       chatArtifacts.length > 0 &&
-      (/\b(?:please\s+)?(?:save|copy|move|transfer|write|put|place|export)\s+(?:the\s+)?(?:updated\s+|repaired\s+|modified\s+|fixed\s+|generated\s+)?(?:artifact|artefact|deliverable|file|files|script|scripts|code|it|this|that)\s+(?:to|in|into|inside)\s+(?:the\s+|this\s+|my\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:workspace|project|directory|folder|dir|repo|root)\b/i.test(text) ||
-       /\b(?:please\s+)?(?:save|copy|transfer|write)\s+(?:the\s+)?(?:updated\s+|repaired\s+|modified\s+|fixed\s+|generated\s+)?(?:it|this|that|the artifact|the deliverable|file|script)\s+(?:in|into|to|inside)\s+(?:the\s+|this\s+|my\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:workspace|project|directory|folder|dir|repo|root)\b/i.test(text) ||
-       /^(?:save|copy|write)\s+(?:the\s+)?(?:updated\s+|repaired\s+|modified\s+|fixed\s+|generated\s+)?(?:it|this|that|the artifact|the deliverable|file|script)\b/i.test(text.trim()));
+      (/\b(?:please\s+)?(?:save|copy|move|transfer|write|put|place|export|keep)\s+(?:(?:this|that|the|my)?\s*(?:updated\s+|repaired\s+|modified\s+|fixed\s+|generated\s+)?(?:artifact|artefact|deliverable|file|files|script|scripts|code)|it|this|that)\s+(?:to|in|into|inside)\s+(?:(?:the|this|my|active|current)\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:workspace|project|directory|folder|dir|repo|root)\b/i.test(text) ||
+       /\b(?:please\s+)?(?:save|copy|move|transfer|write|put|place|export|keep)\s+(?:the\s+)?(?:updated\s+|repaired\s+|modified\s+|fixed\s+|generated\s+)?(?:artifact|artefact|deliverable|file|files|script|scripts|code|it|this|that)\s+(?:to|in|into|inside)\s+(?:the\s+|this\s+|my\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:workspace|project|directory|folder|dir|repo|root)\b/i.test(text) ||
+       /\b(?:replace|overwrite)\s+(?:(?:the|this|my)\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:workspace\s+file|file\s+in\s+(?:the\s+)?workspace)\s+with\s+(?:(?:this|that|the)\s+)?(?:artifact|artefact|deliverable|file|script|code|one|it)\b/i.test(text) ||
+       /^(?:save|copy|write)\s+(?:(?:this|that|the|my)?\s*(?:updated\s+|repaired\s+|modified\s+|fixed\s+|generated\s+)?(?:artifact|artefact|deliverable|file|files|script|scripts|code)|it|this|that)\b/i.test(text.trim()));
 
     if (isSaveArtifactToWorkspaceIntent && chatArtifacts.length > 0) {
       let targetArtifact: (typeof chatArtifacts)[number] | undefined;
@@ -1882,10 +1930,70 @@ export class RunManager {
       if (targetArtifact) {
         const absPath = absoluteDataPath(targetArtifact.relativePath);
         if (existsSync(absPath)) {
-          const explicitNameMatch = text.match(/\b([a-zA-Z0-9_\-.]+\.[a-zA-Z0-9]+)\b/);
-          const destRel = explicitNameMatch && !/^(workspace|directory|project|folder|root)$/i.test(explicitNameMatch[1])
-            ? explicitNameMatch[1]
-            : targetArtifact.filename;
+          const renameMatch = text.match(/\b(?:as|named?)\s+([a-zA-Z0-9_\-.]+\.[a-zA-Z0-9]+)\b/i);
+          const destRel = renameMatch ? renameMatch[1] : targetArtifact.filename;
+
+          // Check if user requested deleting/clearing/replacing files in workspace
+          const hasDeleteIntent =
+            /\b(?:delete|remove|clear|clean|wipe|rm|replace|erase)\b.*?\b(?:file|files|workspace|old|previous|existing|original)\b/i.test(text);
+
+          const deletedFiles: string[] = [];
+          if (hasDeleteIntent) {
+            try {
+              const existingEntries = readdirSync(ws.root, { withFileTypes: true });
+              const existingFiles = existingEntries
+                .filter((e) => e.isFile() && !e.name.startsWith("."))
+                .map((e) => e.name);
+
+              const explicitlyMentioned = existingFiles.filter((name) =>
+                text.toLowerCase().includes(name.toLowerCase()),
+              );
+
+              const filesToDelete = explicitlyMentioned.length > 0
+                ? explicitlyMentioned
+                : existingFiles.filter((name) => name !== destRel);
+
+              for (const file of filesToDelete) {
+                try {
+                  const resolved = resolveSafe(ws.root, file);
+                  if (existsSync(resolved)) {
+                    unlinkSync(resolved);
+                    deletedFiles.push(file);
+                  }
+                } catch (err) {
+                  console.warn(`[workspace] failed to delete ${file}:`, err);
+                }
+              }
+
+              if (deletedFiles.length > 0) {
+                logHarnessToolCall({
+                  tool: "run_command",
+                  args: { command: `rm ${deletedFiles.join(" ")}` },
+                  runId,
+                  workspaceRoot: ws.root,
+                });
+                this.emit({
+                  type: "tool_call",
+                  runId,
+                  tool: "run_command" as any,
+                  summary: `Deleting ${deletedFiles.join(", ")} from workspace`,
+                });
+                logHarnessToolResult(
+                  { tool: "run_command", args: { command: `rm ${deletedFiles.join(" ")}` } },
+                  { tool: "run_command", result: { exitCode: 0, stdout: `Removed ${deletedFiles.join(", ")}`, stderr: "" } },
+                );
+                this.emit({
+                  type: "tool_result",
+                  runId,
+                  tool: "run_command" as any,
+                  summary: `Deleted ${deletedFiles.join(", ")} from workspace`,
+                });
+              }
+            } catch (err) {
+              console.warn("[workspace] error during file deletion:", err);
+            }
+          }
+
           logHarnessToolCall({
             tool: "write_file",
             args: { path: destRel, source: targetArtifact.filename },
@@ -1909,10 +2017,13 @@ export class RunManager {
             tool: "write_file" as any,
             summary: `Saved ${destRel} to workspace root`,
           });
-          this.emit({ type: "artifact_ready", runId, artifact: savedRef });
+          // copyArtifactToWorkspace already emits artifact_ready via createWorkspaceArtifact
+          const summaryMsg = deletedFiles.length > 0
+            ? `Deleted **${deletedFiles.join(", ")}** from your active workspace (${path.basename(ws.root)}) and saved **${destRel}** to the workspace.`
+            : `Saved **${destRel}** directly to your active workspace (${path.basename(ws.root)}).`;
           this.persistAssistant(
             runId,
-            `Saved **${destRel}** directly to your active workspace (${path.basename(ws.root)}).`,
+            summaryMsg,
             "code-qwen25coder",
           );
           this.complete(runId);
@@ -2001,6 +2112,7 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
     }
     conversationHistory += `User Task: ${text}`;
     let finalAnswer = "";
+    const writtenWorkspaceArtifacts = new Set<string>();
 
     while (turn < MAX_TURNS) {
       turn++;
@@ -2109,9 +2221,12 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
 
           // If a file was written, register as artifact so user can view/open it in ArtifactPane
           if (toolCall.tool === "write_file") {
-            try {
-              this.harness.createWorkspaceArtifact(runId, toolCall.args.path);
-            } catch {}
+            if (!writtenWorkspaceArtifacts.has(toolCall.args.path)) {
+              writtenWorkspaceArtifacts.add(toolCall.args.path);
+              try {
+                this.harness.createWorkspaceArtifact(runId, toolCall.args.path);
+              } catch {}
+            }
           }
         }
       } catch (err: any) {

@@ -11,7 +11,7 @@ import path from "node:path";
 import os from "node:os";
 import { RunManager } from "../src/main/run/manager.js";
 import { HarnessManager } from "../src/main/harness/harness-manager.js";
-import { closeDb, initDb } from "../src/main/persistence/db.js";
+import { closeDb, initDb, getDb } from "../src/main/persistence/db.js";
 import { createChat } from "../src/main/persistence/chats.js";
 import { addMessage } from "../src/main/persistence/messages.js";
 import type { ModelRequest, ModelResponse, RunEvent } from "../src/shared/contracts.js";
@@ -639,6 +639,98 @@ describe("Workspace Task Execution Loop (HARNESS.md)", () => {
     expect(harnessReq.userPrompt).not.toContain("=== End Prior Context ===");
     expect(harnessReq.userPrompt).toContain("User Task: Save the new corrected file in the workspace");
   });
+
+  it("handles compound command: 'Delete the file in the test workspace and save this file in the workspace'", async () => {
+    const mockGateway = createMockGateway(() => ({
+      text: "# Mock deliverable\nprint('fixed')",
+    }));
+
+    manager = new RunManager(mockGateway as any, (event) => runEvents.push(event));
+    harness = new HarnessManager(undefined, (event) => runEvents.push(event));
+    manager.setHarness(harness);
+    harness.registerWorkspace(workspaceRoot);
+
+    // Create an existing file in workspace that should be deleted
+    const oldFilePath = path.join(workspaceRoot, "existing-broken-script.py");
+    writeFileSync(oldFilePath, "broken_code = True\n", "utf8");
+    expect(existsSync(oldFilePath)).toBe(true);
+
+    const chatId = createChat("Script Repair Chat");
+
+    // Turn 1: generate a repaired deliverable script artifact in chat
+    const turn1Text = "Please fix the broken script and output python code";
+    addMessage({ chat_id: chatId, role: "user", content: turn1Text });
+    await manager.start({ userText: turn1Text, chatId });
+    await waitForCompletion(runEvents);
+
+    // Save a mock artifact in the chat persistence
+    const dataDir = process.env.WORKBENCH_DATA_ROOT ?? path.join(tempRoot, "data");
+    const run1Id = runEvents.find((e) => e.type === "run_state" && (e as any).state === "completed")?.runId!;
+    const outDir = path.join(dataDir, "runs", run1Id, "output");
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(path.join(outDir, "repaired-script.py"), "print('all fixed')\n", "utf8");
+
+    getDb()
+      .prepare(
+        "INSERT INTO artifacts(artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        "art-1234",
+        run1Id,
+        "txt",
+        "repaired-script.py",
+        `runs/${run1Id}/output/repaired-script.py`,
+        20,
+        new Date().toISOString(),
+      );
+
+    // Turn 2: User says "Delete the file in the test workspace and save this file in the workspace"
+    runEvents = [];
+    const turn2Text = "Delete the file in the test workspace and save this file in the workspace";
+    addMessage({ chat_id: chatId, role: "user", content: turn2Text });
+    await manager.start({ userText: turn2Text, chatId });
+    await waitForCompletion(runEvents);
+
+    // 1. Existing file in workspace should have been deleted
+    expect(existsSync(oldFilePath)).toBe(false);
+
+    // 2. New repaired script should be saved in workspace
+    const newFilePath = path.join(workspaceRoot, "repaired-script.py");
+    expect(existsSync(newFilePath)).toBe(true);
+    expect(readFileSync(newFilePath, "utf8")).toBe("print('all fixed')\n");
+
+    // 3. Assistant message should report both deletion and save
+    const assistantMsg = runEvents.find((e) => e.type === "assistant_message");
+    expect(assistantMsg).toBeDefined();
+    if (assistantMsg && assistantMsg.type === "assistant_message") {
+      expect(assistantMsg.text).toContain("Deleted **existing-broken-script.py**");
+      expect(assistantMsg.text).toContain("saved **repaired-script.py**");
+    }
+
+    // 4. Only ONE artifact_ready event emitted in turn 2
+    const artifactEvents = runEvents.filter((e) => e.type === "artifact_ready");
+    expect(artifactEvents.length).toBe(1);
+    expect(artifactEvents[0].artifact.filename).toBe("repaired-script.py");
+  });
+
+  it("manager.health returns distinct models keyed by port without repeating for multiple roles", async () => {
+    const mockGateway = {
+      isDevRoutingActive: () => false,
+      healthDistinct: vi.fn().mockResolvedValue([
+        { modelId: "qwen2.5-coder-7b-instruct-mlx", port: 1234, available: true, latencyMs: 12, checkedAt: new Date().toISOString() },
+      ]),
+      health: vi.fn().mockResolvedValue([]),
+    };
+
+    manager = new RunManager(mockGateway as any);
+    const health = await manager.health();
+
+    expect(health).toHaveLength(1);
+    expect(health[0].modelId).toBe("qwen2.5-coder-7b-instruct-mlx");
+    expect(health[0].port).toBe(1234);
+    expect(health[0].available).toBe(true);
+  });
 });
+
 
 

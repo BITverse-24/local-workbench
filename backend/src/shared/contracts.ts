@@ -90,7 +90,7 @@ export type RunEvent =
   | { type: "error"; runId: string; code: string; message: string; retryable?: boolean }
   | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] };
 export interface RunSummary { runId: string; chatId: string; state: RunState; createdAt: string; completedAt: string | null; }
-export interface ModelHealth { modelId: ModelId; available: boolean; checkedAt: string; latencyMs?: number; message?: string; }
+export interface ModelHealth { modelId: ModelId | string; port?: number; available: boolean; checkedAt: string; latencyMs?: number; message?: string; }
 
 export interface Subtask {
   id: string;
