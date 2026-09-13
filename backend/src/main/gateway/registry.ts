@@ -1,7 +1,8 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import type { ModelId, ModelRegistryEntry } from "../../shared/contracts.js";
+import type { ModelConfigRow, ModelId, ModelRegistryEntry } from "../../shared/contracts.js";
+import { getSetting } from "../persistence/settings-store.js";
 
 const entry = z.object({ id: z.enum(["vision-qwen25vl", "draft-qwen3", "code-qwen25coder", "plan-qwen3-8b"]), taskTypes: z.array(z.enum(["vision", "draft", "code", "plan"])), runtime: z.enum(["mlx-lm", "llama-server", "openrouter", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(120000), healthPath: z.literal("/models"), apiKeyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(), enabled: z.boolean(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
 const config = z.object({ $comment: z.string().optional(), models: z.array(entry).min(1) }).strict();
@@ -9,15 +10,183 @@ const config = z.object({ $comment: z.string().optional(), models: z.array(entry
 let configuredModelsPath: string | null = null;
 
 /** Called from `initBackend` with the Electron-provided config. */
-export function configureModels(options: { modelsPath: string }): void {
+export function configureModels(options: { modelsPath: string | null }): void {
   configuredModelsPath = options.modelsPath;
 }
 
-function defaultModelsPath(): string {
+export function defaultModelsPath(): string {
   if (configuredModelsPath) return configuredModelsPath;
   const fromEnv = process.env.WORKBENCH_MODELS_PATH;
   if (fromEnv) return path.resolve(fromEnv);
   return path.resolve(process.cwd(), "config", "models.json");
+}
+
+export function sanitizeHost(host: string): string {
+  let cleaned = (host || "").trim();
+  cleaned = cleaned.replace(/^https?:\/\//i, "");
+  cleaned = cleaned.replace(/\/.*$/, "");
+  if (cleaned.includes(":") && !cleaned.includes("[")) {
+    const parts = cleaned.split(":");
+    if (parts.length === 2 && /^\d+$/.test(parts[1])) {
+      cleaned = parts[0];
+    }
+  }
+  return cleaned || "127.0.0.1";
+}
+
+export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntry[] {
+  const entries: ModelRegistryEntry[] = [];
+  let draftRow: ModelConfigRow | undefined;
+  let hasPlan = false;
+
+  for (const row of rows) {
+    const host = sanitizeHost(row.host);
+    const port = row.port || 11434;
+    const baseUrl = `http://${host}:${port}/v1`;
+
+    if (row.role === "vision") {
+      entries.push({
+        id: "vision-qwen25vl",
+        taskTypes: ["vision"],
+        runtime: "ollama",
+        baseUrl,
+        model: row.modelName,
+        capabilities: ["text", "image-input", "structured-output"],
+        requestTimeoutMs: 60000,
+        healthPath: "/models",
+        enabled: true,
+        maxOutputTokens: row.contextLength || 4096,
+      });
+    } else if (row.role === "coding") {
+      entries.push({
+        id: "code-qwen25coder",
+        taskTypes: ["code"],
+        runtime: "ollama",
+        baseUrl,
+        model: row.modelName,
+        capabilities: ["text", "structured-output", "code-generation"],
+        requestTimeoutMs: 60000,
+        healthPath: "/models",
+        enabled: true,
+        maxOutputTokens: row.contextLength || 8192,
+      });
+    } else if (row.role === "draft") {
+      draftRow = row;
+      entries.push({
+        id: "draft-qwen3",
+        taskTypes: ["draft"],
+        runtime: "ollama",
+        baseUrl,
+        model: row.modelName,
+        capabilities: ["text", "structured-output"],
+        requestTimeoutMs: 45000,
+        healthPath: "/models",
+        enabled: true,
+        maxOutputTokens: row.contextLength || 8192,
+      });
+    } else if (row.role === "plan") {
+      hasPlan = true;
+      entries.push({
+        id: "plan-qwen3-8b",
+        taskTypes: ["plan"],
+        runtime: "ollama",
+        baseUrl,
+        model: row.modelName,
+        capabilities: ["text", "structured-output"],
+        requestTimeoutMs: 45000,
+        healthPath: "/models",
+        enabled: true,
+        maxOutputTokens: row.contextLength || 8192,
+      });
+    }
+  }
+
+  // If no explicit plan row was provided, default plan to draft endpoint
+  if (!hasPlan && draftRow) {
+    const host = sanitizeHost(draftRow.host);
+    const port = draftRow.port || 11434;
+    entries.push({
+      id: "plan-qwen3-8b",
+      taskTypes: ["plan"],
+      runtime: "ollama",
+      baseUrl: `http://${host}:${port}/v1`,
+      model: draftRow.modelName,
+      capabilities: ["text", "structured-output"],
+      requestTimeoutMs: 45000,
+      healthPath: "/models",
+      enabled: true,
+      maxOutputTokens: draftRow.contextLength || 8192,
+    });
+  }
+
+  return entries;
+}
+
+export function writeRegistryToFile(entries: ModelRegistryEntry[], filePath?: string): void {
+  const target = filePath ?? defaultModelsPath();
+  const payload = {
+    $comment: "Generated by Sovereign Workbench Onboarding.",
+    models: entries,
+  };
+  writeFileSync(target, JSON.stringify(payload, null, 2), "utf8");
+}
+
+export function defaultLocalRegistry(): Map<ModelId, ModelRegistryEntry> {
+  const entries = buildRegistryFromRows([
+    { role: "vision", modelName: "qwen2.5vl:3b", host: "127.0.0.1", port: 11434, contextLength: 32768 },
+    { role: "coding", modelName: "qwen2.5-coder:7b", host: "127.0.0.1", port: 11434, contextLength: 32768 },
+    { role: "draft", modelName: "qwen3:8b", host: "127.0.0.1", port: 11434, contextLength: 32768 },
+    { role: "plan", modelName: "qwen3:8b", host: "127.0.0.1", port: 11434, contextLength: 8192 },
+  ]);
+  return new Map(entries.map((e) => [e.id, e]));
+}
+
+export function loadDevOpenRouterRegistry(filePath?: string): Map<ModelId, ModelRegistryEntry> {
+  const resolved = filePath ?? defaultModelsPath();
+  let text: string;
+  try {
+    text = readFileSync(resolved, "utf8");
+  } catch {
+    throw new Error(`models.json not found (tried: ${resolved})`);
+  }
+  const parsed = config.parse(JSON.parse(text));
+  return new Map(parsed.models.map((model) => [model.id, model as ModelRegistryEntry]));
+}
+
+export function loadProductionRegistryFromDb(dbModels?: ModelConfigRow[]): Map<ModelId, ModelRegistryEntry> {
+  let rows = dbModels;
+  if (!rows) {
+    try {
+      rows = getSetting<ModelConfigRow[]>("configured_models");
+    } catch {
+      // In standalone tests where DB is not open
+    }
+  }
+
+  if (rows && Array.isArray(rows) && rows.length > 0) {
+    const entries = buildRegistryFromRows(rows);
+    return new Map(entries.map((e) => [e.id, e]));
+  }
+
+  return defaultLocalRegistry();
+}
+
+let inMemoryDevOpenRouter: boolean | null = null;
+
+export function setInMemoryDevOpenRouter(enabled: boolean | null): void {
+  inMemoryDevOpenRouter = enabled;
+}
+
+export function isDevOpenRouterActive(): boolean {
+  if (inMemoryDevOpenRouter !== null) return inMemoryDevOpenRouter;
+  if (process.env.WORKBENCH_DEV_OPENROUTER === "true" || process.env.WORKBENCH_DEV_WORKLOAD === "true") {
+    return true;
+  }
+  try {
+    return !!getSetting<boolean>("dev_use_openrouter");
+  } catch {
+    return false;
+  }
 }
 
 export function loadRegistry(filePath?: string): Map<ModelId, ModelRegistryEntry> {
@@ -31,8 +200,10 @@ export function loadRegistry(filePath?: string): Map<ModelId, ModelRegistryEntry
   const parsed = config.parse(JSON.parse(text));
   return new Map(parsed.models.map((model) => [model.id, model as ModelRegistryEntry]));
 }
+
 export function resolveModel(registry: Map<ModelId, ModelRegistryEntry>, modelId: ModelId, taskType?: string): ModelRegistryEntry {
   const model = registry.get(modelId);
   if (!model || !model.enabled || (taskType && !model.taskTypes.includes(taskType as never))) throw new Error(`model unavailable: ${modelId}`);
   return model;
 }
+

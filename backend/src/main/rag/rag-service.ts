@@ -8,11 +8,37 @@ import {
   type RetrievalResult,
   type EmbeddingConfig,
 } from "../../../../ai/rag/index.js";
+import { getSetting } from "../persistence/settings-store.js";
+import type { ModelConfigRow } from "../../shared/contracts.js";
 
 export interface RAGStats {
   docCount: number;
   chunkCount: number;
   initialized: boolean;
+}
+
+export function loadSavedEmbeddingConfig(fallback?: EmbeddingConfig): EmbeddingConfig {
+  const def = fallback ?? {
+    baseUrl: "http://127.0.0.1:11434/v1",
+    model: "nomic-embed-text:v1.5",
+  };
+  try {
+    const saved = getSetting<EmbeddingConfig>("embedding_config");
+    if (saved?.baseUrl && saved?.model) return saved;
+    const models = getSetting<ModelConfigRow[]>("configured_models");
+    const embeddingRow = models?.find((m) => m.role === "embedding");
+    if (embeddingRow) {
+      const host = (embeddingRow.host || "127.0.0.1").replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+      const port = embeddingRow.port || 11434;
+      return {
+        baseUrl: `http://${host}:${port}/v1`,
+        model: embeddingRow.modelName,
+      };
+    }
+  } catch {
+    // In standalone tests where DB is not open
+  }
+  return def;
 }
 
 export class RAGService {
@@ -23,10 +49,7 @@ export class RAGService {
 
   constructor(
     private dataDir: string,
-    private embeddingConfig: EmbeddingConfig = {
-      baseUrl: "http://localhost:1234/v1",
-      model: "nomic-embed-text:v1.5",
-    },
+    private embeddingConfig: EmbeddingConfig = loadSavedEmbeddingConfig(),
   ) {}
 
   async init(): Promise<void> {
@@ -42,6 +65,17 @@ export class RAGService {
 
   isInitialized(): boolean {
     return this.initialized;
+  }
+
+  getEmbeddingConfig(): EmbeddingConfig {
+    return this.embeddingConfig;
+  }
+
+  updateEmbeddingConfig(config: EmbeddingConfig): void {
+    this.embeddingConfig = config;
+    this.embeddingService = new EmbeddingService(this.embeddingConfig);
+    this.retrieval = new RetrievalPipeline(this.embeddingService);
+    this.ingestion = new IngestionPipeline(this.embeddingService);
   }
 
   async query(text: string, topK: number = 5): Promise<RetrievalResult[]> {

@@ -272,3 +272,33 @@ export async function runWorkspaceCommand(command: string): Promise<{ tool: "run
 export function onWorkspaceEvent(listener: (event: any) => void): () => void {
   return bridge().onWorkspaceEvent(listener);
 }
+
+// Onboarding & Model Configuration
+export async function getOnboardingStatus(): Promise<OnboardingStatus> {
+  return bridge().getOnboardingStatus();
+}
+
+export async function saveModelConfig(models: ModelConfigRow[]): Promise<{ ok: boolean }> {
+  return bridge().saveModelConfig(models);
+}
+
+export async function testModelEndpoint(input: {
+  host: string;
+  port: number;
+  modelName?: string;
+  role?: string;
+}): Promise<ModelEndpointTestResult> {
+  return bridge().testModelEndpoint(input);
+}
+
+export async function resetOnboarding(): Promise<{ ok: boolean }> {
+  return bridge().resetOnboarding();
+}
+
+export async function getDevMode(): Promise<DevModeStatus> {
+  return bridge().getDevMode();
+}
+
+export async function setDevMode(enabled: boolean): Promise<{ ok: boolean; devOpenRouter: boolean }> {
+  return bridge().setDevMode(enabled);
+}

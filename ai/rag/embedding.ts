@@ -63,6 +63,8 @@ export class EmbeddingService {
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
 
+    console.log(`[rag:embedding] Dispatching embedBatch (${missingTexts.length} texts) to ${url} (model: ${this.modelConfig.model})`);
+
     const res = await fetch(url, {
       method: "POST",
       headers,

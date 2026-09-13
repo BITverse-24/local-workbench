@@ -57,3 +57,16 @@ export type KBChannel = (typeof IPC_KB)[keyof typeof IPC_KB];
 
 export const KB_CHANNELS: readonly string[] = Object.values(IPC_KB);
 
+export const IPC_ONBOARDING = {
+  GET_STATUS: "workbench:getOnboardingStatus",
+  SAVE_CONFIG: "workbench:saveModelConfig",
+  TEST_ENDPOINT: "workbench:testModelEndpoint",
+  RESET: "workbench:resetOnboarding",
+  GET_DEV_MODE: "workbench:getDevMode",
+  SET_DEV_MODE: "workbench:setDevMode",
+} as const;
+
+export type OnboardingChannel = (typeof IPC_ONBOARDING)[keyof typeof IPC_ONBOARDING];
+
+export const ONBOARDING_CHANNELS: readonly string[] = Object.values(IPC_ONBOARDING);
+

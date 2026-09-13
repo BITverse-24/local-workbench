@@ -220,7 +220,44 @@ interface WorkbenchBridge {
   writeWorkspaceFile: (path: string, content: string) => Promise<{ tool: "write_file"; result: HarnessWriteResult }>;
   runWorkspaceCommand: (command: string) => Promise<{ tool: "run_command"; result: HarnessCommandResult }>;
   onWorkspaceEvent: (listener: (event: any) => void) => () => void;
+
+  // Onboarding & Model Configuration APIs
+  getOnboardingStatus: () => Promise<OnboardingStatus>;
+  saveModelConfig: (models: ModelConfigRow[]) => Promise<{ ok: boolean }>;
+  testModelEndpoint: (input: { host: string; port: number; modelName?: string; role?: string }) => Promise<ModelEndpointTestResult>;
+  resetOnboarding: () => Promise<{ ok: boolean }>;
+  getDevMode: () => Promise<DevModeStatus>;
+  setDevMode: (enabled: boolean) => Promise<{ ok: boolean; devOpenRouter: boolean }>;
 }
+
+interface DevModeStatus {
+  devOpenRouter: boolean;
+  hasOpenRouterKey: boolean;
+}
+
+type ModelRoleType = "vision" | "coding" | "draft" | "plan" | "embedding";
+
+interface ModelConfigRow {
+  role: ModelRoleType;
+  modelName: string;
+  host: string;
+  port: number;
+  contextLength: number;
+}
+
+interface ModelEndpointTestResult {
+  ok: boolean;
+  latencyMs?: number;
+  modelFound?: boolean;
+  availableModels?: string[];
+  error?: string;
+}
+
+interface OnboardingStatus {
+  completed: boolean;
+  configuredModels?: ModelConfigRow[];
+}
+
 
 interface Window {
   electronAPI?: { minimize: () => void; maximize: () => void; close: () => void };

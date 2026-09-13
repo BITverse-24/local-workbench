@@ -4,7 +4,14 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { AIResult, ModelHealth, ModelId, ModelRequest, ModelResponse, ModelRegistryEntry } from "../../shared/contracts.js";
 import type { ModelClient } from "../models/ports.js";
-import { loadRegistry, resolveModel } from "./registry.js";
+import {
+  defaultLocalRegistry,
+  isDevOpenRouterActive,
+  loadDevOpenRouterRegistry,
+  loadProductionRegistryFromDb,
+  loadRegistry,
+  resolveModel,
+} from "./registry.js";
 import { normalizeResponse, parseProviderContent, providerError } from "./normalizer.js";
 import { absoluteDataPath, createRunDirectories, runRoot } from "../run/filesystem.js";
 import { assertUploadableSize, createPlaceholderImagesFromText, extractPdfText, extractSvgText, prepareImage, renderPdfToImages } from "../run/images.js";
@@ -52,15 +59,81 @@ export interface GatewayTransport { request(url: string, init: { method: string;
 const nativeTransport: GatewayTransport = { async request(url, init, timeoutMs) { const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs); try { return await fetch(url, { ...init, signal: controller.signal }); } finally { clearTimeout(timer); } } };
 export interface VisionUploadInfo { originalBytes: number; finalBytes: number; resized: boolean; mediaType: string; }
 export class ModelGateway implements ModelClient {
-  readonly registry: Map<string, ModelRegistryEntry>; externalRequestCount = 0; lastVisionUpload?: VisionUploadInfo;
-  constructor(private readonly transport: GatewayTransport = nativeTransport, registry = loadRegistry()) { this.registry = registry; }
+  readonly dbRegistry: Map<string, ModelRegistryEntry>;
+  readonly devRegistry: Map<string, ModelRegistryEntry>;
+  private devModeOverride: boolean | null = null;
+  externalRequestCount = 0;
+  lastVisionUpload?: VisionUploadInfo;
+
+  constructor(
+    private readonly transport: GatewayTransport = nativeTransport,
+    initialRegistry?: Map<string, ModelRegistryEntry>,
+    devRegistry?: Map<string, ModelRegistryEntry>,
+  ) {
+    this.dbRegistry = initialRegistry ?? (loadProductionRegistryFromDb() as Map<string, ModelRegistryEntry>);
+    try {
+      this.devRegistry = devRegistry ?? (loadDevOpenRouterRegistry() as Map<string, ModelRegistryEntry>);
+    } catch {
+      this.devRegistry = new Map();
+    }
+  }
+
+  get registry(): Map<string, ModelRegistryEntry> {
+    return this.isDevRoutingActive() ? this.devRegistry : this.dbRegistry;
+  }
+
+  setDevMode(enabled: boolean | null): void {
+    this.devModeOverride = enabled;
+  }
+
+  isDevRoutingActive(request?: ModelRequest): boolean {
+    if (request?.devWorkload !== undefined) return request.devWorkload;
+    if (this.devModeOverride !== null) return this.devModeOverride;
+    return isDevOpenRouterActive();
+  }
+
+  /** Dynamically replace production DB registry entries in memory without requiring application restart. */
+  updateRegistry(entries: ModelRegistryEntry[] | Map<string, ModelRegistryEntry>): void {
+    this.dbRegistry.clear();
+    const map = Array.isArray(entries) ? new Map(entries.map((m) => [m.id, m])) : entries;
+    for (const [k, v] of map) {
+      this.dbRegistry.set(k, v);
+    }
+  }
+
+  updateDbRegistry(entries: ModelRegistryEntry[] | Map<string, ModelRegistryEntry>): void {
+    this.updateRegistry(entries);
+  }
+
   /** `ModelClient` surface: delegates to `execute`. */
   async complete(request: ModelRequest): Promise<AIResult<ModelResponse>> {
     return this.execute(request);
   }
+
   async execute(request: ModelRequest): Promise<AIResult<ModelResponse>> {
+    const isDev = this.isDevRoutingActive(request);
+    const activeRegistry = isDev && this.devRegistry.size > 0 ? this.devRegistry : this.dbRegistry;
     let model: ModelRegistryEntry;
-    try { model = resolveModel(this.registry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType); } catch { return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } }; }
+    try {
+      model = resolveModel(activeRegistry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType);
+    } catch {
+      if (isDev && this.dbRegistry.has(request.modelId)) {
+        try {
+          model = resolveModel(this.dbRegistry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType);
+        } catch {
+          return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
+        }
+      } else {
+        return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
+      }
+    }
+
+    if (isDev) {
+      gatewayConsole("log", request, `DEV WORKLOAD: Dispatching to OpenRouter (${model.model} at ${model.baseUrl})`);
+    } else {
+      gatewayConsole("log", request, `DB ENDPOINT: Dispatching to ${model.baseUrl} (${model.model}, role: ${request.taskType})`);
+    }
+
     const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
     if (model.runtime === "openrouter" && !key) return { ok: false, error: { kind: "ai-error", code: "model_rejected_request", message: `missing environment credential ${model.apiKeyEnv}`, retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
     const maybeVision = request as unknown as { taskType: string; attachment?: { mediaType: string; relativePath: string; filename?: string; selectedPages?: number[] } };
@@ -230,6 +303,7 @@ export class ModelGateway implements ModelClient {
       phase: "request" as const,
       taskType: request.taskType,
       modelId: request.modelId,
+      devWorkload: isDev,
       providerModel: model.model,
       baseUrl: model.baseUrl,
       endpoint: `${model.baseUrl}/chat/completions`,

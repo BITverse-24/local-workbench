@@ -26,6 +26,7 @@ export interface ModelRequestBase {
   timeoutMs: number;
   temperature?: number;
   maxTokens?: number;
+  devWorkload?: boolean;
 }
 export interface VisionModelRequest extends ModelRequestBase { taskType: "vision"; modelId: "vision-qwen25vl"; responseFormat: "vision-result"; attachment: AttachmentReference; inputMode: "typed-scan"; }
 export interface CodeModelRequest extends ModelRequestBase { taskType: "code"; modelId: "code-qwen25coder"; responseFormat: "code-result"; task: string; inputFile: InputFileReference; allowedLanguage: "python"; executionRules: string[]; }
@@ -71,7 +72,7 @@ export interface GroundingChunk {
 }
 export type RunEvent =
   | { type: "run_state"; runId: string; state: RunState }
-  | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number }
+  | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number; devWorkload?: boolean; providerEndpoint?: string }
   | { type: "plan_step"; runId: string; index: number; text: string }
   | { type: "tool_call"; runId: string; tool: ToolName; summary: string }
   | { type: "tool_result"; runId: string; tool: ToolName; summary: string }
@@ -149,3 +150,32 @@ export type WorkspaceEvent =
   | { type: "workspace_tree"; entries: HarnessDirEntry[] }
   | { type: "harness_tool_call"; runId: string; tool: HarnessToolName; summary: string }
   | { type: "harness_tool_result"; runId: string; tool: HarnessToolName; summary: string; detail?: string };
+
+// ── Onboarding & Model Configuration Contracts ──────────────────────────
+export type ModelRoleType = "vision" | "coding" | "draft" | "plan" | "embedding";
+
+export interface ModelConfigRow {
+  role: ModelRoleType;
+  modelName: string;
+  host: string;
+  port: number;
+  contextLength: number;
+}
+
+export interface ModelEndpointTestResult {
+  ok: boolean;
+  latencyMs?: number;
+  modelFound?: boolean;
+  availableModels?: string[];
+  error?: string;
+}
+
+export interface OnboardingStatus {
+  completed: boolean;
+  configuredModels?: ModelConfigRow[];
+}
+
+export interface DevModeStatus {
+  devOpenRouter: boolean;
+  hasOpenRouterKey: boolean;
+}

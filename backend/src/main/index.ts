@@ -17,6 +17,8 @@ import {
   registerChatHandlers,
   registerRunHandlers,
   registerWorkspaceHandlers,
+  registerOnboardingHandlers,
+  restoreSavedModelConfig,
 } from "./ipc/handlers.js";
 import type { IpcRegistrar } from "./ipc/handlers.js";
 import { RunManager } from "./run/manager.js";
@@ -40,9 +42,13 @@ export {
   IPC_KB,
   KB_CHANNELS,
   type KBChannel,
+  IPC_ONBOARDING,
+  ONBOARDING_CHANNELS,
+  type OnboardingChannel,
 } from "./ipc/channels.js";
 export { HarnessManager } from "./harness/harness-manager.js";
 export { registerKnowledgeBaseHandlers } from "./ipc/handlers.js";
+export { registerOnboardingHandlers, restoreSavedModelConfig } from "./ipc/handlers.js";
 export { RAGService } from "./rag/rag-service.js";
 export { RAGGroundingProvider } from "./grounding/rag-grounding-provider.js";
 
@@ -87,11 +93,7 @@ export function initBackend(
   }
 
   const dataDir = config?.dataDir ?? "./data";
-  const embeddingConfig = config?.embeddingConfig ?? {
-    baseUrl: "http://localhost:1234/v1",
-    model: "nomic-embed-text:v1.5",
-  };
-  const ragService = new RAGService(dataDir, embeddingConfig);
+  const ragService = new RAGService(dataDir, config?.embeddingConfig);
   registerKnowledgeBaseHandlers(ipcMain, ragService);
   const grounding = new RAGGroundingProvider(ragService);
   manager.setGrounding(grounding);
@@ -100,7 +102,18 @@ export function initBackend(
     console.warn("Failed to initialize RAG subsystem on startup:", err);
   });
 
+  registerOnboardingHandlers(ipcMain, manager, ragService, dataDir);
+  try {
+    const restored = restoreSavedModelConfig(manager, ragService);
+    if (restored) {
+      console.log("[backend] restored user-configured model endpoints from persistence");
+    }
+  } catch (err) {
+    console.warn("Failed to restore saved model config on startup:", err);
+  }
+
   (manager as any).harness = harness;
   return manager as BackendInstance;
 }
+
 

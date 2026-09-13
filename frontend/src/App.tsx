@@ -13,6 +13,7 @@ import CameraModal from "./components/modals/CameraModal";
 import VoiceModal from "./components/modals/VoiceModal";
 import ConfirmationModal from "./components/ConfirmationModal";
 import RouteBadge from "./components/RouteBadge";
+import OnboardingPage from "./components/onboarding/OnboardingPage";
 import { MODELS } from "./lib/models";
 import * as wb from "./lib/workbench";
 import { useDropdownPosition, usePlusPosition } from "./lib/hooks/useDropdownPosition";
@@ -71,17 +72,32 @@ export default function App() {
   activeRunRef.current = activeRunId;
   const isRunning = runState !== null && !["completed", "failed", "cancelled"].includes(runState);
 
+  // Onboarding state
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
+  const [cachedModels, setCachedModels] = useState<ModelConfigRow[] | undefined>(undefined);
+
   // Workspace state
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceInfo | null>(null);
   const [workspaceTree, setWorkspaceTree] = useState<HarnessDirEntry[]>([]);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
 
-  // Launch: restore history, last chat, temperature, workspace
+  // Launch: restore history, last chat, temperature, workspace, onboarding
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!wb.isWorkbenchAvailable()) return;
       try {
+        // Check onboarding status first
+        try {
+          const ob = await wb.getOnboardingStatus();
+          if (!cancelled) {
+            setOnboardingCompleted(ob.completed);
+            setCachedModels(ob.configuredModels);
+          }
+        } catch {
+          if (!cancelled) setOnboardingCompleted(true);
+        }
+
         const chats = await wb.getChatHistory(50);
         if (cancelled) return;
         setPersistent(true);
@@ -645,6 +661,23 @@ export default function App() {
     }
     upload.setShow(false);
   }, [upload, addFiles]);
+
+  if (onboardingCompleted === false) {
+    return (
+      <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none" style={{ background: "#181818" }}>
+        <TitleBar />
+        <div className="flex-1 overflow-hidden relative">
+          <OnboardingPage
+            initialConfig={cachedModels}
+            onComplete={() => {
+              setOnboardingCompleted(true);
+              void refreshHealth();
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none page-apple-enter" style={{ background: "#181818" }}>

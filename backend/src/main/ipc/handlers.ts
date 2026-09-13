@@ -170,5 +170,6 @@ export function registerWorkspaceHandlers(ipcMain: MinimalIpcMain, harness: Harn
 }
 
 export { registerKnowledgeBaseHandlers } from "./kb-handlers.js";
+export { registerOnboardingHandlers, restoreSavedModelConfig } from "./onboarding-handlers.js";
 
 

@@ -104,6 +104,20 @@ contextBridge.exposeInMainWorld("workbench", {
   runWorkspaceCommand: (command: string) =>
     ipcRenderer.invoke("workspace:runCommand", { command }),
 
+  // onboarding protocol
+  getOnboardingStatus: () =>
+    ipcRenderer.invoke("workbench:getOnboardingStatus"),
+  saveModelConfig: (models: unknown[]) =>
+    ipcRenderer.invoke("workbench:saveModelConfig", { models }),
+  testModelEndpoint: (input: { host: string; port: number; modelName?: string; role?: string }) =>
+    ipcRenderer.invoke("workbench:testModelEndpoint", input),
+  resetOnboarding: () =>
+    ipcRenderer.invoke("workbench:resetOnboarding"),
+  getDevMode: () =>
+    ipcRenderer.invoke("workbench:getDevMode"),
+  setDevMode: (enabled: boolean) =>
+    ipcRenderer.invoke("workbench:setDevMode", { enabled }),
+
 
   // push events — returns unsubscribe
   onRunEvent: (listener: (event: unknown) => void) => {

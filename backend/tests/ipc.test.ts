@@ -15,6 +15,7 @@ import {
   IPC_WORKSPACE,
   WORKSPACE_CHANNELS,
   KB_CHANNELS,
+  ONBOARDING_CHANNELS,
 } from "../src/main/ipc/channels.js";
 import { registerChatHandlers, type MinimalIpcMain } from "../src/main/ipc/handlers.js";
 import { initBackend } from "../src/main/index.js";
@@ -55,7 +56,7 @@ describe("chat IPC over mock Electron ipcMain", () => {
   it("initBackend registers all chat+run channels (launch wiring)", () => {
     const fake = new FakeIpcMain();
     initBackend(fake);
-    const expected = [...CHAT_CHANNELS, ...RUN_CHANNELS, ...WORKSPACE_CHANNELS, ...KB_CHANNELS].filter(
+    const expected = [...CHAT_CHANNELS, ...RUN_CHANNELS, ...WORKSPACE_CHANNELS, ...KB_CHANNELS, ...ONBOARDING_CHANNELS].filter(
       (channel) =>
         channel !== IPC_RUN.RUN_EVENT &&
         channel !== IPC_RUN.OPEN_ARTIFACT &&
@@ -67,7 +68,9 @@ describe("chat IPC over mock Electron ipcMain", () => {
     expect(RUN_CHANNELS).toHaveLength(10);
     expect(WORKSPACE_CHANNELS).toHaveLength(9);
     expect(KB_CHANNELS).toHaveLength(6);
+    expect(ONBOARDING_CHANNELS).toHaveLength(6);
   });
+
 
   it("createChat → getChatHistory round-trips a uuid4 chat", async () => {
     const fake = new FakeIpcMain();
