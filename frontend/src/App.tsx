@@ -664,7 +664,7 @@ export default function App() {
 
   if (onboardingCompleted === false) {
     return (
-      <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none" style={{ background: "#181818" }}>
+      <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none" style={{ background: "var(--bg-canvas)" }}>
         <TitleBar />
         <div className="flex-1 overflow-hidden relative">
           <OnboardingPage
@@ -680,10 +680,10 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none page-apple-enter" style={{ background: "#181818" }}>
+    <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none page-apple-enter" style={{ background: "var(--bg-canvas)" }}>
       <TitleBar />
 
-      <div className="flex flex-1 overflow-hidden p-3 gap-3 relative z-10" style={{ background: "#181818" }}>
+      <div className="flex flex-1 overflow-hidden p-3 gap-3 relative z-10" style={{ background: "var(--bg-canvas)" }}>
         <LeftSidebar
           collapsed={leftCollapsed}
           onCollapse={() => setLeftCollapsed(true)}
@@ -705,21 +705,21 @@ export default function App() {
         <ChatPanel title={activeTitle} leftCollapsed={leftCollapsed} rightCollapsed={rightCollapsed} onToggleLeft={() => setLeftCollapsed(!leftCollapsed)} onToggleRight={() => setRightCollapsed(!rightCollapsed)}>
           {activeRoute && <RouteBadge route={activeRoute} state={runState} />}
           {runError && (
-            <div className="mx-4 mt-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex flex-col gap-1 select-text">
+            <div className="mx-4 mt-2 px-3.5 py-2.5 rounded-[var(--radius-sm)] bg-[var(--status-error)]/15 border border-[var(--status-error)]/30 text-sm text-[var(--status-error)] flex flex-col gap-1 select-text">
               <div className="flex items-start justify-between gap-2">
                 <span className="break-words whitespace-pre-wrap cursor-text"><strong>{runError.code}:</strong> {runError.message}</span>
-                <button onClick={() => setRunError(null)} className="shrink-0 w-6 h-6 rounded-full bg-white/10 grid place-items-center">x</button>
+                <button onClick={() => setRunError(null)} className="shrink-0 w-6 h-6 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs text-[var(--text-secondary)]">✕</button>
               </div>
-              <span className="opacity-60 text-[11px] cursor-text">Full model response is in Model Trace (Settings sidebar & terminal logs) — expand provider_content_raw / normalized to see what the model returned.</span>
+              <span className="opacity-70 text-xs cursor-text">Full model response is in Model Trace (Settings sidebar & terminal logs) — expand provider_content_raw / normalized to see what the model returned.</span>
             </div>
           )}
           {isRunning && (
-            <div className="mx-4 mt-2 flex items-center gap-2 text-xs opacity-60">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              {runState === "awaiting_confirmation" ? "Awaiting confirmation" : `Run ${runState}...`}
+            <div className="mx-4 mt-2 flex items-center gap-2.5 text-sm text-[var(--text-secondary)]">
+              <span className="w-2 h-2 rounded-full bg-[var(--accent)]" />
+              <span className="font-medium">{runState === "awaiting_confirmation" ? "Awaiting confirmation" : `Run ${runState}...`}</span>
               {groundingStatus && (
-                <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+                <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
                   {groundingStatus.status === "retrieving"
                     ? "Retrieving SOP context..."
                     : groundingStatus.status === "injected"
@@ -727,7 +727,7 @@ export default function App() {
                     : "Grounding: No SOP found"}
                 </span>
               )}
-              <button onClick={handleCancelRun} className="ml-auto px-3 py-1 rounded-full neu-button text-xs">Cancel</button>
+              <button onClick={handleCancelRun} className="ml-auto px-3 py-1 rounded-[var(--radius-sm)] neu-button text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Cancel</button>
             </div>
           )}
           <ChatArea

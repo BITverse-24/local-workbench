@@ -59,25 +59,26 @@ function formatSize(bytes: number): string {
 
 function getBadgeStyle(kind: string, filename?: string): { label: string; badgeClass: string; iconColor: string } {
   const ext = (filename?.split(".").pop() || kind).toLowerCase();
+  const neutralClass = "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]";
   switch (ext) {
     case "py":
-      return { label: "PYTHON", badgeClass: "bg-sky-500/15 text-sky-400 border-sky-500/30", iconColor: "text-sky-400" };
+      return { label: "Python", badgeClass: neutralClass, iconColor: "text-[var(--text-secondary)]" };
     case "docx":
     case "doc":
-      return { label: "WORD", badgeClass: "bg-blue-500/15 text-blue-400 border-blue-500/30", iconColor: "text-blue-400" };
+      return { label: "Word", badgeClass: neutralClass, iconColor: "text-[var(--text-secondary)]" };
     case "pdf":
-      return { label: "PDF", badgeClass: "bg-rose-500/15 text-rose-400 border-rose-500/30", iconColor: "text-rose-400" };
+      return { label: "PDF", badgeClass: neutralClass, iconColor: "text-[var(--text-secondary)]" };
     case "xlsx":
     case "xls":
-      return { label: "EXCEL", badgeClass: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", iconColor: "text-emerald-400" };
+      return { label: "Excel", badgeClass: neutralClass, iconColor: "text-[var(--text-secondary)]" };
     case "csv":
-      return { label: "CSV", badgeClass: "bg-teal-500/15 text-teal-400 border-teal-500/30", iconColor: "text-teal-400" };
+      return { label: "CSV", badgeClass: neutralClass, iconColor: "text-[var(--text-secondary)]" };
     case "json":
-      return { label: "JSON", badgeClass: "bg-amber-500/15 text-amber-400 border-amber-500/30", iconColor: "text-amber-400" };
+      return { label: "JSON", badgeClass: neutralClass, iconColor: "text-[var(--text-secondary)]" };
     case "md":
-      return { label: "MARKDOWN", badgeClass: "bg-indigo-500/15 text-indigo-400 border-indigo-500/30", iconColor: "text-indigo-400" };
+      return { label: "Markdown", badgeClass: neutralClass, iconColor: "text-[var(--text-secondary)]" };
     default:
-      return { label: kind.toUpperCase() || "FILE", badgeClass: "bg-zinc-500/15 text-zinc-300 border-zinc-500/30", iconColor: "text-zinc-400" };
+      return { label: ext.toUpperCase() || "File", badgeClass: neutralClass, iconColor: "text-[var(--text-secondary)]" };
   }
 }
 
@@ -146,13 +147,13 @@ function renderCellContent(text: string, keyPrefix: string): React.ReactNode {
   const trimmed = text.trim();
   const upper = trimmed.toUpperCase();
   if (["APPROVED", "COMPLIANT", "PASS", "PASSED"].includes(upper)) {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">{trimmed}</span>;
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-medium bg-[var(--status-success)]/15 text-[var(--status-success)] border border-[var(--status-success)]/30">{trimmed}</span>;
   }
   if (["NOT APPROVED", "REJECTED", "NON-COMPLIANT", "FAIL", "FAILED"].includes(upper)) {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-rose-500/15 text-rose-400 border border-rose-500/30">{trimmed}</span>;
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-medium bg-[var(--status-error)]/15 text-[var(--status-error)] border border-[var(--status-error)]/30">{trimmed}</span>;
   }
   if (["UNKNOWN", "FLAGGED", "WARNING", "RECHECK", "REVISIONS REQUIRED"].some((k) => upper.includes(k))) {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-amber-500/15 text-amber-400 border border-amber-500/30">{trimmed}</span>;
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-medium bg-[var(--status-warning)]/15 text-[var(--status-warning)] border border-[var(--status-warning)]/30">{trimmed}</span>;
   }
   return renderInline(trimmed, keyPrefix);
 }
@@ -212,17 +213,17 @@ function InteractiveMarkdown({ text }: { text: string }) {
         if (seg.type === "code") {
           const isCopied = copiedIndex === si;
           return (
-            <div key={`code-${si}`} className="my-2.5 rounded-lg border border-[#2A2A2A] bg-[#0E0E0E] overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-1.5 bg-[#181818] border-b border-[#2A2A2A] text-[10px] text-white/50 font-mono">
+            <div key={`code-${si}`} className="my-2.5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] text-[11px] text-[var(--text-tertiary)] font-mono">
                 <span>{seg.lang?.toUpperCase() || "CODE"}</span>
                 <button
                   onClick={() => handleCopyCode(seg.content.trim(), si)}
-                  className="text-white/60 hover:text-white transition-colors"
+                  className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                 >
                   {isCopied ? "Copied!" : "Copy code"}
                 </button>
               </div>
-              <pre className="p-3 overflow-x-auto font-mono text-xs leading-relaxed">
+              <pre className="p-3 overflow-x-auto font-mono text-xs leading-relaxed text-[var(--text-primary)]">
                 <code>{highlightCode(seg.content.trim())}</code>
               </pre>
             </div>
@@ -238,12 +239,12 @@ function InteractiveMarkdown({ text }: { text: string }) {
           const tableData = parseMarkdownTable(trimmed);
           if (tableData) {
             return (
-              <div key={`tbl-${si}-${bi}`} className="my-3 overflow-x-auto rounded-lg border border-[#2E2E2E] bg-[#161616]">
+              <div key={`tbl-${si}-${bi}`} className="my-3 overflow-x-auto rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="border-b border-[#2C2C2C] bg-[#1F1F1F]">
+                    <tr className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)]">
                       {tableData.headers.map((h, hi) => (
-                        <th key={hi} className="p-2.5 font-semibold text-white/90 whitespace-nowrap">
+                        <th key={hi} className="p-2.5 font-medium text-[var(--text-primary)] whitespace-nowrap">
                           {renderInline(h, `th-${si}-${bi}-${hi}`)}
                         </th>
                       ))}
@@ -251,9 +252,9 @@ function InteractiveMarkdown({ text }: { text: string }) {
                   </thead>
                   <tbody>
                     {tableData.rows.map((row, ri) => (
-                      <tr key={ri} className="border-b border-[#222222] hover:bg-white/[0.02] transition-colors">
+                      <tr key={ri} className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-surface-raised)]/50 transition-colors">
                         {row.map((cell, ci) => (
-                          <td key={ci} className="p-2.5 text-white/75 align-top">
+                          <td key={ci} className="p-2.5 text-[var(--text-secondary)] align-top">
                             {renderCellContent(cell, `td-${si}-${bi}-${ri}-${ci}`)}
                           </td>
                         ))}
@@ -267,7 +268,7 @@ function InteractiveMarkdown({ text }: { text: string }) {
 
           // Horizontal rule
           if (/^(\-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
-            return <hr key={`hr-${si}-${bi}`} className="my-4 border-[#2A2A2A]" />;
+            return <hr key={`hr-${si}-${bi}`} className="my-4 border-[var(--border-subtle)]" />;
           }
 
           // Heading
@@ -275,17 +276,17 @@ function InteractiveMarkdown({ text }: { text: string }) {
             const level = trimmed.match(/^#+/)![0].length;
             const headingContent = trimmed.replace(/^#+\s+/, "");
             const headingStyles: Record<number, string> = {
-              1: "text-base font-bold text-white border-b border-[#2E2E2E] pb-1.5 mt-3 mb-2",
-              2: "text-[15px] font-bold text-white/95 mt-3 mb-1.5",
-              3: "text-sm font-semibold text-white/90 mt-2.5 mb-1",
-              4: "text-xs font-semibold text-white/80 uppercase tracking-wider mt-2 mb-1",
-              5: "text-xs font-semibold text-white/70 uppercase tracking-wider",
-              6: "text-xs font-medium text-white/60 uppercase tracking-wider",
+              1: "text-base font-semibold text-[var(--text-primary)] border-b border-[var(--border-subtle)] pb-1.5 mt-3 mb-2",
+              2: "text-[15px] font-semibold text-[var(--text-primary)] mt-3 mb-1.5",
+              3: "text-sm font-semibold text-[var(--text-primary)] mt-2.5 mb-1",
+              4: "text-xs font-semibold text-[var(--text-secondary)] mt-2 mb-1",
+              5: "text-xs font-semibold text-[var(--text-secondary)]",
+              6: "text-xs font-medium text-[var(--text-tertiary)]",
             };
             const Tag = `h${Math.min(level, 6)}` as keyof React.JSX.IntrinsicElements;
             return React.createElement(
               Tag,
-              { key: `h-${si}-${bi}`, className: `${headingStyles[level] || "text-sm font-bold text-white"} leading-tight` },
+              { key: `h-${si}-${bi}`, className: `${headingStyles[level] || "text-sm font-semibold text-[var(--text-primary)]"} leading-tight` },
               ...renderInline(headingContent, `h-${si}-${bi}`)
             );
           }
@@ -294,9 +295,9 @@ function InteractiveMarkdown({ text }: { text: string }) {
           if (/^(\s*[-*]\s+.+(\n\s*[-*]\s+.+)*)$/.test(trimmed)) {
             const items = trimmed.split("\n").map((l) => l.replace(/^\s*[-*]\s+/, "").trim()).filter(Boolean);
             return (
-              <ul key={`ul-${si}-${bi}`} className="list-disc pl-5 space-y-1 my-1.5 marker:text-white/40">
+              <ul key={`ul-${si}-${bi}`} className="list-disc pl-5 space-y-1 my-1.5 marker:text-[var(--text-tertiary)]">
                 {items.map((it, i) => (
-                  <li key={i} className="leading-relaxed text-white/80 break-words">
+                  <li key={i} className="leading-relaxed text-[var(--text-secondary)] break-words">
                     {renderInline(it, `li-${si}-${bi}-${i}`)}
                   </li>
                 ))}
@@ -308,9 +309,9 @@ function InteractiveMarkdown({ text }: { text: string }) {
           if (/^(\s*\d+\.\s+.+(\n\s*\d+\.\s+.+)*)$/.test(trimmed)) {
             const items = trimmed.split("\n").map((l) => l.replace(/^\s*\d+\.\s+/, "").trim()).filter(Boolean);
             return (
-              <ol key={`ol-${si}-${bi}`} className="list-decimal pl-5 space-y-1 my-1.5 marker:text-white/40">
+              <ol key={`ol-${si}-${bi}`} className="list-decimal pl-5 space-y-1 my-1.5 marker:text-[var(--text-tertiary)]">
                 {items.map((it, i) => (
-                  <li key={i} className="leading-relaxed text-white/80 break-words">
+                  <li key={i} className="leading-relaxed text-[var(--text-secondary)] break-words">
                     {renderInline(it, `oli-${si}-${bi}-${i}`)}
                   </li>
                 ))}
@@ -322,7 +323,7 @@ function InteractiveMarkdown({ text }: { text: string }) {
           if (/^>\s?/.test(trimmed)) {
             const quote = trimmed.replace(/^>\s?/gm, "");
             return (
-              <blockquote key={`q-${si}-${bi}`} className="border-l-2 border-indigo-500/50 bg-indigo-500/5 px-3 py-2 rounded-r my-2 text-xs text-white/80 italic leading-relaxed">
+              <blockquote key={`q-${si}-${bi}`} className="border-l-2 border-[var(--border-muted)] bg-[var(--bg-surface-raised)] px-3 py-2 rounded-r-[var(--radius-sm)] my-2 text-xs text-[var(--text-secondary)] italic leading-relaxed">
                 {renderInline(quote, `q-${si}-${bi}`)}
               </blockquote>
             );
@@ -331,7 +332,7 @@ function InteractiveMarkdown({ text }: { text: string }) {
           // Regular paragraph
           const paragraphLines = trimmed.split("\n");
           return (
-            <p key={`p-${si}-${bi}`} className="leading-relaxed text-white/80 my-1.5 whitespace-pre-wrap break-words">
+            <p key={`p-${si}-${bi}`} className="leading-relaxed text-[var(--text-secondary)] my-1.5 whitespace-pre-wrap break-words">
               {paragraphLines.map((line, li) => (
                 <React.Fragment key={li}>
                   {renderInline(line, `p-${si}-${bi}-${li}`)}
@@ -429,20 +430,20 @@ export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
   const csvData = useMemo(() => (artifact.kind === "csv" && content ? parseCsv(content) : null), [artifact.kind, content]);
 
   return (
-    <div className="my-2.5 w-full max-w-2xl rounded-xl neu-card border border-[#2E2E2E] bg-[#1A1A1A] overflow-hidden transition-all duration-200 shadow-sm">
+    <div className="my-2.5 w-full max-w-2xl rounded-[var(--radius-md)] neu-card border border-[var(--border-subtle)] bg-[var(--bg-surface)] overflow-hidden transition-all duration-200 shadow-sm">
       {/* Header bar matching Claude artifact preview */}
-      <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[#202020] border-b border-[#2A2A2A]">
+      <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-[var(--bg-surface-raised)] border-b border-[var(--border-subtle)]">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <span
-            className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase border shrink-0 ${badge.badgeClass}`}
+            className={`px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-medium border shrink-0 ${badge.badgeClass}`}
           >
             {badge.label}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-white/90 truncate" title={artifact.filename}>
+            <div className="text-sm font-medium text-[var(--text-primary)] truncate" title={artifact.filename}>
               {artifact.filename}
             </div>
-            <div className="text-[10px] text-white/40 truncate">
+            <div className="text-xs text-[var(--text-tertiary)] truncate">
               {formatSize(artifact.sizeBytes)}
               {lines.length > 0 ? ` • ${lines.length} lines` : ""}
             </div>
@@ -450,22 +451,22 @@ export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
         </div>
 
         {/* 3 action buttons: Expand, Copy, Save as */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={handleToggleExpand}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg neu-button text-xs font-medium text-white/80 hover:text-white transition-colors"
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[var(--radius-sm)] neu-button text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             title={expanded ? "Collapse preview" : "Expand preview"}
           >
             {expanded ? (
               <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="18 15 12 9 6 15" />
                 </svg>
                 <span>Collapse</span>
               </>
             ) : (
               <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="6 9 12 15 18 9" />
                 </svg>
                 <span>Expand</span>
@@ -475,19 +476,19 @@ export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
 
           <button
             onClick={handleCopy}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg neu-button text-xs font-medium text-white/80 hover:text-white transition-colors"
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[var(--radius-sm)] neu-button text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             title={isTextLike ? "Copy file content" : "Copy file"}
           >
             {copied ? (
               <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-400">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--status-success)]">
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
-                <span className="text-green-400">{copyFeedback ?? "Copied!"}</span>
+                <span className="text-[var(--status-success)]">{copyFeedback ?? "Copied"}</span>
               </>
             ) : (
               <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="9" y="9" width="13" height="13" rx="2" />
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3.5" />
                 </svg>
@@ -498,10 +499,10 @@ export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
 
           <button
             onClick={handleSave}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg neu-button-primary text-xs font-medium transition-colors"
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[var(--radius-sm)] neu-button-primary text-xs font-medium transition-colors"
             title="Save file to local disk"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
@@ -513,25 +514,25 @@ export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
 
       {/* Expanded content area */}
       {expanded && (
-        <div className="bg-[#141414] border-t border-[#262626]">
+        <div className="bg-[var(--bg-canvas)] border-t border-[var(--border-subtle)]">
           {loading ? (
-            <div className="p-8 text-center text-xs text-white/40">Loading file content...</div>
+            <div className="p-8 text-center text-xs text-[var(--text-tertiary)]">Loading file content...</div>
           ) : isTextLike && content ? (
             <div>
               {/* CSV view toggle bar if applicable */}
               {artifact.kind === "csv" && csvData && (
-                <div className="flex items-center justify-between px-3 py-1.5 bg-[#1B1B1B] border-b border-[#262626] text-xs text-white/60">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--bg-surface-raised)] border-b border-[var(--border-subtle)] text-xs text-[var(--text-secondary)]">
                   <span>{csvData.rows.length} rows • {csvData.headers.length} columns</span>
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setViewMode("table")}
-                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${viewMode === "table" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"}`}
+                      className={`px-2 py-0.5 rounded-[var(--radius-sm)] text-[11px] font-medium transition-colors ${viewMode === "table" ? "bg-[var(--bg-surface)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"}`}
                     >
                       Table View
                     </button>
                     <button
                       onClick={() => setViewMode("code")}
-                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${viewMode === "code" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"}`}
+                      className={`px-2 py-0.5 rounded-[var(--radius-sm)] text-[11px] font-medium transition-colors ${viewMode === "code" ? "bg-[var(--bg-surface)] text-[var(--text-primary)]" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"}`}
                     >
                       Raw Code
                     </button>
@@ -541,21 +542,21 @@ export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
 
               {/* Markdown view toggle bar if applicable */}
               {isMarkdown && (
-                <div className="flex items-center justify-between px-3 py-1.5 bg-[#1B1B1B] border-b border-[#262626] text-xs text-white/60">
-                  <span className="flex items-center gap-1.5 font-medium text-white/70">
-                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
-                    Markdown Deliverable
+                <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--bg-surface-raised)] border-b border-[var(--border-subtle)] text-xs text-[var(--text-secondary)]">
+                  <span className="flex items-center gap-1.5 font-medium text-[var(--text-secondary)]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]"></span>
+                    Markdown deliverable
                   </span>
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setViewMode("markdown")}
-                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${viewMode === "markdown" ? "bg-white/15 text-white font-semibold" : "text-white/40 hover:text-white/70"}`}
+                      className={`px-2 py-0.5 rounded-[var(--radius-sm)] text-[11px] font-medium transition-colors ${viewMode === "markdown" ? "bg-[var(--bg-surface)] text-[var(--text-primary)] font-semibold" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"}`}
                     >
                       Markdown
                     </button>
                     <button
                       onClick={() => setViewMode("code")}
-                      className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${viewMode === "code" ? "bg-white/15 text-white font-semibold" : "text-white/40 hover:text-white/70"}`}
+                      className={`px-2 py-0.5 rounded-[var(--radius-sm)] text-[11px] font-medium transition-colors ${viewMode === "code" ? "bg-[var(--bg-surface)] text-[var(--text-primary)] font-semibold" : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"}`}
                     >
                       Raw Code
                     </button>
@@ -568,9 +569,9 @@ export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
                 <div className="max-h-80 overflow-auto p-2">
                   <table className="w-full text-left text-xs border-collapse font-mono">
                     <thead>
-                      <tr className="border-b border-[#2C2C2C] bg-[#1A1A1A]">
+                      <tr className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)]">
                         {csvData.headers.map((h, hi) => (
-                          <th key={hi} className="p-2 font-semibold text-white/80 whitespace-nowrap">
+                          <th key={hi} className="p-2 font-medium text-[var(--text-primary)] whitespace-nowrap">
                             {h}
                           </th>
                         ))}
@@ -578,9 +579,9 @@ export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
                     </thead>
                     <tbody>
                       {csvData.rows.map((row, ri) => (
-                        <tr key={ri} className="border-b border-[#222222] hover:bg-[#1C1C1C]">
+                        <tr key={ri} className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-surface-raised)]/50 transition-colors">
                           {row.map((cell, ci) => (
-                            <td key={ci} className="p-2 text-white/70 whitespace-nowrap">
+                            <td key={ci} className="p-2 text-[var(--text-secondary)] whitespace-nowrap">
                               {cell}
                             </td>
                           ))}
@@ -593,9 +594,9 @@ export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
                 <InteractiveMarkdown text={content} />
               ) : (
                 /* Line-numbered Code View */
-                <div className="max-h-96 overflow-y-auto font-mono text-xs text-white/85 p-3 flex leading-relaxed">
+                <div className="max-h-96 overflow-y-auto font-mono text-xs text-[var(--text-primary)] p-3 flex leading-relaxed">
                   {/* Line numbers gutter */}
-                  <div className="select-none pr-3 text-right text-zinc-600 shrink-0 border-r border-[#262626]/80 mr-3">
+                  <div className="select-none pr-3 text-right text-[var(--text-tertiary)] shrink-0 border-r border-[var(--border-subtle)] mr-3">
                     {lines.map((_, idx) => (
                       <div key={idx}>{idx + 1}</div>
                     ))}
@@ -603,7 +604,7 @@ export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
                   {/* Code body */}
                   <div className="overflow-x-auto whitespace-pre flex-1">
                     {lines.map((line, idx) => (
-                      <div key={idx} className="hover:bg-white/[0.02]">
+                      <div key={idx} className="hover:bg-[var(--bg-surface-raised)]/30">
                         {highlightCode(line)}
                       </div>
                     ))}
@@ -612,20 +613,20 @@ export default function ArtifactCard({ artifact, onSave }: ArtifactCardProps) {
               )}
             </div>
           ) : isTextLike && !content ? (
-            <div className="p-6 text-center text-xs text-white/40">File content is empty or unavailable.</div>
+            <div className="p-6 text-center text-xs text-[var(--text-tertiary)]">File content is empty or unavailable.</div>
           ) : (
             /* Binary File Aesthetic Card */
             <div className="p-5 flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-xl grid place-items-center shrink-0 border ${badge.badgeClass}`}>
-                <span className="text-xs font-bold">{badge.label.slice(0, 4)}</span>
+              <div className={`w-12 h-12 rounded-[var(--radius-md)] grid place-items-center shrink-0 border ${badge.badgeClass}`}>
+                <span className="text-xs font-medium">{badge.label.slice(0, 4)}</span>
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-xs font-semibold text-white/90">{artifact.filename}</div>
-                <div className="text-[11px] text-white/50 mt-0.5">
+                <div className="text-xs font-medium text-[var(--text-primary)]">{artifact.filename}</div>
+                <div className="text-[11px] text-[var(--text-tertiary)] mt-0.5">
                   Binary deliverable • {formatSize(artifact.sizeBytes)}
                 </div>
-                <div className="text-[11px] text-white/40 mt-1">
-                  Ready to export. Click <span className="text-white/80 font-medium">Save as</span> to choose a destination folder on your machine or <span className="text-white/80 font-medium">Copy</span> to copy the file to clipboard.
+                <div className="text-[11px] text-[var(--text-tertiary)] mt-1">
+                  Ready to export. Click <span className="text-[var(--text-primary)] font-medium">Save as</span> to choose a destination folder on your machine or <span className="text-[var(--text-primary)] font-medium">Copy</span> to copy the file to clipboard.
                 </div>
               </div>
             </div>

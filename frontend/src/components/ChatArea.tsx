@@ -90,17 +90,17 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
       nodes.push(text.slice(lastIndex, m.index));
     }
     if (m[1]) {
-      nodes.push(<strong key={`${keyPrefix}-b-${idx++}`} className="font-semibold text-white">{m[1]}</strong>);
+      nodes.push(<strong key={`${keyPrefix}-b-${idx++}`} className="font-semibold text-[var(--text-primary)]">{m[1]}</strong>);
     } else if (m[2]) {
-      nodes.push(<strong key={`${keyPrefix}-b2-${idx++}`} className="font-semibold text-white">{m[2]}</strong>);
+      nodes.push(<strong key={`${keyPrefix}-b2-${idx++}`} className="font-semibold text-[var(--text-primary)]">{m[2]}</strong>);
     } else if (m[3]) {
       nodes.push(<em key={`${keyPrefix}-i-${idx++}`} className="italic">{m[3]}</em>);
     } else if (m[4]) {
       nodes.push(<em key={`${keyPrefix}-i2-${idx++}`} className="italic">{m[4]}</em>);
     } else if (m[5]) {
-      nodes.push(<code key={`${keyPrefix}-c-${idx++}`} className="px-1 py-0.5 rounded bg-white/10 border border-white/10 text-xs font-mono">{m[5]}</code>);
+      nodes.push(<code key={`${keyPrefix}-c-${idx++}`} className="px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-sm font-mono text-[var(--text-primary)]">{m[5]}</code>);
     } else if (m[6] && m[7]) {
-      nodes.push(<a key={`${keyPrefix}-a-${idx++}`} href={m[7]} target="_blank" rel="noreferrer" className="underline underline-offset-2 decoration-white/30 hover:decoration-white/60 text-white/90">{m[6]}</a>);
+      nodes.push(<a key={`${keyPrefix}-a-${idx++}`} href={m[7]} target="_blank" rel="noreferrer" className="underline underline-offset-2 decoration-[var(--border-strong)] hover:text-[var(--accent)] text-[var(--text-primary)] transition-colors">{m[6]}</a>);
     }
     lastIndex = pattern.lastIndex;
   }
@@ -134,17 +134,17 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   }, [code]);
   return (
     <div className="relative group/code">
-      <pre className="p-3 pr-12 rounded-xl bg-[#0F0F0F] border border-[#2A2A2A] overflow-x-auto text-xs font-mono whitespace-pre-wrap break-words">
+      <pre className="p-4 pr-12 rounded-[var(--radius-md)] bg-[var(--bg-canvas)] border border-[var(--border-subtle)] overflow-x-auto text-[13.5px] sm:text-[14px] font-mono leading-relaxed whitespace-pre-wrap break-words text-[var(--text-primary)]">
         <code>{highlightCode(code)}</code>
       </pre>
       <button
         onClick={handleCopy}
-        className="absolute top-2 right-2 w-7 h-7 grid place-items-center rounded-full bg-[#1F1F1F] border border-[#2A2A2A] text-white/60 hover:text-white hover:brightness-125 transition-colors opacity-0 group-hover/code:opacity-100 group-focus-within/code:opacity-100 focus:opacity-100 transition-opacity duration-150 pointer-events-none group-hover/code:pointer-events-auto group-focus-within/code:pointer-events-auto"
-        title={copied ? 'Copied!' : 'Copy code'}
+        className="absolute top-2.5 right-2.5 w-7 h-7 grid place-items-center rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors opacity-0 group-hover/code:opacity-100 group-focus-within/code:opacity-100 focus:opacity-100 transition-opacity duration-150 pointer-events-none group-hover/code:pointer-events-auto group-focus-within/code:pointer-events-auto"
+        title={copied ? 'Copied' : 'Copy code'}
         aria-label={copied ? 'Copied' : 'Copy code'}
       >
         {copied ? (
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-400">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--status-success)]">
             <path d="M20 6L9 17l-5-5" />
           </svg>
         ) : (
@@ -154,7 +154,7 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
           </svg>
         )}
       </button>
-      {lang ? <span className="absolute bottom-1.5 right-2 text-[9px] tracking-wide uppercase opacity-30 pointer-events-none">{lang}</span> : null}
+      {lang ? <span className="absolute bottom-2 right-2.5 text-xs font-mono text-[var(--text-tertiary)] pointer-events-none">{lang}</span> : null}
     </div>
   );
 }
@@ -174,7 +174,7 @@ function BasicMarkdown({ text }: { text: string }) {
   if (segments.length === 0) segments.push({ type: 'text', content: text });
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-3">
       {segments.map((seg, si) => {
         if (seg.type === 'code') {
           return <CodeBlock key={`code-${si}`} code={seg.content.replace(/^\n/, '').replace(/\n$/, '')} lang={seg.lang} />;
@@ -188,23 +188,23 @@ function BasicMarkdown({ text }: { text: string }) {
             const level = trimmed.match(/^#+/)![0].length;
             const content = trimmed.replace(/^#+\s+/, '');
             const sizeMap: Record<number, string> = {
-              1: 'text-base font-bold',
-              2: 'text-[15px] font-bold',
-              3: 'text-sm font-semibold',
-              4: 'text-sm font-semibold',
-              5: 'text-xs font-semibold uppercase tracking-wide opacity-80',
-              6: 'text-xs font-semibold uppercase tracking-wide opacity-60',
+              1: 'text-xl font-bold',
+              2: 'text-lg font-bold',
+              3: 'text-base font-semibold',
+              4: 'text-[15px] font-semibold',
+              5: 'text-sm font-semibold text-[var(--text-secondary)]',
+              6: 'text-sm font-semibold text-[var(--text-tertiary)]',
             };
             const Tag = `h${Math.min(level, 6)}` as keyof React.JSX.IntrinsicElements;
-            return React.createElement(Tag, { key: `h-${si}-${bi}`, className: `${sizeMap[level] || 'text-sm font-bold'} leading-tight` }, ...renderInline(content, `h-${si}-${bi}`));
+            return React.createElement(Tag, { key: `h-${si}-${bi}`, className: `${sizeMap[level] || 'text-base font-bold'} leading-tight mt-1 mb-0.5` }, ...renderInline(content, `h-${si}-${bi}`));
           }
           // unordered list
           if (/^(\s*[-*]\s+.+(\n\s*[-*]\s+.+)*)$/.test(trimmed)) {
             const items = trimmed.split('\n').map((l) => l.replace(/^\s*[-*]\s+/, '').trim()).filter(Boolean);
             return (
-              <ul key={`ul-${si}-${bi}`} className="list-disc pl-5 space-y-1 marker:text-white/40">
+              <ul key={`ul-${si}-${bi}`} className="list-disc pl-5 space-y-1.5 marker:text-[var(--text-tertiary)]">
                 {items.map((it, i) => (
-                  <li key={i} className="leading-relaxed break-words">{renderInline(it, `li-${si}-${bi}-${i}`)}</li>
+                  <li key={i} className="leading-relaxed break-words text-[15px] sm:text-base">{renderInline(it, `li-${si}-${bi}-${i}`)}</li>
                 ))}
               </ul>
             );
@@ -213,9 +213,9 @@ function BasicMarkdown({ text }: { text: string }) {
           if (/^(\s*\d+\.\s+.+(\n\s*\d+\.\s+.+)*)$/.test(trimmed)) {
             const items = trimmed.split('\n').map((l) => l.replace(/^\s*\d+\.\s+/, '').trim()).filter(Boolean);
             return (
-              <ol key={`ol-${si}-${bi}`} className="list-decimal pl-5 space-y-1 marker:text-white/40">
+              <ol key={`ol-${si}-${bi}`} className="list-decimal pl-5 space-y-1.5 marker:text-[var(--text-tertiary)]">
                 {items.map((it, i) => (
-                  <li key={i} className="leading-relaxed break-words">{renderInline(it, `oli-${si}-${bi}-${i}`)}</li>
+                  <li key={i} className="leading-relaxed break-words text-[15px] sm:text-base">{renderInline(it, `oli-${si}-${bi}-${i}`)}</li>
                 ))}
               </ol>
             );
@@ -224,7 +224,7 @@ function BasicMarkdown({ text }: { text: string }) {
           if (/^>\s?/.test(trimmed)) {
             const quote = trimmed.replace(/^>\s?/gm, '');
             return (
-              <blockquote key={`q-${si}-${bi}`} className="border-l-2 border-white/20 pl-3 italic opacity-80 leading-relaxed">
+              <blockquote key={`q-${si}-${bi}`} className="border-l-2 border-[var(--border-strong)] pl-3.5 italic text-[var(--text-secondary)] leading-relaxed text-[15px] sm:text-base">
                 {renderInline(quote, `q-${si}-${bi}`)}
               </blockquote>
             );
@@ -232,7 +232,7 @@ function BasicMarkdown({ text }: { text: string }) {
           // paragraph with line breaks
           const lines = trimmed.split('\n');
           return (
-            <p key={`p-${si}-${bi}`} className="leading-relaxed whitespace-pre-wrap break-words text-sm">
+            <p key={`p-${si}-${bi}`} className="leading-relaxed whitespace-pre-wrap break-words text-[15px] sm:text-base">
               {lines.map((line, li) => (
                 <span key={li}>
                   {renderInline(line, `p-${si}-${bi}-${li}`)}
@@ -396,8 +396,7 @@ export default function ChatArea({
 
   return (
     <div
-      className="flex-1 flex flex-col overflow-hidden relative"
-      style={{ background: '#1A1A1A' }}
+      className="flex-1 flex flex-col overflow-hidden relative bg-[var(--bg-canvas)]"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -405,11 +404,11 @@ export default function ChatArea({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-2 transition-colors ${isDragOver ? 'bg-[#252525]/60' : ''}`}
+        className={`flex-1 overflow-y-auto p-4 md:p-6 space-y-3 transition-colors ${isDragOver ? 'bg-[var(--bg-surface-raised)]/60' : ''}`}
       >
         {!hasMessages && !isRunning ? (
-          <div className="flex flex-col items-center justify-center min-h-[60%] py-16 text-center animate-apple-fade">
-            <p className="text-sm text-white/40">Welcome! Ready when you are.</p>
+          <div className="flex flex-col items-center justify-center min-h-[60%] py-16 text-center">
+            <p className="text-xs text-[var(--text-tertiary)]">Air-gapped workspace ready.</p>
           </div>
         ) : null}
 
@@ -421,14 +420,14 @@ export default function ChatArea({
           return (
             <div
               key={msg.id}
-              className={`flex animate-apple-message group ${isUser ? 'justify-end' : 'justify-start'}`}
+              className={`flex group ${isUser ? 'justify-end' : 'justify-start'}`}
             >
               <div className={`flex flex-col gap-1 ${isUser ? 'items-end max-w-[88%] md:max-w-[72%]' : 'max-w-[88%] md:max-w-[72%] items-start'}`}>
                 <div
-                  className={`w-full ${isUser ? 'px-5 py-3.5 rounded-[18px] rounded-br-[6px] neu-raised' : 'px-2 py-2 bg-transparent border-0'}`}
+                  className={`w-full ${isUser ? 'px-5 py-3.5 rounded-[var(--radius-md)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)]' : 'px-2 py-2 bg-transparent border-0 text-[var(--text-primary)]'}`}
                 >
                   {isEditing ? (
-                    <div className="flex flex-col gap-2 min-w-[220px]">
+                    <div className="flex flex-col gap-2 min-w-[240px]">
                       <textarea
                         value={editDraft}
                         onChange={(e) => setEditDraft(e.target.value)}
@@ -444,30 +443,30 @@ export default function ChatArea({
                         }}
                         autoFocus
                         rows={3}
-                        className="w-full min-h-[64px] max-h-[160px] p-3 rounded-xl bg-[#1A1A1A] border border-[#2A2A2A] outline-none text-sm leading-relaxed resize-none focus:border-[#333] focus:ring-1 focus:ring-white/10"
+                        className="w-full min-h-[72px] max-h-[180px] p-3.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] outline-none text-[15px] sm:text-base text-[var(--text-primary)] leading-relaxed resize-none focus:border-[var(--accent)]"
                         placeholder="Edit message..."
                       />
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={handleEditCancel}
-                          className="px-3 py-1.5 rounded-full neu-button text-xs font-medium"
+                          className="px-3.5 py-1.5 rounded-[var(--radius-sm)] neu-button text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                         >
                           Cancel
                         </button>
                         <button
                           onClick={handleEditSave}
                           disabled={editDraft.trim().length === 0}
-                          className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${editDraft.trim().length === 0 ? 'neu-button opacity-40 cursor-not-allowed' : 'neu-button-primary'}`}
+                          className={`px-4 py-1.5 rounded-[var(--radius-sm)] text-xs font-medium transition ${editDraft.trim().length === 0 ? 'neu-button opacity-40 cursor-not-allowed' : 'neu-button-primary'}`}
                         >
                           Save
                         </button>
                       </div>
-                      <div className="text-[10px] opacity-40 text-right">Esc to cancel • Ctrl+Enter to save</div>
+                      <div className="text-[11px] text-[var(--text-tertiary)] text-right">Esc to cancel • Ctrl+Enter to save</div>
                     </div>
                   ) : (
                     <>
                       {isUser ? (
-                        msg.text && <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>
+                        msg.text && <p className="text-[15px] sm:text-base leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>
                       ) : (
                         <>
                           {msg.text && <BasicMarkdown text={msg.text} />}
@@ -485,16 +484,16 @@ export default function ChatArea({
                         </>
                       )}
                       {msg.files && msg.files.length > 0 && (
-                        <div className={`flex flex-wrap gap-2 ${msg.text ? 'mt-2.5' : ''}`}>
+                        <div className={`flex flex-wrap gap-2 ${msg.text ? 'mt-3' : ''}`}>
                           {msg.files.map((f, i) => (
                             <span
                               key={`${f.name}-${i}`}
-                              className="inline-flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full neu-pressed text-xs max-w-[240px] border border-white/10"
+                              className="inline-flex items-center gap-2.5 pl-2.5 pr-3.5 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] text-sm max-w-[280px] border border-[var(--border-subtle)] text-[var(--text-secondary)]"
                             >
-                              <span className="w-6 h-6 rounded-full bg-white/15 grid place-items-center text-[8px] font-bold shrink-0">{fileLabel(f.name).slice(0, 3)}</span>
-                              <span className="truncate font-medium text-white/90">{f.name}</span>
+                              <span className="w-6 h-6 rounded-[4px] bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] grid place-items-center text-[10px] font-mono shrink-0">{fileLabel(f.name).slice(0, 3)}</span>
+                              <span className="truncate font-medium text-[var(--text-primary)]">{f.name}</span>
                               {typeof f.size === "number" && f.size > 0 ? (
-                                <span className="opacity-50 shrink-0 text-[10px]">{formatSize(f.size)}</span>
+                                <span className="text-[var(--text-tertiary)] shrink-0 text-xs">{formatSize(f.size)}</span>
                               ) : null}
                             </span>
                           ))}
@@ -505,19 +504,19 @@ export default function ChatArea({
                 </div>
                 {/* Icons at bottom of text box - outside bubble, bottom-aligned */}
                 {isUser && !isEditing && (
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
+                  <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
                     <button
                       onClick={() => handleCopy(msg)}
-                      className="w-7 h-7 grid place-items-center rounded-full neu-pressed hover:brightness-125 border border-transparent hover:border-[#2A2A2A] text-white/70 hover:text-white transition-colors"
-                      title={isCopied ? 'Copied!' : 'Copy'}
+                      className="w-8 h-8 grid place-items-center rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                      title={isCopied ? 'Copied' : 'Copy'}
                       aria-label={isCopied ? 'Copied' : 'Copy message'}
                     >
                       {isCopied ? (
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-400">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--status-success)]">
                           <path d="M20 6L9 17l-5-5" />
                         </svg>
                       ) : (
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                           <rect x="9" y="9" width="13" height="13" rx="2" />
                           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3.5" />
                         </svg>
@@ -525,11 +524,11 @@ export default function ChatArea({
                     </button>
                     <button
                       onClick={() => handleEditStart(msg)}
-                      className="w-7 h-7 grid place-items-center rounded-full neu-pressed hover:brightness-125 border border-transparent hover:border-[#2A2A2A] text-white/70 hover:text-white transition-colors"
+                      className="w-8 h-8 grid place-items-center rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                       title="Edit"
                       aria-label="Edit message"
                     >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                         <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                       </svg>
@@ -554,10 +553,10 @@ export default function ChatArea({
       </div>
 
       {isDragOver && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#1A1A1A]/75 backdrop-blur-[1px] border-2 border-dashed border-white/20 rounded-xl m-2 pointer-events-none animate-apple-fade">
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-[var(--bg-canvas)]/85 border-2 border-dashed border-[var(--border-muted)] rounded-[var(--radius-md)] m-2 pointer-events-none">
           <div className="flex flex-col items-center gap-2 neu-card px-6 py-4">
-            <div className="w-10 h-10 rounded-full neu-pressed grid place-items-center">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-80">
+            <div className="w-10 h-10 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] grid place-items-center text-[var(--text-secondary)]">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
               </svg>
             </div>
@@ -566,10 +565,10 @@ export default function ChatArea({
       )}
 
       {dropError && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 p-2.5 rounded-xl neu-card border border-red-500/30 text-xs text-red-400 flex items-center gap-2 animate-apple-message max-w-[90%]">
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 p-2.5 rounded-[var(--radius-sm)] neu-card border border-[var(--status-error)]/40 text-xs text-[var(--status-error)] flex items-center gap-2 max-w-[90%]">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
           <span className="flex-1 leading-tight">{dropError}</span>
-          <button onClick={() => setDropError(null)} className="w-6 h-6 rounded-full neu-button grid place-items-center text-xs shrink-0 pointer-events-auto">✕</button>
+          <button onClick={() => setDropError(null)} className="w-6 h-6 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs shrink-0 pointer-events-auto">✕</button>
         </div>
       )}
 
@@ -580,7 +579,7 @@ export default function ChatArea({
             scrollToBottom('smooth');
             setShowJump(false);
           }}
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full neu-button shadow-lg text-xs font-medium hover:scale-[1.02] active:scale-[0.98] transition-transform"
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] neu-button text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shadow-sm"
           aria-label="Scroll to bottom"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

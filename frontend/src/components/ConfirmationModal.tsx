@@ -131,64 +131,65 @@ export default function ConfirmationModal({
   const isPython = action.kind === "execute_python";
   const isDocx = action.kind === "generate_docx";
 
-  const kindBadge = isPython ? (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-sky-500/15 text-sky-400 border border-sky-500/30">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="16 18 22 12 16 6" />
-        <polyline points="8 6 2 12 8 18" />
-      </svg>
-      Python Sandbox Execution
-    </span>
-  ) : isDocx ? (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-blue-500/15 text-blue-400 border border-blue-500/30">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-      </svg>
-      DOCX Word Document Generation
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-        <line x1="3" y1="9" x2="21" y2="9" />
-        <line x1="9" y1="21" x2="9" y2="9" />
-      </svg>
-      Excel Spreadsheet Generation
+  const kindBadge = (
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-medium bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
+      {isPython ? (
+        <>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
+          Python sandbox execution
+        </>
+      ) : isDocx ? (
+        <>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+          Word document generation
+        </>
+      ) : (
+        <>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <line x1="3" y1="9" x2="21" y2="9" />
+            <line x1="9" y1="21" x2="9" y2="9" />
+          </svg>
+          Excel spreadsheet generation
+        </>
+      )}
     </span>
   );
 
   const previewLines = action.preview ? action.preview.split(/\r?\n/) : [];
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/75 backdrop-blur-[2px] p-4 sm:p-6 animate-apple-fade">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4 sm:p-6">
       <div
         className={`${
           isPython ? "w-[880px] max-w-[94vw]" : "w-[540px] max-w-[94vw]"
-        } max-h-[92vh] flex flex-col neu-dropdown p-6 shadow-2xl animate-apple-scaleIn transition-all duration-300 border border-white/10`}
-        style={{
-          boxShadow: "0 24px 60px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.08)",
-        }}
+        } max-h-[92vh] flex flex-col rounded-[var(--radius-md)] neu-panel p-6 border border-[var(--border-subtle)] bg-[var(--bg-surface)]`}
       >
         {/* Top Header */}
-        <div className="flex items-start justify-between gap-4 pb-3 border-b border-white/[0.08] shrink-0">
+        <div className="flex items-start justify-between gap-4 pb-3 border-b border-[var(--border-subtle)] shrink-0">
           <div>
             <div className="flex items-center gap-2 mb-1.5">
               {kindBadge}
-              <span className="text-[11px] font-mono text-white/40">
+              <span className="text-[11px] font-mono text-[var(--text-tertiary)]">
                 Run {action.runId.slice(0, 8)}
               </span>
             </div>
-            <h3 className="text-base sm:text-lg font-semibold text-white/90 leading-snug">
+            <h3 className="text-base sm:text-lg font-medium text-[var(--text-primary)] leading-snug">
               {action.prompt}
             </h3>
           </div>
           <div className="flex flex-col items-end shrink-0">
-            <span className="text-[11px] font-mono px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/10 text-white/60">
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-secondary)]">
               ⏱ {expiresIn}
             </span>
             {runState && (
-              <span className="text-[10px] text-white/40 mt-1 uppercase tracking-wider">
+              <span className="text-[11px] text-[var(--text-tertiary)] mt-1 font-mono">
                 {runState}
               </span>
             )}
@@ -197,17 +198,14 @@ export default function ConfirmationModal({
 
         {/* Script Code Viewport (for execute_python) */}
         {action.preview && (
-          <div className="flex-1 flex flex-col min-h-0 mt-4 rounded-xl border border-white/[0.1] bg-[#101010] overflow-hidden shadow-inner">
+          <div className="flex-1 flex flex-col min-h-0 mt-4 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] overflow-hidden">
             {/* Code Window Titlebar */}
-            <div className="flex items-center justify-between px-3.5 py-2 bg-white/[0.04] border-b border-white/[0.08] shrink-0">
+            <div className="flex items-center justify-between px-3.5 py-2 bg-[var(--bg-surface-raised)] border-b border-[var(--border-subtle)] shrink-0">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-400/80 inline-block" />
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400/80 inline-block" />
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/80 inline-block" />
-                <span className="text-xs font-mono font-medium text-white/80 ml-2">
+                <span className="text-xs font-mono font-medium text-[var(--text-primary)]">
                   {isPython ? "task.py" : "output-preview"}
                 </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.08] text-white/50 font-mono">
+                <span className="text-[10px] px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] text-[var(--text-tertiary)] font-mono border border-[var(--border-subtle)]">
                   {previewLines.length} lines
                 </span>
               </div>
@@ -215,7 +213,7 @@ export default function ConfirmationModal({
                 {isPython && (
                   <button
                     onClick={() => setWrapLines((w) => !w)}
-                    className="text-[11px] px-2 py-0.5 rounded neu-button text-white/60 hover:text-white transition-colors font-mono"
+                    className="text-[11px] px-2 py-0.5 rounded-[var(--radius-sm)] neu-button text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-mono"
                     title="Toggle line wrapping"
                   >
                     Wrap: {wrapLines ? "ON" : "OFF"}
@@ -223,15 +221,15 @@ export default function ConfirmationModal({
                 )}
                 <button
                   onClick={handleCopyCode}
-                  className="text-[11px] px-2.5 py-0.5 rounded neu-button text-white/70 hover:text-white transition-colors flex items-center gap-1.5"
+                  className="text-[11px] px-2.5 py-0.5 rounded-[var(--radius-sm)] neu-button text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-1.5"
                   title="Copy full script"
                 >
                   {copied ? (
                     <>
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-emerald-400">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-[var(--status-success)]">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
-                      <span className="text-emerald-400 font-medium">Copied</span>
+                      <span className="text-[var(--status-success)] font-medium">Copied</span>
                     </>
                   ) : (
                     <>
@@ -239,7 +237,7 @@ export default function ConfirmationModal({
                         <rect x="9" y="9" width="13" height="13" rx="2" />
                         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3.5" />
                       </svg>
-                      <span>Copy Code</span>
+                      <span>Copy code</span>
                     </>
                   )}
                 </button>
@@ -247,10 +245,10 @@ export default function ConfirmationModal({
             </div>
 
             {/* Scrollable Code Content with Line Numbers */}
-            <div className="flex-1 overflow-auto max-h-[440px] min-h-[220px] p-2 select-text font-mono text-[12.5px] leading-relaxed">
+            <div className="flex-1 overflow-auto max-h-[440px] min-h-[220px] p-2 select-text font-mono text-xs leading-relaxed text-[var(--text-primary)]">
               {previewLines.map((line, idx) => (
-                <div key={idx} className="flex hover:bg-white/[0.04] rounded-sm group transition-colors">
-                  <span className="select-none text-zinc-600 group-hover:text-zinc-400 pr-3.5 pl-2 text-right w-11 shrink-0 text-[11px] font-mono leading-relaxed border-r border-white/[0.06]">
+                <div key={idx} className="flex hover:bg-[var(--bg-surface-raised)]/40 rounded-sm group transition-colors">
+                  <span className="select-none text-[var(--text-tertiary)] pr-3.5 pl-2 text-right w-11 shrink-0 text-[11px] font-mono leading-relaxed border-r border-[var(--border-subtle)]">
                     {idx + 1}
                   </span>
                   <span
@@ -266,12 +264,12 @@ export default function ConfirmationModal({
 
             {/* Air-gap Sandbox Security Footer */}
             {isPython && (
-              <div className="px-3.5 py-2 bg-emerald-500/[0.06] border-t border-emerald-500/20 text-[11px] text-emerald-400/90 flex items-center gap-2 shrink-0">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400 shrink-0">
+              <div className="px-3.5 py-2 bg-[var(--bg-surface-raised)] border-t border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)] flex items-center gap-2 shrink-0">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--status-success)] shrink-0">
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                 </svg>
-                <span className="font-medium">
-                  Sandboxed Execution: Zero network access (<code>--unshare-net</code>) • Read-only inputs • Run-scoped output directory • 60s timeout
+                <span>
+                  Sandboxed execution: zero network egress • read-only inputs • run-scoped output directory • 60s timeout
                 </span>
               </div>
             )}
@@ -280,32 +278,32 @@ export default function ConfirmationModal({
 
         {/* Informative text for non-code actions */}
         {!action.preview && (
-          <div className="py-4 text-xs text-white/60 leading-relaxed">
+          <div className="py-4 text-xs text-[var(--text-secondary)] leading-relaxed">
             This action requires your confirmation before the workbench creates official deliverables in the run directory.
           </div>
         )}
 
         {/* Action Controls */}
-        <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/[0.08] shrink-0">
-          <div className="text-[11px] text-white/40 hidden sm:block">
-            Press <kbd className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-[10px] text-white/70">Esc</kbd> to reject, <kbd className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-[10px] text-white/70">Enter</kbd> to approve
+        <div className="flex items-center justify-between pt-4 mt-2 border-t border-[var(--border-subtle)] shrink-0">
+          <div className="text-[11px] text-[var(--text-tertiary)] hidden sm:block">
+            Press <kbd className="px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] font-mono text-[10px] text-[var(--text-secondary)]">Esc</kbd> to reject, <kbd className="px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] font-mono text-[10px] text-[var(--text-secondary)]">Enter</kbd> to approve
           </div>
           <div className="flex items-center gap-3 ml-auto">
             <button
               onClick={onReject}
               disabled={busy}
-              className="px-5 py-2 rounded-full neu-button text-xs font-medium text-white/70 hover:text-white hover:border-red-500/40 disabled:opacity-40 transition-colors"
+              className="h-10 px-4 rounded-[var(--radius-sm)] neu-button text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-40 transition-colors"
             >
               {busy ? "Working…" : "Reject & Cancel"}
             </button>
             <button
               onClick={onApprove}
               disabled={busy}
-              className="px-6 py-2 rounded-full neu-button-primary text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40 shadow-lg"
+              className="h-10 px-5 rounded-[var(--radius-sm)] neu-button-primary text-sm font-semibold flex items-center gap-2 disabled:opacity-40 transition-colors"
             >
               {busy ? (
                 <>
-                  <span className="w-3.5 h-3.5 rounded-full border-2 border-black/40 border-t-black animate-spin" />
+                  <span className="w-3.5 h-3.5 rounded-full border-2 border-[var(--text-primary)]/40 border-t-[var(--text-primary)] animate-spin" />
                   <span>Processing…</span>
                 </>
               ) : isPython ? (
@@ -313,14 +311,14 @@ export default function ConfirmationModal({
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <polygon points="5 3 19 12 5 21 5 3" />
                   </svg>
-                  <span>Approve & Execute Script</span>
+                  <span>Approve & execute script</span>
                 </>
               ) : (
                 <>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
-                  <span>Approve & Generate</span>
+                  <span>Approve & generate</span>
                 </>
               )}
             </button>

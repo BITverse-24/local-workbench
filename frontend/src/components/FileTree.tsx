@@ -61,26 +61,27 @@ function getFileIcon(filename: string) {
   switch (ext) {
     case 'ts':
     case 'tsx':
+      return <span className="text-[var(--text-tertiary)] font-mono text-xs">TS</span>;
     case 'js':
     case 'jsx':
     case 'mjs':
     case 'cjs':
-      return <span className="text-yellow-400 font-mono text-[10px]">JS</span>;
+      return <span className="text-[var(--text-tertiary)] font-mono text-xs">JS</span>;
     case 'json':
-      return <span className="text-amber-400 font-mono text-[10px]">{}</span>;
+      return <span className="text-[var(--text-tertiary)] font-mono text-xs">{}</span>;
     case 'md':
     case 'txt':
-      return <span className="text-sky-300 font-mono text-[10px]">MD</span>;
+      return <span className="text-[var(--text-tertiary)] font-mono text-xs">MD</span>;
     case 'py':
-      return <span className="text-blue-400 font-mono text-[10px]">PY</span>;
+      return <span className="text-[var(--text-tertiary)] font-mono text-xs">PY</span>;
     case 'css':
     case 'scss':
-      return <span className="text-pink-400 font-mono text-[10px]">#</span>;
+      return <span className="text-[var(--text-tertiary)] font-mono text-xs">CSS</span>;
     case 'csv':
     case 'xlsx':
-      return <span className="text-emerald-400 font-mono text-[10px]">XS</span>;
+      return <span className="text-[var(--text-tertiary)] font-mono text-xs">XS</span>;
     default:
-      return <span className="text-white/40 font-mono text-[10px]">📄</span>;
+      return <span className="text-[var(--text-tertiary)] font-mono text-xs">·</span>;
   }
 }
 
@@ -114,29 +115,27 @@ function TreeItem({
             onSelectFile?.(node.relativePath);
           }
         }}
-        className={`group flex items-center justify-between py-1 px-1.5 rounded-lg text-xs cursor-pointer select-none transition-colors hover:bg-white/[0.06] ${
-          !isDir ? 'hover:text-amber-300' : ''
-        }`}
-        style={{ paddingLeft: `${Math.max(depth * 12, 6)}px` }}
+        className="group flex items-center justify-between py-1.5 px-2 rounded-[var(--radius-sm)] text-sm cursor-pointer select-none transition-colors hover:bg-[var(--bg-surface-raised)]"
+        style={{ paddingLeft: `${Math.max(depth * 14, 8)}px` }}
         title={node.relativePath}
       >
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           {isDir ? (
-            <span className="text-amber-400/80 shrink-0 text-[11px]">
+            <span className="text-[var(--text-secondary)] shrink-0 text-xs">
               {isCollapsed ? '📁' : '📂'}
             </span>
           ) : (
-            <span className="shrink-0 w-3.5 text-center flex items-center justify-center">
+            <span className="shrink-0 w-4 text-center flex items-center justify-center">
               {getFileIcon(node.name)}
             </span>
           )}
-          <span className={`truncate text-[11px] ${isDir ? 'font-medium text-white/80' : 'text-white/70'}`}>
+          <span className={`truncate text-sm ${isDir ? 'font-medium text-[var(--text-primary)]' : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'}`}>
             {node.name}
           </span>
         </div>
 
         {!isDir && node.size > 0 && (
-          <span className="text-[9px] text-white/30 font-mono shrink-0 ml-1">
+          <span className="text-xs text-[var(--text-tertiary)] font-mono shrink-0 ml-1.5">
             {formatBytes(node.size)}
           </span>
         )}
@@ -194,12 +193,12 @@ export default function FileTree({ entries, onSelectFile, onRefresh, loading = f
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter files..."
-            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2.5 py-1 text-[11px] text-white/90 placeholder:text-white/30 outline-none focus:border-amber-400/40 transition-colors"
+            className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-[var(--radius-sm)] px-2.5 py-1 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--accent)] transition-colors"
           />
           {filter && (
             <button
               onClick={() => setFilter('')}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-white/40 hover:text-white/80"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
             >
               ✕
             </button>
@@ -209,7 +208,7 @@ export default function FileTree({ entries, onSelectFile, onRefresh, loading = f
           <button
             onClick={onRefresh}
             disabled={loading}
-            className="w-6 h-6 rounded-lg neu-button flex items-center justify-center text-white/60 hover:text-white/90 transition-colors shrink-0 disabled:opacity-40"
+            className="w-6 h-6 rounded-[var(--radius-sm)] neu-button flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shrink-0 disabled:opacity-40"
             title="Refresh tree"
           >
             <svg
@@ -229,7 +228,7 @@ export default function FileTree({ entries, onSelectFile, onRefresh, loading = f
 
       <div className="flex-1 overflow-y-auto pr-1 space-y-0.5 min-h-0">
         {topLevelChildren.length === 0 ? (
-          <div className="text-[11px] text-white/30 text-center py-4">
+          <div className="text-xs text-[var(--text-tertiary)] text-center py-4">
             {filter ? 'No matching files' : 'Empty directory'}
           </div>
         ) : (

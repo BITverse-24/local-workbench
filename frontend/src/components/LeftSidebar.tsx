@@ -66,25 +66,25 @@ export default function LeftSidebar({
       }
     >
       {/* Top Header */}
-      <div className="flex items-center justify-between pb-2 mb-1 px-1 border-b border-white/[0.06] shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-md bg-white/[0.08] border border-white/10 flex items-center justify-center text-[10px] font-bold text-white/90">
+      <div className="flex items-center justify-between pb-2.5 mb-1.5 px-1 border-b border-[var(--border-subtle)] shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] flex items-center justify-center text-xs font-semibold text-[var(--text-secondary)]">
             S
           </div>
-          <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-white/60">
+          <span className="text-sm font-semibold text-[var(--text-primary)] tracking-normal">
             Explorer
           </span>
         </div>
 
         <button
           onClick={onCollapse}
-          className="w-6 h-6 rounded-full neu-button grid place-items-center text-xs shrink-0 text-white/50 hover:text-white transition-colors"
+          className="w-8 h-8 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs shrink-0 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
           title="Collapse sidebar"
           aria-label="Collapse sidebar"
         >
           <svg
-            width="10"
-            height="10"
+            width="14"
+            height="14"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"

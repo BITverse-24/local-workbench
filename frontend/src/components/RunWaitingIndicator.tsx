@@ -69,27 +69,46 @@ export default function RunWaitingIndicator({
   const modelId = activeRoute?.modelId ?? "draft-qwen3";
   const reason = activeRoute?.reason ?? "processing request";
 
-  const modelColor =
-    taskType === "code"
-      ? {
-          border: "border-sky-500/30",
-          glow: "bg-sky-500/10 text-sky-400",
-          accent: "bg-sky-400",
-          badge: "bg-sky-500/15 text-sky-300 border-sky-500/30",
-        }
-      : taskType === "vision"
-      ? {
-          border: "border-violet-500/30",
-          glow: "bg-violet-500/10 text-violet-400",
-          accent: "bg-violet-400",
-          badge: "bg-violet-500/15 text-violet-300 border-violet-500/30",
-        }
-      : {
-          border: "border-emerald-500/30",
-          glow: "bg-emerald-500/10 text-emerald-400",
-          accent: "bg-emerald-400",
-          badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-        };
+  const getRoleIcon = (type: string) => {
+    switch (type.toLowerCase()) {
+      case "vision":
+        return (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+          </svg>
+        );
+      case "code":
+      case "coding":
+        return (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
+        );
+      case "draft":
+        return (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+        );
+      case "plan":
+        return (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="12 2 2 7 12 12 22 7 12 2" />
+            <polyline points="2 17 12 22 22 17" />
+            <polyline points="2 12 12 17 22 12" />
+          </svg>
+        );
+      default:
+        return (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="8" />
+          </svg>
+        );
+    }
+  };
 
   // Human-readable status headline
   const headline = (() => {
@@ -113,49 +132,41 @@ export default function RunWaitingIndicator({
   })();
 
   return (
-    <div className="flex justify-start w-full my-3 animate-apple-message">
-      <div
-        className={`w-full max-w-[88%] md:max-w-[76%] rounded-2xl neu-panel p-4 md:p-5 border ${modelColor.border} bg-[#1C1C1C] shadow-lg transition-all duration-300`}
-        style={{
-          boxShadow: "0 8px 24px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.04)",
-        }}
-      >
+    <div className="flex justify-start w-full my-3">
+      <div className="w-full max-w-[88%] md:max-w-[76%] rounded-[var(--radius-md)] p-4 md:p-5 border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] transition-all">
         {/* Top Header: Model Identity, Live Status & Timer */}
-        <div className="flex items-center justify-between gap-3 pb-3 border-b border-white/[0.08]">
+        <div className="flex items-center justify-between gap-3 pb-3 border-b border-[var(--border-subtle)]">
           <div className="flex items-center gap-2.5 min-w-0">
-            {/* Animated Pulsing Beacon */}
-            <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${modelColor.accent}`} />
-              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${modelColor.accent}`} />
-            </div>
+            <span className="w-2 h-2 rounded-full bg-[var(--accent)] shrink-0" />
 
-            <div className="flex items-center gap-2 truncate">
-              <span className="text-xs font-semibold text-white/90 truncate">{modelId}</span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium tracking-wider uppercase border ${modelColor.badge} shrink-0`}>
-                {taskType}
+            <div className="flex items-center gap-2.5 truncate">
+              <span className="text-sm font-mono text-[var(--text-primary)] font-medium truncate">{modelId}</span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-sm)] text-xs font-medium bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--accent)] shrink-0">
+                <span className="shrink-0">{getRoleIcon(taskType)}</span>
+                <span>{taskType}</span>
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 font-mono text-[11px] text-white/50">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="flex items-center gap-2 shrink-0 font-mono text-xs text-[var(--text-tertiary)]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-success)]" />
             <span>{seconds}s</span>
           </div>
         </div>
 
         {/* Live Status Headline with Spinner */}
-        <div className="mt-3.5 flex items-start gap-2.5 text-xs text-white/90">
-          <span className="mt-0.5 w-3.5 h-3.5 border-2 border-white/20 border-t-white/80 rounded-full animate-spin shrink-0" />
+        <div className="mt-3.5 flex items-start gap-2.5 text-sm text-[var(--text-primary)]">
+          <span className="mt-0.5 w-4 h-4 border border-[var(--border-default)] border-t-[var(--accent)] rounded-full animate-spin shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="font-medium leading-tight text-white/90 truncate">{headline}</div>
-            <div className="text-[11px] text-white/40 mt-0.5 truncate">Route: {reason}</div>
+            <div className="font-medium leading-tight text-[var(--text-primary)] truncate text-sm">{headline}</div>
+            <div className="text-xs text-[var(--text-tertiary)] mt-1 truncate">Route: {reason}</div>
           </div>
         </div>
 
         {/* SOP Grounding Context Pill (if active) */}
         {groundingInfo && (
-          <div className="mt-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/[0.08] border border-emerald-500/20 text-[11px] text-emerald-400/90 font-medium">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
+          <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] font-medium">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
               <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
             </svg>
@@ -171,36 +182,36 @@ export default function RunWaitingIndicator({
 
         {/* Streamed Plan Steps (if available) */}
         {planSteps.length > 0 && (
-          <div className="mt-3.5 pt-3 border-t border-white/[0.06] space-y-1.5">
-            <div className="text-[10px] uppercase font-semibold tracking-wider text-white/40 mb-1">
-              Execution Plan
+          <div className="mt-4 pt-3.5 border-t border-[var(--border-subtle)] space-y-2">
+            <div className="text-xs tracking-[0.02em] font-medium text-[var(--text-tertiary)] mb-1.5">
+              Execution plan
             </div>
             {planSteps.map((step, idx) => {
               const isPast = activeTool.call ? idx < 2 : idx === 0;
               const isCurrent = activeTool.call ? idx === 2 : idx === 1;
 
               return (
-                <div key={idx} className="flex items-center gap-2 text-xs">
+                <div key={idx} className="flex items-center gap-2.5 text-sm">
                   {isPast ? (
-                    <span className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 grid place-items-center text-[10px] shrink-0 font-bold">
+                    <span className="w-4.5 h-4.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--status-success)] grid place-items-center text-xs shrink-0 font-bold">
                       ✓
                     </span>
                   ) : isCurrent ? (
-                    <span className="w-4 h-4 rounded-full bg-sky-500/20 border border-sky-500/40 text-sky-300 grid place-items-center text-[10px] shrink-0 animate-pulse">
+                    <span className="w-4.5 h-4.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--accent)] text-[var(--accent)] grid place-items-center text-xs shrink-0">
                       ⟳
                     </span>
                   ) : (
-                    <span className="w-4 h-4 rounded-full bg-white/[0.04] border border-white/10 text-white/30 grid place-items-center text-[10px] shrink-0">
+                    <span className="w-4.5 h-4.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-tertiary)] grid place-items-center text-xs shrink-0">
                       ○
                     </span>
                   )}
                   <span
-                    className={`leading-tight ${
+                    className={`leading-normal ${
                       isPast
-                        ? "text-white/60 line-through decoration-white/20"
+                        ? "text-[var(--text-secondary)] line-through decoration-white/20"
                         : isCurrent
-                        ? "text-white/90 font-medium"
-                        : "text-white/40"
+                        ? "text-[var(--text-primary)] font-medium"
+                        : "text-[var(--text-tertiary)]"
                     }`}
                   >
                     {step.text}
@@ -211,12 +222,13 @@ export default function RunWaitingIndicator({
           </div>
         )}
 
-        {/* Shimmering Skeleton Lines (simulating live response generation) */}
-        <div className="mt-4 pt-3 border-t border-white/[0.06] space-y-2.5">
-          <div className="h-3 w-[92%] rounded-full bg-gradient-to-r from-white/[0.04] via-white/[0.09] to-white/[0.04] animate-pulse" />
-          <div className="h-3 w-[76%] rounded-full bg-gradient-to-r from-white/[0.04] via-white/[0.09] to-white/[0.04] animate-pulse delay-100" />
-          <div className="h-3 w-[84%] rounded-full bg-gradient-to-r from-white/[0.04] via-white/[0.09] to-white/[0.04] animate-pulse delay-200" />
-          <div className="h-3 w-[52%] rounded-full bg-gradient-to-r from-white/[0.04] via-white/[0.09] to-white/[0.04] animate-pulse delay-300" />
+        {/* Restrained 1px progress line and static low-opacity skeleton bar */}
+        <div className="mt-4 pt-3 border-t border-[var(--border-subtle)] space-y-2">
+          <div className="h-[1px] w-full bg-[var(--border-subtle)] overflow-hidden">
+            <div className="h-[1px] w-1/3 bg-[var(--accent)]" />
+          </div>
+          <div className="h-2 w-[85%] rounded-[var(--radius-sm)] bg-[var(--bg-surface)] opacity-60" />
+          <div className="h-2 w-[60%] rounded-[var(--radius-sm)] bg-[var(--bg-surface)] opacity-40" />
         </div>
       </div>
     </div>

@@ -33,13 +33,13 @@ function labelFor(e: RunEvent): string {
 export default function RunTranscript({ events }: Props) {
   if (!events.length) return null;
   return (
-    <div className="mx-4 my-2 rounded-xl neu-card p-3 max-h-[160px] overflow-y-auto">
-      <div className="text-[11px] tracking-[0.12em] uppercase opacity-50 mb-2">Run transcript</div>
+    <div className="mx-4 my-2 rounded-[var(--radius-md)] neu-card border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 max-h-[160px] overflow-y-auto">
+      <div className="text-xs font-medium text-[var(--text-secondary)] mb-2">Run transcript</div>
       <div className="space-y-1">
         {events.map((e, i) => (
           <div key={i} className="flex gap-2 text-xs leading-relaxed">
-            <span className="opacity-40 shrink-0 w-4 text-center">{iconFor(e)}</span>
-            <span className="opacity-80 break-words">{labelFor(e)}</span>
+            <span className="text-[var(--text-tertiary)] shrink-0 w-4 text-center font-mono">{iconFor(e)}</span>
+            <span className="text-[var(--text-secondary)] break-words">{labelFor(e)}</span>
           </div>
         ))}
       </div>

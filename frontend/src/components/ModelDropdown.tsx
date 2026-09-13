@@ -14,19 +14,18 @@ export default function ModelDropdown({ open, pos, models, selected, onSelect, o
   return (
     <>
       <div className="fixed inset-0 z-30" onClick={onClose} style={{ background: 'transparent' }} />
-      <div className="fixed z-40 neu-dropdown p-1.5 overflow-y-auto" style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: '13rem' }}>
+      <div className="fixed z-40 rounded-[var(--radius-md)] neu-dropdown p-1 overflow-y-auto border border-[var(--border-subtle)] bg-[var(--bg-surface)]" style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: '13rem' }}>
         {models.map((m) => (
           <button
             key={m.id}
             onClick={() => onSelect(m)}
-            className={`w-full text-left p-3 rounded-xl flex items-center justify-between ${selected.id === m.id ? 'neu-pressed' : 'hover:brightness-110'}`}
-            style={{ transition: 'all 0.35s cubic-bezier(0.16,1,0.3,1)' }}
+            className={`w-full text-left p-2 rounded-[var(--radius-sm)] flex items-center justify-between transition-colors ${selected.id === m.id ? 'bg-[var(--bg-surface-raised)] text-[var(--text-primary)]' : 'hover:bg-[var(--bg-surface-raised)] text-[var(--text-secondary)]'}`}
           >
             <div>
-              <div className="text-sm font-medium">{m.name}</div>
-              <div className="text-xs opacity-50">{m.desc}</div>
+              <div className="text-xs font-medium text-[var(--text-primary)]">{m.name}</div>
+              <div className="text-[11px] text-[var(--text-tertiary)]">{m.desc}</div>
             </div>
-            {selected.id === m.id && <span className="w-2 h-2 rounded-full bg-white/70 shrink-0" />}
+            {selected.id === m.id && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0" />}
           </button>
         ))}
       </div>

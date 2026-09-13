@@ -46,38 +46,38 @@ export default function FilesPanel({
       }`}
     >
       {/* Section Header */}
-      <div className="flex items-center justify-between py-1 px-1 shrink-0 select-none">
+      <div className="flex items-center justify-between py-1.5 px-1 shrink-0 select-none">
         <button
           onClick={onToggleExpand}
           className="flex items-center gap-1.5 text-left group hover:opacity-100 transition-opacity"
           title={isExpanded ? 'Collapse files' : 'Expand files'}
         >
           <span
-            className={`text-[10px] text-white/40 group-hover:text-white/80 transition-transform duration-200 ${
+            className={`text-[11px] text-white/40 group-hover:text-white/80 transition-transform duration-200 ${
               isExpanded ? 'rotate-0' : '-rotate-90'
             }`}
           >
             ▾
           </span>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <svg
-              width="12"
-              height="12"
+              width="14"
+              height="14"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="text-amber-300"
+              className="text-[var(--text-tertiary)]"
             >
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-white/70 group-hover:text-white transition-colors">
+            <span className="text-sm font-semibold text-[var(--text-secondary)] tracking-normal group-hover:text-[var(--text-primary)] transition-colors">
               Files
             </span>
             {workspace && (
-              <span className="text-[9px] px-1.5 py-0.2 rounded-full neu-pressed text-amber-300/80 font-mono">
+              <span className="text-xs px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-tertiary)] font-mono">
                 {fileCount}
               </span>
             )}
@@ -91,20 +91,20 @@ export default function FilesPanel({
                 <button
                   onClick={onRefreshTree}
                   disabled={loading}
-                  className="p-1 rounded-full neu-button text-white/50 hover:text-white transition-colors"
+                  className="w-7 h-7 rounded-[var(--radius-sm)] neu-button grid place-items-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                   title="Refresh files"
                   aria-label="Refresh files"
                 >
                   <svg
-                    width="11"
-                    height="11"
+                    width="13"
+                    height="13"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className={loading ? 'animate-spin text-amber-400' : ''}
+                    className={loading ? 'animate-spin text-[var(--accent)]' : ''}
                   >
                     <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
                   </svg>
@@ -114,28 +114,18 @@ export default function FilesPanel({
               {onCloseWorkspace && (
                 <button
                   onClick={onCloseWorkspace}
-                  className="p-1 rounded-full neu-button text-white/40 hover:text-red-300 transition-colors"
+                  className="w-7 h-7 rounded-[var(--radius-sm)] neu-button grid place-items-center text-[var(--text-secondary)] hover:text-[var(--status-error)] transition-colors"
                   title="Disconnect workspace"
                   aria-label="Disconnect workspace"
                 >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <line x1="18" y1="6" x2="6" y2="18" />
                     <line x1="6" y1="6" x2="18" y2="18" />
                   </svg>
                 </button>
               )}
             </>
-          ) : (
-            <button
-              onClick={onPickWorkspace}
-              disabled={loading}
-              className="px-2 py-0.5 rounded-full neu-button text-[11px] font-medium text-amber-300/80 hover:text-amber-200 flex items-center gap-1 hover:border-amber-500/30 transition-colors"
-              title="Open project folder"
-            >
-              <span>＋</span>
-              <span>Open</span>
-            </button>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -145,20 +135,20 @@ export default function FilesPanel({
           {workspace ? (
             <>
               {/* Compact Workspace Status Bar */}
-              <div className="flex items-center justify-between px-2 py-1 mb-1 rounded-lg neu-pressed bg-[#181818] text-[10px] shrink-0 border border-white/[0.04]">
+              <div className="flex items-center justify-between px-2.5 py-1.5 mb-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-canvas)] text-xs shrink-0 border border-[var(--border-subtle)]">
                 <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                  <span className="font-semibold text-white/90 truncate">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-success)] shrink-0" />
+                  <span className="font-medium text-[var(--text-primary)] truncate">
                     {getFolderName(workspace.root)}
                   </span>
-                  <span className="text-white/30 truncate font-mono text-[9px]" title={workspace.root}>
+                  <span className="text-[var(--text-tertiary)] truncate font-mono text-[10px]" title={workspace.root}>
                     ({workspace.root})
                   </span>
                 </div>
                 {onPickWorkspace && (
                   <button
                     onClick={onPickWorkspace}
-                    className="text-[9px] text-white/40 hover:text-white/80 ml-1 underline shrink-0"
+                    className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] ml-1 underline shrink-0 font-medium"
                   >
                     Change
                   </button>
@@ -167,17 +157,17 @@ export default function FilesPanel({
 
               {/* Quick file search if > 8 files */}
               {workspaceTree.length > 8 && (
-                <div className="relative flex items-center mb-1.5 px-0.5 shrink-0">
+                <div className="relative flex items-center mb-2 px-0.5 shrink-0">
                   <svg
-                    width="11"
-                    height="11"
+                    width="13"
+                    height="13"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="absolute left-2.5 text-white/30 pointer-events-none"
+                    className="absolute left-3 text-white/30 pointer-events-none"
                   >
                     <circle cx="11" cy="11" r="8" />
                     <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -187,12 +177,12 @@ export default function FilesPanel({
                     value={filterQuery}
                     onChange={(e) => setFilterQuery(e.target.value)}
                     placeholder="Search files..."
-                    className="w-full bg-[#181818] border border-white/[0.06] rounded-lg pl-6 pr-6 py-1 text-[11px] text-white/80 placeholder:text-white/30 outline-none focus:border-white/20 transition-colors"
+                    className="w-full bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] rounded-[var(--radius-sm)] pl-7 pr-7 py-1.5 text-xs sm:text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--border-strong)] transition-colors"
                   />
                   {filterQuery && (
                     <button
                       onClick={() => setFilterQuery('')}
-                      className="absolute right-2 text-[9px] text-white/40 hover:text-white/80 w-3.5 h-3.5 rounded-full grid place-items-center"
+                      className="absolute right-2 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] w-4 h-4 rounded-[var(--radius-sm)] grid place-items-center"
                     >
                       ✕
                     </button>
@@ -211,16 +201,16 @@ export default function FilesPanel({
               </div>
             </>
           ) : (
-            <div className="p-3 text-center rounded-xl neu-pressed opacity-50 space-y-1.5 my-auto">
-              <div className="text-sm">📁</div>
-              <div className="text-[11px] font-medium text-white/80">No folder connected</div>
-              <p className="text-[10px] text-white/40 leading-snug">
+            <div className="p-3.5 text-center rounded-[var(--radius-md)] neu-pressed opacity-60 space-y-1.5 my-auto">
+              <div className="text-base">📁</div>
+              <div className="text-xs font-medium text-white/80">No folder connected</div>
+              <p className="text-xs text-white/40 leading-snug">
                 Open a local project directory to inspect source code and execute harness tools.
               </p>
               <button
                 onClick={onPickWorkspace}
                 disabled={loading}
-                className="mt-1 px-3 py-1 rounded-full neu-button text-[11px] text-amber-300 inline-flex items-center gap-1 hover:border-amber-500/40"
+                className="mt-1 px-3.5 py-1.5 rounded-full neu-button text-xs font-medium text-amber-300 inline-flex items-center gap-1.5 hover:border-amber-500/40"
               >
                 <span>＋</span>
                 <span>Open Folder</span>

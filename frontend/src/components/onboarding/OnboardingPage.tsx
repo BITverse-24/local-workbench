@@ -27,7 +27,7 @@ const DEFAULT_ROWS: RowState[] = [
     title: "Vision & OCR",
     description: "Inspection reports, engineering drawings, P&ID diagrams",
     badge: "VISION",
-    badgeColor: "bg-blue-500/10 text-blue-400 border-blue-500/25",
+    badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
     modelName: "qwen2.5vl:3b",
     host: "127.0.0.1",
     port: "11434",
@@ -39,7 +39,7 @@ const DEFAULT_ROWS: RowState[] = [
     title: "Coding & Analysis",
     description: "Python execution, automated script repair, CSV parsing",
     badge: "CODE",
-    badgeColor: "bg-purple-500/10 text-purple-400 border-purple-500/25",
+    badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
     modelName: "qwen2.5-coder:7b",
     host: "127.0.0.1",
     port: "11434",
@@ -51,7 +51,7 @@ const DEFAULT_ROWS: RowState[] = [
     title: "Draft & Reasoning",
     description: "Approval notes, synthesis, technical memos, chat",
     badge: "DRAFT",
-    badgeColor: "bg-emerald-500/10 text-emerald-400 border-emerald-500/25",
+    badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
     modelName: "qwen3:8b",
     host: "127.0.0.1",
     port: "11434",
@@ -63,7 +63,7 @@ const DEFAULT_ROWS: RowState[] = [
     title: "Routing & Planning",
     description: "Multi-stage pipeline decomposition and subtask routing",
     badge: "PLAN",
-    badgeColor: "bg-amber-500/10 text-amber-400 border-amber-500/25",
+    badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
     modelName: "qwen3:8b",
     host: "127.0.0.1",
     port: "11434",
@@ -75,7 +75,7 @@ const DEFAULT_ROWS: RowState[] = [
     title: "Vector Embedding",
     description: "Local RAG semantic search, SOP grounding (/embeddings)",
     badge: "EMBED",
-    badgeColor: "bg-cyan-500/10 text-cyan-400 border-cyan-500/25",
+    badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
     modelName: "nomic-embed-text:v1.5",
     host: "127.0.0.1",
     port: "11434",
@@ -320,21 +320,66 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
     }
   };
 
+  const step1Done = rows.some((r) => r.testStatus === "success");
+  const step2Done = rows.every((r) => r.modelName.trim().length > 0);
+  const step3Done = !allowExternal || rows.every((r) => r.host.trim().length > 0);
+
+  const getRoleIcon = (role: string) => {
+    switch (role.toLowerCase()) {
+      case "vision":
+        return (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+          </svg>
+        );
+      case "coding":
+      case "code":
+        return (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
+        );
+      case "draft":
+        return (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+        );
+      case "plan":
+        return (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="12 2 2 7 12 12 22 7 12 2" />
+            <polyline points="2 17 12 22 22 17" />
+            <polyline points="2 12 12 17 22 12" />
+          </svg>
+        );
+      default:
+        return (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="8" />
+          </svg>
+        );
+    }
+  };
+
   return (
-    <div className="w-full h-full min-h-screen flex flex-col justify-between px-8 sm:px-12 lg:px-18 py-8 bg-[#101010] text-[#E8E8E8] overflow-y-auto select-none animate-apple-message">
-      <div className="w-full max-w-[1760px] mx-auto flex-1 flex flex-col justify-between space-y-8">
+    <div className="w-full h-full min-h-screen flex flex-col justify-between px-8 sm:px-12 lg:px-16 py-8 bg-[var(--bg-canvas)] text-[var(--text-primary)] overflow-y-auto select-none">
+      <div className="w-full max-w-[1760px] mx-auto flex-1 flex flex-col space-y-5">
         {/* 1. Header Section */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-[#222222]">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-mono tracking-widest text-emerald-400 uppercase font-semibold px-3 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/25">
-                AIR-GAPPED SYSTEM SETUP • ZERO EGRESS • REST OPENAI COMPLIANT
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-5 border-b border-[var(--border-subtle)]">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold tracking-[0.02em] uppercase text-[var(--text-tertiary)]">
+                Air-gapped system setup
               </span>
             </div>
-            <h1 className="text-3xl sm:text-4xl font-semibold text-white tracking-tight pt-1">
+            <h1 className="text-[20px] font-semibold text-[var(--text-primary)] tracking-tight">
               LLM Model Endpoint Configuration
             </h1>
-            <p className="text-sm sm:text-base text-neutral-400 max-w-4xl leading-relaxed">
+            <p className="text-xs sm:text-sm text-[var(--text-secondary)] max-w-4xl leading-relaxed">
               Industrial multi-model orchestration for defence manufacturing, PSU engineering, and government facilities. Assign offline, OpenAI-compatible model endpoints for each specialized operational role.
             </p>
           </div>
@@ -344,15 +389,15 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
             <button
               type="button"
               onClick={prefillOllama}
-              className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium neu-button hover:text-white transition-all hover:bg-[#202020]"
+              className="h-9 sm:h-10 px-3.5 sm:px-4 rounded-[var(--radius-sm)] text-xs sm:text-sm font-medium neu-button"
               title="Populate standard local Ollama ports (11434)"
             >
-              Ollama Defaults
+              Ollama defaults
             </button>
             <button
               type="button"
               onClick={prefillLMStudio}
-              className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium neu-button hover:text-white transition-all hover:bg-[#202020]"
+              className="h-9 sm:h-10 px-3.5 sm:px-4 rounded-[var(--radius-sm)] text-xs sm:text-sm font-medium neu-button"
               title="Populate standard local LM Studio port (1234)"
             >
               LM Studio (1234)
@@ -360,7 +405,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
             <button
               type="button"
               onClick={prefillVLLM}
-              className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium neu-button hover:text-white transition-all hover:bg-[#202020]"
+              className="h-9 sm:h-10 px-3.5 sm:px-4 rounded-[var(--radius-sm)] text-xs sm:text-sm font-medium neu-button"
               title="Populate standard local vLLM port (8000)"
             >
               vLLM (8000)
@@ -369,84 +414,88 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
               type="button"
               onClick={testAllEndpoints}
               disabled={testingAll}
-              className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium neu-button hover:text-white transition-all hover:bg-[#202020] disabled:opacity-40"
+              className="h-9 sm:h-10 px-3.5 sm:px-4 rounded-[var(--radius-sm)] text-xs sm:text-sm font-medium neu-button disabled:opacity-40"
             >
-              {testingAll ? "Testing All..." : "Test All Endpoints"}
+              {testingAll ? "Testing all…" : "Test all endpoints"}
             </button>
             <button
               type="button"
               onClick={clearForm}
-              className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium neu-button opacity-60 hover:opacity-100 hover:text-red-400 transition-all hover:bg-[#202020]"
+              className="h-9 sm:h-10 px-3.5 sm:px-4 rounded-[var(--radius-sm)] text-xs sm:text-sm font-medium neu-button opacity-70 hover:opacity-100 hover:text-[var(--status-error)] transition-colors"
             >
               Clear
             </button>
           </div>
         </div>
 
-        {/* 2. Enterprise Instructions & Network Policy Panel (Utilizes Upper Space) */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* 2. Enterprise Instructions & Network Policy Panel */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Card 1: Runtime Prerequisites */}
-          <div className="neu-card p-6 rounded-2xl border border-[#262626] bg-[#151515] flex flex-col justify-between space-y-4">
-            <div className="space-y-2">
+          <div className="neu-card p-5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] flex flex-col justify-between space-y-3">
+            <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold tracking-wider text-neutral-300 uppercase">
-                  1. Local Inference Server
+                <span className="text-xs font-semibold text-[var(--text-secondary)]">
+                  Local inference server
                 </span>
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-400" />
+                <span className={`text-xs font-mono font-semibold ${step1Done ? "text-[var(--status-success)]" : "text-[var(--text-tertiary)]"}`}>
+                  1
+                </span>
               </div>
-              <h3 className="text-sm font-semibold text-white">OpenAI-Compatible REST API</h3>
-              <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
+              <h3 className="text-sm font-medium text-[var(--text-primary)]">OpenAI-Compatible REST API</h3>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                 Ensure an approved local server (Ollama, vLLM, LM Studio, or llama-server) is listening. Sovereign Workbench communicates via standard HTTP JSON payloads.
               </p>
             </div>
-            <div className="text-xs font-mono text-neutral-500 pt-3 border-t border-[#222222]">
+            <div className="text-[11px] font-mono text-[var(--text-tertiary)] pt-2.5 border-t border-[var(--border-subtle)]">
               Standard routes: /v1/chat/completions, /v1/models
             </div>
           </div>
 
           {/* Card 2: Deterministic Routing Architecture */}
-          <div className="neu-card p-6 rounded-2xl border border-[#262626] bg-[#151515] flex flex-col justify-between space-y-4">
-            <div className="space-y-2">
+          <div className="neu-card p-5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] flex flex-col justify-between space-y-3">
+            <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold tracking-wider text-neutral-300 uppercase">
-                  2. Role Delegation Policy
+                <span className="text-xs font-semibold text-[var(--text-secondary)]">
+                  Role delegation policy
                 </span>
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                <span className={`text-xs font-mono font-semibold ${step2Done ? "text-[var(--status-success)]" : "text-[var(--text-tertiary)]"}`}>
+                  2
+                </span>
               </div>
-              <h3 className="text-sm font-semibold text-white">Deterministic Task Routing</h3>
-              <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
+              <h3 className="text-sm font-medium text-[var(--text-primary)]">Deterministic Task Routing</h3>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                 Workloads are strictly partitioned: Vision handles drawings/OCR, Coding executes Python math, Draft writes technical notes, and Embedding executes local RAG vectors.
               </p>
             </div>
-            <div className="text-xs font-mono text-neutral-500 pt-3 border-t border-[#222222]">
+            <div className="text-[11px] font-mono text-[var(--text-tertiary)] pt-2.5 border-t border-[var(--border-subtle)]">
               Single multi-model engine or distributed cluster
             </div>
           </div>
 
           {/* Card 3: Air-Gap Boundary & "Allow external requests" Inverse Toggle */}
-          <div className="neu-card p-6 rounded-2xl border border-[#262626] bg-[#151515] flex flex-col justify-between space-y-4">
-            <div className="space-y-2">
+          <div className="neu-card p-5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] flex flex-col justify-between space-y-3">
+            <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold tracking-wider text-neutral-300 uppercase">
-                  3. Air-Gap Isolation Policy
+                <span className="text-xs font-semibold text-[var(--text-secondary)]">
+                  Air-gap isolation policy
                 </span>
-                <span
-                  className={`w-2.5 h-2.5 rounded-full ${allowExternal ? "bg-amber-400 animate-pulse" : "bg-emerald-400"}`}
-                />
+                <span className={`text-xs font-mono font-semibold ${step3Done ? "text-[var(--status-success)]" : "text-[var(--text-tertiary)]"}`}>
+                  3
+                </span>
               </div>
-              <h3 className="text-sm font-semibold text-white">Network Boundary Enforcement</h3>
-              <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
+              <h3 className="text-sm font-medium text-[var(--text-primary)]">Network Boundary Enforcement</h3>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                 By default, all network calls are physically restricted to loopback (127.0.0.1) with zero data egress. Enable external requests only to target air-gapped LAN GPU nodes.
               </p>
             </div>
 
-            {/* The Inverse Toggle */}
-            <div className="pt-3 border-t border-[#222222] flex items-center justify-between gap-4">
+            {/* Flat Toggle Switch */}
+            <div className="pt-2.5 border-t border-[var(--border-subtle)] flex items-center justify-between gap-4">
               <div>
-                <div className="text-sm font-semibold text-white">Allow external requests</div>
-                <div className="text-xs text-neutral-400 mt-0.5">
+                <div className="text-xs font-medium text-[var(--text-primary)]">Allow external requests</div>
+                <div className="text-[11px] text-[var(--text-tertiary)] mt-0.5">
                   {allowExternal
-                    ? "LAN access enabled — Host/IP inputs unlocked"
+                    ? "LAN access enabled — Host/IP unlocked"
                     : "Loopback locked — Host/IP forced to 127.0.0.1"}
                 </div>
               </div>
@@ -455,13 +504,13 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                 role="switch"
                 aria-checked={allowExternal}
                 onClick={handleToggleAllowExternal}
-                className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  allowExternal ? "bg-amber-500" : "bg-neutral-700"
+                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border border-[var(--border-default)] transition-colors duration-150 ease-in-out focus:outline-none ${
+                  allowExternal ? "bg-[var(--accent)]" : "bg-[var(--bg-surface-raised)]"
                 }`}
               >
                 <span
-                  className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                    allowExternal ? "translate-x-6" : "translate-x-0"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--text-primary)] transition duration-150 ease-in-out mt-0.5 ${
+                    allowExternal ? "translate-x-6" : "translate-x-1"
                   }`}
                 />
               </button>
@@ -470,28 +519,27 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
         </div>
 
         {globalError && (
-          <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/25 text-red-300 text-sm flex items-center gap-3">
-            <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
+          <div className="p-3.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--status-error)]/40 text-[var(--status-error)] text-xs flex items-center gap-2.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-error)] shrink-0" />
             <span>{globalError}</span>
           </div>
         )}
 
-        {/* 3. Model Role Endpoints Table (Moved Down to Fill Lower Space) */}
-        <form onSubmit={handleSubmit} className="space-y-6 flex-1 flex flex-col justify-end">
-          <div className="space-y-3.5">
+        {/* 3. Model Role Endpoints Table */}
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between pt-1">
+          <div className="flex-1 flex flex-col justify-between space-y-3 sm:space-y-4">
             {/* Table Column Headers */}
-            <div className="flex items-center gap-4 px-3">
-              <div className="flex-1 grid grid-cols-12 gap-4 px-6 py-2 text-xs font-mono uppercase tracking-widest text-neutral-400 font-semibold">
-                <div className="col-span-3">Operational Role & Task</div>
-                <div className="col-span-3">Model Tag / Identifier</div>
-                <div className="col-span-2">Host / IP Address</div>
+            <div className="flex items-center gap-4 px-2">
+              <div className="flex-1 grid grid-cols-12 gap-4 px-4 py-1.5 text-xs text-[var(--text-tertiary)] font-medium">
+                <div className="col-span-3">Operational role & task</div>
+                <div className="col-span-3">Model tag / identifier</div>
+                <div className="col-span-2">Host / IP address</div>
                 <div className="col-span-1">Port</div>
                 <div className="col-span-1">Context</div>
-                <div className="col-span-2 text-right">Endpoint Status & Test</div>
+                <div className="col-span-2 text-right">Endpoint status & test</div>
               </div>
-              {/* Header Spacer for the Outside Button */}
-              <div className="w-32 text-xs font-mono uppercase tracking-widest text-neutral-500 font-semibold text-center">
-                Sync Row
+              <div className="w-28 text-xs text-[var(--text-tertiary)] font-medium text-center">
+                Sync row
               </div>
             </div>
 
@@ -504,19 +552,18 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
 
               return (
                 <div key={row.role} className="flex items-center gap-4">
-                  {/* The Main Table Row Card */}
-                  <div className="flex-1 neu-panel border border-[#262626] rounded-2xl p-5 bg-[#161616] hover:bg-[#1A1A1A] transition-all shadow-sm">
+                  {/* Main Table Row Card */}
+                  <div className="flex-1 rounded-[var(--radius-md)] p-5 sm:p-6 bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] transition-colors">
                     <div className="grid grid-cols-12 gap-4 items-center">
                       {/* Col 1: Role & Description */}
                       <div className="col-span-3 flex items-start gap-3 pr-2">
-                        <span
-                          className={`text-xs font-mono px-2.5 py-1 rounded-md border font-bold tracking-wider shrink-0 mt-0.5 ${row.badgeColor}`}
-                        >
-                          {row.badge}
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] text-xs font-mono shrink-0 mt-0.5">
+                          <span className="shrink-0">{getRoleIcon(row.role)}</span>
+                          <span>{row.badge}</span>
                         </span>
                         <div>
-                          <div className="font-semibold text-white text-sm sm:text-base">{row.title}</div>
-                          <div className="text-xs text-neutral-400 leading-normal mt-0.5">
+                          <div className="font-semibold text-[var(--text-primary)] text-sm">{row.title}</div>
+                          <div className="text-xs text-[var(--text-secondary)] leading-relaxed mt-0.5">
                             {row.description}
                           </div>
                         </div>
@@ -529,13 +576,13 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                           value={row.modelName}
                           onChange={(e) => updateRow(idx, "modelName", e.target.value)}
                           placeholder="e.g. qwen2.5-coder:7b"
-                          className={`w-full h-12 px-4 rounded-xl text-sm neu-input outline-none font-mono transition-all ${
+                          className={`w-full h-11 px-3.5 rounded-[var(--radius-sm)] text-sm neu-input font-mono outline-none transition-all ${
                             modelErr
-                              ? "border-red-500/80 focus:border-red-500"
-                              : "border-[#333333] focus:border-neutral-200"
+                              ? "border-[var(--status-error)] focus:border-[var(--status-error)]"
+                              : "border-[var(--border-default)] focus:border-[var(--accent)]"
                           }`}
                         />
-                        {modelErr && <span className="text-xs text-red-400 mt-1 block font-mono">{modelErr}</span>}
+                        {modelErr && <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">{modelErr}</span>}
                       </div>
 
                       {/* Col 3: Host / IP Address Input (Locked when !allowExternal) */}
@@ -547,21 +594,21 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                             value={allowExternal ? row.host : "127.0.0.1"}
                             onChange={(e) => updateRow(idx, "host", e.target.value)}
                             placeholder="127.0.0.1"
-                            className={`w-full h-12 px-4 rounded-xl text-sm font-mono outline-none transition-all ${
+                            className={`w-full h-11 px-3.5 rounded-[var(--radius-sm)] text-sm font-mono outline-none transition-all ${
                               !allowExternal
-                                ? "bg-[#111111] border border-[#222222] text-neutral-500 cursor-not-allowed select-none"
+                                ? "bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--text-tertiary)] cursor-not-allowed select-none"
                                 : hostErr
-                                ? "neu-input border-red-500/80 focus:border-red-500 text-white"
-                                : "neu-input border-[#333333] focus:border-neutral-200 text-white"
+                                ? "neu-input border-[var(--status-error)] focus:border-[var(--status-error)] text-[var(--text-primary)]"
+                                : "neu-input border-[var(--border-default)] focus:border-[var(--accent)] text-[var(--text-primary)]"
                             }`}
                           />
                           {!allowExternal && (
-                            <span className="absolute right-3.5 top-3.5 text-xs font-mono text-neutral-600 select-none uppercase tracking-wider">
+                            <span className="absolute right-3 top-3 text-[11px] font-mono text-[var(--text-tertiary)] select-none">
                               locked
                             </span>
                           )}
                         </div>
-                        {hostErr && <span className="text-xs text-red-400 mt-1 block font-mono">{hostErr}</span>}
+                        {hostErr && <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">{hostErr}</span>}
                       </div>
 
                       {/* Col 4: Port Input */}
@@ -573,13 +620,13 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                           value={row.port}
                           onChange={(e) => updateRow(idx, "port", e.target.value)}
                           placeholder="11434"
-                          className={`w-full h-12 px-3 rounded-xl text-sm neu-input outline-none font-mono transition-all ${
+                          className={`w-full h-11 px-3 rounded-[var(--radius-sm)] text-sm neu-input font-mono outline-none transition-all ${
                             portErr
-                              ? "border-red-500/80 focus:border-red-500"
-                              : "border-[#333333] focus:border-neutral-200"
+                              ? "border-[var(--status-error)] focus:border-[var(--status-error)]"
+                              : "border-[var(--border-default)] focus:border-[var(--accent)]"
                           }`}
                         />
-                        {portErr && <span className="text-xs text-red-400 mt-1 block font-mono">{portErr}</span>}
+                        {portErr && <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">{portErr}</span>}
                       </div>
 
                       {/* Col 5: Context Length Input */}
@@ -591,47 +638,47 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                           value={row.contextLength}
                           onChange={(e) => updateRow(idx, "contextLength", e.target.value)}
                           placeholder="32768"
-                          className={`w-full h-12 px-3 rounded-xl text-sm neu-input outline-none font-mono transition-all ${
+                          className={`w-full h-11 px-3 rounded-[var(--radius-sm)] text-sm neu-input font-mono outline-none transition-all ${
                             contextErr
-                              ? "border-red-500/80 focus:border-red-500"
-                              : "border-[#333333] focus:border-neutral-200"
+                              ? "border-[var(--status-error)] focus:border-[var(--status-error)]"
+                              : "border-[var(--border-default)] focus:border-[var(--accent)]"
                           }`}
                         />
-                        {contextErr && <span className="text-xs text-red-400 mt-1 block font-mono">{contextErr}</span>}
+                        {contextErr && <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">{contextErr}</span>}
                       </div>
 
-                      {/* Col 6: Status & Test Action ONLY */}
-                      <div className="col-span-2 flex items-center justify-end gap-3">
+                      {/* Col 6: Status & Test Action */}
+                      <div className="col-span-2 flex items-center justify-end gap-2.5">
                         {row.testStatus === "testing" && (
-                          <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-xs text-amber-300 font-mono">
-                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                            Testing...
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs text-[var(--status-warning)] font-mono">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-warning)]" />
+                            Testing…
                           </span>
                         )}
                         {row.testStatus === "success" && (
                           <span
-                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-xs text-emerald-400 font-mono"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs text-[var(--status-success)] font-mono"
                             title={row.testMessage}
                           >
-                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-success)]" />
                             Connected {row.testLatency !== undefined ? `(${row.testLatency}ms)` : ""}
                           </span>
                         )}
                         {row.testStatus === "warning" && (
                           <span
-                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-xs text-amber-300 font-mono"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs text-[var(--status-warning)] font-mono"
                             title={row.testMessage}
                           >
-                            <span className="w-2 h-2 rounded-full bg-amber-400" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-warning)]" />
                             Reachable
                           </span>
                         )}
                         {row.testStatus === "error" && (
                           <span
-                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/25 text-xs text-red-400 max-w-[150px] truncate font-mono"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs text-[var(--status-error)] max-w-[140px] truncate font-mono"
                             title={row.testMessage}
                           >
-                            <span className="w-2 h-2 rounded-full bg-red-400" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-error)]" />
                             Failed
                           </span>
                         )}
@@ -640,7 +687,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                           type="button"
                           onClick={() => testEndpoint(idx)}
                           disabled={row.testStatus === "testing"}
-                          className="h-11 px-4 rounded-xl text-xs font-semibold neu-button hover:text-white transition-all disabled:opacity-40"
+                          className="h-11 px-4 rounded-[var(--radius-sm)] text-xs font-semibold neu-button disabled:opacity-40"
                         >
                           Test
                         </button>
@@ -648,14 +695,14 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                     </div>
                   </div>
 
-                  {/* OUTSIDE THE TABLE: Copy to All Button for this specific row */}
+                  {/* Copy to All Button */}
                   <button
                     type="button"
                     onClick={() => applyHostPortToAll(idx)}
-                    className="w-32 h-12 px-3 rounded-xl border border-[#282828] bg-[#161616] hover:bg-[#222222] hover:border-neutral-400 text-xs font-mono text-neutral-400 hover:text-white transition-all shrink-0 flex items-center justify-center gap-1.5 shadow-sm"
+                    className="w-32 h-11 px-3 rounded-[var(--radius-sm)] border border-[var(--border-default)] bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface-active)] text-xs font-sans text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shrink-0 flex items-center justify-center gap-1.5"
                     title={`Copy Host and Port from ${row.title} (${row.host}:${row.port}) to all other rows`}
                   >
-                    <span>Copy to All</span>
+                    <span>Copy to all</span>
                   </button>
                 </div>
               );
@@ -663,28 +710,26 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
           </div>
 
           {/* 4. Bottom Commit & Launch Action Bar */}
-          <div className="pt-6 pb-2 flex flex-col sm:flex-row items-center justify-between gap-6 border-t border-[#222222]">
-            <div className="text-xs sm:text-sm text-neutral-400 flex items-center gap-3">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0" />
+          <div className="pt-5 pb-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-[var(--border-subtle)]">
+            <div className="text-xs sm:text-sm text-[var(--text-secondary)] flex items-center gap-2.5">
+              <span className="w-2 h-2 rounded-full bg-[var(--status-success)] shrink-0" />
               <span>
-                Configuration is saved to local SQLite database (<code className="font-mono text-neutral-300">workbench.db</code>). Pure offline operation.
+                Configuration is saved to local SQLite database (<code className="font-mono text-[var(--text-primary)]">workbench.db</code>). Offline operation.
               </span>
             </div>
 
             <button
               type="submit"
               disabled={saving || hasErrors}
-              className="h-14 px-10 rounded-2xl font-semibold text-sm neu-button-primary disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-3 shadow-2xl transition-all hover:scale-[1.01] active:scale-[0.99]"
+              className="h-12 sm:h-13 px-8 sm:px-10 rounded-[var(--radius-sm)] font-semibold text-sm neu-button-primary disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2.5"
             >
               {saving ? (
                 <>
-                  <span className="w-4 h-4 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin" />
-                  <span>Saving Configuration & Launching...</span>
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Saving configuration…</span>
                 </>
               ) : (
-                <>
-                  <span>Complete Setup & Launch Workbench</span>
-                </>
+                <span>Launch Workbench</span>
               )}
             </button>
           </div>
@@ -692,8 +737,8 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
       </div>
 
       {/* Industrial Footer Notice */}
-      <div className="pt-6 pb-2 text-center text-xs text-neutral-600 font-mono tracking-widest uppercase">
-        SOVEREIGN WORKBENCH • DEFENCE & PSU MISSION-CRITICAL INTELLIGENCE PLATFORM • AIR-GAPPED VERIFIED
+      <div className="pt-4 pb-1 text-center text-xs text-[var(--text-tertiary)] font-sans">
+        Sovereign Workbench · defence & PSU mission-critical intelligence platform · air-gapped verified
       </div>
     </div>
   );

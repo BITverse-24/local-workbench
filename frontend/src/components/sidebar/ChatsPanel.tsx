@@ -150,37 +150,37 @@ export default function ChatsPanel({
       }`}
     >
       {/* Section Header */}
-      <div className="flex items-center justify-between py-1 px-1 shrink-0 select-none">
+      <div className="flex items-center justify-between py-1.5 px-1 shrink-0 select-none">
         <button
           onClick={onToggleExpand}
           className="flex items-center gap-1.5 text-left group hover:opacity-100 transition-opacity"
           title={isExpanded ? 'Collapse chats' : 'Expand chats'}
         >
           <span
-            className={`text-[10px] text-white/40 group-hover:text-white/80 transition-transform duration-200 ${
+            className={`text-[11px] text-white/40 group-hover:text-white/80 transition-transform duration-200 ${
               isExpanded ? 'rotate-0' : '-rotate-90'
             }`}
           >
             ▾
           </span>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <svg
-              width="12"
-              height="12"
+              width="14"
+              height="14"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="text-sky-300"
+              className="text-[var(--text-tertiary)]"
             >
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-white/70 group-hover:text-white transition-colors">
+            <span className="text-sm font-semibold text-[var(--text-secondary)] tracking-normal group-hover:text-[var(--text-primary)] transition-colors">
               Chats
             </span>
-            <span className="text-[9px] px-1.5 py-0.2 rounded-full neu-pressed text-white/50 font-mono">
+            <span className="text-xs px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-tertiary)] font-mono">
               {chats.length}
             </span>
           </div>
@@ -188,7 +188,7 @@ export default function ChatsPanel({
 
         <button
           onClick={onNewChat}
-          className="px-2 py-0.5 rounded-full neu-button text-[11px] font-medium text-white/70 hover:text-white flex items-center gap-1 hover:border-white/30 transition-colors"
+          className="h-7.5 px-3 rounded-[var(--radius-sm)] neu-button text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center gap-1.5 transition-colors"
           title="New conversation"
         >
           <span>＋</span>
@@ -201,17 +201,17 @@ export default function ChatsPanel({
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden pt-1">
           {/* Quick Search filter if more than 5 chats */}
           {chats.length > 5 && (
-            <div className="relative flex items-center mb-1.5 px-0.5 shrink-0">
+            <div className="relative flex items-center mb-2 px-0.5 shrink-0">
               <svg
-                width="11"
-                height="11"
+                width="13"
+                height="13"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className="absolute left-2.5 text-white/30 pointer-events-none"
+                className="absolute left-3 text-[var(--text-tertiary)] pointer-events-none"
               >
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -220,13 +220,13 @@ export default function ChatsPanel({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter chats..."
-                className="w-full bg-[#181818] border border-white/[0.06] rounded-lg pl-6 pr-6 py-1 text-[11px] text-white/80 placeholder:text-white/30 outline-none focus:border-white/20 transition-colors"
+                placeholder="Filter chats…"
+                className="w-full bg-[var(--bg-canvas)] border border-[var(--border-subtle)] rounded-[var(--radius-sm)] pl-7 pr-7 py-1.5 text-xs sm:text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--border-default)] transition-colors"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2 text-[9px] text-white/40 hover:text-white/80 w-3.5 h-3.5 rounded-full grid place-items-center"
+                  className="absolute right-2 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] w-4 h-4 rounded-[var(--radius-sm)] grid place-items-center"
                 >
                   ✕
                 </button>
@@ -234,10 +234,10 @@ export default function ChatsPanel({
             </div>
           )}
 
-          {/* Scrollable Chat Item List */}
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1">
+          {/* Scrollable list */}
+          <div className="flex-1 overflow-y-auto space-y-1 pr-0.5">
             {sortedChats.length > 0 ? (
-              sortedChats.map((chat, idx) => {
+              sortedChats.map((chat) => {
                 const isSelected = activeId === chat.id;
                 const isEditing = editingId === chat.id;
                 const isMenuOpen = openMenuId === chat.id;
@@ -246,12 +246,11 @@ export default function ChatsPanel({
                 return (
                   <div
                     key={chat.id}
-                    className={`group flex items-center gap-1 w-full rounded-xl text-xs transition-all duration-150 ${
+                    className={`group flex items-center gap-1 w-full rounded-[var(--radius-sm)] text-sm transition-colors duration-150 ${
                       isSelected
-                        ? 'neu-pressed ring-1 ring-white/15'
-                        : 'neu-card hover:bg-white/[0.04]'
+                        ? 'bg-[var(--accent-muted)] border border-[var(--accent)]/30 text-[var(--text-primary)]'
+                        : 'hover:bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border border-transparent'
                     }`}
-                    style={{ animationDelay: `${idx * 25}ms` }}
                   >
                     {isEditing ? (
                       <input
@@ -263,26 +262,26 @@ export default function ChatsPanel({
                           if (e.key === 'Enter') commitRename();
                           if (e.key === 'Escape') setEditingId(null);
                         }}
-                        className="flex-1 min-w-0 bg-transparent outline-none px-2.5 py-1.5 text-xs font-medium"
+                        className="flex-1 min-w-0 bg-transparent outline-none px-3 py-2 text-sm font-medium text-[var(--text-primary)]"
                       />
                     ) : (
                       <button
                         onClick={() => onSelect(chat.id)}
-                        className="flex-1 min-w-0 text-left px-2.5 py-1.5 truncate flex flex-col items-start"
+                        className="flex-1 min-w-0 text-left px-3 py-2 truncate flex flex-col items-start"
                         title={chat.title}
                       >
-                        <span className="flex items-center gap-1.5 min-w-0 w-full">
+                        <span className="flex items-center gap-2 min-w-0 w-full">
                           {isPinned ? (
                             <svg
-                              width="10"
-                              height="10"
+                              width="12"
+                              height="12"
                               viewBox="0 0 24 24"
                               fill="none"
                               stroke="currentColor"
                               strokeWidth="2"
                               strokeLinecap="round"
                               strokeLinejoin="round"
-                              className="shrink-0 text-amber-400"
+                              className="shrink-0 text-[var(--text-secondary)]"
                               aria-hidden="true"
                             >
                               <path d="M12 17v5" />
@@ -290,17 +289,17 @@ export default function ChatsPanel({
                               <path d="M12 3a4 4 0 0 0-4 4v5.5a1 1 0 0 0 .3.7l1.7 1.7a1 1 0 0 0 .7.3h2.6a1 1 0 0 0 .7-.3l1.7-1.7a1 1 0 0 0 .3-.7V7a4 4 0 0 0-4-4z" />
                             </svg>
                           ) : (
-                            <span className="w-1.5 h-1.5 rounded-full bg-white/20 group-hover:bg-white/40 shrink-0" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-tertiary)] shrink-0" />
                           )}
                           <span
                             className={`truncate ${
-                              isSelected ? 'font-semibold text-white' : 'text-white/80'
+                              isSelected ? 'font-medium text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'
                             }`}
                           >
                             {chat.title}
                           </span>
                         </span>
-                        <span className="text-[9px] leading-tight opacity-40 ml-3 font-mono mt-0.5">
+                        <span className="text-xs leading-tight text-[var(--text-tertiary)] ml-3.5 font-mono mt-0.5">
                           {formatRelativeTime(chat.updated_at)}
                         </span>
                       </button>
@@ -320,28 +319,28 @@ export default function ChatsPanel({
                           e.stopPropagation();
                           setOpenMenuId(isMenuOpen ? null : chat.id);
                         }}
-                        className={`shrink-0 w-6 h-6 mr-1 rounded-full grid place-items-center transition-all duration-150 ${
+                        className={`shrink-0 w-7 h-7 mr-1.5 rounded-[var(--radius-sm)] grid place-items-center transition-all duration-150 ${
                           isMenuOpen
                             ? 'opacity-100 bg-white/15'
                             : 'opacity-0 group-hover:opacity-100 hover:bg-white/10'
                         }`}
                         title="Options"
                       >
-                        <DotsIcon size={12} />
+                        <DotsIcon size={14} />
                       </button>
                     )}
                   </div>
                 );
               })
             ) : (
-              <div className="p-3 text-center rounded-xl neu-pressed opacity-50 space-y-1">
-                <div className="text-[11px] text-white/70">
+              <div className="p-3.5 text-center rounded-[var(--radius-md)] neu-pressed opacity-60 space-y-1">
+                <div className="text-xs text-[var(--text-secondary)]">
                   {searchQuery ? 'No matching chats' : 'No conversation history'}
                 </div>
                 {!searchQuery && (
                   <button
                     onClick={onNewChat}
-                    className="text-[10px] text-white/50 hover:text-white underline mt-1"
+                    className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] underline mt-1"
                   >
                     Start a new conversation
                   </button>
@@ -405,30 +404,30 @@ export default function ChatsPanel({
       {/* Delete Confirmation Alert */}
       {confirmDeleteId && createPortal(
         <div
-          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-[1px] p-4 animate-apple-fade"
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4"
           onClick={() => setConfirmDeleteId(null)}
         >
           <div
             role="alertdialog"
             aria-modal="true"
             aria-label="Archive chat"
-            className="w-72 max-w-full neu-dropdown p-4 animate-apple-scaleIn"
+            className="w-72 max-w-full rounded-[var(--radius-md)] neu-panel border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-sm font-semibold">Archive chat?</h3>
-            <p className="text-xs opacity-60 mt-1.5 leading-relaxed truncate">
+            <h3 className="text-sm font-medium text-[var(--text-primary)]">Archive chat?</h3>
+            <p className="text-xs text-[var(--text-secondary)] mt-1.5 leading-relaxed truncate">
               &ldquo;{chats.find((c) => c.id === confirmDeleteId)?.title ?? 'this chat'}&rdquo; will be archived.
             </p>
             <div className="flex justify-end gap-2 mt-4">
               <button
                 onClick={() => setConfirmDeleteId(null)}
-                className="px-3 py-1 rounded-full neu-button text-xs font-medium"
+                className="px-3 py-1 rounded-[var(--radius-sm)] neu-button text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmDelete}
-                className="px-3 py-1 rounded-full text-xs font-semibold bg-red-500/20 border border-red-500/40 text-red-200 hover:bg-red-500/30 transition-colors"
+                className="px-3 py-1 rounded-[var(--radius-sm)] text-xs font-medium bg-[var(--status-error)]/15 border border-[var(--status-error)]/30 text-[var(--status-error)] hover:bg-[var(--status-error)]/25 transition-colors"
               >
                 Archive
               </button>
