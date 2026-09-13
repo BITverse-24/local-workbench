@@ -7,7 +7,6 @@ import ChatArea, { type ChatMessage } from "./components/ChatArea";
 import InputBar from "./components/InputBar";
 import RightSidebar from "./components/RightSidebar";
 import ModelDropdown from "./components/ModelDropdown";
-import PlusDropup from "./components/PlusDropup";
 import UploadModal from "./components/modals/UploadModal";
 import CameraModal from "./components/modals/CameraModal";
 import VoiceModal from "./components/modals/VoiceModal";
@@ -16,7 +15,7 @@ import RouteBadge from "./components/RouteBadge";
 import OnboardingPage from "./components/onboarding/OnboardingPage";
 import { MODELS } from "./lib/models";
 import * as wb from "./lib/workbench";
-import { useDropdownPosition, usePlusPosition } from "./lib/hooks/useDropdownPosition";
+import { useDropdownPosition } from "./lib/hooks/useDropdownPosition";
 import { useCamera } from "./lib/hooks/useCamera";
 import { useVoice } from "./lib/hooks/useVoice";
 import { useUpload } from "./lib/hooks/useUpload";
@@ -44,8 +43,6 @@ export default function App() {
   const [temperature, setTemperature] = useState(0.7);
   const [selectedModel, setSelectedModel] = useState(MODELS[0]);
   const [modelOpen, setModelOpen] = useState(false);
-  const [plusOpen, setPlusOpen] = useState(false);
-  const [searchActive, setSearchActive] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
@@ -443,7 +440,6 @@ export default function App() {
   );
 
   const { btnRef: modelBtnRef, pos: dropdownPos } = useDropdownPosition(modelOpen);
-  const { btnRef: plusBtnRef, pos: plusPos } = usePlusPosition(plusOpen);
 
   const upload = useUpload();
   const camera = useCamera();
@@ -743,12 +739,6 @@ export default function App() {
           <InputBar
             input={input}
             setInput={setInput}
-            plusOpen={plusOpen}
-            setPlusOpen={setPlusOpen}
-            plusBtnRef={plusBtnRef}
-            searchActive={searchActive}
-            setSearchActive={setSearchActive}
-            onVoice={() => voice.setShow(true)}
             onSend={handleSend}
             attachedFiles={attachedFiles}
             onAttachFiles={addFiles}
@@ -780,15 +770,6 @@ export default function App() {
       </div>
 
       <ModelDropdown open={modelOpen} pos={dropdownPos} models={MODELS} selected={selectedModel} onSelect={(m) => { setSelectedModel(m); setModelOpen(false); }} onClose={() => setModelOpen(false)} />
-
-      <PlusDropup
-        open={plusOpen}
-        pos={plusPos}
-        onClose={() => setPlusOpen(false)}
-        onUpload={() => { setPlusOpen(false); upload.setShow(true); }}
-        onCamera={() => { setPlusOpen(false); camera.setShow(true); }}
-        onSearch={() => { setPlusOpen(false); setSearchActive(true); }}
-      />
 
       <UploadModal open={upload.show} dragOver={upload.dragOver} setDragOver={upload.setDragOver} files={upload.files} setFiles={upload.setFiles} onClose={() => upload.setShow(false)} onConfirm={handleUploadConfirm} />
 

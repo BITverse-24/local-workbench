@@ -3,12 +3,12 @@ import { useRef, useEffect, useState, useMemo } from 'react';
 type Props = {
   input: string;
   setInput: (v: string) => void;
-  plusOpen: boolean;
-  setPlusOpen: (v: boolean | ((p: boolean) => boolean)) => void;
-  plusBtnRef: React.RefObject<HTMLButtonElement | null>;
-  searchActive: boolean;
-  setSearchActive: (v: boolean) => void;
-  onVoice: () => void;
+  plusOpen?: boolean;
+  setPlusOpen?: (v: boolean | ((p: boolean) => boolean)) => void;
+  plusBtnRef?: React.RefObject<HTMLButtonElement | null>;
+  searchActive?: boolean;
+  setSearchActive?: (v: boolean) => void;
+  onVoice?: () => void;
   onSend?: () => void;
   attachedFiles?: File[];
   onAttachFiles?: (files: File[]) => { added: number; rejected: File[] };
@@ -58,7 +58,7 @@ function FileTypeIcon({ file }: { file: File }) {
   return <span className="w-7 h-7 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] grid place-items-center shrink-0 text-[9px] font-mono text-[var(--text-secondary)]">{label.slice(0, 4)}</span>;
 }
 
-export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusBtnRef, searchActive, setSearchActive, onVoice, onSend, attachedFiles = [], onAttachFiles, onRemoveFile, disabled, groundingEnabled = true, setGroundingEnabled }: Props) {
+export default function InputBar({ input, setInput, onSend, attachedFiles = [], onAttachFiles, onRemoveFile, disabled, groundingEnabled = true, setGroundingEnabled }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -147,7 +147,7 @@ export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusB
       }}
       onDrop={handleDrop}
     >
-      <div className="max-w-3xl mx-auto flex flex-col gap-2">
+      <div className="w-full max-w-[96%] xl:max-w-[92%] mx-auto flex flex-col gap-2">
         {/* Attachment chips */}
         {attachedFiles.length > 0 && (
           <div className="flex flex-wrap gap-2">
@@ -191,21 +191,12 @@ export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusB
 
         {/* Input row */}
         <div
-          className={`relative flex items-end gap-2 rounded-[var(--radius-md)] p-2.5 sm:p-3 bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] focus-within:border-[var(--accent)] transition-colors ${isDragOver ? 'border-[var(--accent)]' : ''}`}
+          className={`relative flex items-end gap-2.5 rounded-[var(--radius-md)] p-2.5 sm:p-3 bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] focus-within:border-white/50 transition-colors ${isDragOver ? 'border-white/60' : ''}`}
         >
-          <button
-            ref={plusBtnRef as React.RefObject<HTMLButtonElement>}
-            onClick={() => setPlusOpen((o: boolean) => !o)}
-            className={`w-10 h-10 rounded-[var(--radius-sm)] neu-button grid place-items-center shrink-0 transition-transform duration-200 text-base text-[var(--text-secondary)] hover:text-[var(--text-primary)] ${plusOpen ? 'rotate-45' : ''}`}
-            title="More options"
-          >
-            ＋
-          </button>
-
           {/* Attach docs/files button */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="w-10 h-10 rounded-[var(--radius-sm)] neu-button grid place-items-center shrink-0 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            className="w-10 h-10 rounded-[var(--radius-sm)] neu-button grid place-items-center shrink-0 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             title="Attach files"
             aria-label="Attach files"
           >
@@ -247,26 +238,6 @@ export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusB
             </button>
           )}
 
-          {searchActive && (
-            <span className="group inline-flex items-center gap-2 pl-3 pr-2.5 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-xs sm:text-sm text-[var(--text-secondary)] shrink-0">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-60">
-                <circle cx="11" cy="11" r="7" />
-                <line x1="16.5" y1="16.5" x2="21" y2="21" />
-              </svg>
-              Search
-              <button
-                onClick={() => setSearchActive(false)}
-                className="w-4.5 h-4.5 rounded-[var(--radius-sm)] neu-button grid place-items-center opacity-60 hover:opacity-100 shrink-0"
-                title="Remove search"
-              >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </span>
-          )}
-
           <textarea
             ref={textareaRef}
             value={input}
@@ -274,20 +245,11 @@ export default function InputBar({ input, setInput, plusOpen, setPlusOpen, plusB
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             disabled={!!disabled}
-            placeholder={searchActive ? 'Search the web…' : disabled ? 'Run in progress…' : attachedFiles.length ? 'Add a message…' : 'Write your prompt...'}
+            placeholder={disabled ? 'Run in progress…' : attachedFiles.length ? 'Add a message…' : 'Write your prompt...'}
             rows={1}
             className="flex-1 bg-transparent border-none outline-none px-2.5 md:px-3.5 py-2.5 min-w-0 text-[15px] sm:text-base text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] resize-none overflow-y-auto leading-relaxed max-h-[160px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             style={{ height: '42px', scrollbarWidth: 'none' } as React.CSSProperties}
           />
-
-          <button onClick={onVoice} className="w-10 h-10 rounded-[var(--radius-sm)] neu-button grid place-items-center shrink-0 text-[var(--text-secondary)] hover:text-[var(--text-primary)]" title="Voice">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
-              <path d="M19 10a7 7 0 0 1-14 0" />
-              <line x1="12" y1="19" x2="12" y2="22" />
-              <line x1="8" y1="22" x2="16" y2="22" />
-            </svg>
-          </button>
 
           <button
             onClick={onSend}
