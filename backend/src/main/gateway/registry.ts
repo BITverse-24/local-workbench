@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { ModelConfigRow, ModelId, ModelRegistryEntry } from "../../shared/contracts.js";
 import { getSetting } from "../persistence/settings-store.js";
 
-const entry = z.object({ id: z.enum(["vision-qwen25vl", "draft-qwen3", "code-qwen25coder", "plan-qwen3-8b"]), taskTypes: z.array(z.enum(["vision", "draft", "code", "plan"])), runtime: z.enum(["mlx-lm", "llama-server", "openrouter", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(120000), healthPath: z.literal("/models"), apiKeyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(), enabled: z.boolean(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
+const entry = z.object({ id: z.enum(["vision-qwen25vl", "draft-qwen3", "code-qwen25coder", "plan-qwen3-8b"]), taskTypes: z.array(z.enum(["vision", "draft", "code", "plan"])), runtime: z.enum(["mlx-lm", "llama-server", "openrouter", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), apiKeyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(), enabled: z.boolean(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
 const config = z.object({ $comment: z.string().optional(), models: z.array(entry).min(1) }).strict();
 
 let configuredModelsPath: string | null = null;
@@ -52,7 +52,7 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
         baseUrl,
         model: row.modelName,
         capabilities: ["text", "image-input", "structured-output"],
-        requestTimeoutMs: 60000,
+        requestTimeoutMs: 180000,
         healthPath: "/models",
         enabled: true,
         maxOutputTokens: row.contextLength || 4096,
@@ -65,7 +65,7 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
         baseUrl,
         model: row.modelName,
         capabilities: ["text", "structured-output", "code-generation"],
-        requestTimeoutMs: 60000,
+        requestTimeoutMs: 300000,
         healthPath: "/models",
         enabled: true,
         maxOutputTokens: row.contextLength || 8192,
@@ -79,7 +79,7 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
         baseUrl,
         model: row.modelName,
         capabilities: ["text", "structured-output"],
-        requestTimeoutMs: 45000,
+        requestTimeoutMs: 180000,
         healthPath: "/models",
         enabled: true,
         maxOutputTokens: row.contextLength || 8192,
@@ -93,7 +93,7 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
         baseUrl,
         model: row.modelName,
         capabilities: ["text", "structured-output"],
-        requestTimeoutMs: 45000,
+        requestTimeoutMs: 180000,
         healthPath: "/models",
         enabled: true,
         maxOutputTokens: row.contextLength || 8192,
@@ -112,7 +112,7 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
       baseUrl: `http://${host}:${port}/v1`,
       model: draftRow.modelName,
       capabilities: ["text", "structured-output"],
-      requestTimeoutMs: 45000,
+      requestTimeoutMs: 180000,
       healthPath: "/models",
       enabled: true,
       maxOutputTokens: draftRow.contextLength || 8192,

@@ -44,6 +44,22 @@ describe("code response validation", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts empty string artifact metadata for a chat-only response (from local LLMs)", () => {
+    const result = validateCode({
+      filename: "task.py",
+      source: "import csv\nwith open('input.csv', newline='') as handle:\n    print(sum(1 for _ in csv.DictReader(handle)))",
+      expectedResult: "Prints the number of CSV rows.",
+      inputFiles: ["input.csv"],
+      outputFiles: [],
+      allowedImports: ["csv"],
+      outputMode: "chat",
+      artifactKind: "",
+      artifactFilename: "",
+      artifactRationale: "",
+    });
+    expect(result.ok).toBe(true);
+  });
+
   it("rejects command-line and unapproved imports", () => {
     const result = validateCode({
       filename: "task.py",

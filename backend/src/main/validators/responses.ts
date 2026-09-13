@@ -3,7 +3,8 @@ import type { ChatResult, CodeDraftResult, Finding, VisionResult } from "../../s
 const page = z.object({ id: z.string().min(1), page: z.number().int().positive(), text: z.string().min(1).max(8000), location: z.string().max(200).optional() }).strict();
 const finding = z.object({ findingId: z.string().min(1), title: z.string().min(1).max(200), value: z.string().min(1).max(1000), pageReferenceIds: z.array(z.string().min(1)).min(1), confidence: z.enum(["high", "medium", "low"]), evidence: z.string().min(1).max(2000) }).strict();
 export const visionResultSchema = z.object({ sourceText: z.string().max(50000), findings: z.array(finding), pageReferences: z.array(page), warnings: z.array(z.string().max(500)).optional() }).strict();
-const nullableOptional = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((value) => value === null ? undefined : value, schema.optional());
+const nullableOptional = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((value) => (value === null || (typeof value === "string" && value.trim() === "") ? undefined : value), schema.optional());
 export const codeResultSchema = z.object({
   filename: z.literal("task.py"),
   source: z.string().min(1).max(30000),
@@ -16,7 +17,10 @@ export const codeResultSchema = z.object({
   artifactFilename: nullableOptional(z.string().min(1).max(200)),
   artifactRationale: nullableOptional(z.string().max(1000)),
 }).strict();
-export const codeSummarySchema = z.object({ summary: z.string().min(1).max(4000), verified: z.boolean() }).strict();
+export const codeSummarySchema = z.object({
+  summary: z.string().min(1).max(4000),
+  verified: z.preprocess((v) => (typeof v === "string" ? v.toLowerCase() === "true" : v), z.boolean()),
+}).strict();
 export const chatResultSchema = z.object({ text: z.string().min(1).max(40000) });
 function failure(error: z.ZodError) {
   const first = error.issues[0];
