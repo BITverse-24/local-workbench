@@ -63,34 +63,26 @@ This is the direct PS example and the flagship flow.
 ### Visible sequence
 
 1. The user drops both PDFs into the workbench.
-2. The router selects the vision/OCR model and shows the reason `scanned
-   inspection bundle`.
+2. The router dispatches the task to the reasoning/drafting agent (`draft-qwen3`) with reason `inspection report review and drafting`.
 3. The transcript streams the plan:
-   - OCR each page and preserve page references.
-   - Extract measurements, defects, and handwritten annotations.
+   - Invoke vision/OCR tool (`vision-qwen25vl`) to extract measurements, defects, and handwritten annotations across pages.
    - Flag uncertain handwriting for human verification.
-   - Compare findings with local SOP-114 criteria.
+   - Query governing SOP criteria dynamically via knowledge base (`retrieve_sop`).
+   - Compare findings against local standards and evaluate compliance.
    - Draft a conditional approval note.
    - Generate a Word document after confirmation.
-4. The vision step displays the tube-thickness finding, pitting finding,
-   gasket degradation, and the handwritten “RECHECK WELD JOINT 4B” annotation.
-5. The local criteria step shows the relevant SOP clause and produces visible
-   `fail`, `pass`, and `unknown` statuses rather than a generic summary.
-6. The router switches to the drafting model with reason `compose grounded
-   approval note`.
-7. The draft contains an evidence table, citations, corrective actions, and a
-   warning that approval authority is missing.
-8. The user approves document generation.
-9. The document tool creates `approval-note-E201.docx` with letterhead,
-   findings, handwritten evidence, recommendation, and grounding references.
+4. The agent executes the vision extraction tool (`ocr_extract`), displaying the tube-thickness finding, pitting finding, gasket degradation, and the handwritten “RECHECK WELD JOINT 4B” annotation with source page references.
+5. The agent executes the grounding tool (`retrieve_sop`), retrieving the governing SOP clause and evaluating `fail`, `pass`, and `unknown` statuses dynamically rather than from hardcoded rules.
+6. The drafting model synthesizes the grounded approval note containing the evidence table, exact citations, corrective actions, and a warning that approval authority is missing.
+7. The user approves document generation via the confirmation modal.
+8. The document tool creates the publication-grade Word deliverable (`.docx`) with formal letterhead, findings table, handwritten evidence, recommendation, and attestation block.
 
 ### Expected proof
 
-- Auto-routing: `vision -> draft`.
-- Multimodal evidence: typed scan plus handwritten annotation.
-- Agent behavior: plan, OCR, anomaly detection, criteria check, drafting,
-  document generation.
-- Grounding: `[SOP-114 §3.2]` appears beside the applicable decision.
+- Multi-model orchestration: Reasoning agent (`draft-qwen3`) coordinates specialized tools (vision extraction via `vision-qwen25vl`, RAG grounding, and OpenXML `.docx` generation).
+- Multimodal evidence: typed scan plus handwritten annotation preserved with real page references.
+- Agent behavior: plan, vision tool call, dynamic criteria retrieval, evaluation, drafting, document generation.
+- Grounding: `[SOP-114 §3.2]` cited beside the applicable evaluation findings.
 - Safety: conditional clearance only; no unsupported final approval.
 - Sovereignty: zero external requests and a recorded blocked attempt.
 
@@ -176,29 +168,23 @@ a large document.
 
 ### Visible sequence
 
-1. The user uploads the drawing.
-2. The router selects the vision-reasoning model with reason `engineering
-   drawing interpretation`.
+1. The user uploads the drawing (`pump-skid-P204.svg`).
+2. The router dispatches the task to the reasoning/drafting agent (`draft-qwen3`) with reason `engineering drawing compliance review`.
 3. The agent displays a plan:
-   - Read drawing identifiers and labels.
-   - Extract valve class and line diameter.
-   - Compare each value with SOP-220.
-   - Show the numeric mismatch and corrective action.
-4. The vision step identifies `XV-204 Class 150` and `DN80 discharge line`.
-5. The local criteria step applies `[SOP-220 §4.2]` and `[SOP-220 §4.3]`:
-   - 150 < 300, non-compliant.
-   - 80 < 100, non-compliant.
-6. The router hands the structured observations to the drafting/reasoning
-   model.
-7. The artifact pane shows a short corrective-action note. It explicitly says
-   the drawing is not approved and must be revised and rechecked.
+   - Invoke visual extraction tool to read drawing identifiers, component tags, and dimensions.
+   - Query governing specification dynamically from the local knowledge base (`retrieve_sop`).
+   - Compare extracted parameters against retrieved criteria.
+   - Draft reviewer corrective-action deliverable note (`corrective-action-note.md`).
+4. The agent executes the visual extraction tool (`inspect_drawing`), identifying `XV-204 Class 150` and `DN80 discharge line` from the drawing.
+5. The agent executes the grounding tool (`retrieve_sop`), querying the knowledge base and retrieving `[SOP-220 §4.2]` and `[SOP-220 §4.3]`.
+6. The reasoning model compares observed values against the retrieved criteria (150 < 300 non-compliant, 80 < 100 non-compliant) dynamically without hardcoded logic.
+7. The artifact pane renders the generated reviewer deliverable (`corrective-action-note.md`), explicitly stating the drawing is not approved and must be revised.
 
 ### Expected proof
 
-- Multimodal understanding: drawing labels become structured evidence.
-- Grounded reasoning: two numeric comparisons with exact SOP citations.
-- Model collaboration: vision interpretation followed by reasoning/drafting.
-- Output range: concise compliance note rather than a forced Word report.
+- Multimodal tool execution: drawing components and labels extracted via visual tool and supplied directly to the reasoning agent.
+- Dynamic RAG grounding: criteria retrieved from the local knowledge base and evaluated without hardcoded demo if-statements.
+- Output range: concise markdown compliance note (`.md`) artifact rendered in the artifact previewer.
 - Sovereignty: zero external requests and a blocked vendor-cloud attempt.
 
 ## Closing panel narration

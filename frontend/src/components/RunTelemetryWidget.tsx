@@ -25,6 +25,7 @@ function iconFor(e: RunEvent): string {
     case "confirmation_required": return "◉";
     case "artifact_ready": return "⬢";
     case "assistant_message": return "✎";
+    case "grounding_context": return "📖";
     case "error": return "✕";
     default: return "·";
   }
@@ -40,6 +41,7 @@ function labelFor(e: RunEvent): string {
     case "confirmation_required": return `${e.action.prompt} [${e.action.kind}]`;
     case "artifact_ready": return `${e.artifact.filename} (${e.artifact.kind})`;
     case "assistant_message": return e.text.slice(0, 120);
+    case "grounding_context": return e.status === "injected" ? `SOP Grounding: ${e.chunkCount ?? 0} chunk(s) injected` : e.status === "retrieving" ? "SOP Grounding: retrieving..." : "SOP Grounding: skipped";
     case "error": return `${e.code}: ${e.message}`;
     default: return "";
   }
@@ -47,18 +49,17 @@ function labelFor(e: RunEvent): string {
 
 function phaseColor(phase?: string): string {
   switch (phase) {
-    case "request": return "text-sky-300";
-    case "http_response": return "text-zinc-300";
-    case "envelope": return "text-violet-300";
-    case "provider_content_raw": return "text-amber-300";
-    case "parsed_json": return "text-emerald-300";
-    case "normalized": return "text-emerald-400";
-    case "gateway_error": return "text-red-400";
+    case "gateway_error":
     case "parse_error":
     case "normalize_error":
     case "envelope_parse_error":
-    case "provider_error": return "text-red-300";
-    default: return "text-zinc-400";
+    case "provider_error":
+      return "text-[var(--status-error)]";
+    case "normalized":
+    case "parsed_json":
+      return "text-[var(--status-success)]";
+    default:
+      return "text-[var(--text-secondary)]";
   }
 }
 
@@ -160,15 +161,15 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
 
   return (
     <>
-      <div className="space-y-3 p-4 rounded-2xl neu-card">
+      <div className="space-y-3 p-3.5 rounded-[var(--radius-md)] neu-card border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium opacity-60">Run Diagnostics</span>
-            {loading && <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />}
-            {hasError && <span className="w-1.5 h-1.5 rounded-full bg-red-400" title="Error in logs" />}
+            <span className="text-xs font-medium text-[var(--text-secondary)]">Run diagnostics</span>
+            {loading && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />}
+            {hasError && <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-error)]" title="Error in logs" />}
           </div>
           {runId && (
-            <span className="text-[10px] font-mono opacity-40">
+            <span className="text-[10px] font-mono text-[var(--text-tertiary)]">
               run:{runId.slice(0, 8)}
             </span>
           )}
@@ -177,46 +178,46 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
         {/* 1. Run Transcript Row (Latest Update Only) */}
         <div
           onClick={() => handleOpenModal("transcript")}
-          className="p-2.5 rounded-xl bg-black/20 hover:bg-black/30 border border-white/5 cursor-pointer transition-colors group"
+          className="p-2.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface)] border border-[var(--border-subtle)] cursor-pointer transition-colors group"
         >
-          <div className="flex items-center justify-between text-[11px] font-medium opacity-70 mb-1">
+          <div className="flex items-center justify-between text-[11px] font-medium text-[var(--text-secondary)] mb-1">
             <div className="flex items-center gap-1.5">
-              <span>Run Transcript</span>
+              <span>Run transcript</span>
               {runEvents.length > 0 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/10 font-mono">
+                <span className="text-[10px] px-1.5 py-0.2 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] text-[var(--text-tertiary)] font-mono border border-[var(--border-subtle)]">
                   {runEvents.length}
                 </span>
               )}
             </div>
-            <span className="opacity-40 group-hover:opacity-100 text-xs transition-opacity" title="Pop open detail">
+            <span className="text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)] text-xs transition-colors" title="Expand detail">
               ⤢
             </span>
           </div>
           {latestEvent ? (
             <div className="flex items-center gap-2 text-xs truncate">
-              <span className="opacity-50 shrink-0 font-mono">{iconFor(latestEvent)}</span>
-              <span className="opacity-80 truncate">{labelFor(latestEvent)}</span>
+              <span className="text-[var(--text-tertiary)] shrink-0 font-mono">{iconFor(latestEvent)}</span>
+              <span className="text-[var(--text-primary)] truncate">{labelFor(latestEvent)}</span>
             </div>
           ) : (
-            <div className="text-[11px] opacity-35 italic">No transcript events yet</div>
+            <div className="text-[11px] text-[var(--text-tertiary)] italic">No transcript events yet</div>
           )}
         </div>
 
         {/* 2. Model Trace Row (Latest Update Only) */}
         <div
           onClick={() => handleOpenModal("trace")}
-          className="p-2.5 rounded-xl bg-black/20 hover:bg-black/30 border border-white/5 cursor-pointer transition-colors group"
+          className="p-2.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface)] border border-[var(--border-subtle)] cursor-pointer transition-colors group"
         >
-          <div className="flex items-center justify-between text-[11px] font-medium opacity-70 mb-1">
+          <div className="flex items-center justify-between text-[11px] font-medium text-[var(--text-secondary)] mb-1">
             <div className="flex items-center gap-1.5">
-              <span>Model Trace</span>
+              <span>Model trace</span>
               {entries.length > 0 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/10 font-mono">
+                <span className="text-[10px] px-1.5 py-0.2 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] text-[var(--text-tertiary)] font-mono border border-[var(--border-subtle)]">
                   {entries.length}
                 </span>
               )}
             </div>
-            <span className="opacity-40 group-hover:opacity-100 text-xs transition-opacity" title="Pop open detail">
+            <span className="text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)] text-xs transition-colors" title="Expand detail">
               ⤢
             </span>
           </div>
@@ -225,38 +226,38 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
               <span className={`text-[10px] font-mono shrink-0 ${phaseColor(latestTrace.phase)}`}>
                 [{latestTrace.phase ?? "?"}]
               </span>
-              <span className="opacity-80 truncate">{tracePreview(latestTrace)}</span>
+              <span className="text-[var(--text-primary)] truncate font-mono text-[11px]">{tracePreview(latestTrace)}</span>
             </div>
           ) : (
-            <div className="text-[11px] opacity-35 italic">No model trace entries yet</div>
+            <div className="text-[11px] text-[var(--text-tertiary)] italic">No model trace entries yet</div>
           )}
         </div>
 
         {/* 3. Per-Request Files Row (Latest Update Only) */}
         <div
           onClick={() => handleOpenModal("files")}
-          className="p-2.5 rounded-xl bg-black/20 hover:bg-black/30 border border-white/5 cursor-pointer transition-colors group"
+          className="p-2.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface)] border border-[var(--border-subtle)] cursor-pointer transition-colors group"
         >
-          <div className="flex items-center justify-between text-[11px] font-medium opacity-70 mb-1">
+          <div className="flex items-center justify-between text-[11px] font-medium text-[var(--text-secondary)] mb-1">
             <div className="flex items-center gap-1.5">
-              <span>Per-Request Files</span>
+              <span>Per-request files</span>
               {files.length > 0 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/10 font-mono">
+                <span className="text-[10px] px-1.5 py-0.2 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] text-[var(--text-tertiary)] font-mono border border-[var(--border-subtle)]">
                   {files.length}
                 </span>
               )}
             </div>
-            <span className="opacity-40 group-hover:opacity-100 text-xs transition-opacity" title="Pop open detail">
+            <span className="text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)] text-xs transition-colors" title="Expand detail">
               ⤢
             </span>
           </div>
           {latestFile ? (
             <div className="flex items-center gap-2 text-xs truncate font-mono">
-              <span className="opacity-40 shrink-0">📄</span>
-              <span className="opacity-80 truncate">{latestFile}</span>
+              <span className="text-[var(--text-tertiary)] shrink-0">📄</span>
+              <span className="text-[var(--text-primary)] truncate">{latestFile}</span>
             </div>
           ) : (
-            <div className="text-[11px] opacity-35 italic">No per-request files yet</div>
+            <div className="text-[11px] text-[var(--text-tertiary)] italic">No per-request files yet</div>
           )}
         </div>
       </div>
@@ -264,24 +265,24 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
       {/* Independent Modal Dialog: Run Transcript */}
       {activeModal === "transcript" && (
         <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-apple-fade"
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
           onClick={() => setActiveModal(null)}
         >
           <div
-            className="bg-[#1c1c1c] border border-white/10 rounded-2xl w-full max-w-3xl h-[80vh] flex flex-col overflow-hidden shadow-2xl animate-apple-scaleIn"
+            className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] w-full max-w-3xl h-[80vh] flex flex-col overflow-hidden"
             onClick={(ev) => ev.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-black/30">
+            <div className="flex items-center justify-between p-4 border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)]">
               <div className="flex items-center gap-2.5">
-                <span className="text-base font-semibold">Run Transcript</span>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/10 font-mono text-white/80">
+                <span className="text-sm font-medium text-[var(--text-primary)]">Run transcript</span>
+                <span className="text-xs px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] font-mono text-[var(--text-secondary)]">
                   {runEvents.length} {runEvents.length === 1 ? "event" : "events"}
                 </span>
-                {runId && <span className="text-[11px] font-mono opacity-40 ml-2">run:{runId.slice(0, 8)}</span>}
+                {runId && <span className="text-[11px] font-mono text-[var(--text-tertiary)] ml-2">run:{runId.slice(0, 8)}</span>}
               </div>
               <button
                 onClick={() => setActiveModal(null)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/15 grid place-items-center text-sm transition-colors"
+                className="w-7 h-7 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                 title="Close"
               >
                 ✕
@@ -290,7 +291,7 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
 
             <div className="flex-1 overflow-hidden p-4">
               {runEvents.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-xs opacity-40 italic">
+                <div className="h-full flex items-center justify-center text-xs text-[var(--text-tertiary)] italic">
                   No run events recorded yet.
                 </div>
               ) : (
@@ -298,12 +299,12 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
                   {runEvents.map((e, idx) => (
                     <div
                       key={idx}
-                      className="flex items-start gap-3 p-2.5 rounded-xl bg-black/25 border border-white/5 text-xs font-mono"
+                      className="flex items-start gap-3 p-2.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs font-mono"
                     >
-                      <span className="opacity-40 shrink-0 w-5 text-center mt-0.5">{iconFor(e)}</span>
+                      <span className="text-[var(--text-tertiary)] shrink-0 w-5 text-center mt-0.5">{iconFor(e)}</span>
                       <div className="flex-1 break-words">
-                        <span className="opacity-40 mr-2">[{e.type}]</span>
-                        <span className="opacity-90">{labelFor(e)}</span>
+                        <span className="text-[var(--text-tertiary)] mr-2">[{e.type}]</span>
+                        <span className="text-[var(--text-primary)]">{labelFor(e)}</span>
                       </div>
                     </div>
                   ))}
@@ -317,37 +318,37 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
       {/* Independent Modal Dialog: Model Trace */}
       {activeModal === "trace" && (
         <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-apple-fade"
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
           onClick={() => setActiveModal(null)}
         >
           <div
-            className="bg-[#1c1c1c] border border-white/10 rounded-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden shadow-2xl animate-apple-scaleIn"
+            className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
             onClick={(ev) => ev.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-black/30">
+            <div className="flex items-center justify-between p-4 border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)]">
               <div className="flex items-center gap-2.5">
-                <span className="text-base font-semibold">Model Trace</span>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/10 font-mono text-white/80">
+                <span className="text-sm font-medium text-[var(--text-primary)]">Model trace</span>
+                <span className="text-xs px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] font-mono text-[var(--text-secondary)]">
                   {entries.length} {entries.length === 1 ? "entry" : "entries"}
                 </span>
                 {hasError && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-medium">
+                  <span className="text-[10px] px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--status-error)]/15 text-[var(--status-error)] border border-[var(--status-error)]/30 font-medium">
                     errors detected
                   </span>
                 )}
-                {runId && <span className="text-[11px] font-mono opacity-40 ml-2">run:{runId.slice(0, 8)}</span>}
+                {runId && <span className="text-[11px] font-mono text-[var(--text-tertiary)] ml-2">run:{runId.slice(0, 8)}</span>}
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => void fetchLogs()}
-                  className="px-3 py-1 rounded-full neu-button text-xs font-medium"
+                  className="px-2.5 py-1 rounded-[var(--radius-sm)] neu-button text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium"
                 >
                   Refresh
                 </button>
                 <button
                   onClick={() => setActiveModal(null)}
-                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/15 grid place-items-center text-sm transition-colors ml-1"
+                  className="w-7 h-7 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors ml-1"
                   title="Close"
                 >
                   ✕
@@ -357,7 +358,7 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
 
             <div className="flex-1 overflow-hidden p-4">
               {entries.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-xs opacity-40 italic">
+                <div className="h-full flex items-center justify-center text-xs text-[var(--text-tertiary)] italic">
                   No model trace entries logged yet for this run.
                 </div>
               ) : (
@@ -365,8 +366,8 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
                   {entries.map((entry, idx) => (
                     <div
                       key={idx}
-                      className={`rounded-xl p-3 bg-black/25 border border-white/5 transition-colors ${
-                        expandedTraceIdx === idx ? "bg-black/45 border-white/15" : ""
+                      className={`rounded-[var(--radius-sm)] p-3 bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] transition-colors ${
+                        expandedTraceIdx === idx ? "bg-[var(--bg-surface-raised)] border-[var(--border-muted)]" : ""
                       }`}
                     >
                       <button
@@ -376,24 +377,24 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
                         <span className={`text-[11px] font-mono shrink-0 mt-0.5 ${phaseColor(entry.phase)}`}>
                           [{entry.phase ?? "?"}]
                         </span>
-                        <span className="text-xs opacity-80 break-all leading-relaxed flex-1 font-mono">
+                        <span className="text-xs text-[var(--text-secondary)] break-all leading-relaxed flex-1 font-mono">
                           {tracePreview(entry)}
                         </span>
-                        <span className="text-[10px] opacity-30 shrink-0">
+                        <span className="text-[10px] text-[var(--text-tertiary)] shrink-0 font-mono">
                           {entry.timestamp ? new Date(entry.timestamp as string).toLocaleTimeString() : ""}
                         </span>
                       </button>
                       {expandedTraceIdx === idx && (
-                        <div className="mt-2.5 pt-2 border-t border-white/10 flex flex-col gap-2">
+                        <div className="mt-2.5 pt-2 border-t border-[var(--border-subtle)] flex flex-col gap-2">
                           <div className="flex justify-end">
                             <button
                               onClick={() => handleCopy(entry)}
-                              className="px-2.5 py-1 rounded-full neu-button text-[11px]"
+                              className="px-2.5 py-1 rounded-[var(--radius-sm)] neu-button text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                             >
-                              {copyFeedback ? "Copied!" : "Copy Payload"}
+                              {copyFeedback ? "Copied" : "Copy payload"}
                             </button>
                           </div>
-                          <pre className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-all bg-black/50 rounded-lg p-3 max-h-[300px] overflow-auto">
+                          <pre className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-all bg-[var(--bg-canvas)] rounded-[var(--radius-sm)] border border-[var(--border-subtle)] text-[var(--text-primary)] p-3 max-h-[300px] overflow-auto">
                             {JSON.stringify(entry, null, 2)}
                           </pre>
                         </div>
@@ -410,34 +411,34 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
       {/* Independent Modal Dialog: Per-Request Files */}
       {activeModal === "files" && (
         <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-apple-fade"
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
           onClick={() => setActiveModal(null)}
         >
           <div
-            className="bg-[#1c1c1c] border border-white/10 rounded-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden shadow-2xl animate-apple-scaleIn"
+            className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
             onClick={(ev) => ev.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-black/30">
+            <div className="flex items-center justify-between p-4 border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)]">
               <div className="flex items-center gap-2.5">
-                <span className="text-base font-semibold">Per-Request Files</span>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/10 font-mono text-white/80">
+                <span className="text-sm font-medium text-[var(--text-primary)]">Per-request files</span>
+                <span className="text-xs px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] font-mono text-[var(--text-secondary)]">
                   {files.length} {files.length === 1 ? "file" : "files"}
                 </span>
-                {runId && <span className="text-[11px] font-mono opacity-40 ml-2">run:{runId.slice(0, 8)}</span>}
+                {runId && <span className="text-[11px] font-mono text-[var(--text-tertiary)] ml-2">run:{runId.slice(0, 8)}</span>}
               </div>
 
               <div className="flex items-center gap-2">
                 {selectedFileContent != null && (
                   <button
                     onClick={() => handleCopy(selectedFileContent)}
-                    className="px-3 py-1 rounded-full neu-button text-xs font-medium"
+                    className="px-2.5 py-1 rounded-[var(--radius-sm)] neu-button text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium"
                   >
-                    {copyFeedback ? "Copied!" : "Copy JSON"}
+                    {copyFeedback ? "Copied" : "Copy JSON"}
                   </button>
                 )}
                 <button
                   onClick={() => setActiveModal(null)}
-                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/15 grid place-items-center text-sm transition-colors ml-1"
+                  className="w-7 h-7 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors ml-1"
                   title="Close"
                 >
                   ✕
@@ -447,20 +448,20 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
 
             <div className="flex-1 overflow-hidden p-4">
               {files.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-xs opacity-40 italic">
+                <div className="h-full flex items-center justify-center text-xs text-[var(--text-tertiary)] italic">
                   No per-request trace files generated yet for this run.
                 </div>
               ) : (
                 <div className="h-full flex flex-col gap-3">
-                  <div className="flex flex-wrap gap-1.5 max-h-[90px] overflow-y-auto p-1 bg-black/20 rounded-xl border border-white/5">
+                  <div className="flex flex-wrap gap-1.5 max-h-[90px] overflow-y-auto p-1.5 bg-[var(--bg-canvas)] rounded-[var(--radius-sm)] border border-[var(--border-subtle)]">
                     {files.map((f) => (
                       <button
                         key={f}
                         onClick={() => void openFile(f)}
-                        className={`px-3 py-1 rounded-full text-xs font-mono transition-colors ${
+                        className={`px-2.5 py-1 rounded-[var(--radius-sm)] text-xs font-mono border transition-colors ${
                           selectedFileName === f
-                            ? "bg-white/20 text-white font-semibold shadow-sm"
-                            : "bg-white/5 hover:bg-white/10 opacity-70"
+                            ? "bg-[var(--accent-muted)] text-[var(--accent)] border-[var(--accent)]/40 font-medium"
+                            : "bg-[var(--bg-surface-raised)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                         }`}
                       >
                         {f}
@@ -468,11 +469,11 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
                     ))}
                   </div>
 
-                  <div className="flex-1 bg-black/40 rounded-xl border border-white/10 overflow-hidden flex flex-col">
-                    <div className="p-2.5 px-4 bg-black/30 border-b border-white/10 text-xs font-mono opacity-60 flex justify-between">
+                  <div className="flex-1 bg-[var(--bg-canvas)] rounded-[var(--radius-sm)] border border-[var(--border-subtle)] overflow-hidden flex flex-col">
+                    <div className="p-2.5 px-4 bg-[var(--bg-surface-raised)] border-b border-[var(--border-subtle)] text-xs font-mono text-[var(--text-secondary)] flex justify-between">
                       <span>{selectedFileName ?? "Select a file to inspect"}</span>
                     </div>
-                    <pre className="p-4 text-xs font-mono leading-relaxed whitespace-pre-wrap break-all overflow-auto flex-1 text-emerald-300/90">
+                    <pre className="p-4 text-xs font-mono leading-relaxed whitespace-pre-wrap break-all overflow-auto flex-1 text-[var(--text-primary)]">
                       {selectedFileContent != null
                         ? typeof selectedFileContent === "string"
                           ? selectedFileContent

@@ -202,3 +202,120 @@ export function logGatewayError(request: { requestId: string; taskType: string }
     `${c.red}└──${"─".repeat(56)}${c.reset}`
   );
 }
+
+export function logHarnessToolCall(call: {
+  tool: string;
+  args?: Record<string, unknown>;
+  runId?: string;
+  workspaceRoot?: string;
+}): void {
+  const border = c.yellow;
+  const toolName = call.tool;
+  const header = `${border}┌── [Tool Executing: ${c.bold}${toolName}${c.reset}${border}] ${"─".repeat(Math.max(4, 44 - toolName.length))}${c.reset}`;
+  const lines: string[] = [header];
+
+  if (call.tool === "run_command" && call.args?.command) {
+    lines.push(`${border}│${c.reset} Command:  ${c.bold}${c.green}${call.args.command}${c.reset}`);
+    if (call.workspaceRoot) {
+      lines.push(`${border}│${c.reset} CWD:      ${c.dim}${call.workspaceRoot}${c.reset}`);
+    }
+  } else if (call.tool === "write_file" && call.args?.path) {
+    const contentLen = typeof call.args.content === "string" ? call.args.content.length : 0;
+    lines.push(`${border}│${c.reset} Target:   ${c.bold}${call.args.path}${c.reset} (${contentLen} chars)`);
+  } else if (call.tool === "read_file" && call.args?.path) {
+    lines.push(`${border}│${c.reset} Reading:  ${c.bold}${call.args.path}${c.reset}`);
+  } else if (call.tool === "list_dir") {
+    lines.push(`${border}│${c.reset} Path:     ${c.bold}${call.args?.path ?? "."}${c.reset}`);
+  } else if (call.tool === "search") {
+    lines.push(`${border}│${c.reset} Query:    "${c.bold}${call.args?.query ?? ""}${c.reset}" in ${call.args?.path ?? "."}`);
+  } else if (call.args) {
+    lines.push(`${border}│${c.reset} Args:     ${c.dim}${JSON.stringify(call.args)}${c.reset}`);
+  }
+
+  lines.push(`${border}└──${"─".repeat(56)}${c.reset}`);
+  console.log(lines.join("\n"));
+}
+
+export function logHarnessToolResult(
+  call: {
+    tool: string;
+    args?: Record<string, unknown>;
+  },
+  result: {
+    tool: string;
+    result: unknown;
+  },
+): void {
+  const toolName = call.tool;
+  if (toolName === "run_command") {
+    const cmdRes = result.result as {
+      stdout?: string;
+      stderr?: string;
+      exitCode?: number;
+      timedOut?: boolean;
+      durationMs?: number;
+    };
+    const success = (cmdRes.exitCode ?? 0) === 0 && !cmdRes.timedOut;
+    const border = success ? c.green : c.red;
+    const statusStr = success
+      ? `${c.green}✔ SUCCESS${c.reset} (exit 0 in ${cmdRes.durationMs ?? 0}ms)`
+      : `${c.red}✖ FAILED${c.reset} (exit ${cmdRes.exitCode ?? 1} in ${cmdRes.durationMs ?? 0}ms${cmdRes.timedOut ? " TIMED OUT" : ""})`;
+
+    const lines = [
+      `${border}┌── [Command Output] ${statusStr} ${border}${"─".repeat(Math.max(4, 24))}${c.reset}`,
+    ];
+    if (cmdRes.stdout?.trim()) {
+      lines.push(`${border}├── Stdout ${"─".repeat(46)}${c.reset}`);
+      for (const l of cmdRes.stdout.trim().split("\n").slice(0, 15)) {
+        lines.push(`${border}│${c.reset}   ${l}`);
+      }
+      if (cmdRes.stdout.trim().split("\n").length > 15) {
+        lines.push(`${border}│${c.reset}   ${c.dim}... (${cmdRes.stdout.trim().split("\n").length - 15} more lines)${c.reset}`);
+      }
+    }
+    if (cmdRes.stderr?.trim()) {
+      lines.push(`${border}├── Stderr ${"─".repeat(46)}${c.reset}`);
+      for (const l of cmdRes.stderr.trim().split("\n").slice(0, 15)) {
+        lines.push(`${border}│${c.reset}   ${c.red}${l}${c.reset}`);
+      }
+    }
+    if (!cmdRes.stdout?.trim() && !cmdRes.stderr?.trim()) {
+      lines.push(`${border}│${c.reset}   ${c.dim}(no output emitted)${c.reset}`);
+    }
+    lines.push(`${border}└──${"─".repeat(56)}${c.reset}`);
+    console.log(lines.join("\n"));
+  } else if (toolName === "write_file") {
+    const border = c.green;
+    console.log(
+      `${border}┌── [Tool Result: write_file] ✔ SUCCESS ${"─".repeat(24)}${c.reset}\n` +
+      `${border}│${c.reset} File:   ${c.bold}${call.args?.path}${c.reset}\n` +
+      `${border}│${c.reset} Status: Written to workspace disk\n` +
+      `${border}└──${"─".repeat(56)}${c.reset}`
+    );
+  } else if (toolName === "read_file") {
+    const border = c.cyan;
+    const content = typeof result.result === "string" ? result.result : "";
+    const linesCount = content.split("\n").length;
+    console.log(
+      `${border}┌── [Tool Result: read_file] ✔ ${"─".repeat(30)}${c.reset}\n` +
+      `${border}│${c.reset} File:   ${c.bold}${call.args?.path}${c.reset} (${linesCount} lines, ${content.length} chars)\n` +
+      `${border}└──${"─".repeat(56)}${c.reset}`
+    );
+  } else if (toolName === "list_dir") {
+    const border = c.cyan;
+    const entries = Array.isArray(result.result) ? result.result : [];
+    const names = entries.slice(0, 8).map((e: any) => e.name).join(", ");
+    console.log(
+      `${border}┌── [Tool Result: list_dir] ✔ (${entries.length} items) ${"─".repeat(24)}${c.reset}\n` +
+      `${border}│${c.reset} Entries: ${c.dim}${names}${entries.length > 8 ? "..." : ""}${c.reset}\n` +
+      `${border}└──${"─".repeat(56)}${c.reset}`
+    );
+  } else if (toolName === "search") {
+    const border = c.cyan;
+    const matches = Array.isArray(result.result) ? result.result : [];
+    console.log(
+      `${border}┌── [Tool Result: search] ✔ (${matches.length} matches) ${"─".repeat(24)}${c.reset}\n` +
+      `${border}└──${"─".repeat(56)}${c.reset}`
+    );
+  }
+}

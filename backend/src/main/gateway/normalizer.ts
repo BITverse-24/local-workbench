@@ -127,13 +127,23 @@ export function normalizeResponse(value: unknown, request: ModelRequest): ModelR
   const raw = value as Record<string, unknown>;
   let result = raw.result ?? value;
 
+  // Clean empty strings for optional fields in structured objects
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    const obj = result as Record<string, unknown>;
+    for (const key of ["artifactKind", "artifactFilename", "artifactRationale", "outputMode"]) {
+      if (typeof obj[key] === "string" && (obj[key] as string).trim() === "") {
+        delete obj[key];
+      }
+    }
+  }
+
   // For chat-result, normalize alternative keys and scalar values to { text: string }
   if (request.responseFormat === "chat-result" && result && typeof result === "object" && !Array.isArray(result)) {
     const obj = result as Record<string, unknown>;
     if (obj.text !== undefined && obj.text !== null) {
       result = { text: String(obj.text).trim() };
     } else {
-      const altKeys = ["message", "response", "answer", "reply", "content", "output", "result", "summary"];
+      const altKeys = ["message", "response", "answer", "reply", "content", "output", "result", "summary", "displayed_text"];
       let found: string | undefined;
       for (const k of altKeys) {
         if (obj[k] !== undefined && obj[k] !== null) {

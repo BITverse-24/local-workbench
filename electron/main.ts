@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -104,9 +104,17 @@ function createWindow(): void {
     height: 720,
     minWidth: 1200,
     minHeight: 720,
+    show: false,
+    backgroundColor: "#181818",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
     },
+  });
+
+  win.once("ready-to-show", () => {
+    if (win && !win.isDestroyed()) {
+      win.show();
+    }
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -160,6 +168,8 @@ app.whenReady().then(async () => {
       schemaPath: app.isPackaged
         ? path.join(process.resourcesPath, "backend", "schema.sql")
         : path.join(REPO_ROOT, "backend", "src", "main", "persistence", "schema.sql"),
+    }, (wsEvent) => {
+      if (win && !win.isDestroyed()) win.webContents.send("workspace:event", wsEvent);
     });
     console.log("[backend] initialized");
 
@@ -253,6 +263,54 @@ app.whenReady().then(async () => {
       if (chosen.canceled || !chosen.filePath) return { saved: false as const };
       copyFileSync(source, chosen.filePath);
       return { saved: true as const, filename: path.basename(chosen.filePath) };
+    });
+    ipcMain.handle("workbench:copyArtifact", async (_event, input) => {
+      const raw = input as { runId?: string; artifactId?: string };
+      if (!raw?.runId || !raw?.artifactId) throw new Error("runId and artifactId required");
+      if (!manager) throw new Error("backend not initialized");
+      const ref = manager.artifact(raw.runId, raw.artifactId) as { relativePath: string; filename: string };
+      const { absoluteDataPath } = await import("../backend/src/main/run/filesystem.js");
+      const abs = absoluteDataPath(ref.relativePath);
+      if (!existsSync(abs)) throw new Error("Artifact file not found");
+
+      const ext = path.extname(ref.filename).toLowerCase();
+      const textExtensions = [
+        ".txt", ".md", ".py", ".csv", ".json", ".js", ".ts", ".jsx",
+        ".tsx", ".html", ".css", ".yaml", ".yml", ".xml", ".sh", ".sql"
+      ];
+
+      if (textExtensions.includes(ext)) {
+        const text = readFileSync(abs, "utf8");
+        clipboard.writeText(text);
+        return { copied: true as const, kind: "text" as const, content: text, filename: ref.filename };
+      } else {
+        if (process.platform === "darwin") {
+          const plist = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><array><string>${abs}</string></array></plist>`;
+          clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(plist));
+        } else {
+          clipboard.writeText(abs);
+        }
+        return { copied: true as const, kind: "file" as const, filename: ref.filename };
+      }
+    });
+
+    // Workspace directory picker — desktop folder selection dialog.
+    ipcMain.handle("workspace:pickFolder", async () => {
+      const result = win
+        ? await dialog.showOpenDialog(win, {
+            properties: ["openDirectory", "createDirectory"],
+            title: "Select Project Workspace",
+            buttonLabel: "Select Folder",
+          })
+        : await dialog.showOpenDialog({
+            properties: ["openDirectory", "createDirectory"],
+            title: "Select Project Workspace",
+            buttonLabel: "Select Folder",
+          });
+      if (result.canceled || result.filePaths.length === 0) {
+        return null;
+      }
+      return result.filePaths[0];
     });
   } catch (err) {
     // Do not create a renderer with a half-registered IPC surface. It causes

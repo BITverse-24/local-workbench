@@ -3,7 +3,8 @@ import type { ChatResult, CodeDraftResult, Finding, VisionResult } from "../../s
 const page = z.object({ id: z.string().min(1), page: z.number().int().positive(), text: z.string().min(1).max(8000), location: z.string().max(200).optional() }).strict();
 const finding = z.object({ findingId: z.string().min(1), title: z.string().min(1).max(200), value: z.string().min(1).max(1000), pageReferenceIds: z.array(z.string().min(1)).min(1), confidence: z.enum(["high", "medium", "low"]), evidence: z.string().min(1).max(2000) }).strict();
 export const visionResultSchema = z.object({ sourceText: z.string().max(50000), findings: z.array(finding), pageReferences: z.array(page), warnings: z.array(z.string().max(500)).optional() }).strict();
-const nullableOptional = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((value) => value === null ? undefined : value, schema.optional());
+const nullableOptional = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((value) => (value === null || (typeof value === "string" && value.trim() === "") ? undefined : value), schema.optional());
 export const codeResultSchema = z.object({
   filename: z.literal("task.py"),
   source: z.string().min(1).max(30000),
@@ -16,7 +17,10 @@ export const codeResultSchema = z.object({
   artifactFilename: nullableOptional(z.string().min(1).max(200)),
   artifactRationale: nullableOptional(z.string().max(1000)),
 }).strict();
-export const codeSummarySchema = z.object({ summary: z.string().min(1).max(4000), verified: z.boolean() }).strict();
+export const codeSummarySchema = z.object({
+  summary: z.string().min(1).max(4000),
+  verified: z.preprocess((v) => (typeof v === "string" ? v.toLowerCase() === "true" : v), z.boolean()),
+}).strict();
 export const chatResultSchema = z.object({ text: z.string().min(1).max(40000) });
 function failure(error: z.ZodError) {
   const first = error.issues[0];
@@ -37,12 +41,85 @@ export function validationMessage(label: string, error: { message: string; path:
 }
 export function validateVision(value: unknown): { ok: true; value: VisionResult } | { ok: false; error: ReturnType<typeof failure> } { const parsed = visionResultSchema.safeParse(value); return parsed.success ? { ok: true, value: parsed.data as VisionResult } : { ok: false, error: failure(parsed.error) }; }
 const SAFE_IMPORTS = new Set(["csv", "datetime", "math"]);
+
+export function sanitizePythonSource(source: string): string {
+  if (!source) return source;
+
+  // 1. Unescape double-escaped newlines if real newlines are absent or sparse
+  const realNewlines = (source.match(/\n/g) || []).length;
+  const escapedNewlines = (source.match(/\\n/g) || []).length;
+  if (escapedNewlines > 0 && (realNewlines <= 1 || escapedNewlines >= realNewlines)) {
+    source = source.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "\n");
+  }
+
+  // 2. Strip markdown code fences if model enclosed code inside fences
+  source = source.replace(/^```(?:python|py)?[\r\n\s]*/i, "").replace(/[\r\n\s]*```$/g, "").trim();
+
+  const lines = source.split(/\r?\n/);
+  const result: string[] = [];
+  let inWith = false;
+  let parenDepth = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+
+    // Normalize leading tabs / escaped tabs to 4 spaces to prevent TabError and backslash syntax errors
+    line = line.replace(/^([ \t]|\\+t)+/, (indent) => {
+      let spaces = 0;
+      let j = 0;
+      while (j < indent.length) {
+        if (indent[j] === " ") {
+          spaces += 1;
+          j += 1;
+        } else if (indent[j] === "\t") {
+          spaces += 4;
+          j += 1;
+        } else {
+          const m = indent.slice(j).match(/^\\+t/);
+          if (m) {
+            spaces += 4;
+            j += m[0].length;
+          } else {
+            j += 1;
+          }
+        }
+      }
+      return " ".repeat(spaces);
+    });
+
+    const trimmed = line.trim();
+
+    if (/^\s*with\b/.test(line)) {
+      inWith = true;
+    }
+
+    for (const ch of line) {
+      if (ch === "(" || ch === "[" || ch === "{") parenDepth++;
+      else if (ch === ")" || ch === "]" || ch === "}") parenDepth = Math.max(0, parenDepth - 1);
+    }
+
+    if (inWith && parenDepth === 0) {
+      // If line ends with a comma without an unclosed parenthesis or trailing backslash, add backslash
+      if (/,\s*$/.test(line) && !/\\\s*$/.test(line)) {
+        line = line.replace(/\s*$/, " \\");
+      }
+      if (trimmed.endsWith(":")) {
+        inWith = false;
+      }
+    }
+
+    result.push(line);
+  }
+  return result.join("\n");
+}
+
 function unsafePython(source: string): boolean { return /(subprocess|socket|requests|urllib|httpx|os\.system|eval\s*\(|exec\s*\(|__import__|https?:\/\/|\b(import|from)\s+(os|sys|pathlib|shutil|ctypes)\b)/i.test(source) || /open\s*\([^)]*(\/|\\\\|\.\.)/i.test(source); }
 function unsafeName(name: string): boolean { return !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name.includes(".."); }
 export function validateCode(value: unknown): { ok: true; value: CodeDraftResult } | { ok: false; error: ReturnType<typeof failure> } {
   const parsed = codeResultSchema.safeParse(value);
   if (!parsed.success) return { ok: false, error: failure(parsed.error) };
   const result = parsed.data;
+  result.source = sanitizePythonSource(result.source);
   const declaredFiles = [...result.inputFiles, ...result.outputFiles];
   const importPattern = /^\s*(?:from|import)\s+([A-Za-z_][A-Za-z0-9_.]*)/gm;
   const imports = [...result.source.matchAll(importPattern)].map((match) => match[1].split(".")[0]);

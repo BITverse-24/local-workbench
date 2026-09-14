@@ -1,12 +1,20 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { AIResult, ModelHealth, ModelId, ModelRequest, ModelResponse, ModelRegistryEntry } from "../../shared/contracts.js";
 import type { ModelClient } from "../models/ports.js";
-import { loadRegistry, resolveModel } from "./registry.js";
+import {
+  defaultLocalRegistry,
+  isDevOpenRouterActive,
+  loadDevOpenRouterRegistry,
+  loadProductionRegistryFromDb,
+  loadRegistry,
+  resolveModel,
+} from "./registry.js";
 import { normalizeResponse, parseProviderContent, providerError } from "./normalizer.js";
 import { absoluteDataPath, createRunDirectories, runRoot } from "../run/filesystem.js";
-import { assertUploadableSize, extractPdfText, prepareImage, renderPdfToImages } from "../run/images.js";
+import { assertUploadableSize, createPlaceholderImagesFromText, extractPdfText, extractSvgText, prepareImage, renderPdfToImages } from "../run/images.js";
 import {
   logGatewayError,
   logGeneratedCode,
@@ -51,18 +59,84 @@ export interface GatewayTransport { request(url: string, init: { method: string;
 const nativeTransport: GatewayTransport = { async request(url, init, timeoutMs) { const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs); try { return await fetch(url, { ...init, signal: controller.signal }); } finally { clearTimeout(timer); } } };
 export interface VisionUploadInfo { originalBytes: number; finalBytes: number; resized: boolean; mediaType: string; }
 export class ModelGateway implements ModelClient {
-  readonly registry: Map<string, ModelRegistryEntry>; externalRequestCount = 0; lastVisionUpload?: VisionUploadInfo;
-  constructor(private readonly transport: GatewayTransport = nativeTransport, registry = loadRegistry()) { this.registry = registry; }
+  readonly dbRegistry: Map<string, ModelRegistryEntry>;
+  readonly devRegistry: Map<string, ModelRegistryEntry>;
+  private devModeOverride: boolean | null = null;
+  externalRequestCount = 0;
+  lastVisionUpload?: VisionUploadInfo;
+
+  constructor(
+    private readonly transport: GatewayTransport = nativeTransport,
+    initialRegistry?: Map<string, ModelRegistryEntry>,
+    devRegistry?: Map<string, ModelRegistryEntry>,
+  ) {
+    this.dbRegistry = initialRegistry ?? (loadProductionRegistryFromDb() as Map<string, ModelRegistryEntry>);
+    try {
+      this.devRegistry = devRegistry ?? (loadDevOpenRouterRegistry() as Map<string, ModelRegistryEntry>);
+    } catch {
+      this.devRegistry = new Map();
+    }
+  }
+
+  get registry(): Map<string, ModelRegistryEntry> {
+    return this.isDevRoutingActive() ? this.devRegistry : this.dbRegistry;
+  }
+
+  setDevMode(enabled: boolean | null): void {
+    this.devModeOverride = enabled;
+  }
+
+  isDevRoutingActive(request?: ModelRequest): boolean {
+    if (request?.devWorkload !== undefined) return request.devWorkload;
+    if (this.devModeOverride !== null) return this.devModeOverride;
+    return isDevOpenRouterActive();
+  }
+
+  /** Dynamically replace production DB registry entries in memory without requiring application restart. */
+  updateRegistry(entries: ModelRegistryEntry[] | Map<string, ModelRegistryEntry>): void {
+    this.dbRegistry.clear();
+    const map = Array.isArray(entries) ? new Map(entries.map((m) => [m.id, m])) : entries;
+    for (const [k, v] of map) {
+      this.dbRegistry.set(k, v);
+    }
+  }
+
+  updateDbRegistry(entries: ModelRegistryEntry[] | Map<string, ModelRegistryEntry>): void {
+    this.updateRegistry(entries);
+  }
+
   /** `ModelClient` surface: delegates to `execute`. */
   async complete(request: ModelRequest): Promise<AIResult<ModelResponse>> {
     return this.execute(request);
   }
+
   async execute(request: ModelRequest): Promise<AIResult<ModelResponse>> {
+    const isDev = this.isDevRoutingActive(request);
+    const activeRegistry = isDev && this.devRegistry.size > 0 ? this.devRegistry : this.dbRegistry;
     let model: ModelRegistryEntry;
-    try { model = resolveModel(this.registry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType); } catch { return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } }; }
+    try {
+      model = resolveModel(activeRegistry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType);
+    } catch {
+      if (isDev && this.dbRegistry.has(request.modelId)) {
+        try {
+          model = resolveModel(this.dbRegistry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType);
+        } catch {
+          return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
+        }
+      } else {
+        return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
+      }
+    }
+
+    if (isDev) {
+      gatewayConsole("log", request, `DEV WORKLOAD: Dispatching to OpenRouter (${model.model} at ${model.baseUrl})`);
+    } else {
+      gatewayConsole("log", request, `DB ENDPOINT: Dispatching to ${model.baseUrl} (${model.model}, role: ${request.taskType})`);
+    }
+
     const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
     if (model.runtime === "openrouter" && !key) return { ok: false, error: { kind: "ai-error", code: "model_rejected_request", message: `missing environment credential ${model.apiKeyEnv}`, retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
-    const maybeVision = request as unknown as { taskType: string; attachment?: { mediaType: string; relativePath: string; filename?: string } };
+    const maybeVision = request as unknown as { taskType: string; attachment?: { mediaType: string; relativePath: string; filename?: string; selectedPages?: number[] } };
     const isVision = maybeVision.taskType === "vision" && !!maybeVision.attachment;
     // PDFs are now parsed into per-page compressed JPEGs (1024px max edge, JPEG 80)
     // and sent as multiple image_url parts to keep total tokens <4096.
@@ -73,7 +147,25 @@ export class ModelGateway implements ModelClient {
     const visionParts = isVision
       ? await (async () => {
           const att = maybeVision.attachment!;
-          const raw = readFileSync(absoluteDataPath(att.relativePath));
+          const raw = await readFile(absoluteDataPath(att.relativePath));
+          if (att.mediaType === "image/svg+xml" || att.filename?.toLowerCase().endsWith(".svg")) {
+            const svgText = extractSvgText(raw);
+            const placeholderImages = await createPlaceholderImagesFromText(svgText || "SVG Vector Drawing");
+            const prepared = placeholderImages[0];
+            assertUploadableSize(prepared.finalBytes);
+            this.lastVisionUpload = {
+              originalBytes: raw.length,
+              finalBytes: prepared.finalBytes,
+              resized: true,
+              mediaType: prepared.mediaType,
+            };
+            return [
+              {
+                type: "image_url",
+                image_url: { url: `data:${prepared.mediaType};base64,${prepared.buffer.toString("base64")}` },
+              },
+            ];
+          }
           if (att.mediaType.startsWith("image/")) {
             const prepared = await prepareImage(raw, att.mediaType);
             assertUploadableSize(prepared.finalBytes);
@@ -91,7 +183,7 @@ export class ModelGateway implements ModelClient {
             ];
           }
           if (att.mediaType === "application/pdf") {
-            const pdfImages = await renderPdfToImages(raw);
+            const pdfImages = await renderPdfToImages(raw, att.selectedPages);
             if (pdfImages.length) {
               const parts = [];
               let totalBytes = 0;
@@ -167,22 +259,221 @@ export class ModelGateway implements ModelClient {
     const systemPrompt = /json/i.test(request.systemPrompt)
       ? request.systemPrompt
       : `${request.systemPrompt} Respond with valid JSON.`;
-    // OpenRouter pre-checks affordability against (prompt + max_tokens): omitting
-    // max_tokens defaults it to the model's full window (e.g. 32768) and yields
-    // 402 on low-credit keys even for tiny replies. Always cap explicitly.
+    const isLocal = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/i.test(model.baseUrl) || model.runtime === "ollama" || model.runtime === "mlx-lm" || model.runtime === "llama-server";
+
+    // Map the internal ResponseFormat to a strict JSON schema if applicable.
+    // For local model servers (LM Studio, mlx-lm, llama-server, Ollama), compiling complex
+    // multi-property JSON schemas into GBNF grammars on the CPU blocks execution for 2-4 seconds
+    // before GPU prefill begins. Using { type: "json_object" } eliminates this CPU grammar stall
+    // completely while local instruct models adhere to the requested JSON shape in the prompt.
+    let responseFormatPayload: any = { type: "json_object" };
+    if (isLocal && (request.responseFormat === "code-result" || request.responseFormat === "harness-step")) {
+      responseFormatPayload = { type: "json_object" };
+    } else if (request.responseFormat === "chat-result") {
+      responseFormatPayload = {
+        type: "json_schema",
+        json_schema: {
+          name: "chat_result",
+          strict: false,
+          schema: {
+            type: "object",
+            properties: { text: { type: "string" } },
+            required: ["text"],
+            additionalProperties: false
+          }
+        }
+      };
+    } else if (request.responseFormat === "code-result") {
+      responseFormatPayload = {
+        type: "json_schema",
+        json_schema: {
+          name: "code_result",
+          strict: false,
+          schema: {
+            type: "object",
+            properties: {
+              filename: { type: "string" },
+              source: { type: "string" },
+              expectedResult: { type: "string" },
+              inputFiles: { type: "array", items: { type: "string" } },
+              outputFiles: { type: "array", items: { type: "string" } },
+              allowedImports: { type: "array", items: { type: "string", enum: ["csv", "datetime", "math"] } },
+              outputMode: { type: "string", enum: ["chat", "artifact", "chat_and_artifact"] },
+              artifactKind: { type: "string", enum: ["docx", "pdf", "xlsx", "csv", "txt", "json", "md", ""] },
+              artifactFilename: { type: "string" },
+              artifactRationale: { type: "string" }
+            },
+            required: ["filename", "source", "expectedResult", "inputFiles", "outputFiles", "allowedImports"]
+          }
+        }
+      };
+    } else if (request.responseFormat === "code-summary") {
+      responseFormatPayload = {
+        type: "json_schema",
+        json_schema: {
+          name: "code_summary",
+          strict: false,
+          schema: {
+            type: "object",
+            properties: {
+              summary: { type: "string" },
+              verified: { type: "boolean" }
+            },
+            required: ["summary", "verified"]
+          }
+        }
+      };
+    } else if (request.responseFormat === "vision-result") {
+      responseFormatPayload = {
+        type: "json_schema",
+        json_schema: {
+          name: "vision_result",
+          strict: false,
+          schema: {
+            type: "object",
+            properties: {
+              sourceText: { type: "string" },
+              findings: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    findingId: { type: "string" },
+                    title: { type: "string" },
+                    value: { type: "string" },
+                    pageReferenceIds: { type: "array", items: { type: "string" } },
+                    confidence: { type: "string", enum: ["high", "medium", "low"] },
+                    evidence: { type: "string" }
+                  },
+                  required: ["findingId", "title", "value", "pageReferenceIds", "confidence", "evidence"]
+                }
+              },
+              pageReferences: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    page: { type: "integer" },
+                    text: { type: "string" },
+                    location: { type: "string" }
+                  },
+                  required: ["id", "page", "text"]
+                }
+              }
+            },
+            required: ["findings", "pageReferences"]
+          }
+        }
+      };
+    } else if (request.responseFormat === "draft-result") {
+      responseFormatPayload = {
+        type: "json_schema",
+        json_schema: {
+          name: "draft_result",
+          strict: false,
+          schema: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              body: { type: "string" },
+              sections: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string", enum: ["equipment-header", "findings-summary", "recommendation"] },
+                    heading: { type: "string" },
+                    body: { type: "string" }
+                  },
+                  required: ["id", "heading", "body"]
+                }
+              },
+              missingInformation: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    field: { type: "string" },
+                    note: { type: "string" }
+                  },
+                  required: ["field", "note"]
+                }
+              }
+            },
+            required: ["title", "body", "sections", "missingInformation"]
+          }
+        }
+      };
+    } else if (request.responseFormat === "harness-step") {
+      responseFormatPayload = {
+        type: "json_schema",
+        json_schema: {
+          name: "harness_step",
+          strict: false,
+          schema: {
+            type: "object",
+            properties: {
+              thought: { type: "string" },
+              action: { type: "string", enum: ["tool_call", "final_answer"] },
+              tool: { type: "string", enum: ["list_dir", "read_file", "search", "write_file", "run_command"] },
+              args: { type: "object" },
+              text: { type: "string" }
+            },
+            required: ["thought", "action"]
+          }
+        }
+      };
+    } else if (request.responseFormat === "file-result") {
+      responseFormatPayload = {
+        type: "json_schema",
+        json_schema: {
+          name: "file_result",
+          strict: false,
+          schema: {
+            type: "object",
+            properties: {
+              filename: { type: "string" },
+              content: { type: "string" }
+            },
+            required: ["filename", "content"]
+          }
+        }
+      };
+    }
+
+    const messagesPayload: Array<{ role: string; content: any }> = [
+      { role: "system", content: systemPrompt },
+    ];
+    if (request.history && request.history.length > 0) {
+      for (const h of request.history) {
+        messagesPayload.push({ role: h.role, content: h.content });
+      }
+    }
+    messagesPayload.push({ role: "user", content: userContent });
+
     const maxTokens = request.maxTokens ?? model.maxOutputTokens ?? 2048;
-    const body = JSON.stringify({ model: model.model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }], response_format: { type: "json_object" }, temperature: request.temperature ?? 0.2, max_tokens: maxTokens });
-    // Log outgoing request (without leaking key, with vision metadata instead of full base64)
+    const body = JSON.stringify({
+      model: model.model,
+      messages: messagesPayload,
+      response_format: responseFormatPayload,
+      temperature: request.temperature ?? 0.2,
+      max_tokens: maxTokens,
+    });
+    const minTimeout = isLocal ? (request.taskType === "code" ? 300000 : 180000) : 0;
+    const effectiveTimeout = Math.max(request.timeoutMs ?? 0, model.requestTimeoutMs ?? 0, minTimeout) || 60000;
+
     const outboundLog = {
       phase: "request" as const,
       taskType: request.taskType,
       modelId: request.modelId,
+      devWorkload: isDev,
       providerModel: model.model,
       baseUrl: model.baseUrl,
       endpoint: `${model.baseUrl}/chat/completions`,
       maxTokens,
       temperature: request.temperature ?? 0.2,
-      timeoutMs: Math.min(request.timeoutMs, model.requestTimeoutMs),
+      timeoutMs: effectiveTimeout,
       systemPromptChars: request.systemPrompt.length,
       systemPromptPreview: request.systemPrompt.slice(0, 800),
       userPromptChars: typeof userContent === "string" ? userContent.length : JSON.stringify(userContent).length,
@@ -208,11 +499,42 @@ export class ModelGateway implements ModelClient {
     try {
       // The counter is for non-local egress evidence. Ollama and LAN model
       // servers remain local; configured cloud endpoints count as external.
-      this.externalRequestCount += /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/i.test(model.baseUrl) || model.runtime === "ollama" || model.runtime === "mlx-lm" || model.runtime === "llama-server" ? 0 : 1;
+      this.externalRequestCount += isLocal ? 0 : 1;
       const t0 = Date.now();
-      const response = await this.transport.request(`${model.baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body }, Math.min(request.timeoutMs, model.requestTimeoutMs));
-      const latencyMs = Date.now() - t0;
+      let response = await this.transport.request(`${model.baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body }, effectiveTimeout);
+      let latencyMs = Date.now() - t0;
       try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
+
+      // If provider rejects response_format (e.g. LM Studio, Ollama, or local model server requiring 'text' or rejecting json_schema)
+      if (response.status === 400 && /response_format|json_schema|json_object|type.*must be/i.test(rawText)) {
+        logGatewayError(request, "provider rejected response_format, retrying with text type", rawText.slice(0, 200));
+        const retryBody = JSON.stringify({
+          model: model.model,
+          messages: messagesPayload,
+          response_format: { type: "text" },
+          temperature: request.temperature ?? 0.2,
+          max_tokens: maxTokens,
+        });
+        const retryResponse = await this.transport.request(`${model.baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: retryBody }, effectiveTimeout);
+        if (retryResponse.status >= 200 && retryResponse.status < 300) {
+          response = retryResponse;
+          try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
+        } else {
+          // Try omitting response_format altogether
+          const plainBody = JSON.stringify({
+            model: model.model,
+            messages: messagesPayload,
+            temperature: request.temperature ?? 0.2,
+            max_tokens: maxTokens,
+          });
+          const plainResponse = await this.transport.request(`${model.baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: plainBody }, effectiveTimeout);
+          if (plainResponse.status >= 200 && plainResponse.status < 300) {
+            response = plainResponse;
+            try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
+          }
+        }
+      }
+
       logModelResponse({
         taskType: request.taskType,
         requestId: request.requestId,
@@ -314,8 +636,72 @@ export class ModelGateway implements ModelClient {
   async health(modelId: ModelId): Promise<ModelHealth>;
   async health(modelId?: ModelId): Promise<ModelHealth[] | ModelHealth> {
     if (modelId !== undefined) return this.healthOne(modelId);
-    const results: ModelHealth[] = []; for (const model of this.registry.values()) { const started = Date.now(); try { const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined; const response = await this.transport.request(`${model.baseUrl}${model.healthPath}`, { method: "GET", headers: { ...(key ? { authorization: `Bearer ${key}` } : {}) } }, model.requestTimeoutMs); results.push({ modelId: model.id, available: response.status >= 200 && response.status < 300, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started }); } catch (error) { results.push({ modelId: model.id, available: false, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started, message: error instanceof Error ? error.message : "health check failed" }); } } return results;
+    return Promise.all(Array.from(this.registry.values()).map((model) => this.healthOne(model.id)));
   }
+
+  /**
+   * Probe health by distinct port/endpoint to ensure duplicates don't appear.
+   * Keeps PORT as index to eliminate duplicate probes, and model name as display.
+   */
+  async healthDistinct(): Promise<ModelHealth[]> {
+    if (this.isDevRoutingActive()) {
+      const all = await this.health();
+      return all.slice(0, 1).map((h) => ({
+        ...h,
+        modelId: this.registry.get(h.modelId)?.model || h.modelId,
+      }));
+    }
+
+    const distinctByPort = new Map<number, { port: number; model: ModelRegistryEntry }>();
+    for (const model of this.registry.values()) {
+      if (!model.enabled) continue;
+      try {
+        const u = new URL(model.baseUrl);
+        const port = u.port ? parseInt(u.port, 10) : (u.protocol === "https:" ? 443 : 80);
+        if (!distinctByPort.has(port)) {
+          distinctByPort.set(port, {
+            port,
+            model,
+          });
+        }
+      } catch {}
+    }
+
+    if (distinctByPort.size === 0) {
+      return this.health();
+    }
+
+    return Promise.all(
+      Array.from(distinctByPort.values()).map(async ({ model, port }) => {
+        const started = Date.now();
+        try {
+          const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
+          const response = await this.transport.request(
+            `${model.baseUrl}${model.healthPath}`,
+            { method: "GET", headers: { ...(key ? { authorization: `Bearer ${key}` } : {}) } },
+            Math.min(model.requestTimeoutMs || 5000, 4000),
+          );
+          return {
+            modelId: model.model as any,
+            port,
+            available: response.status >= 200 && response.status < 300,
+            checkedAt: new Date().toISOString(),
+            latencyMs: Date.now() - started,
+          };
+        } catch (error) {
+          return {
+            modelId: model.model as any,
+            port,
+            available: false,
+            checkedAt: new Date().toISOString(),
+            latencyMs: Date.now() - started,
+            message: error instanceof Error ? error.message : "health check failed",
+          };
+        }
+      }),
+    );
+  }
+
   /** Per-model health probe backing the `ModelClient` surface. */
   async healthOne(modelId: ModelId): Promise<ModelHealth> {
     const model = this.registry.get(modelId);
@@ -336,4 +722,42 @@ export class ModelGateway implements ModelClient {
     }
   }
 }
-export function requestBase(runId: string, taskType: ModelRequest["taskType"], modelId: ModelRequest["modelId"], responseFormat: ModelRequest["responseFormat"], systemPrompt: string, userPrompt: string, timeoutMs: number, maxTokens?: number, temperature?: number): Pick<ModelRequest, "requestId" | "runId" | "taskType" | "modelId" | "responseFormat" | "systemPrompt" | "userPrompt" | "timeoutMs" | "maxTokens" | "temperature"> { return { requestId: randomUUID(), runId, taskType, modelId, responseFormat, systemPrompt, userPrompt, timeoutMs, maxTokens, temperature }; }
+export function requestBase(
+  runId: string,
+  taskType: ModelRequest["taskType"],
+  modelId: ModelRequest["modelId"],
+  responseFormat: ModelRequest["responseFormat"],
+  systemPrompt: string,
+  userPrompt: string,
+  timeoutMs: number,
+  maxTokens?: number,
+  temperature?: number,
+  history?: ModelRequest["history"],
+): Pick<
+  ModelRequest,
+  | "requestId"
+  | "runId"
+  | "taskType"
+  | "modelId"
+  | "responseFormat"
+  | "systemPrompt"
+  | "userPrompt"
+  | "timeoutMs"
+  | "maxTokens"
+  | "temperature"
+  | "history"
+> {
+  return {
+    requestId: randomUUID(),
+    runId,
+    taskType,
+    modelId,
+    responseFormat,
+    systemPrompt,
+    userPrompt,
+    timeoutMs,
+    maxTokens,
+    temperature,
+    history,
+  };
+}

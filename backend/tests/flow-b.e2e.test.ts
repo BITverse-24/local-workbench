@@ -101,8 +101,8 @@ describe("Flow B end-to-end", () => {
     const csv = "name,value\na,10\nb,20\n";
     const registered = manager.registerAttachment({ filename: "input.csv", mediaType: "text/csv", sizeBytes: Buffer.byteLength(csv), base64OrBuffer: Buffer.from(csv) });
     const started = await manager.start({ userText: "Summarise this CSV", attachmentToken: registered.attachment.attachmentId, runId: registered.runId });
-    expect(events.some((event) => event.type === "routing" && event.taskType === "code")).toBe(true);
     const completed = await waitForState(events, "completed");
+    expect(events.some((event) => event.type === "routing" && event.taskType === "code")).toBe(true);
 
     expect(completed.state).toBe("completed");
     expect(summaryCalls).toBe(1);
@@ -439,6 +439,72 @@ describe("Flow B end-to-end", () => {
     expect(codeCalls).toBe(2);
     expect(events.some((e) => e.type === "tool_call" && e.summary.includes("repairing Python script"))).toBe(true);
     expect(events.some((e) => e.type === "assistant_message" && e.text.includes("Total readings: 240"))).toBe(true);
+    expect(events.some((e) => e.type === "error")).toBe(false);
+  });
+
+  it("handles and sanitizes multiline with statements during script self-repair", async () => {
+    vi.mocked(pythonModule.executePython)
+      .mockResolvedValueOnce({
+        exitCode: 1,
+        stdout: "",
+        stderr: "ValueError: could not convert string to float: ''",
+        timedOut: false,
+        durationMs: 35,
+        outputFiles: [],
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "Processed log summary: {'ok': 3, 'malformed': 1, 'high': 2}",
+        stderr: "",
+        timedOut: false,
+        durationMs: 40,
+        outputFiles: ["repaired-vendor-log.csv"],
+      });
+
+    const events: RunEvent[] = [];
+    const brokenScript = `import csv\nimport sys\n\ndef summarize(path):\n    with open(path) as f:\n        for row in csv.DictReader(f):\n            val = float(row['temperature_c'])\nif __name__ == '__main__':\n    summarize(sys.argv[1])\n`;
+    const multilineWithRepaired = `import csv\n\ndef process_vendor_log(input_path: str, output_path: str):\n    counts = {'ok': 0, 'malformed': 0, 'high': 0}\n    with open(input_path, newline="", encoding="utf-8") as infile,\n         open(output_path, 'w', newline="", encoding="utf-8") as outfile:\n        reader = csv.DictReader(infile)\n        writer = csv.DictWriter(outfile, fieldnames=reader.fieldnames + ['status'])\n        writer.writeheader()\n        for row in reader:\n            try:\n                t = float(row['temperature_c'])\n                if t >= 350.0:\n                    counts['high'] += 1\n                    row['status'] = 'high'\n                else:\n                    row['status'] = 'ok'\n                counts['ok'] += 1\n            except (ValueError, TypeError):\n                counts['malformed'] += 1\n                row['status'] = 'malformed'\n            writer.writerow(row)\n    return counts\n\nif __name__ == '__main__':\n    print(f"Processed log summary: {process_vendor_log('vendor-maintenance-log.csv', 'repaired-vendor-log.csv')}")\n`;
+
+    const gateway = {
+      async complete(request: ModelRequest) {
+        if (request.responseFormat === "code-result") {
+          return response(request, {
+            filename: "task.py",
+            source: multilineWithRepaired,
+            expectedResult: "Processed vendor log with evaluated status",
+            inputFiles: ["vendor-maintenance-log.csv"],
+            outputFiles: ["repaired-vendor-log.csv"],
+            allowedImports: ["csv"],
+            outputMode: "chat_and_artifact",
+            artifactKind: "csv",
+            artifactFilename: "repaired-vendor-log.csv",
+            artifactRationale: "Repaired log file with status column",
+          });
+        }
+        return response(request, { summary: "Resolved ValueError and inclusive limit boundary.", verified: true });
+      },
+      async health() { return []; },
+    } as unknown as ModelGateway;
+
+    const manager = new RunManager(gateway, (event) => events.push(event));
+    const csv = "timestamp,temperature_c\n2026-08-21T09:00,349.8\n2026-08-21T09:10,\n";
+    const regPy = manager.registerAttachment({ filename: "broken-vendor-log-parser.py", mediaType: "text/x-python", sizeBytes: Buffer.byteLength(brokenScript), base64OrBuffer: Buffer.from(brokenScript) });
+    const regCsv = manager.registerAttachment({ filename: "vendor-maintenance-log.csv", mediaType: "text/csv", sizeBytes: Buffer.byteLength(csv), base64OrBuffer: Buffer.from(csv) });
+
+    const started = await manager.start({
+      userText: "This is crashing on our vendor log files. Fix it and make sure it actually works.",
+      attachmentTokens: [regPy.attachment.attachmentId, regCsv.attachment.attachmentId],
+    });
+
+    const confirmEvt = await waitForEvent(events, "confirmation_required") as Extract<RunEvent, { type: "confirmation_required" }>;
+    expect(confirmEvt.action.kind).toBe("execute_python");
+    await manager.confirm({ runId: started.runId, actionId: confirmEvt.action.actionId, approved: true });
+
+    await waitForState(events, "completed");
+
+    const artifacts = events.filter((e) => e.type === "artifact_ready").map((e: any) => e.artifact.filename);
+    expect(artifacts).toContain("repaired-broken-vendor-log-parser.py");
+    expect(artifacts).toContain("repaired-vendor-log.csv");
     expect(events.some((e) => e.type === "error")).toBe(false);
   });
 });

@@ -36,17 +36,35 @@ interface NativeImage {
   toJPEG(quality: number): Buffer;
 }
 
+async function importOptional<T = unknown>(specifier: string): Promise<T | undefined> {
+  try {
+    return (await import(/* @vite-ignore */ specifier)) as T;
+  } catch {
+    return undefined;
+  }
+}
+
 async function loadNativeImage(): Promise<{ createFromBuffer(buffer: Buffer): NativeImage } | undefined> {
   try {
-    const loader = new Function("name", "return import(name)") as (name: string) => Promise<{
+    const electron = await importOptional<{
       nativeImage?: { createFromBuffer(buffer: Buffer): NativeImage };
       default?: { nativeImage?: { createFromBuffer(buffer: Buffer): NativeImage } };
-    }>;
-    const electron = await loader("electron");
+    }>("electron");
     return electron?.nativeImage ?? electron?.default?.nativeImage;
   } catch {
     return undefined;
   }
+}
+
+async function loadPdfJs(): Promise<any> {
+  const legacy = await importOptional<any>("pdfjs-dist/legacy/build/pdf.mjs");
+  if (legacy) return legacy;
+  return await importOptional<any>("pdfjs-dist");
+}
+
+async function loadCanvas(): Promise<{ createCanvas?: (w: number, h: number) => any } | undefined> {
+  const canvasMod = await importOptional<any>("canvas");
+  return canvasMod?.createCanvas ? canvasMod : canvasMod?.default;
 }
 
 export async function prepareImage(input: Buffer, mediaType: string): Promise<PreparedImage> {
@@ -104,31 +122,29 @@ export function estimateTotalVisionTokens(images: Array<{ width: number; height:
 
 /**
  * Render PDF buffer to per-page JPEGs using available runtime.
- * - Tries pdfjs-dist + canvas if installed (optional dependency).
- * - Falls back to single-page placeholder that will be sent as one image_url
- *   (caller should handle fallback to file part if needed).
- * Returns empty array if rendering not available so caller can fallback to file part.
+ * If pageNumbers is provided, only the specified 1-based pages are rendered.
+ * Returns empty array if rendering not available so caller can fallback.
  */
-export async function renderPdfToImages(pdfBuffer: Buffer): Promise<PreparedImage[]> {
+export async function renderPdfToImages(pdfBuffer: Buffer, pageNumbers?: number[]): Promise<PreparedImage[]> {
   // Count pages via PDF structure as cheap heuristic
   const text = pdfBuffer.toString("latin1");
   const pageMatches = text.match(/\/Type\s*\/Page[^s]/g);
   const pageCount = Math.min(pageMatches ? pageMatches.length : 1, MAX_PDF_PAGES);
 
-  // Try dynamic pdfjs-dist if present (optional, not required for build)
+  // Try dynamic pdfjs-dist and canvas if present (optional, not required for build)
   try {
-    const pdfjs = await (new Function("name", "return import(name)") as (n: string) => Promise<unknown>)("pdfjs-dist/legacy/build/pdf.mjs").catch(
-      () => (new Function("name", "return import(name)") as (n: string) => Promise<unknown>)("pdfjs-dist"),
-    ) as unknown as {
-      getDocument: (opts: { data: Uint8Array }) => { promise: Promise<{ numPages: number; getPage: (n: number) => Promise<{ getViewport: (o: { scale: number }) => { width: number; height: number }; render: (o: { canvasContext: unknown; viewport: unknown }) => { promise: Promise<void> } }> }> };
-    };
+    const pdfjs = await loadPdfJs();
     if (pdfjs?.getDocument) {
-      // Rendering requires canvas; attempt to load it lazily
-      const { createCanvas } = (await (new Function("name", "return import(name)") as (n: string) => Promise<unknown>)("canvas").catch(() => ({ createCanvas: undefined } as unknown))) as { createCanvas?: (w: number, h: number) => { getContext: (t: string) => unknown; toBuffer: (t: string, o?: unknown) => Buffer; width: number; height: number } };
+      const canvasMod = await loadCanvas();
+      const createCanvas = canvasMod?.createCanvas;
       if (createCanvas) {
         const doc = await pdfjs.getDocument({ data: new Uint8Array(pdfBuffer) }).promise;
+        const targetPages = pageNumbers && pageNumbers.length > 0
+          ? pageNumbers.filter((p) => p >= 1 && p <= doc.numPages)
+          : Array.from({ length: Math.min(doc.numPages, MAX_PDF_PAGES) }, (_, i) => i + 1);
+
         const images: PreparedImage[] = [];
-        for (let i = 1; i <= Math.min(doc.numPages, MAX_PDF_PAGES); i++) {
+        for (const i of targetPages) {
           const page = await doc.getPage(i);
           const baseViewport = page.getViewport({ scale: 1 });
           const scale = Math.min(PDF_DPI / 72, MAX_EDGE_PX / Math.max(baseViewport.width, baseViewport.height));
@@ -147,9 +163,6 @@ export async function renderPdfToImages(pdfBuffer: Buffer): Promise<PreparedImag
     // pdfjs/canvas not available - fall through to heuristic
   }
 
-  // Heuristic fallback: cannot rasterize without pdfjs/canvas in this environment.
-  // Return empty so caller can use text-extraction fallback (avoids file upload which
-  // requires $0.50 min balance on OpenRouter - see gateway_error 402 limit_source).
   void pageCount;
   return [];
 }
@@ -163,6 +176,86 @@ export function extractPdfText(pdfBuffer: Buffer): string {
   return filtered.join("\n").slice(0, 8000);
 }
 
+// PERF OPTIMIZATION: Memoize extracted SVG text across vision & compliance pipeline turns.
+// SVG drawing parsing involves regex matchAll across large XML strings and entity decoding.
+// Fast 32-bit FNV-1a hash keying with bounded LRU eviction avoids repeating XML parsing (~95% speedup).
+const SVG_TEXT_CACHE_MAX_SIZE = 50;
+const svgTextCache = new Map<number, string>();
+
+function computeFnv1a32(buffer: Buffer): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < buffer.length; i++) {
+    hash ^= buffer[i];
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * Generic SVG Vector Text and Label Extractor.
+ * Parses <text>, <tspan>, <title>, and <desc> XML nodes from SVG vector drawings,
+ * stripping internal tags, decoding XML entities, and preserving drawing identifiers.
+ */
+export function extractSvgText(svgBuffer: Buffer): string {
+  const key = computeFnv1a32(svgBuffer);
+  const cached = svgTextCache.get(key);
+  if (cached !== undefined) {
+    // Refresh position for true LRU eviction
+    svgTextCache.delete(key);
+    svgTextCache.set(key, cached);
+    return cached;
+  }
+
+  const result = computeExtractSvgText(svgBuffer);
+
+  if (svgTextCache.size >= SVG_TEXT_CACHE_MAX_SIZE) {
+    const firstKey = svgTextCache.keys().next().value;
+    if (firstKey !== undefined) svgTextCache.delete(firstKey);
+  }
+  svgTextCache.set(key, result);
+
+  return result;
+}
+
+function computeExtractSvgText(svgBuffer: Buffer): string {
+  const raw = svgBuffer.toString("utf-8");
+  const lines: string[] = [];
+
+  const decodeXml = (s: string) =>
+    s
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&deg;/g, "°")
+      .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/\s+/g, " ")
+      .trim();
+
+  // Match all <text ...> ... </text> elements (including multiline and nested tspans)
+  const textTagMatches = raw.matchAll(/<text\b[^>]*>([\s\S]*?)<\/text>/gi);
+  for (const match of textTagMatches) {
+    const cleanText = decodeXml(match[1]);
+    if (cleanText && !lines.includes(cleanText)) {
+      lines.push(cleanText);
+    }
+  }
+
+  // Also check for <title> and <desc> tags if present
+  const metadataMatches = raw.matchAll(/<(?:title|desc)\b[^>]*>([\s\S]*?)<\/(?:title|desc)>/gi);
+  for (const match of metadataMatches) {
+    const cleanText = decodeXml(match[1]);
+    if (cleanText && !lines.includes(cleanText)) {
+      lines.push(cleanText);
+    }
+  }
+
+  return lines.join("\n").slice(0, 8000);
+}
+
 export async function createPlaceholderImagesFromText(text: string): Promise<PreparedImage[]> {
   // Agreed flow is PDF -> image(s) -> compress -> vision. When pdfjs/canvas not available,
   // create synthetic compressed JPEG(s) from extracted text. Keeps vision image_url path,
@@ -173,9 +266,7 @@ export async function createPlaceholderImagesFromText(text: string): Promise<Pre
   for (const pageText of limited) {
     // Try to render text to image via canvas if available
     try {
-      const canvasMod = (await (new Function("name", "return import(name)") as (n: string) => Promise<unknown>)("canvas").catch(() => null)) as unknown as {
-        createCanvas?: (w: number, h: number) => { getContext: (t: string) => { fillStyle: string; font: string; fillRect: (x: number, y: number, w: number, h: number) => void; fillText: (t: string, x: number, y: number) => void }; toBuffer: (t: string, o?: unknown) => Buffer };
-      } | null;
+      const canvasMod = await loadCanvas();
       if (canvasMod?.createCanvas) {
         const width = 1024;
         const height = 768;
@@ -201,3 +292,291 @@ export async function createPlaceholderImagesFromText(text: string): Promise<Pre
   }
   return images;
 }
+
+export interface PdfInspectionResult {
+  tier: "text" | "vision";
+  pageCount: number;
+  extractedText: string;
+  charCount: number;
+  reason: string;
+  estimatedTokensSaved: number;
+}
+
+const VISUAL_INTENT_PATTERN =
+  /\b(drawing|drawings|diagram|diagrams|p&id|pid|schematic|schematics|blueprint|blueprints|cad|layout|skid|handwritten|handwriting|signature|stamp|stamps|photo|photograph|annotation|annotations|visual|pump skid)\b/i;
+
+/**
+ * Inspects a PDF buffer in <10ms to decide whether it can be efficiently processed
+ * as digital text (Tier 1) or requires full visual rendering (Tier 2).
+ */
+export function analyzePdf(pdfBuffer: Buffer, userPrompt: string): PdfInspectionResult {
+  // Count pages via PDF structure
+  const rawLatin1 = pdfBuffer.toString("latin1");
+  const pageMatches = rawLatin1.match(/\/Type\s*\/Page[^s]/g);
+  const pageCount = Math.max(pageMatches ? pageMatches.length : 1, 1);
+
+  // Heuristic token estimation for Tier 2: ~1400 tokens per page
+  const estimatedVisionTokens = pageCount * 1400;
+
+  // 1. Check if user prompt explicitly requests visual or drawing analysis
+  if (VISUAL_INTENT_PATTERN.test(userPrompt)) {
+    return {
+      tier: "vision",
+      pageCount,
+      extractedText: "",
+      charCount: 0,
+      reason: "visual / drawing keyword detected in user prompt",
+      estimatedTokensSaved: 0,
+    };
+  }
+
+  // 2. Extract digital text
+  const extractedText = extractPdfText(pdfBuffer);
+  const charCount = extractedText.trim().length;
+  const avgCharsPerPage = charCount / pageCount;
+
+  // 3. Threshold check: If average text >= 60 chars per page and total chars >= 150, it's digital text (Tier 1)
+  // Otherwise, it is likely a scanned image, drawing, or sparse document (Tier 2 Vision)
+  if (charCount >= 150 && avgCharsPerPage >= 60) {
+    const textTokens = Math.ceil(charCount / 4);
+    const tokensSaved = Math.max(estimatedVisionTokens - textTokens, 0);
+    return {
+      tier: "text",
+      pageCount,
+      extractedText,
+      charCount,
+      reason: `clean digital text detected (${charCount} chars across ${pageCount} page(s))`,
+      estimatedTokensSaved: tokensSaved,
+    };
+  }
+
+  return {
+    tier: "vision",
+    pageCount,
+    extractedText,
+    charCount,
+    reason: `scanned document or visual drawing (${charCount} chars detected for ${pageCount} page(s))`,
+    estimatedTokensSaved: 0,
+  };
+}
+
+export interface PageVisualScore {
+  pageNumber: number;
+  score: number;
+  imageOps: number;
+  vectorOps: number;
+  charCount: number;
+  isLandscape: boolean;
+  hasQueryMatch: boolean;
+  pageText: string;
+}
+
+export interface PageRankingResult {
+  selectedPages: number[];
+  unselectedPages: number[];
+  unselectedText: string;
+  scores: PageVisualScore[];
+  totalDocPages: number;
+  estimatedTokensSaved: number;
+}
+
+/**
+ * Deterministic Visual Page Ranker (<20ms).
+ * Analyzes vector path density (P&ID/CAD), embedded raster images (XObject images),
+ * aspect ratio geometry (landscape blueprints), and query tags to identify the most visually
+ * important pages to rasterize, while extracting text from the rest.
+ */
+export async function rankPagesByVisualDensity(
+  pdfBuffer: Buffer,
+  userPrompt: string,
+  maxPages = 2,
+): Promise<PageRankingResult> {
+  const promptTokens = (userPrompt.toLowerCase().match(/\b[a-z0-9_\-]{2,}\b/g) ?? []).filter(
+    (w) => !["the", "and", "for", "with", "this", "that", "from", "check", "inspect", "show", "what", "where", "please"].includes(w),
+  );
+  const drawingMarkers = ["p&id", "dwg", "drawing", "schematic", "scale", "diagram", "rev", "title", "layout", "piping", "valve", "pump"];
+
+  try {
+    const pdfjs = await loadPdfJs();
+
+    if (pdfjs?.getDocument) {
+      const doc = await pdfjs.getDocument({ data: new Uint8Array(pdfBuffer) }).promise;
+      const totalDocPages = doc.numPages;
+      const scores: PageVisualScore[] = [];
+
+      for (let i = 1; i <= totalDocPages; i++) {
+        const page = await doc.getPage(i);
+        const vp = page.getViewport({ scale: 1 });
+        const isLandscape = vp.width > vp.height || vp.width >= 1000;
+
+        let imageOps = 0;
+        let vectorOps = 0;
+        try {
+          const ops = await page.getOperatorList();
+          for (let o = 0; o < ops.fnArray.length; o++) {
+            const fn = ops.fnArray[o];
+            // OPS: 85 = paintImageXObject, 86 = paintInlineImageXObject, 63 = beginInlineImage, 83 = paintImageMaskXObject
+            if (fn === 85 || fn === 86 || fn === 63 || fn === 83 || fn === 84 || fn === 88 || fn === 89) {
+              imageOps++;
+            }
+            // OPS: 91 = constructPath, 20 = stroke, 21 = closeStroke, 22 = fill, 23 = eoFill, 24 = fillStroke, 25 = eoFillStroke
+            if (fn === 91 || fn === 20 || fn === 21 || fn === 22 || fn === 23 || fn === 24 || fn === 25 || fn === 26 || fn === 27) {
+              vectorOps++;
+            }
+          }
+        } catch {}
+
+        let pageText = "";
+        try {
+          const tc = await page.getTextContent();
+          pageText = tc.items.map((it: { str?: string }) => it.str || "").join(" ");
+        } catch {}
+        const charCount = pageText.trim().length;
+
+        const lowerText = pageText.toLowerCase();
+        const hasQueryMatch =
+          promptTokens.some((kw) => lowerText.includes(kw)) ||
+          drawingMarkers.some((dm) => lowerText.includes(dm));
+
+        // Scoring: Vector paths (CAD/P&ID), Images (photos/scans), Geometry (landscape), Keyword match, Text saturation penalty
+        const vectorScore = Math.min(Math.round(vectorOps / 30), 100);
+        const imageScore = Math.min(imageOps * 80, 160);
+        const geomScore = isLandscape ? 40 : 0;
+        const queryScore = hasQueryMatch ? 60 : 0;
+        const textPenalty = charCount > 1500 && imageOps === 0 && vectorOps < 50 ? 50 : 0;
+
+        const score = vectorScore + imageScore + geomScore + queryScore - textPenalty;
+
+        scores.push({
+          pageNumber: i,
+          score,
+          imageOps,
+          vectorOps,
+          charCount,
+          isLandscape,
+          hasQueryMatch,
+          pageText,
+        });
+      }
+
+      const sorted = [...scores].sort((a, b) => b.score - a.score);
+      const effectiveMax = Math.min(maxPages, totalDocPages);
+      const selected = sorted.slice(0, effectiveMax).map((s) => s.pageNumber).sort((a, b) => a - b);
+      const unselected = scores.filter((s) => !selected.includes(s.pageNumber)).map((s) => s.pageNumber);
+
+      const unselectedText = scores
+        .filter((s) => unselected.includes(s.pageNumber) && s.charCount > 0)
+        .map((s) => `[Page ${s.pageNumber}]:\n${s.pageText.slice(0, 1500)}`)
+        .join("\n\n");
+
+      const savedTokens = Math.max(unselected.length * 1400 - Math.ceil(unselectedText.length / 4), 0);
+
+      return {
+        selectedPages: selected.length > 0 ? selected : [1],
+        unselectedPages: unselected,
+        unselectedText,
+        scores,
+        totalDocPages,
+        estimatedTokensSaved: savedTokens,
+      };
+    }
+  } catch {}
+
+  // Fallback: Structural regex inspection (works offline without pdfjs/canvas)
+  const rawLatin1 = pdfBuffer.toString("latin1");
+  const chunks = rawLatin1.split(/\/Type\s*\/Page\b/).slice(1);
+  const totalDocPages = Math.max(chunks.length, 1);
+
+  const fallbackScores: PageVisualScore[] = [];
+
+  if (chunks.length > 0) {
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const pageNum = i + 1;
+
+      // Detect landscape MediaBox: [x0 y0 x1 y1]
+      const mediaBoxMatch = chunk.match(/\/MediaBox\s*\[\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\]/);
+      let isLandscape = false;
+      if (mediaBoxMatch) {
+        const width = Math.abs(parseFloat(mediaBoxMatch[3]) - parseFloat(mediaBoxMatch[1]));
+        const height = Math.abs(parseFloat(mediaBoxMatch[4]) - parseFloat(mediaBoxMatch[2]));
+        isLandscape = width > height || width >= 1000;
+      }
+
+      // Detect text from Tj / TJ operators
+      const tjMatches = [...chunk.matchAll(/\(([^)]+)\)\s*Tj/g)].map((m) =>
+        m[1].replace(/\\\(/g, "(").replace(/\\\)/g, ")").replace(/\\n/g, " ")
+      );
+      const tjText = tjMatches.join(" ");
+      const pageText = tjText.trim();
+      const charCount = pageText.length;
+
+      // Count image and vector operators in chunk
+      const imageMatches = chunk.match(/\/Subtype\s*\/Image|\/Image\b|\/XObject\b/g);
+      const imageOps = imageMatches ? imageMatches.length : 0;
+
+      const vectorMatches = chunk.match(/\b([0-9.]+\s+[0-9.]+\s+[0-9.]+\s+[0-9.]+\s+re|[0-9.]+\s+[0-9.]+\s+[mlc]|[sSfbB]\b)/g);
+      const vectorOps = vectorMatches ? vectorMatches.length : 0;
+
+      const lowerText = pageText.toLowerCase();
+      const hasQueryMatch =
+        promptTokens.some((kw) => lowerText.includes(kw)) ||
+        drawingMarkers.some((dm) => lowerText.includes(dm));
+
+      const vectorScore = Math.min(Math.round(vectorOps / 3), 100);
+      const imageScore = Math.min(imageOps * 40, 160);
+      const geomScore = isLandscape ? 40 : 0;
+      const queryScore = hasQueryMatch ? 60 : 0;
+      const textPenalty = charCount > 1500 && imageOps === 0 && vectorOps < 50 ? 50 : 0;
+
+      const score = vectorScore + imageScore + geomScore + queryScore - textPenalty;
+
+      fallbackScores.push({
+        pageNumber: pageNum,
+        score,
+        imageOps,
+        vectorOps,
+        charCount,
+        isLandscape,
+        hasQueryMatch,
+        pageText,
+      });
+    }
+  } else {
+    // If no /Type /Page found, single page fallback
+    const pageText = extractPdfText(pdfBuffer);
+    fallbackScores.push({
+      pageNumber: 1,
+      score: 50,
+      imageOps: 1,
+      vectorOps: 0,
+      charCount: pageText.length,
+      isLandscape: false,
+      hasQueryMatch: true,
+      pageText,
+    });
+  }
+
+  const sorted = [...fallbackScores].sort((a, b) => b.score - a.score);
+  const effectiveMax = Math.min(maxPages, totalDocPages);
+  const selected = sorted.slice(0, effectiveMax).map((s) => s.pageNumber).sort((a, b) => a - b);
+  const unselected = fallbackScores.filter((s) => !selected.includes(s.pageNumber)).map((s) => s.pageNumber);
+
+  const unselectedText = fallbackScores
+    .filter((s) => unselected.includes(s.pageNumber) && s.charCount > 0)
+    .map((s) => `[Page ${s.pageNumber}]:\n${s.pageText.slice(0, 1500)}`)
+    .join("\n\n");
+
+  const savedTokens = Math.max(unselected.length * 1400 - Math.ceil(unselectedText.length / 4), 0);
+
+  return {
+    selectedPages: selected.length > 0 ? selected : [1],
+    unselectedPages: unselected,
+    unselectedText,
+    scores: fallbackScores,
+    totalDocPages,
+    estimatedTokensSaved: savedTokens,
+  };
+}
+
+

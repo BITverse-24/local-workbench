@@ -9,7 +9,7 @@
 import { archiveChat, createChat, listChats, renameChat } from "../persistence/chats.js";
 import { addMessage, editMessage, listMessages, type Message } from "../persistence/messages.js";
 import { getSetting, setSetting } from "../persistence/settings-store.js";
-import { IPC_CHAT } from "./channels.js";
+import { IPC_CHAT, IPC_RUN, IPC_WORKSPACE } from "./channels.js";
 import {
   archiveChatSchema,
   createChatSchema,
@@ -26,9 +26,15 @@ import {
   getArtifactSchema,
   getRunHistorySchema,
   registerAttachmentSchema,
+  registerWorkspaceSchema,
+  harnessListDirSchema,
+  harnessReadFileSchema,
+  harnessSearchSchema,
+  harnessWriteFileSchema,
+  harnessRunCommandSchema,
 } from "./validators.js";
-import { IPC_RUN } from "./channels.js";
 import { RunManager } from "../run/manager.js";
+import { HarnessManager } from "../harness/harness-manager.js";
 
 /** Structural subset of Electron's ipcMain needed here (keeps backend testable w/o electron). */
 export interface IpcRegistrar {
@@ -79,6 +85,7 @@ export function handleSendMessage(input: unknown): { messageId: string; seq: num
     chat_id: parsed.chatId,
     role: parsed.role,
     content: parsed.content,
+    attachment_ids: parsed.attachmentIds,
   });
   return { messageId: id, seq };
 }
@@ -127,5 +134,42 @@ export function registerRunHandlers(ipcMain: MinimalIpcMain, manager: RunManager
   // openArtifact is Electron-main-only; registered in electron_app/electron/main.ts via manager.artifact + shell.
   // Kept here as a no-op so FakeIpcMain tests pass; real handler is installed by initBackend when running under Electron.
 }
+
+export function registerWorkspaceHandlers(ipcMain: MinimalIpcMain, harness: HarnessManager): void {
+  ipcMain.handle(IPC_WORKSPACE.REGISTER, (_event, input) => {
+    const parsed = registerWorkspaceSchema.parse(input);
+    return harness.registerWorkspace(parsed.dirPath);
+  });
+  ipcMain.handle(IPC_WORKSPACE.DEREGISTER, () => {
+    harness.deregisterWorkspace();
+    return { ok: true };
+  });
+  ipcMain.handle(IPC_WORKSPACE.GET_CURRENT, () => {
+    return harness.currentWorkspace();
+  });
+  ipcMain.handle(IPC_WORKSPACE.LIST_DIR, (_event, input) => {
+    const parsed = harnessListDirSchema.parse(input ?? {});
+    return harness.executeTool({ tool: "list_dir", args: parsed });
+  });
+  ipcMain.handle(IPC_WORKSPACE.READ_FILE, (_event, input) => {
+    const parsed = harnessReadFileSchema.parse(input);
+    return harness.executeTool({ tool: "read_file", args: parsed });
+  });
+  ipcMain.handle(IPC_WORKSPACE.SEARCH, (_event, input) => {
+    const parsed = harnessSearchSchema.parse(input);
+    return harness.executeTool({ tool: "search", args: parsed });
+  });
+  ipcMain.handle(IPC_WORKSPACE.WRITE_FILE, (_event, input) => {
+    const parsed = harnessWriteFileSchema.parse(input);
+    return harness.executeTool({ tool: "write_file", args: parsed });
+  });
+  ipcMain.handle(IPC_WORKSPACE.RUN_COMMAND, (_event, input) => {
+    const parsed = harnessRunCommandSchema.parse(input);
+    return harness.executeTool({ tool: "run_command", args: parsed });
+  });
+}
+
+export { registerKnowledgeBaseHandlers } from "./kb-handlers.js";
+export { registerOnboardingHandlers, restoreSavedModelConfig } from "./onboarding-handlers.js";
 
 

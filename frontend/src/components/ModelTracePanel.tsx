@@ -7,18 +7,17 @@ type TraceEntry = Record<string, unknown> & { phase?: string; taskType?: string;
 
 function phaseColor(phase?: string) {
   switch (phase) {
-    case "request": return "text-sky-300";
-    case "http_response": return "text-zinc-300";
-    case "envelope": return "text-violet-300";
-    case "provider_content_raw": return "text-amber-300";
-    case "parsed_json": return "text-emerald-300";
-    case "normalized": return "text-emerald-400";
-    case "gateway_error": return "text-red-400";
+    case "gateway_error":
     case "parse_error":
     case "normalize_error":
     case "envelope_parse_error":
-    case "provider_error": return "text-red-300";
-    default: return "text-zinc-400";
+    case "provider_error":
+      return "text-[var(--status-error)]";
+    case "normalized":
+    case "parsed_json":
+      return "text-[var(--status-success)]";
+    default:
+      return "text-[var(--text-secondary)]";
   }
 }
 
@@ -92,33 +91,33 @@ export default function ModelTracePanel({ runId }: Props) {
   const hasFailedEntry = entries.some((e) => e.phase === "gateway_error" || e.phase === "parse_error" || e.phase === "normalize_error");
 
   return (
-    <div className="mx-4 my-2 rounded-xl neu-card p-3">
+    <div className="mx-4 my-2 rounded-[var(--radius-md)] neu-card border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-[11px] tracking-[0.12em] uppercase opacity-50 flex items-center gap-2">
-          Model trace {loading && <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse inline-block" />}
-          {hasFailedEntry && <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 normal-case tracking-normal text-[10px]">has error</span>}
+        <div className="text-xs font-medium text-[var(--text-secondary)] flex items-center gap-2">
+          Model trace {loading && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] inline-block" />}
+          {hasFailedEntry && <span className="px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-[var(--status-error)]/15 text-[var(--status-error)] border border-[var(--status-error)]/30 text-[10px] font-medium">has error</span>}
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => void fetchLogs()} className="px-2 py-1 rounded-full neu-button text-[11px]">Refresh</button>
+          <button onClick={() => void fetchLogs()} className="px-2 py-0.5 rounded-[var(--radius-sm)] neu-button text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Refresh</button>
           {recentFull != null && (
-            <button onClick={() => { setSelectedFileContent(recentFull); setSelectedFileName("recentFull (latest)"); setFullOpen(true); }} className="px-2 py-1 rounded-full neu-button text-[11px]">Full JSON</button>
+            <button onClick={() => { setSelectedFileContent(recentFull); setSelectedFileName("recentFull (latest)"); setFullOpen(true); }} className="px-2 py-0.5 rounded-[var(--radius-sm)] neu-button text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Full JSON</button>
           )}
         </div>
       </div>
 
       {entries.length === 0 ? (
-        <div className="text-xs opacity-40">No model logs yet for this run. Logs appear after each gateway call — check <span className="font-mono">backend/data/runs/{(runId ?? "").slice(0, 8)}…/logs/</span>.</div>
+        <div className="text-xs text-[var(--text-tertiary)]">No model logs yet for this run. Logs appear after each gateway call — check <span className="font-mono">backend/data/runs/{(runId ?? "").slice(0, 8)}…/logs/</span>.</div>
       ) : (
         <div className="space-y-1 max-h-[220px] overflow-y-auto pr-1">
           {entries.map((e, i) => (
-            <div key={i} className={`rounded-lg px-2 py-1.5 bg-black/20 border border-white/5 ${expanded === i ? "bg-black/30" : ""}`}>
+            <div key={i} className={`rounded-[var(--radius-sm)] px-2 py-1.5 bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] ${expanded === i ? "bg-[var(--bg-surface-raised)]" : ""}`}>
               <button onClick={() => setExpanded(expanded === i ? null : i)} className="w-full text-left flex gap-2 items-start">
                 <span className={`text-[10px] font-mono shrink-0 mt-0.5 ${phaseColor(e.phase)}`}>{e.phase ?? "?"}</span>
-                <span className="text-xs opacity-80 break-all leading-relaxed flex-1">{preview(e)}</span>
-                <span className="text-[10px] opacity-30 shrink-0">{e.timestamp ? new Date(e.timestamp as string).toLocaleTimeString() : ""}</span>
+                <span className="text-xs text-[var(--text-secondary)] break-all leading-relaxed flex-1">{preview(e)}</span>
+                <span className="text-[10px] text-[var(--text-tertiary)] shrink-0 font-mono">{e.timestamp ? new Date(e.timestamp as string).toLocaleTimeString() : ""}</span>
               </button>
               {expanded === i && (
-                <pre className="mt-2 text-[11px] leading-relaxed whitespace-pre-wrap break-all bg-black/40 rounded p-2 max-h-[300px] overflow-auto">
+                <pre className="mt-2 text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-all bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--text-primary)] rounded-[var(--radius-sm)] p-2 max-h-[300px] overflow-auto">
                   {JSON.stringify(e, null, 2)}
                 </pre>
               )}
@@ -128,11 +127,11 @@ export default function ModelTracePanel({ runId }: Props) {
       )}
 
       {files.length > 0 && (
-        <div className="mt-2 pt-2 border-t border-white/5">
-          <div className="text-[11px] opacity-40 mb-1">Per-request files — full untruncated traces:</div>
+        <div className="mt-2 pt-2 border-t border-[var(--border-subtle)]">
+          <div className="text-[11px] text-[var(--text-tertiary)] mb-1">Per-request files — full untruncated traces:</div>
           <div className="flex flex-wrap gap-1">
             {files.map((f) => (
-              <button key={f} onClick={() => void openFile(f)} className="px-2 py-1 rounded-full bg-white/5 hover:bg-white/10 text-[11px] font-mono">
+              <button key={f} onClick={() => void openFile(f)} className="px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] hover:bg-[var(--bg-surface)] text-[11px] font-mono text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
                 {f}
               </button>
             ))}
@@ -141,24 +140,24 @@ export default function ModelTracePanel({ runId }: Props) {
       )}
 
       {fullOpen && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setFullOpen(false)}>
-          <div className="bg-[#1c1c1c] border border-white/10 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden" onClick={(ev) => ev.stopPropagation()}>
-            <div className="flex items-center justify-between p-3 border-b border-white/10">
-              <span className="text-xs font-mono opacity-70 truncate">{selectedFileName}</span>
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setFullOpen(false)}>
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden" onClick={(ev) => ev.stopPropagation()}>
+            <div className="flex items-center justify-between p-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)]">
+              <span className="text-xs font-mono text-[var(--text-secondary)] truncate">{selectedFileName}</span>
               <div className="flex gap-2">
                 <button
                   onClick={() => {
                     const text = JSON.stringify(selectedFileContent, null, 2);
                     void navigator.clipboard.writeText(text);
                   }}
-                  className="px-3 py-1 rounded-full neu-button text-xs"
+                  className="px-2.5 py-1 rounded-[var(--radius-sm)] neu-button text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 >
                   Copy
                 </button>
-                <button onClick={() => setFullOpen(false)} className="w-8 h-8 rounded-full bg-white/10 grid place-items-center">×</button>
+                <button onClick={() => setFullOpen(false)} className="w-7 h-7 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]">✕</button>
               </div>
             </div>
-            <pre className="p-3 text-xs leading-relaxed whitespace-pre-wrap break-all overflow-auto flex-1">{JSON.stringify(selectedFileContent, null, 2)}</pre>
+            <pre className="p-3 text-xs font-mono leading-relaxed whitespace-pre-wrap break-all overflow-auto flex-1 bg-[var(--bg-canvas)] text-[var(--text-primary)]">{JSON.stringify(selectedFileContent, null, 2)}</pre>
           </div>
         </div>
       )}

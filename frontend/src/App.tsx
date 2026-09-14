@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import "./App.css";
 import TitleBar from "./components/TitleBar";
 import LeftSidebar, { type SidebarChat } from "./components/LeftSidebar";
@@ -7,16 +7,15 @@ import ChatArea, { type ChatMessage } from "./components/ChatArea";
 import InputBar from "./components/InputBar";
 import RightSidebar from "./components/RightSidebar";
 import ModelDropdown from "./components/ModelDropdown";
-import PlusDropup from "./components/PlusDropup";
 import UploadModal from "./components/modals/UploadModal";
 import CameraModal from "./components/modals/CameraModal";
 import VoiceModal from "./components/modals/VoiceModal";
 import ConfirmationModal from "./components/ConfirmationModal";
-import ArtifactPane from "./components/ArtifactPane";
 import RouteBadge from "./components/RouteBadge";
-import { MODELS } from "./lib/models";
+import OnboardingPage from "./components/onboarding/OnboardingPage";
+import { getModelRoutes, MODELS } from "./lib/models";
 import * as wb from "./lib/workbench";
-import { useDropdownPosition, usePlusPosition } from "./lib/hooks/useDropdownPosition";
+import { useDropdownPosition } from "./lib/hooks/useDropdownPosition";
 import { useCamera } from "./lib/hooks/useCamera";
 import { useVoice } from "./lib/hooks/useVoice";
 import { useUpload } from "./lib/hooks/useUpload";
@@ -27,7 +26,13 @@ function toChatMessages(rows: PersistedMessage[]): ChatMessage[] {
   const out: ChatMessage[] = [];
   for (const r of rows) {
     if (r.role === "user" || r.role === "assistant") {
-      out.push({ id: r.id, role: r.role, text: r.content });
+      out.push({
+        id: r.id,
+        role: r.role,
+        text: r.content,
+        artifacts: r.artifacts,
+        files: r.attachments?.map((a) => ({ name: a.filename, size: a.sizeBytes })),
+      });
     }
   }
   return out;
@@ -38,8 +43,6 @@ export default function App() {
   const [temperature, setTemperature] = useState(0.7);
   const [selectedModel, setSelectedModel] = useState(MODELS[0]);
   const [modelOpen, setModelOpen] = useState(false);
-  const [plusOpen, setPlusOpen] = useState(false);
-  const [searchActive, setSearchActive] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
@@ -56,20 +59,53 @@ export default function App() {
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingAction | null>(null);
   const [confirmationBusy, setConfirmationBusy] = useState(false);
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
-  const [runArtifacts, setRunArtifacts] = useState<ArtifactRef[]>([]);
+  const [, setRunArtifacts] = useState<ArtifactRef[]>([]);
   const [runError, setRunError] = useState<{ code: string; message: string } | null>(null);
   const [serviceHealth, setServiceHealth] = useState<ModelHealth[] | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [groundingEnabled, setGroundingEnabled] = useState(true);
+  const [groundingStatus, setGroundingStatus] = useState<{ status: "retrieving" | "injected" | "skipped"; chunkCount?: number } | null>(null);
   const activeRunRef = useRef<string | null>(null);
   activeRunRef.current = activeRunId;
   const isRunning = runState !== null && !["completed", "failed", "cancelled"].includes(runState);
 
-  // Launch: restore history, last chat, temperature
+  // Onboarding state
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
+  const [cachedModels, setCachedModels] = useState<ModelConfigRow[] | undefined>(undefined);
+
+  const availableModels = useMemo(() => getModelRoutes(cachedModels), [cachedModels]);
+
+  useEffect(() => {
+    if (availableModels.length > 0) {
+      setSelectedModel((prev) => {
+        const match = availableModels.find((m) => m.id === prev.id || m.role === prev.role);
+        return match ?? availableModels[0];
+      });
+    }
+  }, [availableModels]);
+
+  // Workspace state
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceInfo | null>(null);
+  const [workspaceTree, setWorkspaceTree] = useState<HarnessDirEntry[]>([]);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
+
+  // Launch: restore history, last chat, temperature, workspace, onboarding
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!wb.isWorkbenchAvailable()) return;
       try {
+        // Check onboarding status first
+        try {
+          const ob = await wb.getOnboardingStatus();
+          if (!cancelled) {
+            setOnboardingCompleted(ob.completed);
+            setCachedModels(ob.configuredModels);
+          }
+        } catch {
+          if (!cancelled) setOnboardingCompleted(true);
+        }
+
         const chats = await wb.getChatHistory(50);
         if (cancelled) return;
         setPersistent(true);
@@ -85,10 +121,22 @@ export default function App() {
         setRunEvents([]);
         setRunArtifacts([]);
         setRunError(null);
+        setGroundingStatus(null);
         // Health probe on startup
         try {
           const h = await wb.getHealth();
           if (!cancelled) setServiceHealth(h);
+        } catch {
+          void 0;
+        }
+        // Check if a workspace is already active
+        try {
+          const ws = await wb.getCurrentWorkspace();
+          if (!cancelled && ws) {
+            setActiveWorkspace(ws);
+            const treeRes = await wb.listWorkspaceDir();
+            if (!cancelled && treeRes?.result) setWorkspaceTree(treeRes.result);
+          }
         } catch {
           void 0;
         }
@@ -120,12 +168,16 @@ export default function App() {
     try {
       unsub = wb.onRunEvent((event: RunEvent) => {
         // Ignore events for other runs when we have an active run filter
-        // but still accept routing/assistant for history coherence.
+        // but never drop assistant_message or routing for chat coherence.
         const rid = (event as { runId?: string }).runId;
-        if (activeRunRef.current && rid && rid !== activeRunRef.current) {
-          // Only skip UI-spam; keep routing visible if needed.
-          // For now ignore foreign run entirely.
-          return;
+        if (event.type !== "assistant_message") {
+          if (activeRunRef.current && rid && rid !== activeRunRef.current) {
+            return;
+          }
+        }
+        if (rid && !activeRunRef.current) {
+          activeRunRef.current = rid;
+          setActiveRunId(rid);
         }
         setRunEvents((prev) => [...prev, event]);
         switch (event.type) {
@@ -142,10 +194,58 @@ export default function App() {
             setPendingConfirmation(event.action);
             break;
           case "artifact_ready":
-            setRunArtifacts((prev) => [...prev, event.artifact]);
+            setRunArtifacts((prev) => {
+              if (
+                prev.some(
+                  (a) =>
+                    a.artifactId === event.artifact.artifactId ||
+                    (a.runId === event.artifact.runId && a.filename === event.artifact.filename),
+                )
+              ) {
+                return prev;
+              }
+              return [...prev, event.artifact];
+            });
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === "assistant") {
+                const existing = last.artifacts ?? [];
+                if (
+                  !existing.some(
+                    (a) =>
+                      a.artifactId === event.artifact.artifactId ||
+                      a.filename === event.artifact.filename,
+                  )
+                ) {
+                  return [...prev.slice(0, -1), { ...last, artifacts: [...existing, event.artifact] }];
+                }
+                return prev;
+              }
+              return [
+                ...prev,
+                {
+                  id: `artifact-msg-${event.artifact.artifactId}`,
+                  role: "assistant",
+                  text: "",
+                  artifacts: [event.artifact],
+                },
+              ];
+            });
             break;
           case "assistant_message":
-            setMessages((prev) => [...prev, { id: event.messageId, role: "assistant", text: event.text }]);
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === "assistant" && (!last.text || last.id.startsWith("artifact-msg-"))) {
+                return [
+                  ...prev.slice(0, -1),
+                  { ...last, id: event.messageId, text: event.text },
+                ];
+              }
+              return [...prev, { id: event.messageId, role: "assistant", text: event.text }];
+            });
+            break;
+          case "grounding_context":
+            setGroundingStatus({ status: event.status, chunkCount: event.chunkCount });
             break;
           case "error":
             setRunError({ code: event.code, message: event.message });
@@ -168,6 +268,82 @@ export default function App() {
     };
   }, []);
 
+  // Single workspace-event subscription
+  useEffect(() => {
+    if (!wb.isWorkbenchAvailable()) return;
+    let unsub: (() => void) | undefined;
+    try {
+      unsub = wb.onWorkspaceEvent((event: any) => {
+        if (event?.type === "workspace_registered") {
+          setActiveWorkspace(event.workspace);
+        } else if (event?.type === "workspace_deregistered") {
+          setActiveWorkspace(null);
+          setWorkspaceTree([]);
+        } else if (event?.type === "workspace_tree") {
+          setWorkspaceTree(event.entries ?? []);
+        }
+      });
+    } catch {
+      void 0;
+    }
+    return () => {
+      try {
+        unsub?.();
+      } catch {
+        void 0;
+      }
+    };
+  }, []);
+
+  const handlePickWorkspace = useCallback(async () => {
+    if (!wb.isWorkbenchAvailable()) return;
+    setWorkspaceLoading(true);
+    try {
+      const folder = await wb.pickWorkspaceFolder();
+      if (folder) {
+        const info = await wb.registerWorkspace(folder);
+        setActiveWorkspace(info);
+        const treeRes = await wb.listWorkspaceDir();
+        if (treeRes?.result) setWorkspaceTree(treeRes.result);
+      }
+    } catch (e) {
+      console.error("Failed to register workspace:", e);
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  }, []);
+
+  const handleCloseWorkspace = useCallback(async () => {
+    if (!wb.isWorkbenchAvailable()) return;
+    setWorkspaceLoading(true);
+    try {
+      await wb.deregisterWorkspace();
+      setActiveWorkspace(null);
+      setWorkspaceTree([]);
+    } catch (e) {
+      console.error("Failed to deregister workspace:", e);
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  }, []);
+
+  const handleRefreshWorkspaceTree = useCallback(async () => {
+    if (!wb.isWorkbenchAvailable() || !activeWorkspace) return;
+    setWorkspaceLoading(true);
+    try {
+      const treeRes = await wb.listWorkspaceDir();
+      if (treeRes?.result) setWorkspaceTree(treeRes.result);
+    } catch (e) {
+      console.error("Failed to refresh workspace tree:", e);
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  }, [activeWorkspace]);
+
+  const handleSelectWorkspaceFile = useCallback((relPath: string) => {
+    setInput((prev) => (prev ? `${prev} ${relPath}` : `@${relPath} `));
+  }, []);
+
   const loadMessages = useCallback(async (id: string) => {
     try {
       const rows = await wb.getMessages(id);
@@ -188,6 +364,7 @@ export default function App() {
       setRunEvents([]);
       setRunArtifacts([]);
       setRunError(null);
+      setGroundingStatus(null);
       if (!persistent) return;
       try {
         await wb.setSetting("lastChatId", id);
@@ -207,6 +384,7 @@ export default function App() {
     setRunEvents([]);
     setRunArtifacts([]);
     setRunError(null);
+    setGroundingStatus(null);
     if (persistent) {
       try {
         const id = await wb.createChat("New chat");
@@ -281,16 +459,8 @@ export default function App() {
     [chatId, persistent],
   );
 
-  const handleTemperature = useCallback(
-    (v: number) => {
-      setTemperature(v);
-      if (persistent) void wb.setSetting("temperature", v).catch(() => undefined);
-    },
-    [persistent],
-  );
 
   const { btnRef: modelBtnRef, pos: dropdownPos } = useDropdownPosition(modelOpen);
-  const { btnRef: plusBtnRef, pos: plusPos } = usePlusPosition(plusOpen);
 
   const upload = useUpload();
   const camera = useCamera();
@@ -322,12 +492,11 @@ export default function App() {
     if (confirmationBusy) return;
     const { actionId, runId } = pendingConfirmation;
     setConfirmationBusy(true);
+    setPendingConfirmation(null);
     try {
       await wb.confirmAction({ runId, actionId, approved });
-      setPendingConfirmation(null);
     } catch (e) {
       setRunError({ code: "confirm_failed", message: e instanceof Error ? e.message : String(e) });
-      setPendingConfirmation(null);
     } finally {
       setConfirmationBusy(false);
     }
@@ -344,14 +513,6 @@ export default function App() {
     }
   }, [activeRunId]);
 
-  const handleOpenArtifact = useCallback(async (artifact: ArtifactRef) => {
-    try {
-      await wb.openArtifact({ runId: artifact.runId, artifactId: artifact.artifactId });
-    } catch (e) {
-      setRunError({ code: "open_failed", message: e instanceof Error ? e.message : String(e) });
-    }
-  }, []);
-
   const handleSaveArtifact = useCallback(async (artifact: ArtifactRef) => {
     try {
       await wb.saveArtifact({ runId: artifact.runId, artifactId: artifact.artifactId });
@@ -365,23 +526,49 @@ export default function App() {
     const hasFiles = attachedFiles.length > 0;
     if (!hasText && !hasFiles) return;
     if (isRunning) return;
-    if (attachedFiles.length > 1) {
-      setRunError({ code: "too_many_attachments", message: "Only one attachment per run is supported. Remove extra files and try again." });
+    if (attachedFiles.length > 10) {
+      setRunError({ code: "too_many_attachments", message: "Maximum 10 attachments per run supported." });
       return;
     }
     const text = input;
-    const file = attachedFiles[0] ?? null;
-    // Clear composer only after validation; for file path clear after register succeeds.
-    if (!file) setInput("");
+    const currentFiles = [...attachedFiles];
+    if (currentFiles.length === 0) setInput("");
 
     // Persistent chat + backend run path
     if (persistent) {
       const cid = await ensureChatId(text);
       if (cid) {
         try {
-          // Persist user message first (visible immediately)
-          const { messageId } = await wb.sendMessage(cid, "user", text);
-          setMessages((prev) => [...prev, { id: messageId, role: "user", text, files: file ? [file] : undefined }]);
+          const attachmentTokens: string[] = [];
+          let runIdForAttachment: string | undefined;
+          if (currentFiles.length > 0) {
+            for (const f of currentFiles) {
+              const reg = await wb.registerAttachment({ chatId: cid, file: f });
+              attachmentTokens.push(reg.attachment.attachmentId);
+              if (!runIdForAttachment) runIdForAttachment = reg.runId;
+            }
+            setInput("");
+            setAttachedFiles([]);
+          } else {
+            setAttachedFiles([]);
+          }
+
+          // Persist user message linked with attachment IDs (visible immediately)
+          const { messageId } = await wb.sendMessage(
+            cid,
+            "user",
+            text,
+            attachmentTokens.length > 0 ? attachmentTokens : undefined,
+          );
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: messageId,
+              role: "user",
+              text,
+              files: currentFiles.length > 0 ? currentFiles.map((f) => ({ name: f.name, size: f.size })) : undefined,
+            },
+          ]);
           setHistory((prev) => prev.map((c) => (c.id === cid ? { ...c, updated_at: new Date().toISOString() } : c)));
 
           // Reset run UI
@@ -390,34 +577,40 @@ export default function App() {
           setRunError(null);
           setActiveRoute(null);
           setPendingConfirmation(null);
+          setGroundingStatus(null);
           setRunState("created");
 
-          let attachmentToken: string | undefined;
-          let runIdForAttachment: string | undefined;
-          if (file) {
-            const reg = await wb.registerAttachment({ chatId: cid, file });
-            attachmentToken = reg.attachment.attachmentId;
-            runIdForAttachment = reg.runId;
-            setInput("");
-            setAttachedFiles([]);
-          } else {
-            setAttachedFiles([]);
-          }
+          const clientRunId = runIdForAttachment ?? crypto.randomUUID();
+          activeRunRef.current = clientRunId;
+          setActiveRunId(clientRunId);
 
           const { runId } = await wb.startRun({
             userText: text,
-            attachmentToken,
-            runId: runIdForAttachment,
+            attachmentToken: attachmentTokens[0],
+            attachmentTokens,
+            runId: clientRunId,
             chatId: cid,
             temperature,
+            groundingEnabled,
+            preferredRoute: selectedModel.role || selectedModel.id,
           });
           setActiveRunId(runId);
+          activeRunRef.current = runId;
+
+          // Re-sync messages from SQLite in case fast background run finished
+          try {
+            const latest = await wb.getMessages(cid);
+            if (latest && latest.length > 0) {
+              setMessages(toChatMessages(latest));
+            }
+          } catch {}
+
           // Chat stays on cid; run is linked via DB.
           return;
         } catch (e) {
           setRunError({ code: "send_failed", message: e instanceof Error ? e.message : String(e) });
           // keep composer content if register/start failed
-          if (file) {
+          if (currentFiles.length > 0) {
             // do not clear on failure — keep file for retry
           }
           return;
@@ -426,9 +619,9 @@ export default function App() {
     }
 
     // Fallback / non-persistent: in-memory only, no backend run
-    const fallbackFiles = file ? [file] : undefined;
-    if (!file) { setInput(""); setAttachedFiles([]); }
-    else { setInput(""); setAttachedFiles([]); }
+    const fallbackFiles = currentFiles.length > 0 ? currentFiles : undefined;
+    setInput("");
+    setAttachedFiles([]);
     const newMsg: ChatMessage = { id: Date.now().toString(), role: "user", text, files: fallbackFiles };
     setMessages((prev) => [...prev, newMsg]);
     if (chatId) {
@@ -487,11 +680,32 @@ export default function App() {
     upload.setShow(false);
   }, [upload, addFiles]);
 
+  if (onboardingCompleted === false) {
+    return (
+      <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none" style={{ background: "var(--bg-canvas)" }}>
+        <TitleBar />
+        <div className="flex-1 overflow-hidden relative">
+          <OnboardingPage
+            initialConfig={cachedModels}
+            onComplete={async () => {
+              try {
+                const ob = await wb.getOnboardingStatus();
+                setCachedModels(ob.configuredModels);
+              } catch {}
+              setOnboardingCompleted(true);
+              void refreshHealth();
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none page-apple-enter" style={{ background: "#181818" }}>
+    <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none page-apple-enter" style={{ background: "var(--bg-canvas)" }}>
       <TitleBar />
 
-      <div className="flex flex-1 overflow-hidden p-3 gap-3 relative z-10" style={{ background: "#181818" }}>
+      <div className="flex flex-1 overflow-hidden p-3 gap-3 relative z-10" style={{ background: "var(--bg-canvas)" }}>
         <LeftSidebar
           collapsed={leftCollapsed}
           onCollapse={() => setLeftCollapsed(true)}
@@ -501,55 +715,74 @@ export default function App() {
           onNewChat={handleNewChat}
           onDeleteChat={handleDeleteChat}
           onRename={handleRenameChat}
+          workspace={activeWorkspace}
+          workspaceTree={workspaceTree}
+          onPickWorkspace={handlePickWorkspace}
+          onCloseWorkspace={handleCloseWorkspace}
+          onRefreshTree={handleRefreshWorkspaceTree}
+          onSelectWorkspaceFile={handleSelectWorkspaceFile}
+          workspaceLoading={workspaceLoading}
         />
 
         <ChatPanel title={activeTitle} leftCollapsed={leftCollapsed} rightCollapsed={rightCollapsed} onToggleLeft={() => setLeftCollapsed(!leftCollapsed)} onToggleRight={() => setRightCollapsed(!rightCollapsed)}>
           {activeRoute && <RouteBadge route={activeRoute} state={runState} />}
           {runError && (
-            <div className="mx-4 mt-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex flex-col gap-1 select-text">
+            <div className="mx-4 mt-2 px-3.5 py-2.5 rounded-[var(--radius-sm)] bg-[var(--status-error)]/15 border border-[var(--status-error)]/30 text-sm text-[var(--status-error)] flex flex-col gap-1 select-text">
               <div className="flex items-start justify-between gap-2">
                 <span className="break-words whitespace-pre-wrap cursor-text"><strong>{runError.code}:</strong> {runError.message}</span>
-                <button onClick={() => setRunError(null)} className="shrink-0 w-6 h-6 rounded-full bg-white/10 grid place-items-center">x</button>
+                <button onClick={() => setRunError(null)} className="shrink-0 w-6 h-6 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs text-[var(--text-secondary)]">✕</button>
               </div>
-              <span className="opacity-60 text-[11px] cursor-text">Full model response is in Model Trace (Settings sidebar & terminal logs) — expand provider_content_raw / normalized to see what the model returned.</span>
+              <span className="opacity-70 text-xs cursor-text">Full model response is in Model Trace (Settings sidebar & terminal logs) — expand provider_content_raw / normalized to see what the model returned.</span>
             </div>
           )}
           {isRunning && (
-            <div className="mx-4 mt-2 flex items-center gap-2 text-xs opacity-60">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              {runState === "awaiting_confirmation" ? "Awaiting confirmation" : `Run ${runState}...`}
-              <button onClick={handleCancelRun} className="ml-auto px-3 py-1 rounded-full neu-button text-xs">Cancel</button>
+            <div className="mx-4 mt-2 flex items-center gap-2.5 text-sm text-[var(--text-secondary)]">
+              <span className="w-2 h-2 rounded-full bg-[var(--accent)]" />
+              <span className="font-medium">{runState === "awaiting_confirmation" ? "Awaiting confirmation" : `Run ${runState}...`}</span>
+              {groundingStatus && (
+                <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+                  {groundingStatus.status === "retrieving"
+                    ? "Retrieving SOP context..."
+                    : groundingStatus.status === "injected"
+                    ? `Grounding: ${groundingStatus.chunkCount ?? 0} SOP chunks`
+                    : "Grounding: No SOP found"}
+                </span>
+              )}
+              <button onClick={handleCancelRun} className="ml-auto px-3 py-1 rounded-[var(--radius-sm)] neu-button text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Cancel</button>
             </div>
           )}
-          <ChatArea messages={messages} onEditMessage={handleEditMessage} onAttachFiles={addFiles} />
-          {runArtifacts.length > 0 && <ArtifactPane artifacts={runArtifacts} onOpen={handleOpenArtifact} onSave={handleSaveArtifact} runId={activeRunId ?? undefined} />}
+          <ChatArea
+            messages={messages}
+            onEditMessage={handleEditMessage}
+            onAttachFiles={addFiles}
+            onSaveArtifact={handleSaveArtifact}
+            isRunning={isRunning}
+            runState={runState}
+            activeRoute={activeRoute}
+            runEvents={runEvents}
+          />
           <InputBar
             input={input}
             setInput={setInput}
-            plusOpen={plusOpen}
-            setPlusOpen={setPlusOpen}
-            plusBtnRef={plusBtnRef}
-            searchActive={searchActive}
-            setSearchActive={setSearchActive}
-            onVoice={() => voice.setShow(true)}
             onSend={handleSend}
             attachedFiles={attachedFiles}
             onAttachFiles={addFiles}
             onRemoveFile={removeAttached}
             disabled={isRunning}
+            groundingEnabled={groundingEnabled}
+            setGroundingEnabled={setGroundingEnabled}
           />
         </ChatPanel>
 
         <RightSidebar
           collapsed={rightCollapsed}
           onCollapse={() => setRightCollapsed(true)}
-          models={MODELS}
+          models={availableModels}
           selectedModel={selectedModel}
           modelOpen={modelOpen}
           setModelOpen={setModelOpen}
           modelBtnRef={modelBtnRef}
-          temperature={temperature}
-          setTemperature={handleTemperature}
           activeRoute={activeRoute}
           runState={runState}
           health={serviceHealth}
@@ -560,16 +793,7 @@ export default function App() {
         />
       </div>
 
-      <ModelDropdown open={modelOpen} pos={dropdownPos} models={MODELS} selected={selectedModel} onSelect={(m) => { setSelectedModel(m); setModelOpen(false); }} onClose={() => setModelOpen(false)} />
-
-      <PlusDropup
-        open={plusOpen}
-        pos={plusPos}
-        onClose={() => setPlusOpen(false)}
-        onUpload={() => { setPlusOpen(false); upload.setShow(true); }}
-        onCamera={() => { setPlusOpen(false); camera.setShow(true); }}
-        onSearch={() => { setPlusOpen(false); setSearchActive(true); }}
-      />
+      <ModelDropdown open={modelOpen} pos={dropdownPos} models={availableModels} selected={selectedModel} onSelect={(m) => { setSelectedModel(m); setModelOpen(false); }} onClose={() => setModelOpen(false)} />
 
       <UploadModal open={upload.show} dragOver={upload.dragOver} setDragOver={upload.setDragOver} files={upload.files} setFiles={upload.setFiles} onClose={() => upload.setShow(false)} onConfirm={handleUploadConfirm} />
 

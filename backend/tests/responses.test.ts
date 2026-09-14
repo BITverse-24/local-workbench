@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateCode, validateChat } from "../src/main/validators/responses.js";
+import { validateCode, validateChat, sanitizePythonSource } from "../src/main/validators/responses.js";
 import { extractJsonFromText, normalizeResponse, parseProviderContent } from "../src/main/gateway/normalizer.js";
 
 describe("code response validation", () => {
@@ -44,6 +44,22 @@ describe("code response validation", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts empty string artifact metadata for a chat-only response (from local LLMs)", () => {
+    const result = validateCode({
+      filename: "task.py",
+      source: "import csv\nwith open('input.csv', newline='') as handle:\n    print(sum(1 for _ in csv.DictReader(handle)))",
+      expectedResult: "Prints the number of CSV rows.",
+      inputFiles: ["input.csv"],
+      outputFiles: [],
+      allowedImports: ["csv"],
+      outputMode: "chat",
+      artifactKind: "",
+      artifactFilename: "",
+      artifactRationale: "",
+    });
+    expect(result.ok).toBe(true);
+  });
+
   it("rejects command-line and unapproved imports", () => {
     const result = validateCode({
       filename: "task.py",
@@ -55,7 +71,6 @@ describe("code response validation", () => {
     });
     expect(result.ok).toBe(false);
   });
-});
 
   it("accepts an artifact response with a text file", () => {
     const result = validateCode({
@@ -72,6 +87,30 @@ describe("code response validation", () => {
     });
     expect(result.ok).toBe(true);
   });
+
+  it("sanitizes double-escaped newlines and code fences emitted by local LLMs", () => {
+    const doubleEscaped = "```python\\nimport csv\\n\\ndef summarize(path):\\n    counts = {\\\"ok\\\": 0}\\n    return counts\\n```";
+    const sanitized = sanitizePythonSource(doubleEscaped);
+    const lines = sanitized.split("\n");
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines[0]).toBe("import csv");
+    expect(sanitized).not.toContain("```");
+  });
+
+  it("normalizes escaped leading tabs to standard 4-space indentation", () => {
+    const withEscapedTabs = "def summarize(path):\n\\tcounts = {}\n\\t\\treturn counts";
+    const sanitized = sanitizePythonSource(withEscapedTabs);
+    const lines = sanitized.split("\n");
+    expect(lines[1]).toBe("    counts = {}");
+    expect(lines[2]).toBe("        return counts");
+  });
+
+  it("preserves escaped newlines inside strings when script already has real newlines", () => {
+    const script = "import csv\nmsg = \"hello\\nworld\"\nprint(msg)";
+    const sanitized = sanitizePythonSource(script);
+    expect(sanitized).toContain("hello\\nworld");
+  });
+});
 
 describe("chat response validation and normalization", () => {
   it("accepts standard text response", () => {
