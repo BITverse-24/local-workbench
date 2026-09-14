@@ -12,6 +12,7 @@ import { IPC_RUN } from "../backend/src/main/ipc/channels.js";
 // Python policy, or any other business rule (those live in /backend).
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
+const isDev = !app.isPackaged && process.env.NODE_ENV !== "production" && !process.env.WORKBENCH_PROD;
 const FRONTEND_DEV_URL =
   process.env.WORKBENCH_FRONTEND_URL ||
   process.env.VITE_DEV_SERVER_URL ||
@@ -25,7 +26,7 @@ let viteChild: ChildProcess | null = null;
 // (WORKBENCH_ENV_PATH or <repo>/.env), never overwrites set variables,
 // never logs values. No .env file is ever packaged.
 function loadDevEnv(): void {
-  if (app.isPackaged) return;
+  if (!isDev) return;
   const file = process.env.WORKBENCH_ENV_PATH ?? path.join(REPO_ROOT, ".env");
   let text: string;
   try {
@@ -89,15 +90,19 @@ function stopVite(): void {
 
 function frontendPublicDir(): string {
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, "frontend", "dist");
+    return path.join(app.getAppPath(), "frontend", "dist");
+  }
+  if (!isDev) {
+    return path.join(REPO_ROOT, "frontend", "dist");
   }
   return path.join(REPO_ROOT, "frontend", "public");
 }
 
 function createWindow(): void {
+  const iconPath = path.join(frontendPublicDir(), "electron-vite.svg");
   win = new BrowserWindow({
     title: "Sovereign Workbench",
-    icon: path.join(frontendPublicDir(), "electron-vite.svg"),
+    ...(existsSync(iconPath) ? { icon: iconPath } : {}),
     frame: false,
     fullscreen: true,
     width: 1200,
@@ -122,10 +127,18 @@ function createWindow(): void {
     return { action: "deny" };
   });
 
-  if (app.isPackaged) {
-    void win.loadFile(path.join(process.resourcesPath, "frontend", "dist", "index.html"));
-  } else {
+  if (isDev) {
+    console.log(`[electron] dev mode: loading url ${FRONTEND_DEV_URL}`);
     void win.loadURL(FRONTEND_DEV_URL);
+  } else {
+    const indexPath = app.isPackaged
+      ? path.join(app.getAppPath(), "frontend", "dist", "index.html")
+      : path.join(REPO_ROOT, "frontend", "dist", "index.html");
+    console.log(`[electron] production mode: loading file ${indexPath}`);
+    if (!existsSync(indexPath)) {
+      throw new Error(`Frontend bundle not found at ${indexPath}. Run 'npm run build' first.`);
+    }
+    void win.loadFile(indexPath);
   }
 }
 
@@ -321,7 +334,7 @@ app.whenReady().then(async () => {
     return;
   }
 
-  if (!app.isPackaged) {
+  if (isDev) {
     try {
       startVite();
       await waitForFrontend(FRONTEND_DEV_URL);

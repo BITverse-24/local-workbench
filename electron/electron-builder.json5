@@ -11,6 +11,11 @@
   "directories": {
     "output": "release/${version}"
   },
+  "asarUnpack": [
+    "**/*.node",
+    "**/node_modules/better-sqlite3/**/*",
+    "**/node_modules/canvas/**/*"
+  ],
   "files": [
     "frontend/dist/**/*",
     "electron/dist-electron/**/*",
