@@ -159,7 +159,7 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   );
 }
 
-function BasicMarkdown({ text }: { text: string }) {
+const BasicMarkdown = React.memo(function BasicMarkdown({ text }: { text: string }) {
   if (!text) return null;
   const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
   const segments: Array<{ type: 'text' | 'code'; content: string; lang?: string }> = [];
@@ -245,7 +245,154 @@ function BasicMarkdown({ text }: { text: string }) {
       })}
     </div>
   );
+});
+
+interface ChatMessageItemProps {
+  msg: ChatMessage;
+  isEditing: boolean;
+  isCopied: boolean;
+  editDraft: string;
+  onEditDraftChange: (val: string) => void;
+  onEditCancel: () => void;
+  onEditSave: () => void;
+  onCopy: (msg: ChatMessage) => void;
+  onEditStart: (msg: ChatMessage) => void;
+  onSaveArtifact?: (artifact: ArtifactRef) => void;
 }
+
+const ChatMessageItem = React.memo(function ChatMessageItem({
+  msg,
+  isEditing,
+  isCopied,
+  editDraft,
+  onEditDraftChange,
+  onEditCancel,
+  onEditSave,
+  onCopy,
+  onEditStart,
+  onSaveArtifact,
+}: ChatMessageItemProps) {
+  const isUser = msg.role === 'user';
+
+  return (
+    <div className={`flex group ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div className={`flex flex-col gap-1 ${isUser ? 'items-end max-w-[88%] md:max-w-[72%]' : 'max-w-[88%] md:max-w-[72%] items-start'}`}>
+        <div
+          className={`w-full ${isUser ? 'px-5 py-3.5 rounded-[var(--radius-md)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)]' : 'px-2 py-2 bg-transparent border-0 text-[var(--text-primary)]'}`}
+        >
+          {isEditing ? (
+            <div className="flex flex-col gap-2 min-w-[240px]">
+              <textarea
+                value={editDraft}
+                onChange={(e) => onEditDraftChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onEditCancel();
+                  }
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    onEditSave();
+                  }
+                }}
+                autoFocus
+                rows={3}
+                className="w-full min-h-[72px] max-h-[180px] p-3.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] outline-none text-[15px] sm:text-base text-[var(--text-primary)] leading-relaxed resize-none focus:border-[var(--accent)]"
+                placeholder="Edit message..."
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  onClick={onEditCancel}
+                  className="px-3.5 py-1.5 rounded-[var(--radius-sm)] neu-button text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={onEditSave}
+                  disabled={editDraft.trim().length === 0}
+                  className={`px-4 py-1.5 rounded-[var(--radius-sm)] text-xs font-medium transition ${editDraft.trim().length === 0 ? 'neu-button opacity-40 cursor-not-allowed' : 'neu-button-primary'}`}
+                >
+                  Save
+                </button>
+              </div>
+              <div className="text-[11px] text-[var(--text-tertiary)] text-right">Esc to cancel • Ctrl+Enter to save</div>
+            </div>
+          ) : (
+            <>
+              {isUser ? (
+                msg.text && <p className="text-[15px] sm:text-base leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>
+              ) : (
+                <>
+                  {msg.text && <BasicMarkdown text={msg.text} />}
+                  {msg.artifacts && msg.artifacts.length > 0 && (
+                    <div className="w-full space-y-2.5 mt-2">
+                      {msg.artifacts.map((art) => (
+                        <ArtifactCard
+                          key={art.artifactId}
+                          artifact={art}
+                          onSave={onSaveArtifact}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+              {msg.files && msg.files.length > 0 && (
+                <div className={`flex flex-wrap gap-2 ${msg.text ? 'mt-3' : ''}`}>
+                  {msg.files.map((f, i) => (
+                    <span
+                      key={`${f.name}-${i}`}
+                      className="inline-flex items-center gap-2.5 pl-2.5 pr-3.5 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] text-sm max-w-[280px] border border-[var(--border-subtle)] text-[var(--text-secondary)]"
+                    >
+                      <span className="w-6 h-6 rounded-[4px] bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] grid place-items-center text-[10px] font-mono shrink-0">{fileLabel(f.name).slice(0, 3)}</span>
+                      <span className="truncate font-medium text-[var(--text-primary)]">{f.name}</span>
+                      {typeof f.size === "number" && f.size > 0 ? (
+                        <span className="text-[var(--text-tertiary)] shrink-0 text-xs">{formatSize(f.size)}</span>
+                      ) : null}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        {/* Icons at bottom of text box - outside bubble, bottom-aligned */}
+        {isUser && !isEditing && (
+          <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
+            <button
+              onClick={() => onCopy(msg)}
+              className="w-8 h-8 grid place-items-center rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              title={isCopied ? 'Copied' : 'Copy'}
+              aria-label={isCopied ? 'Copied' : 'Copy message'}
+            >
+              {isCopied ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--status-success)]">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3.5" />
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={() => onEditStart(msg)}
+              className="w-8 h-8 grid place-items-center rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              title="Edit"
+              aria-label="Edit message"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
 
 export default function ChatArea({
   messages = [],
@@ -412,133 +559,21 @@ export default function ChatArea({
           </div>
         ) : null}
 
-        {messages.map((msg) => {
-          const isUser = msg.role === 'user';
-          const isEditing = editingId === msg.id;
-          const isCopied = copiedId === msg.id;
-
-          return (
-            <div
-              key={msg.id}
-              className={`flex group ${isUser ? 'justify-end' : 'justify-start'}`}
-            >
-              <div className={`flex flex-col gap-1 ${isUser ? 'items-end max-w-[88%] md:max-w-[72%]' : 'max-w-[88%] md:max-w-[72%] items-start'}`}>
-                <div
-                  className={`w-full ${isUser ? 'px-5 py-3.5 rounded-[var(--radius-md)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)]' : 'px-2 py-2 bg-transparent border-0 text-[var(--text-primary)]'}`}
-                >
-                  {isEditing ? (
-                    <div className="flex flex-col gap-2 min-w-[240px]">
-                      <textarea
-                        value={editDraft}
-                        onChange={(e) => setEditDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Escape') {
-                            e.preventDefault();
-                            handleEditCancel();
-                          }
-                          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                            e.preventDefault();
-                            handleEditSave();
-                          }
-                        }}
-                        autoFocus
-                        rows={3}
-                        className="w-full min-h-[72px] max-h-[180px] p-3.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] outline-none text-[15px] sm:text-base text-[var(--text-primary)] leading-relaxed resize-none focus:border-[var(--accent)]"
-                        placeholder="Edit message..."
-                      />
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={handleEditCancel}
-                          className="px-3.5 py-1.5 rounded-[var(--radius-sm)] neu-button text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleEditSave}
-                          disabled={editDraft.trim().length === 0}
-                          className={`px-4 py-1.5 rounded-[var(--radius-sm)] text-xs font-medium transition ${editDraft.trim().length === 0 ? 'neu-button opacity-40 cursor-not-allowed' : 'neu-button-primary'}`}
-                        >
-                          Save
-                        </button>
-                      </div>
-                      <div className="text-[11px] text-[var(--text-tertiary)] text-right">Esc to cancel • Ctrl+Enter to save</div>
-                    </div>
-                  ) : (
-                    <>
-                      {isUser ? (
-                        msg.text && <p className="text-[15px] sm:text-base leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>
-                      ) : (
-                        <>
-                          {msg.text && <BasicMarkdown text={msg.text} />}
-                          {msg.artifacts && msg.artifacts.length > 0 && (
-                            <div className="w-full space-y-2.5 mt-2">
-                              {msg.artifacts.map((art) => (
-                                <ArtifactCard
-                                  key={art.artifactId}
-                                  artifact={art}
-                                  onSave={onSaveArtifact}
-                                />
-                              ))}
-                            </div>
-                          )}
-                        </>
-                      )}
-                      {msg.files && msg.files.length > 0 && (
-                        <div className={`flex flex-wrap gap-2 ${msg.text ? 'mt-3' : ''}`}>
-                          {msg.files.map((f, i) => (
-                            <span
-                              key={`${f.name}-${i}`}
-                              className="inline-flex items-center gap-2.5 pl-2.5 pr-3.5 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] text-sm max-w-[280px] border border-[var(--border-subtle)] text-[var(--text-secondary)]"
-                            >
-                              <span className="w-6 h-6 rounded-[4px] bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] grid place-items-center text-[10px] font-mono shrink-0">{fileLabel(f.name).slice(0, 3)}</span>
-                              <span className="truncate font-medium text-[var(--text-primary)]">{f.name}</span>
-                              {typeof f.size === "number" && f.size > 0 ? (
-                                <span className="text-[var(--text-tertiary)] shrink-0 text-xs">{formatSize(f.size)}</span>
-                              ) : null}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-                {/* Icons at bottom of text box - outside bubble, bottom-aligned */}
-                {isUser && !isEditing && (
-                  <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
-                    <button
-                      onClick={() => handleCopy(msg)}
-                      className="w-8 h-8 grid place-items-center rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                      title={isCopied ? 'Copied' : 'Copy'}
-                      aria-label={isCopied ? 'Copied' : 'Copy message'}
-                    >
-                      {isCopied ? (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--status-success)]">
-                          <path d="M20 6L9 17l-5-5" />
-                        </svg>
-                      ) : (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <rect x="9" y="9" width="13" height="13" rx="2" />
-                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3.5" />
-                        </svg>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => handleEditStart(msg)}
-                      className="w-8 h-8 grid place-items-center rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                      title="Edit"
-                      aria-label="Edit message"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        {messages.map((msg) => (
+          <ChatMessageItem
+            key={msg.id}
+            msg={msg}
+            isEditing={editingId === msg.id}
+            isCopied={copiedId === msg.id}
+            editDraft={editDraft}
+            onEditDraftChange={setEditDraft}
+            onEditCancel={handleEditCancel}
+            onEditSave={handleEditSave}
+            onCopy={handleCopy}
+            onEditStart={handleEditStart}
+            onSaveArtifact={onSaveArtifact}
+          />
+        ))}
 
         {isRunning && (
           <RunWaitingIndicator
