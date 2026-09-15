@@ -55,8 +55,92 @@ function persistGatewayTrace(runId: string, requestId: string, entry: Record<str
   }
 }
 
-export interface GatewayTransport { request(url: string, init: { method: string; headers: Record<string, string>; body?: string }, timeoutMs: number): Promise<{ status: number; text(): Promise<string> }>; }
-const nativeTransport: GatewayTransport = { async request(url, init, timeoutMs) { const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs); try { return await fetch(url, { ...init, signal: controller.signal }); } finally { clearTimeout(timer); } } };
+export interface GatewayTransport {
+  request(
+    url: string,
+    init: { method: string; headers: Record<string, string>; body?: string },
+    timeoutMs: number,
+  ): Promise<{ status: number; text(): Promise<string> }>;
+
+  streamRequest?(
+    url: string,
+    init: { method: string; headers: Record<string, string>; body?: string },
+    timeoutMs: number,
+    onChunk: (delta: string) => void,
+  ): Promise<{ status: number; text(): Promise<string> }>;
+}
+
+const nativeTransport: GatewayTransport = {
+  async request(url, init, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
+  async streamRequest(url, init, timeoutMs, onChunk) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...init, signal: controller.signal });
+      if (response.status < 200 || response.status >= 300 || !response.body) {
+        return response;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+      let accumulatedText = "";
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith(":")) continue;
+            if (trimmed === "data: [DONE]") continue;
+            if (trimmed.startsWith("data: ")) {
+              const jsonStr = trimmed.slice(6);
+              try {
+                const parsed = JSON.parse(jsonStr);
+                const delta = parsed.choices?.[0]?.delta?.content ?? "";
+                if (typeof delta === "string" && delta.length > 0) {
+                  accumulatedText += delta;
+                  onChunk(delta);
+                }
+              } catch {
+                // Incomplete or malformed SSE line, skip
+              }
+            }
+          }
+        }
+      } catch (streamErr: any) {
+        if (streamErr.name === "AbortError") throw streamErr;
+      }
+
+      const syntheticEnvelope = JSON.stringify({
+        choices: [{ message: { content: accumulatedText, role: "assistant" }, finish_reason: "stop" }],
+      });
+
+      return {
+        status: response.status,
+        async text() {
+          return syntheticEnvelope;
+        },
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+};
 export interface VisionUploadInfo { originalBytes: number; finalBytes: number; resized: boolean; mediaType: string; }
 export class ModelGateway implements ModelClient {
   readonly dbRegistry: Map<string, ModelRegistryEntry>;
@@ -254,11 +338,14 @@ export class ModelGateway implements ModelClient {
     const userContent = isVision
       ? [{ type: "text", text: (request as { userPrompt: string }).userPrompt }, ...(visionParts ?? [])]
       : (request as { userPrompt: string }).userPrompt;
-    // Providers with OpenAI semantics reject `response_format: json_object`
-    // unless the messages mention JSON. Backstop every caller here.
-    const systemPrompt = /json/i.test(request.systemPrompt)
+    // For free-text chat/draft turns, disable structured output to avoid CPU GBNF grammar compilation
+    // stalls and JSON string escaping overhead. Only structured tasks (code, vision) enforce JSON.
+    const isFreeTextChat = request.responseFormat === "chat-result";
+    const systemPrompt = isFreeTextChat
       ? request.systemPrompt
-      : `${request.systemPrompt} Respond with valid JSON.`;
+      : (/json/i.test(request.systemPrompt)
+        ? request.systemPrompt
+        : `${request.systemPrompt} Respond with valid JSON.`);
     const isLocal = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/i.test(model.baseUrl) || model.runtime === "ollama" || model.runtime === "mlx-lm" || model.runtime === "llama-server";
 
     // Map the internal ResponseFormat to a strict JSON schema if applicable.
@@ -266,23 +353,12 @@ export class ModelGateway implements ModelClient {
     // multi-property JSON schemas into GBNF grammars on the CPU blocks execution for 2-4 seconds
     // before GPU prefill begins. Using { type: "json_object" } eliminates this CPU grammar stall
     // completely while local instruct models adhere to the requested JSON shape in the prompt.
-    let responseFormatPayload: any = { type: "json_object" };
-    if (isLocal && (request.responseFormat === "code-result" || request.responseFormat === "harness-step")) {
+    let responseFormatPayload: any = undefined;
+    if (isFreeTextChat) {
+      // Free text chat / drafting: disable structured output completely.
+      responseFormatPayload = undefined;
+    } else if (isLocal && (request.responseFormat === "code-result" || request.responseFormat === "harness-step")) {
       responseFormatPayload = { type: "json_object" };
-    } else if (request.responseFormat === "chat-result") {
-      responseFormatPayload = {
-        type: "json_schema",
-        json_schema: {
-          name: "chat_result",
-          strict: false,
-          schema: {
-            type: "object",
-            properties: { text: { type: "string" } },
-            required: ["text"],
-            additionalProperties: false
-          }
-        }
-      };
     } else if (request.responseFormat === "code-result") {
       responseFormatPayload = {
         type: "json_schema",
@@ -452,14 +528,20 @@ export class ModelGateway implements ModelClient {
     }
     messagesPayload.push({ role: "user", content: userContent });
 
-    const maxTokens = request.maxTokens ?? model.maxOutputTokens ?? 2048;
-    const body = JSON.stringify({
+    const maxTokens = request.maxTokens ?? model.maxOutputTokens ?? (isFreeTextChat ? 1536 : 2048);
+    const requestPayload: Record<string, any> = {
       model: model.model,
       messages: messagesPayload,
-      response_format: responseFormatPayload,
       temperature: request.temperature ?? 0.2,
       max_tokens: maxTokens,
-    });
+    };
+    if (responseFormatPayload !== undefined) {
+      requestPayload.response_format = responseFormatPayload;
+    }
+    if (request.onChunk) {
+      requestPayload.stream = true;
+    }
+    const body = JSON.stringify(requestPayload);
     const minTimeout = isLocal ? (request.taskType === "code" ? 300000 : 180000) : 0;
     const effectiveTimeout = Math.max(request.timeoutMs ?? 0, model.requestTimeoutMs ?? 0, minTimeout) || 60000;
 
@@ -501,7 +583,21 @@ export class ModelGateway implements ModelClient {
       // servers remain local; configured cloud endpoints count as external.
       this.externalRequestCount += isLocal ? 0 : 1;
       const t0 = Date.now();
-      let response = await this.transport.request(`${model.baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body }, effectiveTimeout);
+      let response: { status: number; text(): Promise<string> };
+      if (request.onChunk && this.transport.streamRequest) {
+        response = await this.transport.streamRequest(
+          `${model.baseUrl}/chat/completions`,
+          { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body },
+          effectiveTimeout,
+          request.onChunk,
+        );
+      } else {
+        response = await this.transport.request(
+          `${model.baseUrl}/chat/completions`,
+          { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body },
+          effectiveTimeout,
+        );
+      }
       let latencyMs = Date.now() - t0;
       try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
 
@@ -587,14 +683,38 @@ export class ModelGateway implements ModelClient {
 
       persistGatewayTrace(request.runId, request.requestId, { phase: "provider_content_raw", taskType: request.taskType, extractedContent, reasoning });
 
-      try {
-        parsedJson = parseProviderContent(extractedContent, reasoning);
-      } catch (e) {
-        logGatewayError(request, "parseProviderContent failed (empty/invalid JSON)", e instanceof Error ? e.message : String(e));
-        persistGatewayTrace(request.runId, request.requestId, { phase: "parse_error", taskType: request.taskType, error: e instanceof Error ? e.message : String(e), extractedContent, reasoning, rawText, envelope });
-        throw e;
+      if (request.responseFormat === "chat-result") {
+        if (typeof extractedContent === "string" && extractedContent.trim().length > 0) {
+          const trimmed = extractedContent.trim();
+          if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            try {
+              parsedJson = JSON.parse(trimmed);
+            } catch {
+              parsedJson = { text: trimmed };
+            }
+          } else {
+            parsedJson = { text: trimmed };
+          }
+        } else {
+          parsedJson = { text: String(extractedContent ?? "") };
+        }
+      } else {
+        try {
+          parsedJson = parseProviderContent(extractedContent, reasoning);
+        } catch (e) {
+          logGatewayError(request, "parseProviderContent failed (empty/invalid JSON)", e instanceof Error ? e.message : String(e));
+          persistGatewayTrace(request.runId, request.requestId, { phase: "parse_error", taskType: request.taskType, error: e instanceof Error ? e.message : String(e), extractedContent, reasoning, rawText, envelope });
+          throw e;
+        }
       }
       persistGatewayTrace(request.runId, request.requestId, { phase: "parsed_json", taskType: request.taskType, parsedJson });
+
+      if (request.onChunk && !this.transport.streamRequest) {
+        const finalText = typeof parsedJson === "object" && parsedJson && "text" in parsedJson ? String((parsedJson as any).text) : String(extractedContent ?? "");
+        if (finalText) {
+          request.onChunk(finalText);
+        }
+      }
 
       let normalized: ModelResponse;
       try {

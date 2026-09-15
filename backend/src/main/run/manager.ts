@@ -656,9 +656,9 @@ export class RunManager {
     if (!row) throw new Error("run not found");
     return row.chatId;
   }
-  private persistAssistant(runId: string, text: string, modelId: string): string {
+  private persistAssistant(runId: string, text: string, modelId: string, existingMessageId?: string): string {
     const chatId = this.chatIdForRun(runId);
-    const { id } = addMessage({ chat_id: chatId, role: "assistant", content: text, run_id: runId, model_id: modelId });
+    const { id } = addMessage({ id: existingMessageId, chat_id: chatId, role: "assistant", content: text, run_id: runId, model_id: modelId });
     this.emit({ type: "assistant_message", runId, messageId: id, text, modelId: modelId as never });
     return id;
   }
@@ -1319,12 +1319,13 @@ export class RunManager {
           evidenceBlock,
         ].filter(Boolean).join("\n\n");
 
+        const draftMessageId = randomUUID();
         const baseDraft = requestBase(
           runId,
           "draft",
           "draft-qwen3",
           "chat-result",
-          "You are an expert engineering assistant for industrial knowledge work. Output strictly valid JSON matching {\"text\": string}. Ensure the draft includes the equipment header, findings summary with citations, conditional recommendation citing governing criteria, and explicit safety warnings for any unverified or missing information.",
+          "You are an expert engineering assistant for industrial knowledge work. Compose a comprehensive, professional engineering approval note directly in Markdown. Ensure the draft includes the equipment header, findings summary with citations, conditional recommendation citing governing criteria, and explicit safety warnings for any unverified or missing information.",
           draftUserPrompt,
           45000,
           2048,
@@ -1336,6 +1337,15 @@ export class RunManager {
           taskType: "draft",
           modelId: "draft-qwen3",
           responseFormat: "chat-result",
+          onChunk: (delta: string) => {
+            this.emit({
+              type: "assistant_message_chunk",
+              runId,
+              messageId: draftMessageId,
+              delta,
+              modelId: "draft-qwen3",
+            });
+          },
         };
 
         const draftResp = await this.chatModel.complete(draftReq);
@@ -1345,7 +1355,7 @@ export class RunManager {
         const draftText = draftResp.value.text;
 
         this.result(runId, "draft_note", "Draft note generated and grounded against extracted findings");
-        this.persistAssistant(runId, draftText, "draft-qwen3");
+        this.persistAssistant(runId, draftText, "draft-qwen3", draftMessageId);
 
         // Dynamically derive deliverable document name based on prompt or entity detected in document
         const entityMatch =
@@ -1481,8 +1491,9 @@ export class RunManager {
 
       // 3. Reasoning & Note Drafting
       this.tool(runId, "draft_note", "Evaluating drawing parameters against governing specifications");
+      const draftMessageId = randomUUID();
       const draftSystemPrompt =
-        "You are an expert engineering assistant reviewing technical drawings against governing standards. Output strictly valid JSON matching {\"text\": string}. Compare each observed component rating, dimension, and tag from the drawing against the retrieved specification criteria. Explicitly cite the governing sections (e.g. [SOP-220 §4.2]). State whether each item is compliant or non-compliant, and state clearly that the drawing is NOT approved and requires corrective action.";
+        "You are an expert engineering assistant reviewing technical drawings against governing standards. Output your review directly in clear Markdown. Compare each observed component rating, dimension, and tag from the drawing against the retrieved specification criteria. Explicitly cite the governing sections (e.g. [SOP-220 §4.2]). State whether each item is compliant or non-compliant, and state clearly that the drawing is NOT approved and requires corrective action.";
 
       const draftPrompt = [
         text,
@@ -1510,6 +1521,15 @@ export class RunManager {
         taskType: "draft",
         modelId: "draft-qwen3",
         responseFormat: "chat-result",
+        onChunk: (delta: string) => {
+          this.emit({
+            type: "assistant_message_chunk",
+            runId,
+            messageId: draftMessageId,
+            delta,
+            modelId: "draft-qwen3",
+          });
+        },
       };
 
       const draftResp = await this.chatModel.complete(draftReq);
@@ -1519,7 +1539,7 @@ export class RunManager {
       const draftText = draftResp.value.text;
 
       this.result(runId, "draft_note", "Compliance evaluation completed and corrective-action note drafted");
-      this.persistAssistant(runId, draftText, "draft-qwen3");
+      this.persistAssistant(runId, draftText, "draft-qwen3", draftMessageId);
 
       // 4. Register Markdown Review Deliverable Artifact
       const explicitMdMatch = text.match(/\b([a-zA-Z0-9_\-]+\.md)\b/i);
@@ -1790,34 +1810,29 @@ export class RunManager {
       }
     }
 
+    const messageId = randomUUID();
     const baseSystemPrompt =
-      "You are a helpful assistant. If providing code, always wrap it in standard markdown code blocks with language identifiers (e.g. ```python). Provide your answer strictly as a JSON object with a single key 'text': {\"text\": \"your markdown-formatted answer\"}. Do NOT add any other fields such as 'displayed_text' or 'display_time'. Never return an empty JSON object.";
+      "You are a helpful assistant for engineering and industrial knowledge work. Provide your answer directly in clear, well-structured Markdown. If providing code or scripts, wrap them in standard markdown code blocks with language identifiers (e.g. ```python).";
     const systemPrompt = `${baseSystemPrompt}${groundingNote}`;
-    const base = requestBase(runId, "draft", "draft-qwen3", "chat-result", systemPrompt, text, 45000, 1024, temperature, history);
+    const base = requestBase(runId, "draft", "draft-qwen3", "chat-result", systemPrompt, text, 45000, 1536, temperature, history);
     const request: ChatModelRequest = {
       ...base,
       taskType: "draft",
       modelId: "draft-qwen3",
       responseFormat: "chat-result",
+      onChunk: (delta: string) => {
+        this.emit({
+          type: "assistant_message_chunk",
+          runId,
+          messageId,
+          delta,
+          modelId: "draft-qwen3",
+        });
+      },
     };
-    let chat = await this.chatModel.complete(request);
-    if (!chat.ok) {
-      this.tool(runId, "draft_note", "retrying response with explicit format");
-      const retryPrompt = `${text}\n\nPlease output your response in JSON format: {"text": "<your answer>"}. Ensure the "text" key contains your answer.`;
-      const retryBase = requestBase(runId, "draft", "draft-qwen3", "chat-result", systemPrompt, retryPrompt, 45000, 1024, temperature, history);
-      const retryRequest: ChatModelRequest = {
-        ...retryBase,
-        taskType: "draft",
-        modelId: "draft-qwen3",
-        responseFormat: "chat-result",
-      };
-      const retryChat = await this.chatModel.complete(retryRequest);
-      if (retryChat.ok) {
-        chat = retryChat;
-      }
-    }
+    const chat = await this.chatModel.complete(request);
     if (!chat.ok) throw new Error(chat.error.message);
-    this.result(runId, "draft_note", "draft validated");
+    this.result(runId, "draft_note", "draft completed");
 
     // If user requested saving as a Word document or docx deliverable, register an artifact in output
     const isWordRequested = /\b(word document|\.docx|docx\b|save (?:it )?as (?:a )?document)\b/i.test(text);
@@ -1845,7 +1860,7 @@ export class RunManager {
       }
     }
 
-    this.persistAssistant(runId, chat.value.text, "draft-qwen3");
+    this.persistAssistant(runId, chat.value.text, "draft-qwen3", messageId);
     this.complete(runId);
   }
 

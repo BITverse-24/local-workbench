@@ -170,7 +170,7 @@ export default function App() {
         // Ignore events for other runs when we have an active run filter
         // but never drop assistant_message or routing for chat coherence.
         const rid = (event as { runId?: string }).runId;
-        if (event.type !== "assistant_message") {
+        if (event.type !== "assistant_message" && event.type !== "assistant_message_chunk") {
           if (activeRunRef.current && rid && rid !== activeRunRef.current) {
             return;
           }
@@ -179,7 +179,9 @@ export default function App() {
           activeRunRef.current = rid;
           setActiveRunId(rid);
         }
-        setRunEvents((prev) => [...prev, event]);
+        if (event.type !== "assistant_message_chunk") {
+          setRunEvents((prev) => [...prev, event]);
+        }
         switch (event.type) {
           case "run_state":
             setRunState(event.state);
@@ -232,14 +234,38 @@ export default function App() {
               ];
             });
             break;
+          case "assistant_message_chunk":
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.id === event.messageId) {
+                return [
+                  ...prev.slice(0, -1),
+                  { ...last, text: last.text + event.delta },
+                ];
+              }
+              if (last && last.role === "assistant" && (!last.text || last.id.startsWith("artifact-msg-"))) {
+                return [
+                  ...prev.slice(0, -1),
+                  { ...last, id: event.messageId, text: event.delta },
+                ];
+              }
+              return [...prev, { id: event.messageId, role: "assistant", text: event.delta }];
+            });
+            break;
           case "assistant_message":
             setMessages((prev) => {
               const last = prev[prev.length - 1];
-              if (last && last.role === "assistant" && (!last.text || last.id.startsWith("artifact-msg-"))) {
+              if (last && (last.id === event.messageId || (last.role === "assistant" && (!last.text || last.id.startsWith("artifact-msg-"))))) {
                 return [
                   ...prev.slice(0, -1),
                   { ...last, id: event.messageId, text: event.text },
                 ];
+              }
+              const existingIdx = prev.findIndex((m) => m.id === event.messageId);
+              if (existingIdx !== -1) {
+                const updated = [...prev];
+                updated[existingIdx] = { ...updated[existingIdx], text: event.text };
+                return updated;
               }
               return [...prev, { id: event.messageId, role: "assistant", text: event.text }];
             });

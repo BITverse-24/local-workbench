@@ -229,4 +229,113 @@ describe("model gateway health checks", () => {
     expect(port11434?.modelId).toBe("test-model");
     expect(port11434?.available).toBe(true);
   });
+
+  it("chat drafting disables structured output and passes raw prompt without forcing JSON", async () => {
+    let capturedBody: any;
+    const model: ModelRegistryEntry = {
+      id: "draft-qwen3",
+      taskTypes: ["draft"],
+      runtime: "llama-server",
+      baseUrl: "https://example.test/v1",
+      model: "test-draft",
+      capabilities: ["text"],
+      requestTimeoutMs: 1000,
+      healthPath: "/models",
+      enabled: true,
+    };
+    const gateway = new ModelGateway(
+      {
+        async request(_url, init) {
+          capturedBody = JSON.parse(init.body!);
+          return {
+            status: 200,
+            async text() {
+              return JSON.stringify({
+                choices: [{ message: { content: "# Engineering Note\n\nDirect markdown output.", role: "assistant" } }],
+              });
+            },
+          };
+        },
+      },
+      new Map([[model.id, model]]),
+    );
+
+    const result = await gateway.execute({
+      requestId: "req-draft-1",
+      runId: RUN_ID,
+      taskType: "draft",
+      modelId: "draft-qwen3",
+      responseFormat: "chat-result",
+      systemPrompt: "You are an engineering assistant.",
+      userPrompt: "Draft compliance note.",
+      timeoutMs: 1000,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect((result.value.result as any).text).toBe("# Engineering Note\n\nDirect markdown output.");
+    }
+    // Verify response_format was NOT forced into a JSON schema or json_object
+    expect(capturedBody.response_format).toBeUndefined();
+    // Verify system prompt was NOT altered to force JSON
+    expect(capturedBody.messages[0].content).toBe("You are an engineering assistant.");
+    expect(capturedBody.stream).toBeUndefined();
+  });
+
+  it("chat drafting with onChunk enables stream: true and receives streamed chunks", async () => {
+    let capturedBody: any;
+    const chunks: string[] = [];
+    const model: ModelRegistryEntry = {
+      id: "draft-qwen3",
+      taskTypes: ["draft"],
+      runtime: "llama-server",
+      baseUrl: "https://example.test/v1",
+      model: "test-draft",
+      capabilities: ["text"],
+      requestTimeoutMs: 1000,
+      healthPath: "/models",
+      enabled: true,
+    };
+    const gateway = new ModelGateway(
+      {
+        async request() {
+          throw new Error("should not call request when streamRequest exists");
+        },
+        async streamRequest(_url, init, _timeout, onChunk) {
+          capturedBody = JSON.parse(init.body!);
+          onChunk("Hello ");
+          onChunk("World");
+          const synthetic = JSON.stringify({
+            choices: [{ message: { content: "Hello World", role: "assistant" }, finish_reason: "stop" }],
+          });
+          return {
+            status: 200,
+            async text() {
+              return synthetic;
+            },
+          };
+        },
+      },
+      new Map([[model.id, model]]),
+    );
+
+    const result = await gateway.execute({
+      requestId: "req-draft-stream",
+      runId: RUN_ID,
+      taskType: "draft",
+      modelId: "draft-qwen3",
+      responseFormat: "chat-result",
+      systemPrompt: "You are an assistant.",
+      userPrompt: "Hi",
+      timeoutMs: 1000,
+      onChunk: (chunk) => chunks.push(chunk),
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect((result.value.result as any).text).toBe("Hello World");
+    }
+    expect(capturedBody.stream).toBe(true);
+    expect(chunks).toEqual(["Hello ", "World"]);
+  });
 });

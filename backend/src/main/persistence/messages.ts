@@ -12,6 +12,7 @@ export const MAX_CONTENT_CHARS = 32 * 1024;
 export const roleSchema = z.enum(["user", "assistant", "system", "tool"]);
 
 export const addMessageSchema = z.object({
+  id: z.string().uuid().optional(),
   chat_id: chatIdSchema,
   role: roleSchema,
   content: z.string().min(1).max(MAX_CONTENT_CHARS),
@@ -40,7 +41,7 @@ export type AddMessageInput = z.infer<typeof addMessageSchema>;
 export function addMessage(input: AddMessageInput): { id: string; seq: number } {
   const parsed = addMessageSchema.parse(input);
   const db = getDb();
-  const id = randomUUID();
+  const id = parsed.id ?? randomUUID();
   const now = new Date().toISOString();
   const txn = db.transaction(() => {
     const prev = db

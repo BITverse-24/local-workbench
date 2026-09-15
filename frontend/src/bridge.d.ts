@@ -125,6 +125,7 @@ type RunEvent =
   | { type: "tool_result"; runId: string; tool: string; summary: string }
   | { type: "confirmation_required"; runId: string; action: PendingAction }
   | { type: "artifact_ready"; runId: string; artifact: ArtifactRef }
+  | { type: "assistant_message_chunk"; runId: string; messageId: string; delta: string; modelId: string }
   | { type: "assistant_message"; runId: string; messageId: string; text: string; modelId: string }
   | { type: "error"; runId: string; code: string; message: string; retryable?: boolean }
   | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] };

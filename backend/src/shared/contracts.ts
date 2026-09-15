@@ -34,6 +34,7 @@ export interface ModelRequestBase {
   temperature?: number;
   history?: ModelConversationMessage[];
   devWorkload?: boolean;
+  onChunk?: (delta: string) => void;
 }
 export interface VisionModelRequest extends ModelRequestBase { taskType: "vision"; modelId: "vision-qwen25vl"; responseFormat: "vision-result"; attachment: AttachmentReference; inputMode: "typed-scan"; }
 export interface CodeModelRequest extends ModelRequestBase { taskType: "code"; modelId: "code-qwen25coder"; responseFormat: "code-result" | "file-result" | "harness-step"; task: string; inputFile: InputFileReference; allowedLanguage: "python"; executionRules: string[]; }
@@ -86,6 +87,7 @@ export type RunEvent =
   | { type: "tool_result"; runId: string; tool: ToolName; summary: string }
   | { type: "confirmation_required"; runId: string; action: PendingAction }
   | { type: "artifact_ready"; runId: string; artifact: ArtifactRef }
+  | { type: "assistant_message_chunk"; runId: string; messageId: string; delta: string; modelId: ModelId }
   | { type: "assistant_message"; runId: string; messageId: string; text: string; modelId: ModelId }
   | { type: "error"; runId: string; code: string; message: string; retryable?: boolean }
   | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] };
