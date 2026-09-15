@@ -76,29 +76,62 @@ export function addMessage(input: AddMessageInput): { id: string; seq: number } 
 
 export function listMessages(chat_id: string): Message[] {
   chatIdSchema.parse(chat_id);
-  const rows = getDb()
+  const db = getDb();
+  const rows = db
     .prepare("SELECT * FROM messages WHERE chat_id = ? ORDER BY seq ASC")
     .all(chat_id) as Message[];
 
+  if (rows.length === 0) return [];
+
   try {
-    const artifactStmt = getDb().prepare(
-      "SELECT artifact_id as artifactId, run_id as runId, kind, filename, relative_path as relativePath, size_bytes as sizeBytes, created_at as createdAt FROM artifacts WHERE run_id = ?",
-    );
-    const attachmentStmt = getDb().prepare(
-      "SELECT a.attachment_id as attachmentId, a.filename, a.media_type as mediaType, a.size_bytes as sizeBytes, a.relative_path as relativePath FROM attachments a JOIN message_attachments ma ON a.attachment_id = ma.attachment_id WHERE ma.message_id = ?",
+    // PERF OPTIMIZATION: Batch subquery execution to eliminate N+1 queries.
+    // Instead of executing artifactStmt and attachmentStmt in a loop per message (2N queries),
+    // retrieve all artifacts and attachments for the entire chat in 2 batch JOIN queries
+    // and map them in memory using HashMaps (O(N) time complexity).
+    const artifactsByRun = new Map<string, ArtifactRef[]>();
+    const attachmentsByMsg = new Map<string, AttachmentReference[]>();
+
+    const runIds = Array.from(
+      new Set(rows.map((r) => r.run_id).filter((id): id is string => Boolean(id)))
     );
 
-    return rows.map((msg) => {
-      let artifacts: ArtifactRef[] | undefined;
-      let attachments: AttachmentReference[] | undefined;
-      if (msg.run_id) {
-        try {
-          artifacts = artifactStmt.all(msg.run_id) as ArtifactRef[];
-        } catch {}
+    if (runIds.length > 0) {
+      const runPlaceholders = runIds.map(() => "?").join(",");
+      const allArtifacts = db
+        .prepare(
+          `SELECT artifact_id as artifactId, run_id as runId, kind, filename, relative_path as relativePath, size_bytes as sizeBytes, created_at as createdAt FROM artifacts WHERE run_id IN (${runPlaceholders})`
+        )
+        .all(...runIds) as ArtifactRef[];
+
+      for (const art of allArtifacts) {
+        let list = artifactsByRun.get(art.runId);
+        if (!list) {
+          list = [];
+          artifactsByRun.set(art.runId, list);
+        }
+        list.push(art);
       }
-      try {
-        attachments = attachmentStmt.all(msg.id) as AttachmentReference[];
-      } catch {}
+    }
+
+    const allAttachments = db
+      .prepare(
+        `SELECT ma.message_id as messageId, a.attachment_id as attachmentId, a.filename, a.media_type as mediaType, a.size_bytes as sizeBytes, a.relative_path as relativePath FROM attachments a JOIN message_attachments ma ON a.attachment_id = ma.attachment_id JOIN messages m ON ma.message_id = m.id WHERE m.chat_id = ?`
+      )
+      .all(chat_id) as (AttachmentReference & { messageId: string })[];
+
+    for (const att of allAttachments) {
+      const { messageId, ...ref } = att;
+      let list = attachmentsByMsg.get(messageId);
+      if (!list) {
+        list = [];
+        attachmentsByMsg.set(messageId, list);
+      }
+      list.push(ref);
+    }
+
+    return rows.map((msg) => {
+      const artifacts = msg.run_id ? artifactsByRun.get(msg.run_id) : undefined;
+      const attachments = attachmentsByMsg.get(msg.id);
       return {
         ...msg,
         ...(artifacts && artifacts.length > 0 ? { artifacts } : {}),
