@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, memo } from 'react';
 
 type Props = {
   entries: HarnessDirEntry[];
@@ -88,7 +88,7 @@ function getFileIcon(filename: string) {
   }
 }
 
-function TreeItem({
+const TreeItem = memo(function TreeItem({
   node,
   depth,
   expanded,
@@ -105,10 +105,15 @@ function TreeItem({
 }) {
   const isDir = node.type === 'directory';
   const isExpanded = isFilterActive || expanded.has(node.relativePath);
-  const childList = Array.from(node.children.values()).sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
+
+  // PERF OPTIMIZATION: Memoize child list sorting to avoid repeated array allocations
+  // and string localeComparisons on every component re-render when children haven't changed.
+  const childList = useMemo(() => {
+    return Array.from(node.children.values()).sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [node.children]);
 
   return (
     <div>
@@ -163,7 +168,7 @@ function TreeItem({
       )}
     </div>
   );
-}
+});
 
 export default function FileTree({
   entries,
@@ -183,14 +188,14 @@ export default function FileTree({
     setFilter('');
   }, [rootPath]);
 
-  const toggleExpand = (path: string) => {
+  const toggleExpand = useCallback((path: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
       else next.add(path);
       return next;
     });
-  };
+  }, []);
 
   const filteredEntries = useMemo(() => {
     if (!filter.trim()) return entries;
