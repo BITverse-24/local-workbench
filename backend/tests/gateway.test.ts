@@ -338,4 +338,71 @@ describe("model gateway health checks", () => {
     expect(capturedBody.stream).toBe(true);
     expect(chunks).toEqual(["Hello ", "World"]);
   });
+
+  it("code-summary disables structured output and streams execution summary", async () => {
+    let capturedBody: any;
+    const chunks: string[] = [];
+    const model: ModelRegistryEntry = {
+      id: "code-qwen25coder",
+      taskTypes: ["code"],
+      runtime: "llama-server",
+      baseUrl: "https://example.test/v1",
+      model: "test-coder",
+      capabilities: ["text"],
+      requestTimeoutMs: 1000,
+      healthPath: "/models",
+      enabled: true,
+    };
+    const gateway = new ModelGateway(
+      {
+        async request() {
+          throw new Error("should stream");
+        },
+        async streamRequest(_url, init, _timeout, onChunk) {
+          capturedBody = JSON.parse(init.body!);
+          onChunk("The script has been ");
+          onChunk("repaired and executed.");
+          return {
+            status: 200,
+            async text() {
+              return JSON.stringify({
+                choices: [
+                  {
+                    message: { content: "The script has been repaired and executed.", role: "assistant" },
+                    finish_reason: "stop",
+                  },
+                ],
+              });
+            },
+          };
+        },
+      },
+      new Map([[model.id, model]]),
+    );
+
+    const result = await gateway.execute({
+      requestId: "req-summary-stream",
+      runId: RUN_ID,
+      taskType: "code",
+      modelId: "code-qwen25coder",
+      responseFormat: "code-summary",
+      phase: "summarize",
+      task: "fix script",
+      execution: { exitCode: 0, stdout: "ok", stderr: "", timedOut: false, outputFiles: [], durationMs: 100 },
+      systemPrompt: "Summarize execution.",
+      userPrompt: "Task: fix script",
+      timeoutMs: 1000,
+      onChunk: (chunk) => chunks.push(chunk),
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect((result.value.result as any).summary).toBe("The script has been repaired and executed.");
+      expect((result.value.result as any).verified).toBe(true);
+    }
+    expect(capturedBody.response_format).toBeUndefined();
+    expect(capturedBody.stream).toBe(true);
+    expect(capturedBody.messages[0].content).toBe("Summarize execution.");
+    expect(chunks).toEqual(["The script has been ", "repaired and executed."]);
+  });
 });

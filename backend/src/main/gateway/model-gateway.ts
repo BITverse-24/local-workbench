@@ -338,10 +338,10 @@ export class ModelGateway implements ModelClient {
     const userContent = isVision
       ? [{ type: "text", text: (request as { userPrompt: string }).userPrompt }, ...(visionParts ?? [])]
       : (request as { userPrompt: string }).userPrompt;
-    // For free-text chat/draft turns, disable structured output to avoid CPU GBNF grammar compilation
+    // For free-text chat/draft turns and execution summaries, disable structured output to avoid CPU GBNF grammar compilation
     // stalls and JSON string escaping overhead. Only structured tasks (code, vision) enforce JSON.
-    const isFreeTextChat = request.responseFormat === "chat-result";
-    const systemPrompt = isFreeTextChat
+    const isFreeText = request.responseFormat === "chat-result" || request.responseFormat === "code-summary";
+    const systemPrompt = isFreeText
       ? request.systemPrompt
       : (/json/i.test(request.systemPrompt)
         ? request.systemPrompt
@@ -354,8 +354,8 @@ export class ModelGateway implements ModelClient {
     // before GPU prefill begins. Using { type: "json_object" } eliminates this CPU grammar stall
     // completely while local instruct models adhere to the requested JSON shape in the prompt.
     let responseFormatPayload: any = undefined;
-    if (isFreeTextChat) {
-      // Free text chat / drafting: disable structured output completely.
+    if (isFreeText) {
+      // Free text chat / drafting / execution summary: disable structured output completely.
       responseFormatPayload = undefined;
     } else if (isLocal && (request.responseFormat === "code-result" || request.responseFormat === "harness-step")) {
       responseFormatPayload = { type: "json_object" };
@@ -380,22 +380,6 @@ export class ModelGateway implements ModelClient {
               artifactRationale: { type: "string" }
             },
             required: ["filename", "source", "expectedResult", "inputFiles", "outputFiles", "allowedImports"]
-          }
-        }
-      };
-    } else if (request.responseFormat === "code-summary") {
-      responseFormatPayload = {
-        type: "json_schema",
-        json_schema: {
-          name: "code_summary",
-          strict: false,
-          schema: {
-            type: "object",
-            properties: {
-              summary: { type: "string" },
-              verified: { type: "boolean" }
-            },
-            required: ["summary", "verified"]
           }
         }
       };
@@ -528,7 +512,7 @@ export class ModelGateway implements ModelClient {
     }
     messagesPayload.push({ role: "user", content: userContent });
 
-    const maxTokens = request.maxTokens ?? model.maxOutputTokens ?? (isFreeTextChat ? 1536 : 2048);
+    const maxTokens = request.maxTokens ?? model.maxOutputTokens ?? (isFreeText ? 1536 : 2048);
     const requestPayload: Record<string, any> = {
       model: model.model,
       messages: messagesPayload,
@@ -683,20 +667,26 @@ export class ModelGateway implements ModelClient {
 
       persistGatewayTrace(request.runId, request.requestId, { phase: "provider_content_raw", taskType: request.taskType, extractedContent, reasoning });
 
-      if (request.responseFormat === "chat-result") {
+      if (request.responseFormat === "chat-result" || request.responseFormat === "code-summary") {
         if (typeof extractedContent === "string" && extractedContent.trim().length > 0) {
           const trimmed = extractedContent.trim();
           if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
             try {
               parsedJson = JSON.parse(trimmed);
             } catch {
-              parsedJson = { text: trimmed };
+              parsedJson = request.responseFormat === "code-summary"
+                ? { summary: trimmed, verified: true }
+                : { text: trimmed };
             }
           } else {
-            parsedJson = { text: trimmed };
+            parsedJson = request.responseFormat === "code-summary"
+              ? { summary: trimmed, verified: true }
+              : { text: trimmed };
           }
         } else {
-          parsedJson = { text: String(extractedContent ?? "") };
+          parsedJson = request.responseFormat === "code-summary"
+            ? { summary: String(extractedContent ?? ""), verified: true }
+            : { text: String(extractedContent ?? "") };
         }
       } else {
         try {

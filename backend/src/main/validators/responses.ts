@@ -136,7 +136,16 @@ export function validateCode(value: unknown): { ok: true; value: CodeDraftResult
   if (invalid) return { ok: false, error: { kind: "validation-failure", code: "invalid-value", message: "generated Python must use one safe CSV input, approved standard-library imports, and no network/shell/path escape; outputs must be declared when requested", path: "source", expected: "validated local Python task" } };
   return { ok: true, value: result as CodeDraftResult };
 }
-export function validateCodeSummary(value: unknown) { const parsed = codeSummarySchema.safeParse(value); return parsed.success ? { ok: true as const, value: parsed.data } : { ok: false as const, error: failure(parsed.error) }; }
+export function validateCodeSummary(value: unknown) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return { ok: true as const, value: { summary: trimmed, verified: true } };
+    }
+  }
+  const parsed = codeSummarySchema.safeParse(value);
+  return parsed.success ? { ok: true as const, value: parsed.data } : { ok: false as const, error: failure(parsed.error) };
+}
 export function validateChat(value: unknown): { ok: true; value: ChatResult } | { ok: false; error: ReturnType<typeof failure> } {
   if (typeof value === "string") {
     const trimmed = value.trim();

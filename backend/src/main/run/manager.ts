@@ -2695,9 +2695,10 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
         : "CRITICAL FACTUAL INTEGRITY RULE: Output files were generated in the isolated run output directory only. Do NOT claim, state, or imply that any file was saved, written, created, or placed in any workspace, project directory, or user folder.";
 
       const summaryPrompt = isScriptRepairRequest
-        ? `Summarize the execution of the repaired script and describe the defects that were resolved (e.g. malformed/empty row handling, threshold boundaries, or command arguments). Mention that the repaired script is ready in the artifacts panel. ${workspaceFactualRule} Return exactly one JSON object shaped {"summary": string, "verified": boolean}. Set verified to true.`
-        : `Summarize only the supplied actual execution result. ${workspaceFactualRule} Return exactly one JSON object shaped {"summary": string, "verified": boolean}. Set verified to true because the backend has already verified the execution and declared outputs.`;
+        ? `Summarize the execution of the repaired script and describe the defects that were resolved (e.g. malformed/empty row handling, threshold boundaries, or command arguments). Mention that the repaired script is ready in the artifacts panel. ${workspaceFactualRule} Provide your concise execution summary directly in Markdown.`
+        : `Summarize only the supplied actual execution result. ${workspaceFactualRule} Provide your concise execution summary directly in Markdown.`;
 
+      const summaryMessageId = randomUUID();
       const summaryBase = requestBase(
         runId,
         "code",
@@ -2717,10 +2718,19 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
         phase: "summarize",
         task: text,
         execution,
+        onChunk: (delta: string) => {
+          this.emit({
+            type: "assistant_message_chunk",
+            runId,
+            messageId: summaryMessageId,
+            delta,
+            modelId: "code-qwen25coder",
+          });
+        },
       };
       const summary = await this.codeModel.summarize(summaryRequest);
       if (!summary.ok || !summary.value.verified) throw new Error(summary.ok ? "execution summary failed validation" : summary.error.message);
-      this.persistAssistant(runId, summary.value.summary, "code-qwen25coder");
+      this.persistAssistant(runId, summary.value.summary, "code-qwen25coder", summaryMessageId);
 
       if (pythonAttachment && isScriptRepairRequest) {
         const repairedPyName = `repaired-${pythonAttachment.filename}`;

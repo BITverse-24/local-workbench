@@ -42,7 +42,7 @@ export class CodeModel {
     const retry = await this.client.complete({
       ...request,
       requestId: randomUUID(),
-      userPrompt: `${request.userPrompt}\n\n[VALIDATION FEEDBACK]\nThe previous summary was rejected: ${result.error.message}. Return exactly one JSON object with both string field \"summary\" and boolean field \"verified\". Set verified to true only because the supplied execution result has already passed backend checks.\n[/VALIDATION FEEDBACK]`,
+      userPrompt: `${request.userPrompt}\n\n[VALIDATION FEEDBACK]\nThe previous summary was rejected: ${result.error.message}. Return your execution summary directly.\n[/VALIDATION FEEDBACK]`,
     });
     if (!retry.ok) return retry;
     const corrected = validateCodeSummary((retry.value as ModelResponse).result);
