@@ -1,5 +1,5 @@
 {
-  "$comment": "Copy to models.json when Ollama is running locally. The backend keeps the same typed model boundaries and only changes provider configuration.",
+  "$comment": "Copy to models.json when Ollama/llama-server is running locally. Recommended engine flags for local hardware throughput: llama-server: '--flash-attn --prompt-cache --cache-type-k q8_0 --cache-type-v q8_0 -c 8192'; Ollama: 'OLLAMA_FLASH_ATTENTION=1 OLLAMA_NUM_PARALLEL=1'.",
   "models": [
     {
       "id": "vision-qwen25vl",

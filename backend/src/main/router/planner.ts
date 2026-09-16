@@ -52,7 +52,7 @@ export async function generatePlan(
     PLANNER_PROMPT,
     prompt,
     45000,
-    1024,
+    256,
     temperature
   );
 

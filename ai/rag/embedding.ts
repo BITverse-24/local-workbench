@@ -14,7 +14,8 @@ export class EmbeddingService {
   // PERF OPTIMIZATION: Bounded in-memory cache for string embeddings.
   // Prevents duplicate REST API network calls and vector calculations for previously embedded texts,
   // substantially accelerating grounding checks and repeated RAG queries.
-  private static readonly CACHE_MAX_SIZE = 200;
+  private static readonly CACHE_MAX_SIZE = 1000;
+  private static readonly BATCH_CHUNK_SIZE = 32;
   private cache = new Map<string, number[]>();
 
   constructor(private modelConfig: EmbeddingConfig | any) {}
@@ -48,12 +49,6 @@ export class EmbeddingService {
     }
 
     const apiKey = this.modelConfig.apiKey || process.env[this.modelConfig.apiKeyEnv || ""] || "";
-
-    const payload: EmbeddingRequest = {
-      model: this.modelConfig.model,
-      input: missingTexts
-    };
-
     const baseUrl = (this.modelConfig.baseUrl || "http://localhost:1234/v1").replace(/\/+$/, "");
     const url = `${baseUrl}/embeddings`;
     const headers: Record<string, string> = {
@@ -65,19 +60,29 @@ export class EmbeddingService {
 
     console.log(`[rag:embedding] Dispatching embedBatch (${missingTexts.length} texts) to ${url} (model: ${this.modelConfig.model})`);
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload)
-    });
+    const fetchedEmbeddings: number[][] = [];
+    for (let i = 0; i < missingTexts.length; i += EmbeddingService.BATCH_CHUNK_SIZE) {
+      const chunk = missingTexts.slice(i, i + EmbeddingService.BATCH_CHUNK_SIZE);
+      const payload: EmbeddingRequest = {
+        model: this.modelConfig.model,
+        input: chunk
+      };
 
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Embedding request failed: ${res.status} ${err}`);
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Embedding request failed: ${res.status} ${err}`);
+      }
+
+      const data = (await res.json()) as EmbeddingResponse;
+      const chunkEmbeddings = data.data.sort((a, b) => a.index - b.index).map(d => d.embedding);
+      fetchedEmbeddings.push(...chunkEmbeddings);
     }
-
-    const data = (await res.json()) as EmbeddingResponse;
-    const fetchedEmbeddings = data.data.sort((a, b) => a.index - b.index).map(d => d.embedding);
 
     // 2. Populate missing results and update cache
     for (let j = 0; j < missingIndices.length; j++) {

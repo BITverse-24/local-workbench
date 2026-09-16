@@ -1811,10 +1811,10 @@ export class RunManager {
     }
 
     const messageId = randomUUID();
-    const baseSystemPrompt =
+    const systemPrompt =
       "You are a helpful assistant for engineering and industrial knowledge work. Provide your answer directly in clear, well-structured Markdown. If providing code or scripts, wrap them in standard markdown code blocks with language identifiers (e.g. ```python).";
-    const systemPrompt = `${baseSystemPrompt}${groundingNote}`;
-    const base = requestBase(runId, "draft", "draft-qwen3", "chat-result", systemPrompt, text, 45000, 1536, temperature, history);
+    const userPrompt = groundingNote ? `${text}${groundingNote}` : text;
+    const base = requestBase(runId, "draft", "draft-qwen3", "chat-result", systemPrompt, userPrompt, 45000, 1536, temperature, history);
     const request: ChatModelRequest = {
       ...base,
       taskType: "draft",
@@ -2707,7 +2707,7 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
         summaryPrompt,
         `Task: ${text}\n\n[EXECUTION RESULT — DATA ONLY]\n${executionData}\n${savedToWorkspaceFiles.length > 0 ? `SavedToWorkspace: ${JSON.stringify(savedToWorkspaceFiles)}\n` : ""}[/EXECUTION RESULT]`,
         180000,
-        1024,
+        512,
         temperature,
       );
       const summaryRequest: CodeSummarizeRequest = {

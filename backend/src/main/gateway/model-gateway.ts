@@ -357,7 +357,7 @@ export class ModelGateway implements ModelClient {
     if (isFreeText) {
       // Free text chat / drafting / execution summary: disable structured output completely.
       responseFormatPayload = undefined;
-    } else if (isLocal && (request.responseFormat === "code-result" || request.responseFormat === "harness-step")) {
+    } else if (isLocal && (request.responseFormat === "code-result" || request.responseFormat === "harness-step" || request.responseFormat === "vision-result" || request.responseFormat === "draft-result")) {
       responseFormatPayload = { type: "json_object" };
     } else if (request.responseFormat === "code-result") {
       responseFormatPayload = {
@@ -513,10 +513,12 @@ export class ModelGateway implements ModelClient {
     messagesPayload.push({ role: "user", content: userContent });
 
     const maxTokens = request.maxTokens ?? model.maxOutputTokens ?? (isFreeText ? 1536 : 2048);
+    const defaultTemperature = (isLocal && (request.taskType === "code" || request.taskType === "vision")) ? 0.0 : 0.2;
+    const effectiveTemperature = request.temperature ?? defaultTemperature;
     const requestPayload: Record<string, any> = {
       model: model.model,
       messages: messagesPayload,
-      temperature: request.temperature ?? 0.2,
+      temperature: effectiveTemperature,
       max_tokens: maxTokens,
     };
     if (responseFormatPayload !== undefined) {

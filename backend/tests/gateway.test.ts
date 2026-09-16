@@ -405,4 +405,61 @@ describe("model gateway health checks", () => {
     expect(capturedBody.messages[0].content).toBe("Summarize execution.");
     expect(chunks).toEqual(["The script has been ", "repaired and executed."]);
   });
+
+  it("applies json_object and greedy 0.0 temperature for local structured tasks", async () => {
+    let capturedBody: any;
+    const model: ModelRegistryEntry = {
+      id: "vision-qwen25vl",
+      taskTypes: ["vision"],
+      runtime: "ollama",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      model: "test-vision",
+      capabilities: ["text", "image-input"],
+      requestTimeoutMs: 1000,
+      healthPath: "/models",
+      enabled: true,
+    };
+    const gateway = new ModelGateway(
+      {
+        async request(_url, init) {
+          capturedBody = JSON.parse(init.body!);
+          return {
+            status: 200,
+            async text() {
+              return JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({ findings: [], pageReferences: [] }),
+                      role: "assistant",
+                    },
+                    finish_reason: "stop",
+                  },
+                ],
+              });
+            },
+          };
+        },
+      },
+      new Map([[model.id, model]]),
+    );
+
+    const result = await gateway.execute({
+      requestId: "req-local-opt",
+      runId: RUN_ID,
+      taskType: "vision",
+      modelId: "vision-qwen25vl",
+      responseFormat: "vision-result",
+      inputMode: "typed-scan",
+      systemPrompt: "Extract findings.",
+      userPrompt: "Find data.",
+      timeoutMs: 1000,
+    });
+
+    expect(result.ok).toBe(true);
+    // Verifies GBNF CPU freeze elimination via json_object
+    expect(capturedBody.response_format).toEqual({ type: "json_object" });
+    // Verifies greedy decoding (0.0) on local extraction tasks
+    expect(capturedBody.temperature).toBe(0.0);
+  });
 });
