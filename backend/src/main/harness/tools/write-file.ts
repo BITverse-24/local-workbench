@@ -7,6 +7,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { resolveSafe } from "../path-guard.js";
+import { clearListDirCache } from "./list-dir.js";
 
 export interface WriteResult {
   written: string;
@@ -49,6 +50,9 @@ export function writeFile(
   // Ensure parent directory exists before writing
   mkdirSync(path.dirname(target), { recursive: true });
   writeFileSync(target, content, "utf8");
+
+  // Invalidate listDir cache so subsequent directory queries reflect newly created/updated files immediately
+  clearListDirCache();
 
   // Generate a clear diff summary
   let diff: string;
