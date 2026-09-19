@@ -33,12 +33,17 @@ export interface DirEntry {
  * Recursive directory walk with ignore list applied.
  * Returns flat array of {name, type, size} (HARNESS.md §5).
  * maxDepth defaults to 4.
+ *
+ * PERF OPTIMIZATION: Early depth guard check, direct string filtering, and efficient directory walk loop.
+ * Bypasses stats and path resolution for ignored files and out-of-bounds recursive depths.
  */
 export function listDir(
   workspaceRoot: string,
   relativePath: string = ".",
   maxDepth: number = 4,
 ): DirEntry[] {
+  if (maxDepth < 1) return [];
+
   const target = resolveSafe(workspaceRoot, relativePath);
   const entries: DirEntry[] = [];
 
@@ -52,12 +57,20 @@ export function listDir(
       return; // Permission denied or unreadable directory — skip gracefully
     }
 
+    // Filter out ignored items before sorting to reduce string comparison work
+    const filtered: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (!IGNORE_LIST.has(item)) {
+        filtered.push(item);
+      }
+    }
+
     // Sort alphabetically for deterministic output
-    items.sort();
+    filtered.sort();
 
-    for (const name of items) {
-      if (IGNORE_LIST.has(name)) continue;
-
+    for (let i = 0; i < filtered.length; i++) {
+      const name = filtered[i];
       const fullPath = path.join(dir, name);
       let stat;
       try {
@@ -70,7 +83,9 @@ export function listDir(
 
       if (stat.isDirectory()) {
         entries.push({ name: rel, type: "directory", size: 0 });
-        walk(fullPath, currentDepth + 1);
+        if (currentDepth < maxDepth) {
+          walk(fullPath, currentDepth + 1);
+        }
       } else if (stat.isFile()) {
         entries.push({ name: rel, type: "file", size: stat.size });
       }
