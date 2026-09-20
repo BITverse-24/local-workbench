@@ -68,7 +68,7 @@ export type AIWorkflowError = AIError | ValidationFailure;
 export type AIResult<T> = { ok: true; value: T } | { ok: false; error: AIWorkflowError };
 export type RunState = "created" | "classifying" | "planning" | "acting" | "awaiting_confirmation" | "completed" | "failed" | "cancelled";
 export type ToolName = "read_file" | "draft_note" | "draft_code" | "execute_python" | "generate_xlsx" | "retrieve_sop" | "inspect_drawing";
-export interface PendingAction { actionId: string; runId: string; kind: "generate_docx" | "execute_python" | "generate_xlsx"; prompt: string; createdAt: string; expiresAt: string; preview?: string; }
+export interface PendingAction { actionId: string; runId: string; kind: "generate_docx" | "execute_python" | "generate_xlsx" | "plan_approval"; prompt: string; createdAt: string; expiresAt: string; preview?: string; }
 export interface ArtifactRef { artifactId: string; runId: string; kind: ArtifactKind; filename: string; relativePath: string; sizeBytes: number; createdAt: string; content?: string; isBinary?: boolean; }
 export interface GroundingChunk {
   chunkId: string;

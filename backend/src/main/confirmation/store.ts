@@ -5,6 +5,7 @@ const prompts: Record<PendingAction["kind"], string> = {
   generate_docx: "Generate the approval-note DOCX?",
   execute_python: "Execute the generated Python?",
   generate_xlsx: "Generate the out-of-range summary XLSX?",
+  plan_approval: "Approve proposed execution plan?",
 };
 export function createConfirmation(runId: string, kind: PendingAction["kind"], preview?: string, customPrompt?: string): PendingAction {
   const now = new Date();

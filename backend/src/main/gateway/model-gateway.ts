@@ -152,6 +152,133 @@ const nativeTransport: GatewayTransport = {
     }
   },
 };
+/**
+ * Normalizes conversation history into strictly compliant OpenAI / OpenRouter messages format.
+ *
+ * Requirements for native tools:
+ * 1. role: "system" | "user" | "assistant" | "tool"
+ * 2. assistant messages:
+ *    - content: string or null
+ *    - tool_calls?: Array<{
+ *        id: string;
+ *        type: "function";
+ *        function: {
+ *          name: string;
+ *          arguments: string; // Must be JSON-stringified
+ *        };
+ *      }>
+ * 3. tool messages:
+ *    - role: "tool"
+ *    - tool_call_id: string
+ *    - content: string
+ * 4. Strips internal metadata: `turn`, `toolName`, `args`, etc.
+ */
+export function formatMessagesForNativeTools(
+  messages: Array<{ role: string; content?: any; tool_calls?: any[]; tool_call_id?: string; [key: string]: any }>,
+): Array<Record<string, any>> {
+  return messages.map((m) => {
+    if (m.role === "assistant") {
+      const formatted: Record<string, any> = {
+        role: "assistant",
+        content: typeof m.content === "string" && m.content.trim().length > 0 ? m.content : null,
+      };
+
+      if (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+        formatted.tool_calls = m.tool_calls.map((tc: any) => {
+          if (tc.type === "function" && tc.function && typeof tc.function.name === "string") {
+            return {
+              id: String(tc.id ?? randomUUID()),
+              type: "function",
+              function: {
+                name: tc.function.name,
+                arguments:
+                  typeof tc.function.arguments === "string"
+                    ? tc.function.arguments
+                    : JSON.stringify(tc.function.arguments ?? {}),
+              },
+            };
+          }
+
+          return {
+            id: String(tc.id ?? randomUUID()),
+            type: "function",
+            function: {
+              name: String(tc.name ?? tc.function?.name ?? "unknown"),
+              arguments:
+                typeof tc.arguments === "string"
+                  ? tc.arguments
+                  : JSON.stringify(tc.arguments ?? tc.function?.arguments ?? {}),
+            },
+          };
+        });
+      }
+
+      return formatted;
+    }
+
+    if (m.role === "tool") {
+      return {
+        role: "tool",
+        tool_call_id: String(m.tool_call_id ?? ""),
+        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? ""),
+      };
+    }
+
+    return {
+      role: m.role,
+      content: typeof m.content === "string" ? m.content : String(m.content ?? ""),
+    };
+  });
+}
+
+/**
+ * Normalizes messages for providers or models where `tools` parameter is rejected or unsupported.
+ * Converts `tool` role messages to `user` role results, and assistant tool_calls to text.
+ */
+export function formatMessagesForFallback(
+  messages: Array<{ role: string; content?: any; tool_calls?: any[]; tool_call_id?: string; toolName?: string; [key: string]: any }>,
+  systemPromptAddition: string,
+): Array<Record<string, any>> {
+  return messages.map((m, idx) => {
+    if (idx === 0 && m.role === "system") {
+      return {
+        role: "system",
+        content: `${m.content ?? ""}${systemPromptAddition}`,
+      };
+    }
+
+    if (m.role === "assistant") {
+      let content = typeof m.content === "string" ? m.content : "";
+      if (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+        const calls = m.tool_calls.map((tc: any) => ({
+          name: tc.name ?? tc.function?.name,
+          arguments: typeof tc.arguments === "string" ? JSON.parse(tc.arguments) : (tc.arguments ?? tc.function?.arguments ?? {}),
+        }));
+        content = content
+          ? `${content}\n${JSON.stringify({ tool_calls: calls })}`
+          : JSON.stringify({ content: null, tool_calls: calls });
+      }
+      return {
+        role: "assistant",
+        content,
+      };
+    }
+
+    if (m.role === "tool") {
+      const toolIdentifier = m.toolName || m.tool_call_id || "tool";
+      return {
+        role: "user",
+        content: `[Tool Result for ${toolIdentifier}]:\n${typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "")}`,
+      };
+    }
+
+    return {
+      role: m.role,
+      content: typeof m.content === "string" ? m.content : String(m.content ?? ""),
+    };
+  });
+}
+
 export interface VisionUploadInfo { originalBytes: number; finalBytes: number; resized: boolean; mediaType: string; }
 export class ModelGateway implements ModelClient {
   readonly dbRegistry: Map<string, ModelRegistryEntry>;
@@ -938,7 +1065,7 @@ export class ModelGateway implements ModelClient {
    */
   async chatWithTools(
     modelId: ModelId,
-    messages: Array<{ role: string; content: any; tool_calls?: any[]; tool_call_id?: string }>,
+    messages: Array<{ role: string; content: any; tool_calls?: any[]; tool_call_id?: string; [key: string]: any }>,
     tools: AgentToolDefinition[],
     options?: {
       runId?: string;
@@ -994,9 +1121,10 @@ export class ModelGateway implements ModelClient {
 
     // 1. If tools are available and provider hasn't rejected tools previously:
     if (tools.length > 0 && knownSupportsTools) {
+      const nativeMessages = formatMessagesForNativeTools(messages);
       const payload: Record<string, any> = {
         model: model.model,
-        messages,
+        messages: nativeMessages,
         tools,
         tool_choice: "auto",
         temperature: effectiveTemperature,
@@ -1117,12 +1245,7 @@ export class ModelGateway implements ModelClient {
 
     const fallbackSystemPromptAddition = `\n\nAVAILABLE TOOLS:\n${toolDescriptions}\n\nTo use a tool, respond with JSON matching:\n{"content": "reasoning or response", "tool_calls": [{"name": "tool_name", "arguments": { ... }}]}\nIf no tool is needed, respond with:\n{"content": "your response", "tool_calls": null}`;
 
-    const fallbackMessages = messages.map((m, idx) => {
-      if (idx === 0 && m.role === "system") {
-        return { ...m, content: `${m.content}${fallbackSystemPromptAddition}` };
-      }
-      return m;
-    });
+    const fallbackMessages = formatMessagesForFallback(messages, fallbackSystemPromptAddition);
 
     try {
       const fallbackBody = JSON.stringify({

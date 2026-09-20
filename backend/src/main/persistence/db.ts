@@ -99,6 +99,33 @@ function migrateArtifactsSchema(db: Db): void {
   }
 }
 
+function migrateConfirmationsSchema(db: Db): void {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='confirmations'").get() as
+    | { sql: string }
+    | undefined;
+  if (!row?.sql) return;
+  if (!row.sql.includes("'plan_approval'")) {
+    db.pragma("foreign_keys = OFF");
+    db.exec(`
+      CREATE TABLE confirmations_new (
+        action_id  TEXT PRIMARY KEY,
+        run_id     TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        kind       TEXT NOT NULL CHECK (kind IN ('generate_docx','execute_python','generate_xlsx','plan_approval')),
+        prompt     TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        outcome    TEXT CHECK (outcome IN ('approved','rejected','expired','cancelled')),
+        decided_at TEXT
+      );
+      INSERT INTO confirmations_new (action_id, run_id, kind, prompt, created_at, expires_at, outcome, decided_at)
+        SELECT action_id, run_id, kind, prompt, created_at, expires_at, outcome, decided_at FROM confirmations;
+      DROP TABLE confirmations;
+      ALTER TABLE confirmations_new RENAME TO confirmations;
+    `);
+    db.pragma("foreign_keys = ON");
+  }
+}
+
 function seedDefaults(db: Db): void {
   const now = new Date().toISOString();
   const seedSetting = db.prepare(
@@ -128,6 +155,7 @@ export function initDb(dbPath?: string): Db {
   db.pragma("foreign_keys = ON");
   applySchema(db);
   migrateArtifactsSchema(db);
+  migrateConfirmationsSchema(db);
   seedDefaults(db);
   instance = db;
   instancePath = resolved;

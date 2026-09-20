@@ -102,4 +102,147 @@ describe("Agent Loop Engine & Context Manager", () => {
     expect(result.finalText).toBe("A heat exchanger transfers heat safely.");
     expect(confirmationTriggered).toBe(false);
   });
+
+  it("intercepts markdown code blocks as write_file tool calls when model outputs files as chat", async () => {
+    const loop = new AgentLoop();
+    let writtenFiles: Array<{ path: string; content: string }> = [];
+    let callTurn = 0;
+
+    const mockWriteFileTool: AgentTool = {
+      name: "write_file",
+      definition: {
+        type: "function",
+        function: {
+          name: "write_file",
+          description: "Write file",
+          parameters: {
+            type: "object",
+            properties: {
+              path: { type: "string" },
+              content: { type: "string" },
+            },
+          },
+        },
+      },
+      async execute(args) {
+        writtenFiles.push({ path: String(args.path), content: String(args.content) });
+        return { output: `Saved ${args.path}`, summary: `Saved ${args.path}` };
+      },
+    };
+
+    const mockGateway = {
+      async chatWithTools() {
+        callTurn++;
+        if (callTurn === 1) {
+          // Model lazily returns text with code blocks without calling write_file
+          return {
+            ok: true,
+            value: {
+              content: `Sure, I will set up the Express app.
+Create a file named app.js:
+\`\`\`javascript
+// app.js
+const express = require('express');
+const app = express();
+module.exports = app;
+\`\`\`
+`,
+              tool_calls: null,
+            },
+          };
+        }
+        return {
+          ok: true,
+          value: {
+            content: "Express app has been set up successfully.",
+            tool_calls: null,
+          },
+        };
+      },
+    };
+
+    let planConfirmed = false;
+    const result = await loop.run({
+      runId: "test-lazy",
+      driverModelId: "code-qwen25coder",
+      userPrompt: "Setup an express app in the workspace",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockWriteFileTool],
+      context: { runId: "test-lazy", workspaceRoot: ".", gateway: mockGateway as any },
+      onPlanConfirmationRequired: async () => {
+        planConfirmed = true;
+        return true;
+      },
+      emitEvent: () => {},
+    });
+
+    expect(planConfirmed).toBe(true);
+    expect(writtenFiles).toHaveLength(1);
+    expect(writtenFiles[0].path).toBe("app.js");
+    expect(writtenFiles[0].content).toContain("const express = require('express');");
+    expect(result.completed).toBe(true);
+    expect(result.finalText).toBe("Express app has been set up successfully.");
+  });
+
+  it("nudges model when it answers conversational text without tools for a file creation request", async () => {
+    const loop = new AgentLoop();
+    let callTurn = 0;
+    let receivedMessagesOnTurn2: any[] = [];
+
+    const mockWriteFileTool: AgentTool = {
+      name: "write_file",
+      definition: {
+        type: "function",
+        function: {
+          name: "write_file",
+          description: "Write file",
+          parameters: { type: "object", properties: {} },
+        },
+      },
+      async execute(args) {
+        return { output: `Saved ${args.path}`, summary: "Saved" };
+      },
+    };
+
+    const mockGateway = {
+      async chatWithTools(_modelId: any, messages: any[]) {
+        callTurn++;
+        if (callTurn === 1) {
+          // Model returns purely conversational text with no code blocks or tools
+          return {
+            ok: true,
+            value: {
+              content: "To set up an express app, you should run npm init and create an app.js file with express routing.",
+              tool_calls: null,
+            },
+          };
+        }
+        receivedMessagesOnTurn2 = messages;
+        // On turn 2, model calls write_file
+        return {
+          ok: true,
+          value: {
+            content: "Created app.js.",
+            tool_calls: null,
+          },
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-nudge",
+      driverModelId: "code-qwen25coder",
+      userPrompt: "Setup an express app in the workspace",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockWriteFileTool],
+      context: { runId: "test-nudge", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: () => {},
+    });
+
+    expect(callTurn).toBe(2);
+    // Turn 2 messages should include the system nudge feedback
+    const nudgeMsg = receivedMessagesOnTurn2.find((m) => typeof m.content === "string" && m.content.includes("[SYSTEM FEEDBACK]"));
+    expect(nudgeMsg).toBeDefined();
+    expect(result.completed).toBe(true);
+  });
 });

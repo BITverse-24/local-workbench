@@ -55,7 +55,7 @@ interface ArtifactRef {
 interface PendingAction {
   actionId: string;
   runId: string;
-  kind: "generate_docx" | "execute_python" | "generate_xlsx";
+  kind: "generate_docx" | "execute_python" | "generate_xlsx" | "plan_approval";
   prompt: string;
   createdAt: string;
   expiresAt: string;

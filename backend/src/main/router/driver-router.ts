@@ -37,6 +37,7 @@ export function pickDriverModel(
   );
 
   const hasCodeKeywords = /\b(code|function|script|bug|crash|error|traceback|fix|test|build|compile|refactor)\b/i.test(lower);
+  const hasWorkspaceOps = /\b(workspace|file|files|delete|remove|clean|search|find|list|dir)\b/i.test(lower);
 
   // Case 1: Script repair or data calculation
   if (hasCodeAttachment || (hasDataAttachment && hasCodeKeywords)) {
@@ -56,7 +57,16 @@ export function pickDriverModel(
     };
   }
 
-  // Case 3: Default driver (reasoning & drafting generalist)
+  // Case 3: Workspace management and file operations
+  if (hasWorkspace && hasWorkspaceOps) {
+    return {
+      taskType: "draft",
+      modelId: "draft-qwen3",
+      reason: "workspace management and file operations",
+    };
+  }
+
+  // Case 4: Default driver (reasoning & drafting generalist)
   return {
     taskType: "draft",
     modelId: "draft-qwen3",

@@ -15,7 +15,11 @@ const args = [vitest, "run", ...process.argv.slice(2)];
 const child = spawn(electron, args, {
   cwd: ROOT,
   stdio: "inherit",
-  env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+  env: {
+    WORKBENCH_AGENT_V2: process.env.WORKBENCH_AGENT_V2 ?? "false",
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: "1",
+  },
 });
 
 child.on("exit", (code) => process.exit(code ?? 0));

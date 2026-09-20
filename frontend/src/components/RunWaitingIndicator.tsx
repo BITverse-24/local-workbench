@@ -110,9 +110,22 @@ export default function RunWaitingIndicator({
     }
   };
 
+  const pendingConfirmationKind = useMemo(() => {
+    for (let i = runEvents.length - 1; i >= 0; i--) {
+      const e = runEvents[i];
+      if (e.type === "confirmation_required") {
+        return e.action.kind;
+      }
+    }
+    return null;
+  }, [runEvents]);
+
   // Human-readable status headline
   const headline = (() => {
     if (runState === "awaiting_confirmation") {
+      if (pendingConfirmationKind === "plan_approval") {
+        return "Awaiting your review of the proposed execution plan...";
+      }
       return "Awaiting your approval for consequential action...";
     }
     if (activeTool.call && activeTool.isBusy) {

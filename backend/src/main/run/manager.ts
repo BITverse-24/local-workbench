@@ -729,7 +729,9 @@ export class RunManager {
     const chatArtifacts = chatId ? this.getChatArtifacts(chatId) : [];
 
     // Feature switch: Enabled by default unless explicitly disabled, or when running legacy test suites
-    const useUnifiedAgentV2 = process.env.WORKBENCH_AGENT_V2 !== "false";
+    const useUnifiedAgentV2 =
+      process.env.WORKBENCH_AGENT_V2 !== "false" &&
+      typeof (this.gateway as any)?.chatWithTools === "function";
 
     if (useUnifiedAgentV2) {
       // ── Unified Agent Loop (Sovereign Workbench v2) ────────────────────────
@@ -768,13 +770,33 @@ export class RunManager {
         devWorkload: this.runDevWorkload.get(runId) ?? false,
       };
 
-      const systemPrompt = `You are Sovereign Workbench, an expert engineering assistant with access to local tools.
+      let systemPrompt: string;
+      if (isWorkspaceActive && this.harness) {
+        const tree = this.harness.getDirectoryTree();
+        const treeFormatted = formatTreeForPrompt(tree);
+        systemPrompt = `You are Sovereign Workbench, an autonomous engineering and coding agent operating directly inside the user's project workspace.
+
+CURRENT WORKSPACE DIRECTORY TREE:
+${treeFormatted}
+
+CRITICAL OPERATIONAL RULES:
+1. YOU HAVE DIRECT FILESYSTEM ACCESS via tools. NEVER say you cannot interact with files or lack permissions.
+2. CREATING & EDITING FILES: When the user asks you to create, setup, scaffold, write, build, or edit files or code, you MUST call the \`write_file\` tool to save each file to disk!
+   - NEVER merely output code in markdown blocks or give instructions telling the user to create files manually.
+   - You MUST invoke \`write_file\` with {"path": "relative/path/to/file", "content": "..."} for every file needed.
+3. COMMAND EXECUTION: To install dependencies, run scripts, test, or initialize packages (e.g. npm init, npm install, pip install), call \`run_command\`.
+4. EXPLORATION: Explore existing files with \`list_dir\`, \`read_file\`, or \`search\` before modifying existing code.
+5. DELETION: To delete files, call \`delete_file\`. Never delete files by writing empty content.
+6. When finished, provide a clear, concise summary of the files written and steps taken.`;
+      } else {
+        systemPrompt = `You are Sovereign Workbench, an expert engineering assistant with access to local tools.
 Solve the user's task step-by-step.
 Follow these operational guidelines:
-1. When inspecting files, explore and read the existing code/data first before proposing modifications.
+1. When asked to write code, create files, or generate deliverables, invoke the appropriate tools (e.g. write_file, execute_python, generate_deliverable).
 2. When performing calculations or fixing bugs, verify code execution in the sandbox.
 3. If an error occurs during tool execution, diagnose the error and retry with a corrected action.
 4. When finished, provide a clear, grounded summary of the actions taken. Do not invoke further tools once done.`;
+      }
 
       this.state(runId, "acting");
 
@@ -793,11 +815,11 @@ Follow these operational guidelines:
           onPlanConfirmationRequired: async (planText, firstCalls) => {
             return new Promise<boolean>((resolve) => {
               const firstActionsSummary = firstCalls.map((c: any) => c.name).join(", ");
-              const prompt = `Agent proposed execution plan:\n${planText.slice(0, 300)}\n\nFirst proposed actions: ${firstActionsSummary}\nApprove execution?`;
+              const prompt = `Review Agent Plan (${firstActionsSummary})`;
 
               void this.awaitConfirmation(
                 runId,
-                "execute_python",
+                "plan_approval",
                 async () => resolve(true),
                 planText,
                 prompt,

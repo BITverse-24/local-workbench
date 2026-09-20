@@ -3,6 +3,7 @@ import type { ModelId, RunEvent } from "../../shared/contracts.js";
 import type { AgentTool, ToolExecutionContext } from "../tools/types.js";
 import { ToolDispatcher } from "./tool-dispatcher.js";
 import { compactConversationHistory, type AgentMessage } from "./context-manager.js";
+import { extractCodeBlocksWithFilenames } from "./code-extractor.js";
 
 export interface AgentLoopOptions {
   runId: string;
@@ -89,8 +90,43 @@ export class AgentLoop {
         });
       }
 
-      // 4. Pure chat detection: If no tool calls on turn 1 (or any subsequent turn), we are done!
-      if (!tool_calls || tool_calls.length === 0) {
+      let effectiveToolCalls: any[] | null = tool_calls;
+
+      // 4. Guardrail: If model lazily output conversational text/code without invoking tools
+      // when the user requested creating or setting up files in the workspace:
+      if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && dispatcher.getTool("write_file")) {
+        const extracted = extractCodeBlocksWithFilenames(content ?? "");
+        if (extracted.length > 0) {
+          effectiveToolCalls = extracted.map((file) => ({
+            id: `call_${randomUUID().slice(0, 8)}`,
+            name: "write_file",
+            arguments: {
+              path: file.path,
+              content: file.content,
+            },
+          }));
+        } else if (
+          turn === 1 &&
+          /\b(create|write|setup|set up|scaffold|build|make|add|generate|init|initialize)\b/i.test(userPrompt) &&
+          /\b(file|files|app|application|project|code|server|api|repo|directory|folder|script|express|react|node|python)\b/i.test(userPrompt)
+        ) {
+          // Nudge model to invoke write_file
+          messages.push({
+            role: "assistant",
+            content,
+            turn,
+          });
+          messages.push({
+            role: "user",
+            content: `[SYSTEM FEEDBACK]: You answered with conversational instructions or text, but the user requested creating or setting up files in the workspace. No files were written to disk. You MUST invoke the \`write_file\` tool (with {"path": "relative/path/to/file", "content": "..."}) for each file to create them on disk. Please call \`write_file\` now.`,
+            turn,
+          });
+          continue;
+        }
+      }
+
+      // 5. Pure chat detection: If no tool calls and no synthesized actions, we are done!
+      if (!effectiveToolCalls || effectiveToolCalls.length === 0) {
         finalText = content ?? "Task completed.";
         return {
           finalText,
@@ -100,10 +136,10 @@ export class AgentLoop {
         };
       }
 
-      // 5. Single-gate confirmation check on turn 1
+      // 6. Single-gate confirmation check on turn 1
       if (turn === 1 && !confirmed && onPlanConfirmationRequired) {
-        const planDescription = content || `Executing ${tool_calls.length} initial actions.`;
-        const approved = await onPlanConfirmationRequired(planDescription, tool_calls);
+        const planDescription = content || `Executing ${effectiveToolCalls.length} initial actions.`;
+        const approved = await onPlanConfirmationRequired(planDescription, effectiveToolCalls);
         if (!approved) {
           emitEvent({
             type: "error",
@@ -121,16 +157,16 @@ export class AgentLoop {
         confirmed = true;
       }
 
-      // 6. Record assistant's tool-calling turn
+      // 7. Record assistant's tool-calling turn
       messages.push({
         role: "assistant",
         content,
-        tool_calls,
+        tool_calls: effectiveToolCalls,
         turn,
       });
 
-      // 7. Execute tool calls concurrently
-      const executed = await dispatcher.dispatchConcurrent(tool_calls, context);
+      // 8. Execute tool calls concurrently
+      const executed = await dispatcher.dispatchConcurrent(effectiveToolCalls, context);
 
       // 8. Record each tool's result in the conversation history
       for (const exec of executed) {

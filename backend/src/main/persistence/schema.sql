@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS execution_results (
 CREATE TABLE IF NOT EXISTS confirmations (
   action_id  TEXT PRIMARY KEY,            -- uuid4
   run_id     TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-  kind       TEXT NOT NULL CHECK (kind IN ('generate_docx','execute_python','generate_xlsx')),
+  kind       TEXT NOT NULL CHECK (kind IN ('generate_docx','execute_python','generate_xlsx','plan_approval')),
   prompt     TEXT NOT NULL,               -- locked strings: 'Generate the approval-note DOCX?' etc.
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,               -- +5 min
