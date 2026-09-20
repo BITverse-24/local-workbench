@@ -19,6 +19,7 @@ import {
   isDevOpenRouterActive,
   loadDevOpenRouterRegistry,
   loadProductionRegistryFromDb,
+  loadProductionRegistryEntriesFromDb,
   loadRegistry,
   resolveModel,
 } from "./registry.js";
@@ -155,20 +156,77 @@ export interface VisionUploadInfo { originalBytes: number; finalBytes: number; r
 export class ModelGateway implements ModelClient {
   readonly dbRegistry: Map<string, ModelRegistryEntry>;
   readonly devRegistry: Map<string, ModelRegistryEntry>;
+  private readonly endpointPool = new Map<string, ModelRegistryEntry[]>();
+  private roundRobinCounter = 0;
   private devModeOverride: boolean | null = null;
   externalRequestCount = 0;
   lastVisionUpload?: VisionUploadInfo;
 
   constructor(
     private readonly transport: GatewayTransport = nativeTransport,
-    initialRegistry?: Map<string, ModelRegistryEntry>,
+    initialRegistry?: Map<string, ModelRegistryEntry> | ModelRegistryEntry[],
     devRegistry?: Map<string, ModelRegistryEntry>,
   ) {
-    this.dbRegistry = initialRegistry ?? (loadProductionRegistryFromDb() as Map<string, ModelRegistryEntry>);
+    this.dbRegistry = new Map();
     try {
       this.devRegistry = devRegistry ?? (loadDevOpenRouterRegistry() as Map<string, ModelRegistryEntry>);
     } catch {
       this.devRegistry = new Map();
+    }
+
+    if (initialRegistry) {
+      this.updateRegistry(initialRegistry);
+    } else {
+      const entries = loadProductionRegistryEntriesFromDb();
+      this.updateRegistry(entries);
+    }
+  }
+
+  /**
+   * Register multiple instances / endpoints for a given model ID (worker pool).
+   */
+  registerModelInstances(modelId: ModelId | string, instances: ModelRegistryEntry[]): void {
+    if (!instances || instances.length === 0) return;
+    this.endpointPool.set(modelId, instances);
+    // Keep primary in dbRegistry for backward compatibility
+    this.dbRegistry.set(modelId, instances[0]);
+  }
+
+  /**
+   * Get all registered worker instances for a given model ID.
+   */
+  getModelInstances(modelId: ModelId | string): ModelRegistryEntry[] {
+    return this.endpointPool.get(modelId) ?? (this.registry.has(modelId) ? [this.registry.get(modelId)!] : []);
+  }
+
+  /**
+   * Select next healthy endpoint for the requested model using round-robin load balancing.
+   */
+  resolveNextEndpoint(modelId: ModelId | string, isDev = false): ModelRegistryEntry | undefined {
+    const activeRegistry = isDev && this.devRegistry.size > 0 ? this.devRegistry : this.dbRegistry;
+    if (isDev) {
+      return activeRegistry.get(modelId) ?? this.dbRegistry.get(modelId);
+    }
+
+    const instances = this.endpointPool.get(modelId);
+    if (instances && instances.length > 0) {
+      const enabledInstances = instances.filter((inst) => inst.enabled);
+      if (enabledInstances.length > 0) {
+        const selected = enabledInstances[this.roundRobinCounter % enabledInstances.length];
+        this.roundRobinCounter++;
+        return selected;
+      }
+    }
+
+    return activeRegistry.get(modelId);
+  }
+
+  private rebuildEndpointPool(): void {
+    this.endpointPool.clear();
+    for (const [id, entry] of this.dbRegistry.entries()) {
+      if (!this.endpointPool.has(id)) {
+        this.endpointPool.set(id, [entry]);
+      }
     }
   }
 
@@ -189,9 +247,22 @@ export class ModelGateway implements ModelClient {
   /** Dynamically replace production DB registry entries in memory without requiring application restart. */
   updateRegistry(entries: ModelRegistryEntry[] | Map<string, ModelRegistryEntry>): void {
     this.dbRegistry.clear();
-    const map = Array.isArray(entries) ? new Map(entries.map((m) => [m.id, m])) : entries;
-    for (const [k, v] of map) {
-      this.dbRegistry.set(k, v);
+    this.endpointPool.clear();
+
+    if (Array.isArray(entries)) {
+      for (const entry of entries) {
+        if (!this.dbRegistry.has(entry.id)) {
+          this.dbRegistry.set(entry.id, entry);
+        }
+        const list = this.endpointPool.get(entry.id) ?? [];
+        list.push(entry);
+        this.endpointPool.set(entry.id, list);
+      }
+    } else {
+      for (const [k, v] of entries) {
+        this.dbRegistry.set(k, v);
+        this.endpointPool.set(k, [v]);
+      }
     }
   }
 
@@ -206,19 +277,21 @@ export class ModelGateway implements ModelClient {
 
   async execute(request: ModelRequest): Promise<AIResult<ModelResponse>> {
     const isDev = this.isDevRoutingActive(request);
-    const activeRegistry = isDev && this.devRegistry.size > 0 ? this.devRegistry : this.dbRegistry;
-    let model: ModelRegistryEntry;
-    try {
-      model = resolveModel(activeRegistry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType);
-    } catch {
-      if (isDev && this.dbRegistry.has(request.modelId)) {
-        try {
-          model = resolveModel(this.dbRegistry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType);
-        } catch {
+    let model: ModelRegistryEntry | undefined = this.resolveNextEndpoint(request.modelId, isDev);
+    if (!model) {
+      const activeRegistry = isDev && this.devRegistry.size > 0 ? this.devRegistry : this.dbRegistry;
+      try {
+        model = resolveModel(activeRegistry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType);
+      } catch {
+        if (isDev && this.dbRegistry.has(request.modelId)) {
+          try {
+            model = resolveModel(this.dbRegistry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType);
+          } catch {
+            return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
+          }
+        } else {
           return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
         }
-      } else {
-        return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
       }
     }
 
@@ -774,14 +847,25 @@ export class ModelGateway implements ModelClient {
       }));
     }
 
-    const distinctByPort = new Map<number, { port: number; model: ModelRegistryEntry }>();
-    for (const model of this.registry.values()) {
+    const distinctByEndpoint = new Map<string, { port: number; model: ModelRegistryEntry }>();
+    const entriesToProbe: ModelRegistryEntry[] = [];
+    for (const pool of this.endpointPool.values()) {
+      for (const m of pool) {
+        entriesToProbe.push(m);
+      }
+    }
+    if (entriesToProbe.length === 0) {
+      entriesToProbe.push(...this.registry.values());
+    }
+
+    for (const model of entriesToProbe) {
       if (!model.enabled) continue;
       try {
         const u = new URL(model.baseUrl);
         const port = u.port ? parseInt(u.port, 10) : (u.protocol === "https:" ? 443 : 80);
-        if (!distinctByPort.has(port)) {
-          distinctByPort.set(port, {
+        const key = `${u.hostname}:${port}`;
+        if (!distinctByEndpoint.has(key)) {
+          distinctByEndpoint.set(key, {
             port,
             model,
           });
@@ -789,12 +873,12 @@ export class ModelGateway implements ModelClient {
       } catch {}
     }
 
-    if (distinctByPort.size === 0) {
+    if (distinctByEndpoint.size === 0) {
       return this.health();
     }
 
     return Promise.all(
-      Array.from(distinctByPort.values()).map(async ({ model, port }) => {
+      Array.from(distinctByEndpoint.values()).map(async ({ model, port }) => {
         const started = Date.now();
         try {
           const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
@@ -866,9 +950,7 @@ export class ModelGateway implements ModelClient {
     },
   ): Promise<AIResult<AgentTurnResponse>> {
     const isDev = this.isDevRoutingActive(options?.devWorkload !== undefined ? ({ devWorkload: options.devWorkload } as any) : undefined);
-    const activeRegistry = isDev && this.devRegistry.size > 0 ? this.devRegistry : this.dbRegistry;
-    let model: ModelRegistryEntry | undefined = activeRegistry.get(modelId);
-    if (!model && isDev) model = this.dbRegistry.get(modelId);
+    const model = this.resolveNextEndpoint(modelId, isDev);
     if (!model) {
       return {
         ok: false,

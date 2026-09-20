@@ -153,7 +153,7 @@ export function loadDevOpenRouterRegistry(filePath?: string): Map<ModelId, Model
   return new Map(parsed.models.map((model) => [model.id, model as ModelRegistryEntry]));
 }
 
-export function loadProductionRegistryFromDb(dbModels?: ModelConfigRow[]): Map<ModelId, ModelRegistryEntry> {
+export function loadProductionRegistryEntriesFromDb(dbModels?: ModelConfigRow[]): ModelRegistryEntry[] {
   let rows = dbModels;
   if (!rows) {
     try {
@@ -164,11 +164,15 @@ export function loadProductionRegistryFromDb(dbModels?: ModelConfigRow[]): Map<M
   }
 
   if (rows && Array.isArray(rows) && rows.length > 0) {
-    const entries = buildRegistryFromRows(rows);
-    return new Map(entries.map((e) => [e.id, e]));
+    return buildRegistryFromRows(rows);
   }
 
-  return defaultLocalRegistry();
+  return Array.from(defaultLocalRegistry().values());
+}
+
+export function loadProductionRegistryFromDb(dbModels?: ModelConfigRow[]): Map<ModelId, ModelRegistryEntry> {
+  const entries = loadProductionRegistryEntriesFromDb(dbModels);
+  return new Map(entries.map((e) => [e.id, e]));
 }
 
 let inMemoryDevOpenRouter: boolean | null = null;

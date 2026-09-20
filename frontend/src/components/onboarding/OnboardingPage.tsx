@@ -6,12 +6,8 @@ export interface OnboardingPageProps {
   initialConfig?: ModelConfigRow[];
 }
 
-interface RowState {
-  role: ModelRoleType;
-  title: string;
-  description: string;
-  badge: string;
-  badgeColor: string;
+export interface EndpointNode {
+  id: string;
   modelName: string;
   host: string;
   port: string;
@@ -21,18 +17,32 @@ interface RowState {
   testLatency?: number;
 }
 
-const DEFAULT_ROWS: RowState[] = [
+export interface RoleCardState {
+  role: ModelRoleType;
+  title: string;
+  description: string;
+  badge: string;
+  badgeColor: string;
+  nodes: EndpointNode[];
+}
+
+const DEFAULT_CARDS: RoleCardState[] = [
   {
     role: "vision",
     title: "Vision & OCR",
     description: "Inspection reports, engineering drawings, P&ID diagrams",
     badge: "VISION",
     badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
-    modelName: "qwen2.5vl:3b",
-    host: "127.0.0.1",
-    port: "11434",
-    contextLength: "32768",
-    testStatus: "idle",
+    nodes: [
+      {
+        id: "vision-node-1",
+        modelName: "qwen2.5vl:3b",
+        host: "127.0.0.1",
+        port: "11434",
+        contextLength: "32768",
+        testStatus: "idle",
+      },
+    ],
   },
   {
     role: "coding",
@@ -40,11 +50,16 @@ const DEFAULT_ROWS: RowState[] = [
     description: "Python execution, automated script repair, CSV parsing",
     badge: "CODE",
     badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
-    modelName: "qwen2.5-coder:7b",
-    host: "127.0.0.1",
-    port: "11434",
-    contextLength: "32768",
-    testStatus: "idle",
+    nodes: [
+      {
+        id: "coding-node-1",
+        modelName: "qwen2.5-coder:7b",
+        host: "127.0.0.1",
+        port: "11434",
+        contextLength: "32768",
+        testStatus: "idle",
+      },
+    ],
   },
   {
     role: "draft",
@@ -52,11 +67,16 @@ const DEFAULT_ROWS: RowState[] = [
     description: "Approval notes, synthesis, technical memos, chat",
     badge: "DRAFT",
     badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
-    modelName: "qwen3:8b",
-    host: "127.0.0.1",
-    port: "11434",
-    contextLength: "32768",
-    testStatus: "idle",
+    nodes: [
+      {
+        id: "draft-node-1",
+        modelName: "qwen3:8b",
+        host: "127.0.0.1",
+        port: "11434",
+        contextLength: "32768",
+        testStatus: "idle",
+      },
+    ],
   },
   {
     role: "plan",
@@ -64,11 +84,16 @@ const DEFAULT_ROWS: RowState[] = [
     description: "Multi-stage pipeline decomposition and subtask routing",
     badge: "PLAN",
     badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
-    modelName: "qwen3:8b",
-    host: "127.0.0.1",
-    port: "11434",
-    contextLength: "8192",
-    testStatus: "idle",
+    nodes: [
+      {
+        id: "plan-node-1",
+        modelName: "qwen3:8b",
+        host: "127.0.0.1",
+        port: "11434",
+        contextLength: "8192",
+        testStatus: "idle",
+      },
+    ],
   },
   {
     role: "embedding",
@@ -76,11 +101,16 @@ const DEFAULT_ROWS: RowState[] = [
     description: "Local RAG semantic search, SOP grounding (/embeddings)",
     badge: "EMBED",
     badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
-    modelName: "nomic-embed-text:v1.5",
-    host: "127.0.0.1",
-    port: "11434",
-    contextLength: "2048",
-    testStatus: "idle",
+    nodes: [
+      {
+        id: "embedding-node-1",
+        modelName: "nomic-embed-text:v1.5",
+        host: "127.0.0.1",
+        port: "11434",
+        contextLength: "2048",
+        testStatus: "idle",
+      },
+    ],
   },
 ];
 
@@ -95,23 +125,27 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
     return false;
   });
 
-  const [rows, setRows] = useState<RowState[]>(() => {
+  const [cards, setCards] = useState<RoleCardState[]>(() => {
     if (initialConfig && initialConfig.length > 0) {
-      return DEFAULT_ROWS.map((def) => {
-        const found = initialConfig.find((c) => c.role === def.role);
-        if (found) {
+      return DEFAULT_CARDS.map((def) => {
+        const matching = initialConfig.filter((c) => c.role === def.role);
+        if (matching.length > 0) {
           return {
             ...def,
-            modelName: found.modelName,
-            host: found.host,
-            port: String(found.port),
-            contextLength: String(found.contextLength),
+            nodes: matching.map((m, i) => ({
+              id: `${def.role}-node-${i + 1}-${Date.now()}`,
+              modelName: m.modelName,
+              host: m.host,
+              port: String(m.port),
+              contextLength: String(m.contextLength),
+              testStatus: "idle" as const,
+            })),
           };
         }
         return def;
       });
     }
-    return DEFAULT_ROWS;
+    return DEFAULT_CARDS;
   });
 
   const [saving, setSaving] = useState(false);
@@ -123,102 +157,186 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
     setAllowExternal(nextVal);
     // If switching off, lock all hosts back to 127.0.0.1
     if (!nextVal) {
-      setRows((prev) =>
-        prev.map((r) => ({
-          ...r,
-          host: "127.0.0.1",
-          testStatus: "idle",
-          testMessage: undefined,
+      setCards((prev) =>
+        prev.map((c) => ({
+          ...c,
+          nodes: c.nodes.map((n) => ({
+            ...n,
+            host: "127.0.0.1",
+            testStatus: "idle",
+            testMessage: undefined,
+          })),
         })),
       );
     }
   };
 
-  const updateRow = (index: number, field: keyof RowState, value: string) => {
-    setRows((prev) => {
+  const updateNode = (
+    cardIdx: number,
+    nodeIdx: number,
+    field: keyof EndpointNode,
+    value: string,
+  ) => {
+    setCards((prev) => {
       const next = [...prev];
-      next[index] = { ...next[index], [field]: value, testStatus: "idle", testMessage: undefined };
+      const targetNodes = [...next[cardIdx].nodes];
+      targetNodes[nodeIdx] = {
+        ...targetNodes[nodeIdx],
+        [field]: value,
+        testStatus: "idle",
+        testMessage: undefined,
+      };
+      next[cardIdx] = { ...next[cardIdx], nodes: targetNodes };
       return next;
     });
   };
 
-  const applyHostPortToAll = (sourceIndex: number) => {
-    const sourceHost = rows[sourceIndex].host;
-    const sourcePort = rows[sourceIndex].port;
-    setRows((prev) =>
-      prev.map((r) => ({
-        ...r,
-        host: sourceHost,
-        port: sourcePort,
+  const addWorkerNode = (cardIdx: number) => {
+    setCards((prev) => {
+      const next = [...prev];
+      const targetCard = next[cardIdx];
+      const primaryNode = targetCard.nodes[0];
+      const nextPort =
+        targetCard.nodes.length > 0 && !isNaN(Number(primaryNode?.port))
+          ? String(Number(primaryNode.port) + targetCard.nodes.length)
+          : "11434";
+
+      const newNode: EndpointNode = {
+        id: `${targetCard.role}-node-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        modelName: primaryNode?.modelName || "",
+        host: allowExternal ? primaryNode?.host || "" : "127.0.0.1",
+        port: allowExternal ? primaryNode?.port || "11434" : nextPort,
+        contextLength: primaryNode?.contextLength || "32768",
         testStatus: "idle",
-        testMessage: undefined,
+      };
+
+      next[cardIdx] = {
+        ...targetCard,
+        nodes: [...targetCard.nodes, newNode],
+      };
+      return next;
+    });
+  };
+
+  const removeWorkerNode = (cardIdx: number, nodeIdx: number) => {
+    setCards((prev) => {
+      const next = [...prev];
+      const targetCard = next[cardIdx];
+      if (targetCard.nodes.length <= 1) return prev;
+      next[cardIdx] = {
+        ...targetCard,
+        nodes: targetCard.nodes.filter((_, idx) => idx !== nodeIdx),
+      };
+      return next;
+    });
+  };
+
+  const applyHostPortToAll = (sourceCardIdx: number, sourceNodeIdx = 0) => {
+    const sourceNode = cards[sourceCardIdx].nodes[sourceNodeIdx];
+    const sourceHost = sourceNode.host;
+    const sourcePort = sourceNode.port;
+    setCards((prev) =>
+      prev.map((c) => ({
+        ...c,
+        nodes: c.nodes.map((n) => ({
+          ...n,
+          host: sourceHost,
+          port: sourcePort,
+          testStatus: "idle",
+          testMessage: undefined,
+        })),
       })),
     );
   };
 
   const prefillOllama = () => {
-    setRows(DEFAULT_ROWS.map((r) => ({ ...r, testStatus: "idle", testMessage: undefined })));
+    setCards((prev) =>
+      prev.map((c) => ({
+        ...c,
+        nodes: c.nodes.map((n) => ({
+          ...n,
+          host: allowExternal ? n.host : "127.0.0.1",
+          port: "11434",
+          testStatus: "idle",
+          testMessage: undefined,
+        })),
+      })),
+    );
   };
 
   const prefillLMStudio = () => {
-    setRows((prev) =>
-      prev.map((r) => ({
-        ...r,
-        host: allowExternal ? r.host : "127.0.0.1",
-        port: "1234",
-        testStatus: "idle",
-        testMessage: undefined,
+    setCards((prev) =>
+      prev.map((c) => ({
+        ...c,
+        nodes: c.nodes.map((n) => ({
+          ...n,
+          host: allowExternal ? n.host : "127.0.0.1",
+          port: "1234",
+          testStatus: "idle",
+          testMessage: undefined,
+        })),
       })),
     );
   };
 
   const prefillVLLM = () => {
-    setRows((prev) =>
-      prev.map((r) => ({
-        ...r,
-        host: allowExternal ? r.host : "127.0.0.1",
-        port: "8000",
-        testStatus: "idle",
-        testMessage: undefined,
+    setCards((prev) =>
+      prev.map((c) => ({
+        ...c,
+        nodes: c.nodes.map((n) => ({
+          ...n,
+          host: allowExternal ? n.host : "127.0.0.1",
+          port: "8000",
+          testStatus: "idle",
+          testMessage: undefined,
+        })),
       })),
     );
   };
 
   const clearForm = () => {
-    setRows((prev) =>
-      prev.map((r) => ({
-        ...r,
-        modelName: "",
-        host: allowExternal ? "" : "127.0.0.1",
-        port: "",
-        contextLength: "",
-        testStatus: "idle",
-        testMessage: undefined,
+    setCards((prev) =>
+      prev.map((c) => ({
+        ...c,
+        nodes: c.nodes.map((n) => ({
+          ...n,
+          modelName: "",
+          host: allowExternal ? "" : "127.0.0.1",
+          port: "",
+          contextLength: "",
+          testStatus: "idle",
+          testMessage: undefined,
+        })),
       })),
     );
   };
 
-  const testEndpoint = async (index: number) => {
-    const r = rows[index];
-    const portNum = parseInt(r.port, 10);
-    const hostToTest = allowExternal ? r.host.trim() : "127.0.0.1";
+  const testNodeEndpoint = async (cardIdx: number, nodeIdx: number) => {
+    const card = cards[cardIdx];
+    const node = card.nodes[nodeIdx];
+    const portNum = parseInt(node.port, 10);
+    const hostToTest = allowExternal ? node.host.trim() : "127.0.0.1";
 
     if (!hostToTest || isNaN(portNum) || portNum < 1 || portNum > 65535) {
-      setRows((prev) => {
+      setCards((prev) => {
         const next = [...prev];
-        next[index] = {
-          ...next[index],
+        const nextNodes = [...next[cardIdx].nodes];
+        nextNodes[nodeIdx] = {
+          ...nextNodes[nodeIdx],
           testStatus: "error",
           testMessage: "Valid Host and Port (1-65535) required",
         };
+        next[cardIdx] = { ...next[cardIdx], nodes: nextNodes };
         return next;
       });
       return;
     }
 
-    setRows((prev) => {
+    setCards((prev) => {
       const next = [...prev];
-      next[index] = { ...next[index], testStatus: "testing", testMessage: undefined };
+      const nextNodes = [...next[cardIdx].nodes];
+      nextNodes[nodeIdx] = { ...nextNodes[nodeIdx], testStatus: "testing", testMessage: undefined };
+      next[cardIdx] = { ...next[cardIdx], nodes: nextNodes };
       return next;
     });
 
@@ -226,38 +344,42 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
       const res = await wb.testModelEndpoint({
         host: hostToTest,
         port: portNum,
-        modelName: r.modelName.trim(),
-        role: r.role,
+        modelName: node.modelName.trim(),
+        role: card.role,
       });
 
-      setRows((prev) => {
+      setCards((prev) => {
         const next = [...prev];
+        const nextNodes = [...next[cardIdx].nodes];
         if (res.ok) {
           const lat = res.latencyMs !== undefined ? `${res.latencyMs}ms` : "";
           const foundMsg = res.modelFound ? "Verified" : "Reachable (model not in list)";
-          next[index] = {
-            ...next[index],
+          nextNodes[nodeIdx] = {
+            ...nextNodes[nodeIdx],
             testStatus: res.modelFound ? "success" : "warning",
             testLatency: res.latencyMs,
             testMessage: `${foundMsg} (${lat})`,
           };
         } else {
-          next[index] = {
-            ...next[index],
+          nextNodes[nodeIdx] = {
+            ...nextNodes[nodeIdx],
             testStatus: "error",
             testMessage: res.error || "Cannot reach endpoint",
           };
         }
+        next[cardIdx] = { ...next[cardIdx], nodes: nextNodes };
         return next;
       });
     } catch (err: any) {
-      setRows((prev) => {
+      setCards((prev) => {
         const next = [...prev];
-        next[index] = {
-          ...next[index],
+        const nextNodes = [...next[cardIdx].nodes];
+        nextNodes[nodeIdx] = {
+          ...nextNodes[nodeIdx],
           testStatus: "error",
           testMessage: err?.message || "Test failed",
         };
+        next[cardIdx] = { ...next[cardIdx], nodes: nextNodes };
         return next;
       });
     }
@@ -265,27 +387,37 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
 
   const testAllEndpoints = async () => {
     setTestingAll(true);
-    await Promise.all(rows.map((_, idx) => testEndpoint(idx)));
+    const testPromises: Promise<void>[] = [];
+    cards.forEach((card, cardIdx) => {
+      card.nodes.forEach((_, nodeIdx) => {
+        testPromises.push(testNodeEndpoint(cardIdx, nodeIdx));
+      });
+    });
+    await Promise.all(testPromises);
     setTestingAll(false);
   };
 
   // Validation
-  const getFieldError = (r: RowState, field: "modelName" | "host" | "port" | "contextLength"): string | null => {
-    if (field === "modelName" && !r.modelName.trim()) return "Model name required";
-    if (field === "host" && allowExternal && !r.host.trim()) return "Host required";
+  const getFieldError = (
+    n: EndpointNode,
+    field: "modelName" | "host" | "port" | "contextLength",
+  ): string | null => {
+    if (field === "modelName" && !n.modelName.trim()) return "Model name required";
+    if (field === "host" && allowExternal && !n.host.trim()) return "Host required";
     if (field === "port") {
-      const p = parseInt(r.port, 10);
+      const p = parseInt(n.port, 10);
       if (isNaN(p) || p < 1 || p > 65535) return "1-65535";
     }
     if (field === "contextLength") {
-      const c = parseInt(r.contextLength, 10);
+      const c = parseInt(n.contextLength, 10);
       if (isNaN(c) || c < 512) return "Min 512";
     }
     return null;
   };
 
-  const hasErrors = rows.some((r) =>
-    ["modelName", "host", "port", "contextLength"].some((f) => getFieldError(r, f as any)),
+  const allNodes = cards.flatMap((c) => c.nodes);
+  const hasErrors = allNodes.some((node) =>
+    ["modelName", "host", "port", "contextLength"].some((f) => getFieldError(node, f as any)),
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -299,13 +431,15 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
 
     setSaving(true);
     try {
-      const payload: ModelConfigRow[] = rows.map((r) => ({
-        role: r.role,
-        modelName: r.modelName.trim(),
-        host: allowExternal ? r.host.trim() : "127.0.0.1",
-        port: parseInt(r.port, 10),
-        contextLength: parseInt(r.contextLength, 10) || 32768,
-      }));
+      const payload: ModelConfigRow[] = cards.flatMap((card) =>
+        card.nodes.map((node) => ({
+          role: card.role,
+          modelName: node.modelName.trim(),
+          host: allowExternal ? node.host.trim() : "127.0.0.1",
+          port: parseInt(node.port, 10),
+          contextLength: parseInt(node.contextLength, 10) || 32768,
+        })),
+      );
 
       const res = await wb.saveModelConfig(payload);
       if (res.ok) {
@@ -320,9 +454,9 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
     }
   };
 
-  const step1Done = rows.some((r) => r.testStatus === "success");
-  const step2Done = rows.every((r) => r.modelName.trim().length > 0);
-  const step3Done = !allowExternal || rows.every((r) => r.host.trim().length > 0);
+  const step1Done = allNodes.some((n) => n.testStatus === "success");
+  const step2Done = allNodes.every((n) => n.modelName.trim().length > 0);
+  const step3Done = !allowExternal || allNodes.every((n) => n.host.trim().length > 0);
 
   const getRoleIcon = (role: string) => {
     switch (role.toLowerCase()) {
@@ -383,7 +517,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
               Industrial multi-model orchestration for defence manufacturing,
               PSU engineering, and government facilities. Assign offline,
               OpenAI-compatible model endpoints for each specialized operational
-              role.
+              role with optional LAN worker pool scaling.
             </p>
           </div>
 
@@ -460,12 +594,12 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
             </div>
           </div>
 
-          {/* Card 2: Deterministic Routing Architecture */}
+          {/* Card 2: Deterministic Routing & Worker Pools */}
           <div className="neu-card p-5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] flex flex-col justify-between space-y-3">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-[var(--text-secondary)]">
-                  Role delegation policy
+                  Role delegation & worker pools
                 </span>
                 <span
                   className={`text-xs font-mono font-semibold ${step2Done ? "text-[var(--status-success)]" : "text-[var(--text-tertiary)]"}`}
@@ -474,16 +608,16 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                 </span>
               </div>
               <h3 className="text-sm font-medium text-[var(--text-primary)]">
-                Deterministic Task Routing
+                Deterministic Routing & Worker Scaling
               </h3>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                Workloads are strictly partitioned: Vision handles drawings/OCR,
-                Coding executes Python math, Draft writes technical notes, and
-                Embedding executes local RAG vectors.
+                Workloads are partitioned: Vision handles drawings/OCR, Coding executes
+                Python, Draft handles notes, and Embedding runs vector search. Add
+                worker instances to pool distributed LAN GPUs with round-robin dispatch.
               </p>
             </div>
             <div className="text-[11px] font-mono text-[var(--text-tertiary)] pt-2.5 border-t border-[var(--border-subtle)]">
-              Single multi-model engine or distributed cluster
+              Horizontal worker scaling & round-robin balancing
             </div>
           </div>
 
@@ -559,7 +693,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
             {/* Table Column Headers */}
             <div className="flex items-center gap-4 px-2">
               <div className="flex-1 grid grid-cols-12 gap-4 px-4 py-1.5 text-xs text-[var(--text-tertiary)] font-medium">
-                <div className="col-span-3">Operational role & task</div>
+                <div className="col-span-3">Operational role & worker pool</div>
                 <div className="col-span-3">Model tag / identifier</div>
                 <div className="col-span-2">Host / IP address</div>
                 <div className="col-span-1">Port</div>
@@ -573,33 +707,69 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
               </div>
             </div>
 
-            {/* Rows List */}
-            {rows.map((row, idx) => {
-              const modelErr = getFieldError(row, "modelName");
-              const hostErr = getFieldError(row, "host");
-              const portErr = getFieldError(row, "port");
-              const contextErr = getFieldError(row, "contextLength");
+            {/* Cards List */}
+            {cards.map((card, cardIdx) => {
+              const primaryNode = card.nodes[0];
+              const primaryModelErr = getFieldError(primaryNode, "modelName");
+              const primaryHostErr = getFieldError(primaryNode, "host");
+              const primaryPortErr = getFieldError(primaryNode, "port");
+              const primaryContextErr = getFieldError(primaryNode, "contextLength");
 
               return (
-                <div key={row.role} className="flex items-center gap-4">
-                  {/* Main Table Row Card */}
+                <div key={card.role} className="flex items-start gap-4">
+                  {/* Main Role Card */}
                   <div className="flex-1 rounded-[var(--radius-md)] p-5 sm:p-6 bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] transition-colors">
+                    {/* Primary Node Row */}
                     <div className="grid grid-cols-12 gap-4 items-center">
-                      {/* Col 1: Role & Description */}
-                      <div className="col-span-3 flex items-start gap-3 pr-2">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] text-xs font-mono shrink-0 mt-0.5">
-                          <span className="shrink-0">
-                            {getRoleIcon(row.role)}
+                      {/* Col 1: Role & Description + Add Worker Node */}
+                      <div className="col-span-3 flex flex-col justify-between pr-2">
+                        <div className="flex items-start gap-3">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] text-xs font-mono shrink-0 mt-0.5">
+                            <span className="shrink-0">
+                              {getRoleIcon(card.role)}
+                            </span>
+                            <span>{card.badge}</span>
                           </span>
-                          <span>{row.badge}</span>
-                        </span>
-                        <div>
-                          <div className="font-semibold text-[var(--text-primary)] text-sm">
-                            {row.title}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-[var(--text-primary)] text-sm">
+                                {card.title}
+                              </span>
+                              {card.nodes.length > 1 && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30 font-medium">
+                                  {card.nodes.length} Nodes (Balanced)
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-[var(--text-secondary)] leading-relaxed mt-0.5">
+                              {card.description}
+                            </div>
                           </div>
-                          <div className="text-xs text-[var(--text-secondary)] leading-relaxed mt-0.5">
-                            {row.description}
-                          </div>
+                        </div>
+
+                        {/* Add Worker Node action */}
+                        <div className="mt-2.5 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => addWorkerNode(cardIdx)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-sm)] text-[11px] font-mono border border-dashed border-[var(--border-default)] hover:border-[var(--accent)] text-[var(--text-secondary)] hover:text-[var(--accent)] bg-[var(--bg-surface-raised)]/40 hover:bg-[var(--bg-surface-raised)] transition-all"
+                            title={`Add a secondary worker instance for ${card.title} (e.g. distributed LAN GPU server)`}
+                          >
+                            <svg
+                              width="11"
+                              height="11"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <line x1="12" y1="5" x2="12" y2="19" />
+                              <line x1="5" y1="12" x2="19" y2="12" />
+                            </svg>
+                            <span>+ Add Worker Node</span>
+                          </button>
                         </div>
                       </div>
 
@@ -607,39 +777,39 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                       <div className="col-span-3">
                         <input
                           type="text"
-                          value={row.modelName}
+                          value={primaryNode.modelName}
                           onChange={(e) =>
-                            updateRow(idx, "modelName", e.target.value)
+                            updateNode(cardIdx, 0, "modelName", e.target.value)
                           }
                           placeholder="e.g. qwen2.5-coder:7b"
                           className={`w-full h-11 px-3.5 rounded-[var(--radius-sm)] text-sm neu-input font-mono outline-none transition-all ${
-                            modelErr
+                            primaryModelErr
                               ? "border-[var(--status-error)] focus:border-[var(--status-error)]"
                               : "border-[var(--border-default)] focus:border-[var(--accent)]"
                           }`}
                         />
-                        {modelErr && (
+                        {primaryModelErr && (
                           <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">
-                            {modelErr}
+                            {primaryModelErr}
                           </span>
                         )}
                       </div>
 
-                      {/* Col 3: Host / IP Address Input (Locked when !allowExternal) */}
+                      {/* Col 3: Host / IP Address Input */}
                       <div className="col-span-2">
                         <div className="relative">
                           <input
                             type="text"
                             disabled={!allowExternal}
-                            value={allowExternal ? row.host : "127.0.0.1"}
+                            value={allowExternal ? primaryNode.host : "127.0.0.1"}
                             onChange={(e) =>
-                              updateRow(idx, "host", e.target.value)
+                              updateNode(cardIdx, 0, "host", e.target.value)
                             }
                             placeholder="127.0.0.1"
                             className={`w-full h-11 px-3.5 rounded-[var(--radius-sm)] text-sm font-mono outline-none transition-all ${
                               !allowExternal
                                 ? "bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--text-tertiary)] cursor-not-allowed select-none"
-                                : hostErr
+                                : primaryHostErr
                                   ? "neu-input border-[var(--status-error)] focus:border-[var(--status-error)] text-[var(--text-primary)]"
                                   : "neu-input border-[var(--border-default)] focus:border-[var(--accent)] text-[var(--text-primary)]"
                             }`}
@@ -650,9 +820,9 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                             </span>
                           )}
                         </div>
-                        {hostErr && (
+                        {primaryHostErr && (
                           <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">
-                            {hostErr}
+                            {primaryHostErr}
                           </span>
                         )}
                       </div>
@@ -663,20 +833,20 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                           type="number"
                           min={1}
                           max={65535}
-                          value={row.port}
+                          value={primaryNode.port}
                           onChange={(e) =>
-                            updateRow(idx, "port", e.target.value)
+                            updateNode(cardIdx, 0, "port", e.target.value)
                           }
                           placeholder="11434"
                           className={`w-full h-11 px-3 rounded-[var(--radius-sm)] text-sm neu-input font-mono outline-none transition-all ${
-                            portErr
+                            primaryPortErr
                               ? "border-[var(--status-error)] focus:border-[var(--status-error)]"
                               : "border-[var(--border-default)] focus:border-[var(--accent)]"
                           }`}
                         />
-                        {portErr && (
+                        {primaryPortErr && (
                           <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">
-                            {portErr}
+                            {primaryPortErr}
                           </span>
                         )}
                       </div>
@@ -687,57 +857,57 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                           type="number"
                           min={512}
                           step={512}
-                          value={row.contextLength}
+                          value={primaryNode.contextLength}
                           onChange={(e) =>
-                            updateRow(idx, "contextLength", e.target.value)
+                            updateNode(cardIdx, 0, "contextLength", e.target.value)
                           }
                           placeholder="32768"
                           className={`w-full h-11 px-3 rounded-[var(--radius-sm)] text-sm neu-input font-mono outline-none transition-all ${
-                            contextErr
+                            primaryContextErr
                               ? "border-[var(--status-error)] focus:border-[var(--status-error)]"
                               : "border-[var(--border-default)] focus:border-[var(--accent)]"
                           }`}
                         />
-                        {contextErr && (
+                        {primaryContextErr && (
                           <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">
-                            {contextErr}
+                            {primaryContextErr}
                           </span>
                         )}
                       </div>
 
                       {/* Col 6: Status & Test Action */}
                       <div className="col-span-2 flex items-center justify-end gap-2.5">
-                        {row.testStatus === "testing" && (
+                        {primaryNode.testStatus === "testing" && (
                           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs text-[var(--status-warning)] font-mono">
-                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-warning)]" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-warning)] animate-pulse" />
                             Testing…
                           </span>
                         )}
-                        {row.testStatus === "success" && (
+                        {primaryNode.testStatus === "success" && (
                           <span
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs text-[var(--status-success)] font-mono"
-                            title={row.testMessage}
+                            title={primaryNode.testMessage}
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-success)]" />
                             Connected{" "}
-                            {row.testLatency !== undefined
-                              ? `(${row.testLatency}ms)`
+                            {primaryNode.testLatency !== undefined
+                              ? `(${primaryNode.testLatency}ms)`
                               : ""}
                           </span>
                         )}
-                        {row.testStatus === "warning" && (
+                        {primaryNode.testStatus === "warning" && (
                           <span
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs text-[var(--status-warning)] font-mono"
-                            title={row.testMessage}
+                            title={primaryNode.testMessage}
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-warning)]" />
                             Reachable
                           </span>
                         )}
-                        {row.testStatus === "error" && (
+                        {primaryNode.testStatus === "error" && (
                           <span
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs text-[var(--status-error)] max-w-[140px] truncate font-mono"
-                            title={row.testMessage}
+                            title={primaryNode.testMessage}
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-error)]" />
                             Failed
@@ -746,22 +916,223 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
 
                         <button
                           type="button"
-                          onClick={() => testEndpoint(idx)}
-                          disabled={row.testStatus === "testing"}
+                          onClick={() => testNodeEndpoint(cardIdx, 0)}
+                          disabled={primaryNode.testStatus === "testing"}
                           className="h-11 px-4 rounded-[var(--radius-sm)] text-xs font-semibold neu-button disabled:opacity-40"
                         >
                           Test
                         </button>
                       </div>
                     </div>
+
+                    {/* Secondary Worker Nodes Sub-rows */}
+                    {card.nodes.length > 1 && (
+                      <div className="space-y-3 mt-3.5 pt-3.5 border-t border-[var(--border-subtle)]/70">
+                        {card.nodes.slice(1).map((workerNode, subIdx) => {
+                          const nodeIdx = subIdx + 1;
+                          const workerModelErr = getFieldError(workerNode, "modelName");
+                          const workerHostErr = getFieldError(workerNode, "host");
+                          const workerPortErr = getFieldError(workerNode, "port");
+                          const workerContextErr = getFieldError(workerNode, "contextLength");
+
+                          return (
+                            <div
+                              key={workerNode.id}
+                              className="grid grid-cols-12 gap-4 items-center bg-[var(--bg-surface-raised)]/30 rounded-[var(--radius-sm)] p-2.5 sm:p-3 border border-[var(--border-subtle)]/50"
+                            >
+                              {/* Col 1: Worker Node Tag & Label */}
+                              <div className="col-span-3 flex items-center justify-between pr-2">
+                                <div className="flex items-center gap-2 pl-1">
+                                  <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] text-[11px] font-mono text-[var(--text-secondary)]">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+                                    <span>Worker #{nodeIdx + 1}</span>
+                                  </span>
+                                  <span className="text-[11px] font-mono text-[var(--text-tertiary)]">
+                                    Parallel Node
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Col 2: Model Name */}
+                              <div className="col-span-3">
+                                <input
+                                  type="text"
+                                  value={workerNode.modelName}
+                                  onChange={(e) =>
+                                    updateNode(cardIdx, nodeIdx, "modelName", e.target.value)
+                                  }
+                                  placeholder="e.g. qwen3:8b"
+                                  className={`w-full h-10 px-3 rounded-[var(--radius-sm)] text-xs neu-input font-mono outline-none transition-all ${
+                                    workerModelErr
+                                      ? "border-[var(--status-error)] focus:border-[var(--status-error)]"
+                                      : "border-[var(--border-default)] focus:border-[var(--accent)]"
+                                  }`}
+                                />
+                                {workerModelErr && (
+                                  <span className="text-[10px] text-[var(--status-error)] mt-1 block font-mono">
+                                    {workerModelErr}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Col 3: Host / IP */}
+                              <div className="col-span-2">
+                                <div className="relative">
+                                  <input
+                                    type="text"
+                                    disabled={!allowExternal}
+                                    value={allowExternal ? workerNode.host : "127.0.0.1"}
+                                    onChange={(e) =>
+                                      updateNode(cardIdx, nodeIdx, "host", e.target.value)
+                                    }
+                                    placeholder="192.168.1.50"
+                                    className={`w-full h-10 px-3 rounded-[var(--radius-sm)] text-xs font-mono outline-none transition-all ${
+                                      !allowExternal
+                                        ? "bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--text-tertiary)] cursor-not-allowed select-none"
+                                        : workerHostErr
+                                          ? "neu-input border-[var(--status-error)] focus:border-[var(--status-error)] text-[var(--text-primary)]"
+                                          : "neu-input border-[var(--border-default)] focus:border-[var(--accent)] text-[var(--text-primary)]"
+                                    }`}
+                                  />
+                                  {!allowExternal && (
+                                    <span className="absolute right-2.5 top-2.5 text-[10px] font-mono text-[var(--text-tertiary)] select-none">
+                                      locked
+                                    </span>
+                                  )}
+                                </div>
+                                {workerHostErr && (
+                                  <span className="text-[10px] text-[var(--status-error)] mt-1 block font-mono">
+                                    {workerHostErr}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Col 4: Port */}
+                              <div className="col-span-1">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={65535}
+                                  value={workerNode.port}
+                                  onChange={(e) =>
+                                    updateNode(cardIdx, nodeIdx, "port", e.target.value)
+                                  }
+                                  placeholder="11434"
+                                  className={`w-full h-10 px-2.5 rounded-[var(--radius-sm)] text-xs neu-input font-mono outline-none transition-all ${
+                                    workerPortErr
+                                      ? "border-[var(--status-error)] focus:border-[var(--status-error)]"
+                                      : "border-[var(--border-default)] focus:border-[var(--accent)]"
+                                  }`}
+                                />
+                                {workerPortErr && (
+                                  <span className="text-[10px] text-[var(--status-error)] mt-1 block font-mono">
+                                    {workerPortErr}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Col 5: Context */}
+                              <div className="col-span-1">
+                                <input
+                                  type="number"
+                                  min={512}
+                                  step={512}
+                                  value={workerNode.contextLength}
+                                  onChange={(e) =>
+                                    updateNode(cardIdx, nodeIdx, "contextLength", e.target.value)
+                                  }
+                                  placeholder="32768"
+                                  className={`w-full h-10 px-2.5 rounded-[var(--radius-sm)] text-xs neu-input font-mono outline-none transition-all ${
+                                    workerContextErr
+                                      ? "border-[var(--status-error)] focus:border-[var(--status-error)]"
+                                      : "border-[var(--border-default)] focus:border-[var(--accent)]"
+                                  }`}
+                                />
+                                {workerContextErr && (
+                                  <span className="text-[10px] text-[var(--status-error)] mt-1 block font-mono">
+                                    {workerContextErr}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Col 6: Status & Test & Remove */}
+                              <div className="col-span-2 flex items-center justify-end gap-2">
+                                {workerNode.testStatus === "testing" && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[11px] text-[var(--status-warning)] font-mono">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-warning)] animate-pulse" />
+                                    Testing…
+                                  </span>
+                                )}
+                                {workerNode.testStatus === "success" && (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[11px] text-[var(--status-success)] font-mono"
+                                    title={workerNode.testMessage}
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-success)]" />
+                                    OK {workerNode.testLatency !== undefined ? `(${workerNode.testLatency}ms)` : ""}
+                                  </span>
+                                )}
+                                {workerNode.testStatus === "warning" && (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[11px] text-[var(--status-warning)] font-mono"
+                                    title={workerNode.testMessage}
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-warning)]" />
+                                    Reachable
+                                  </span>
+                                )}
+                                {workerNode.testStatus === "error" && (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[11px] text-[var(--status-error)] max-w-[100px] truncate font-mono"
+                                    title={workerNode.testMessage}
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-error)]" />
+                                    Failed
+                                  </span>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => testNodeEndpoint(cardIdx, nodeIdx)}
+                                  disabled={workerNode.testStatus === "testing"}
+                                  className="h-9 px-3 rounded-[var(--radius-sm)] text-xs font-semibold neu-button disabled:opacity-40"
+                                >
+                                  Test
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeWorkerNode(cardIdx, nodeIdx)}
+                                  className="h-9 w-9 flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border-subtle)] hover:border-[var(--status-error)]/50 bg-[var(--bg-surface-raised)] hover:bg-[var(--status-error)]/10 text-[var(--text-tertiary)] hover:text-[var(--status-error)] transition-colors shrink-0"
+                                  title="Remove this worker node"
+                                >
+                                  <svg
+                                    width="13"
+                                    height="13"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
-                  {/* Copy to All Button */}
+                  {/* Copy to All Button (aligned with primary row) */}
                   <button
                     type="button"
-                    onClick={() => applyHostPortToAll(idx)}
-                    className="w-32 h-11 px-3 rounded-[var(--radius-sm)] border border-[var(--border-default)] bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface-active)] text-xs font-sans text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shrink-0 flex items-center justify-center gap-1.5"
-                    title={`Copy Host and Port from ${row.title} (${row.host}:${row.port}) to all other rows`}
+                    onClick={() => applyHostPortToAll(cardIdx, 0)}
+                    className="w-32 h-11 px-3 rounded-[var(--radius-sm)] border border-[var(--border-default)] bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface-active)] text-xs font-sans text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shrink-0 flex items-center justify-center gap-1.5 self-start mt-2"
+                    title={`Copy Host and Port from ${card.title} (${primaryNode.host}:${primaryNode.port}) to all other roles`}
                   >
                     <span>Copy to all</span>
                   </button>
