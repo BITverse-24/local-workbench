@@ -1,3 +1,5 @@
+import { memo, useMemo } from "react";
+
 type Props = { events: RunEvent[] };
 
 function iconFor(e: RunEvent): string {
@@ -30,19 +32,30 @@ function labelFor(e: RunEvent): string {
   }
 }
 
-export default function RunTranscript({ events }: Props) {
+// PERF OPTIMIZATION: Memoize RunTranscript and its event label/icon array mapping.
+// Prevents recalculating label strings and icons across the entire events array on every minor stream tick or parent component re-render.
+const RunTranscript = memo(function RunTranscript({ events }: Props) {
+  const formattedEvents = useMemo(() => {
+    return events.map((e) => ({
+      icon: iconFor(e),
+      label: labelFor(e),
+    }));
+  }, [events]);
+
   if (!events.length) return null;
   return (
     <div className="mx-4 my-2 rounded-[var(--radius-md)] neu-card border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 max-h-[160px] overflow-y-auto">
       <div className="text-xs font-medium text-[var(--text-secondary)] mb-2">Run transcript</div>
       <div className="space-y-1">
-        {events.map((e, i) => (
+        {formattedEvents.map((e, i) => (
           <div key={i} className="flex gap-2 text-xs leading-relaxed">
-            <span className="text-[var(--text-tertiary)] shrink-0 w-4 text-center font-mono">{iconFor(e)}</span>
-            <span className="text-[var(--text-secondary)] break-words">{labelFor(e)}</span>
+            <span className="text-[var(--text-tertiary)] shrink-0 w-4 text-center font-mono">{e.icon}</span>
+            <span className="text-[var(--text-secondary)] break-words">{e.label}</span>
           </div>
         ))}
       </div>
     </div>
   );
-}
+});
+
+export default RunTranscript;
