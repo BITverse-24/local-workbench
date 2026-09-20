@@ -787,7 +787,13 @@ CRITICAL OPERATIONAL RULES:
 3. COMMAND EXECUTION: To install dependencies, run scripts, test, or initialize packages (e.g. npm init, npm install, pip install), call \`run_command\`.
 4. EXPLORATION: Explore existing files with \`list_dir\`, \`read_file\`, or \`search\` before modifying existing code.
 5. DELETION: To delete files, call \`delete_file\`. Never delete files by writing empty content.
-6. When finished, provide a clear, concise summary of the files written and steps taken.`;
+6. FINAL RESPONSE FORMAT (STRICT):
+   - When all tools have completed, output ONLY a concise summary (under 120 words).
+   - NEVER paste code snippets, file contents, or repeat code blocks in your final response. The files are ALREADY saved directly in the workspace!
+   - Structure your response strictly as:
+     • **Implemented**: 2-4 brief bullet points of what was set up / created.
+     • **Next Steps**: Command(s) to run, test, or start the code (e.g. \`node app.js\`).
+   - Do NOT include filler, conversational preamble, or redundant code dumps. Be direct and concise.`;
       } else {
         systemPrompt = `You are Sovereign Workbench, an expert engineering assistant with access to local tools.
 Solve the user's task step-by-step.
@@ -795,7 +801,7 @@ Follow these operational guidelines:
 1. When asked to write code, create files, or generate deliverables, invoke the appropriate tools (e.g. write_file, execute_python, generate_deliverable).
 2. When performing calculations or fixing bugs, verify code execution in the sandbox.
 3. If an error occurs during tool execution, diagnose the error and retry with a corrected action.
-4. When finished, provide a clear, grounded summary of the actions taken. Do not invoke further tools once done.`;
+4. When finished, provide a clear, concise summary of the actions taken without dumping redundant code blocks. Do not invoke further tools once done.`;
       }
 
       this.state(runId, "acting");
@@ -810,7 +816,7 @@ Follow these operational guidelines:
           tools,
           context: toolContext,
           recentChatHistory: history,
-          maxTurns: 15,
+          maxTurns: 100,
           devWorkload: this.runDevWorkload.get(runId) ?? false,
           onPlanConfirmationRequired: async (planText, firstCalls) => {
             return new Promise<boolean>((resolve) => {

@@ -133,9 +133,9 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
     }
   }, [code]);
   return (
-    <div className="relative group/code">
-      <pre className="p-4 pr-12 rounded-[var(--radius-md)] bg-[var(--bg-canvas)] border border-[var(--border-subtle)] overflow-x-auto text-[13.5px] sm:text-[14px] font-mono leading-relaxed whitespace-pre-wrap break-words text-[var(--text-primary)]">
-        <code>{highlightCode(code)}</code>
+    <div className="relative group/code select-text">
+      <pre className="p-4 pr-12 rounded-[var(--radius-md)] bg-[var(--bg-canvas)] border border-[var(--border-subtle)] overflow-x-auto text-[13.5px] sm:text-[14px] font-mono leading-relaxed whitespace-pre-wrap break-words text-[var(--text-primary)] select-text">
+        <code className="select-text">{highlightCode(code)}</code>
       </pre>
       <button
         onClick={handleCopy}
@@ -174,7 +174,7 @@ const BasicMarkdown = React.memo(function BasicMarkdown({ text }: { text: string
   if (segments.length === 0) segments.push({ type: 'text', content: text });
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 select-text">
       {segments.map((seg, si) => {
         if (seg.type === 'code') {
           return <CodeBlock key={`code-${si}`} code={seg.content.replace(/^\n/, '').replace(/\n$/, '')} lang={seg.lang} />;
@@ -196,15 +196,15 @@ const BasicMarkdown = React.memo(function BasicMarkdown({ text }: { text: string
               6: 'text-sm font-semibold text-[var(--text-tertiary)]',
             };
             const Tag = `h${Math.min(level, 6)}` as keyof React.JSX.IntrinsicElements;
-            return React.createElement(Tag, { key: `h-${si}-${bi}`, className: `${sizeMap[level] || 'text-base font-bold'} leading-tight mt-1 mb-0.5` }, ...renderInline(content, `h-${si}-${bi}`));
+            return React.createElement(Tag, { key: `h-${si}-${bi}`, className: `${sizeMap[level] || 'text-base font-bold'} leading-tight mt-1 mb-0.5 select-text` }, ...renderInline(content, `h-${si}-${bi}`));
           }
           // unordered list
           if (/^(\s*[-*]\s+.+(\n\s*[-*]\s+.+)*)$/.test(trimmed)) {
             const items = trimmed.split('\n').map((l) => l.replace(/^\s*[-*]\s+/, '').trim()).filter(Boolean);
             return (
-              <ul key={`ul-${si}-${bi}`} className="list-disc pl-5 space-y-1.5 marker:text-[var(--text-tertiary)]">
+              <ul key={`ul-${si}-${bi}`} className="list-disc pl-5 space-y-1.5 marker:text-[var(--text-tertiary)] select-text">
                 {items.map((it, i) => (
-                  <li key={i} className="leading-relaxed break-words text-[15px] sm:text-base">{renderInline(it, `li-${si}-${bi}-${i}`)}</li>
+                  <li key={i} className="leading-relaxed break-words text-[15px] sm:text-base select-text">{renderInline(it, `li-${si}-${bi}-${i}`)}</li>
                 ))}
               </ul>
             );
@@ -213,9 +213,9 @@ const BasicMarkdown = React.memo(function BasicMarkdown({ text }: { text: string
           if (/^(\s*\d+\.\s+.+(\n\s*\d+\.\s+.+)*)$/.test(trimmed)) {
             const items = trimmed.split('\n').map((l) => l.replace(/^\s*\d+\.\s+/, '').trim()).filter(Boolean);
             return (
-              <ol key={`ol-${si}-${bi}`} className="list-decimal pl-5 space-y-1.5 marker:text-[var(--text-tertiary)]">
+              <ol key={`ol-${si}-${bi}`} className="list-decimal pl-5 space-y-1.5 marker:text-[var(--text-tertiary)] select-text">
                 {items.map((it, i) => (
-                  <li key={i} className="leading-relaxed break-words text-[15px] sm:text-base">{renderInline(it, `oli-${si}-${bi}-${i}`)}</li>
+                  <li key={i} className="leading-relaxed break-words text-[15px] sm:text-base select-text">{renderInline(it, `oli-${si}-${bi}-${i}`)}</li>
                 ))}
               </ol>
             );
@@ -224,7 +224,7 @@ const BasicMarkdown = React.memo(function BasicMarkdown({ text }: { text: string
           if (/^>\s?/.test(trimmed)) {
             const quote = trimmed.replace(/^>\s?/gm, '');
             return (
-              <blockquote key={`q-${si}-${bi}`} className="border-l-2 border-[var(--border-strong)] pl-3.5 italic text-[var(--text-secondary)] leading-relaxed text-[15px] sm:text-base">
+              <blockquote key={`q-${si}-${bi}`} className="border-l-2 border-[var(--border-strong)] pl-3.5 italic text-[var(--text-secondary)] leading-relaxed text-[15px] sm:text-base select-text">
                 {renderInline(quote, `q-${si}-${bi}`)}
               </blockquote>
             );
@@ -232,7 +232,7 @@ const BasicMarkdown = React.memo(function BasicMarkdown({ text }: { text: string
           // paragraph with line breaks
           const lines = trimmed.split('\n');
           return (
-            <p key={`p-${si}-${bi}`} className="leading-relaxed whitespace-pre-wrap break-words text-[15px] sm:text-base">
+            <p key={`p-${si}-${bi}`} className="leading-relaxed whitespace-pre-wrap break-words text-[15px] sm:text-base select-text">
               {lines.map((line, li) => (
                 <span key={li}>
                   {renderInline(line, `p-${si}-${bi}-${li}`)}
@@ -275,10 +275,10 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
   const isUser = msg.role === 'user';
 
   return (
-    <div className={`flex group ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`flex flex-col gap-1 ${isUser ? 'items-end max-w-[88%] md:max-w-[72%]' : 'max-w-[88%] md:max-w-[72%] items-start'}`}>
+    <div className={`flex group ${isUser ? 'justify-end' : 'justify-start'} select-text`}>
+      <div className={`flex flex-col gap-1 ${isUser ? 'items-end max-w-[88%] md:max-w-[72%]' : 'max-w-[88%] md:max-w-[72%] items-start'} select-text`}>
         <div
-          className={`w-full ${isUser ? 'px-5 py-3.5 rounded-[var(--radius-md)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)]' : 'px-2 py-2 bg-transparent border-0 text-[var(--text-primary)]'}`}
+          className={`w-full select-text ${isUser ? 'px-5 py-3.5 rounded-[var(--radius-md)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)]' : 'px-2 py-2 bg-transparent border-0 text-[var(--text-primary)]'}`}
         >
           {isEditing ? (
             <div className="flex flex-col gap-2 min-w-[240px]">
@@ -320,7 +320,7 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
           ) : (
             <>
               {isUser ? (
-                msg.text && <p className="text-[15px] sm:text-base leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>
+                msg.text && <p className="text-[15px] sm:text-base leading-relaxed whitespace-pre-wrap break-words select-text">{msg.text}</p>
               ) : (
                 <>
                   {msg.text && <BasicMarkdown text={msg.text} />}
@@ -543,7 +543,7 @@ export default function ChatArea({
 
   return (
     <div
-      className="flex-1 flex flex-col overflow-hidden relative bg-[var(--bg-canvas)]"
+      className="flex-1 flex flex-col overflow-hidden relative bg-[var(--bg-canvas)] select-text"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}

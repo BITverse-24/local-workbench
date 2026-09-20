@@ -18,6 +18,16 @@ describe("Driver Router & Tool Surface Compositor", () => {
     expect(decision.taskType).toBe("code");
   });
 
+  it("routes workspace routes and middleware tasks to code-qwen25coder", () => {
+    const decision = pickDriverModel(
+      "In the current workspace directory, add some more basic routes and a rate limiter middleware",
+      [],
+      true,
+    );
+    expect(decision.modelId).toBe("code-qwen25coder");
+    expect(decision.taskType).toBe("code");
+  });
+
   it("routes document analysis / drafting to draft-qwen3", () => {
     const pdfAttachment: AttachmentReference = {
       attachmentId: "2",

@@ -125,7 +125,7 @@ export const writeFileTool: AgentTool = {
     const res = writeFile(context.workspaceRoot, relPath, content);
     if (context.harness) {
       try {
-        context.harness.createWorkspaceArtifact(context.runId, relPath);
+        context.harness.notifyWorkspaceTreeUpdated();
       } catch {}
     }
     return {
@@ -156,6 +156,11 @@ export const deleteFileTool: AgentTool = {
     const relPath = String(args.path ?? "");
     if (!relPath) throw new Error("path parameter is required");
     const res = deleteFile(context.workspaceRoot, relPath);
+    if (context.harness) {
+      try {
+        context.harness.notifyWorkspaceTreeUpdated();
+      } catch {}
+    }
     return {
       output: JSON.stringify(res),
       summary: `Deleted "${relPath}"`,

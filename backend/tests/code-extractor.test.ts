@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractCodeBlocksWithFilenames } from "../src/main/agent/code-extractor.js";
+import { extractCodeBlocksWithFilenames, cleanFinalSummary } from "../src/main/agent/code-extractor.js";
 
 describe("extractCodeBlocksWithFilenames", () => {
   it("extracts files when filename is in comment on line 1", () => {
@@ -93,5 +93,62 @@ print(x + y)
 `;
     const files = extractCodeBlocksWithFilenames(text);
     expect(files).toHaveLength(0);
+  });
+});
+
+describe("cleanFinalSummary", () => {
+  it("does not alter text when hasExecutedTools is false (pure chat)", () => {
+    const chatResponse = `To create an Express app, you can write:
+\`\`\`javascript
+const app = express();
+\`\`\`
+Hope that helps!`;
+    const result = cleanFinalSummary(chatResponse, false);
+    expect(result).toBe(chatResponse);
+  });
+
+  it("removes redundant source code blocks when hasExecutedTools is true", () => {
+    const agentResponse = `
+I have set up your Express application in the workspace.
+
+\`\`\`javascript
+const express = require('express');
+const app = express();
+app.get('/', (req, res) => res.send('OK'));
+module.exports = app;
+\`\`\`
+
+### Next Steps
+Run the server with:
+\`\`\`bash
+node app.js
+\`\`\`
+`;
+    const result = cleanFinalSummary(agentResponse, true);
+    expect(result).not.toContain("const express = require('express');");
+    expect(result).toContain("I have set up your Express application in the workspace.");
+    expect(result).toContain("node app.js");
+    expect(result).toContain("### Next Steps");
+  });
+
+  it("preserves short untagged command blocks and strips code dumps", () => {
+    const agentResponse = `
+**Implemented**:
+- Created \`app.js\` and \`routes/users.js\`.
+
+\`\`\`
+const router = express.Router();
+router.get('/', (req, res) => res.json([]));
+\`\`\`
+
+**Next Steps**:
+\`\`\`
+npm start
+\`\`\`
+`;
+    const result = cleanFinalSummary(agentResponse, true);
+    expect(result).not.toContain("router.get");
+    expect(result).toContain("**Implemented**:");
+    expect(result).toContain("npm start");
   });
 });

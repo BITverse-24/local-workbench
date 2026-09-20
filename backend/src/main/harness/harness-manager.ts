@@ -89,6 +89,13 @@ export class HarnessManager {
     return this.workspace.requireActive();
   }
 
+  notifyWorkspaceTreeUpdated(): void {
+    if (!this.isWorkspaceActive()) return;
+    try {
+      this.emitWorkspace({ type: "workspace_tree", entries: this.getDirectoryTree() });
+    } catch {}
+  }
+
   /**
    * Execute a single harness tool call.
    * Every tool validates path containment via resolveSafe().

@@ -3,7 +3,7 @@ import type { ModelId, RunEvent } from "../../shared/contracts.js";
 import type { AgentTool, ToolExecutionContext } from "../tools/types.js";
 import { ToolDispatcher } from "./tool-dispatcher.js";
 import { compactConversationHistory, type AgentMessage } from "./context-manager.js";
-import { extractCodeBlocksWithFilenames } from "./code-extractor.js";
+import { extractCodeBlocksWithFilenames, cleanFinalSummary } from "./code-extractor.js";
 
 export interface AgentLoopOptions {
   runId: string;
@@ -36,7 +36,7 @@ export class AgentLoop {
       tools,
       context,
       recentChatHistory = [],
-      maxTurns = 12,
+      maxTurns = 100,
       devWorkload = false,
       onPlanConfirmationRequired,
       emitEvent,
@@ -55,6 +55,9 @@ export class AgentLoop {
     let turn = 0;
     let finalText = "";
     let confirmed = false;
+    let hasExecutedTools = false;
+    let previousCallSignature: string | null = null;
+    let lastContent: string | null = null;
 
     while (turn < maxTurns) {
       turn++;
@@ -79,6 +82,9 @@ export class AgentLoop {
       }
 
       const { content, tool_calls } = turnResponse.value;
+      if (content) {
+        lastContent = content;
+      }
 
       // 3. Emit model thinking / scratchpad to UI if present
       if (content) {
@@ -94,7 +100,9 @@ export class AgentLoop {
 
       // 4. Guardrail: If model lazily output conversational text/code without invoking tools
       // when the user requested creating or setting up files in the workspace:
-      if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && dispatcher.getTool("write_file")) {
+      // CRITICAL: Only synthesize tool calls if tools have NOT yet executed in this run!
+      // Once tools have executed, any subsequent text without tool calls is the model's completion summary!
+      if (!hasExecutedTools && (!effectiveToolCalls || effectiveToolCalls.length === 0) && dispatcher.getTool("write_file")) {
         const extracted = extractCodeBlocksWithFilenames(content ?? "");
         if (extracted.length > 0) {
           effectiveToolCalls = extracted.map((file) => ({
@@ -125,9 +133,9 @@ export class AgentLoop {
         }
       }
 
-      // 5. Pure chat detection: If no tool calls and no synthesized actions, we are done!
+      // 5. Pure chat detection / completion: If no tool calls and no synthesized actions, we are done!
       if (!effectiveToolCalls || effectiveToolCalls.length === 0) {
-        finalText = content ?? "Task completed.";
+        finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedTools);
         return {
           finalText,
           turns: turn,
@@ -135,6 +143,21 @@ export class AgentLoop {
           modelId: driverModelId,
         };
       }
+
+      // Loop detection: check if identical tool calls with identical arguments are being repeated consecutively
+      const currentCallSignature = JSON.stringify(
+        effectiveToolCalls.map((c: any) => ({ name: c.name, args: c.arguments })),
+      );
+      if (previousCallSignature && previousCallSignature === currentCallSignature) {
+        finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedTools);
+        return {
+          finalText,
+          turns: turn,
+          completed: true,
+          modelId: driverModelId,
+        };
+      }
+      previousCallSignature = currentCallSignature;
 
       // 6. Single-gate confirmation check on turn 1
       if (turn === 1 && !confirmed && onPlanConfirmationRequired) {
@@ -167,8 +190,11 @@ export class AgentLoop {
 
       // 8. Execute tool calls concurrently
       const executed = await dispatcher.dispatchConcurrent(effectiveToolCalls, context);
+      if (executed.length > 0) {
+        hasExecutedTools = true;
+      }
 
-      // 8. Record each tool's result in the conversation history
+      // 9. Record each tool's result in the conversation history
       for (const exec of executed) {
         messages.push({
           role: "tool",
@@ -181,7 +207,10 @@ export class AgentLoop {
     }
 
     // Hit maxTurns without returning text
-    const overflowText = `Completed ${maxTurns} operations. Reached maximum turn limit.`;
+    const overflowText = cleanFinalSummary(
+      lastContent || `Completed ${turn} operations.`,
+      hasExecutedTools,
+    );
     return {
       finalText: overflowText,
       turns: turn,

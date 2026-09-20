@@ -708,7 +708,7 @@ export default function App() {
 
   if (onboardingCompleted === false) {
     return (
-      <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none" style={{ background: "var(--bg-canvas)" }}>
+      <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative" style={{ background: "var(--bg-canvas)" }}>
         <TitleBar />
         <div className="flex-1 overflow-hidden relative">
           <OnboardingPage
@@ -728,7 +728,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative select-none page-apple-enter" style={{ background: "var(--bg-canvas)" }}>
+    <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative page-apple-enter" style={{ background: "var(--bg-canvas)" }}>
       <TitleBar />
 
       <div className="flex flex-1 overflow-hidden p-3 gap-3 relative z-10" style={{ background: "var(--bg-canvas)" }}>

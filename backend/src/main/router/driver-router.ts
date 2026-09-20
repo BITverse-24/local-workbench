@@ -36,7 +36,7 @@ export function pickDriverModel(
     (a) => a.mediaType === "text/csv" || a.filename?.endsWith(".csv"),
   );
 
-  const hasCodeKeywords = /\b(code|function|script|bug|crash|error|traceback|fix|test|build|compile|refactor)\b/i.test(lower);
+  const hasCodeKeywords = /\b(code|coding|function|functions|script|scripts|route|routes|routing|middleware|api|apis|app|apps|server|backend|frontend|express|react|node|python|endpoint|endpoints|handler|handlers|bug|bugs|crash|error|traceback|fix|fixes|fixing|test|tests|build|compile|refactor|refactoring|class|classes|method|methods|module|modules|library|install|package|npm|pip|scaffold|scaffolding|implement|implementation|develop|developer|rate\s*limiter|auth|authentication)\b/i.test(lower);
   const hasWorkspaceOps = /\b(workspace|file|files|delete|remove|clean|search|find|list|dir)\b/i.test(lower);
 
   // Case 1: Script repair or data calculation

@@ -245,4 +245,58 @@ module.exports = app;
     expect(nudgeMsg).toBeDefined();
     expect(result.completed).toBe(true);
   });
+
+  it("detects and terminates tool call loops when identical tool calls repeat", async () => {
+    const loop = new AgentLoop();
+    let callCount = 0;
+
+    const mockWriteFileTool: AgentTool = {
+      name: "write_file",
+      definition: {
+        type: "function",
+        function: {
+          name: "write_file",
+          description: "write",
+          parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } } },
+        },
+      },
+      async execute(args) {
+        return { output: `Saved ${args.path}`, summary: "Saved" };
+      },
+    };
+
+    const mockGateway = {
+      async chatWithTools() {
+        callCount++;
+        // Model keeps repeating the exact same tool call
+        return {
+          ok: true,
+          value: {
+            content: "Writing file app.js",
+            tool_calls: [
+              {
+                id: `call_${callCount}`,
+                name: "write_file",
+                arguments: { path: "app.js", content: "const x = 1;" },
+              },
+            ],
+          },
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-loop",
+      driverModelId: "code-qwen25coder",
+      userPrompt: "Write app.js",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockWriteFileTool],
+      context: { runId: "test-loop", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: () => {},
+    });
+
+    // Should stop on turn 2 because turn 2 repeated turn 1's call signature
+    expect(callCount).toBe(2);
+    expect(result.completed).toBe(true);
+  });
 });

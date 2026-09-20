@@ -20,6 +20,7 @@ function iconFor(e: RunEvent): string {
     case "run_state": return "●";
     case "routing": return "↗";
     case "plan_step": return "▣";
+    case "agent_thinking": return "💭";
     case "tool_call": return "▶";
     case "tool_result": return "✓";
     case "confirmation_required": return "◉";
@@ -36,6 +37,7 @@ function labelFor(e: RunEvent): string {
     case "run_state": return `state: ${e.state}`;
     case "routing": return `${e.taskType} → ${e.modelId} (${e.reason})`;
     case "plan_step": return e.text;
+    case "agent_thinking": return (e as any).text ? String((e as any).text).slice(0, 140) : "Thinking...";
     case "tool_call": return `${e.tool}: ${e.summary}`;
     case "tool_result": return `${e.tool}: ${e.summary}`;
     case "confirmation_required": return `${e.action.prompt} [${e.action.kind}]`;
@@ -43,7 +45,7 @@ function labelFor(e: RunEvent): string {
     case "assistant_message": return e.text.slice(0, 120);
     case "grounding_context": return e.status === "injected" ? `SOP Grounding: ${e.chunkCount ?? 0} chunk(s) injected` : e.status === "retrieving" ? "SOP Grounding: retrieving..." : "SOP Grounding: skipped";
     case "error": return `${e.code}: ${e.message}`;
-    default: return "";
+    default: return (e as any).summary || (e as any).text || (e as any).name || "";
   }
 }
 
@@ -88,6 +90,7 @@ function tracePreview(entry: TraceEntry): string {
 }
 
 export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
+  const visibleEvents = runEvents.filter((e) => (e as any).type !== "workspace_tree");
   const [entries, setEntries] = useState<TraceEntry[]>([]);
   const [files, setFiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -114,17 +117,10 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
   }, [runId]);
 
   useEffect(() => {
-    void fetchLogs();
-    if (!runId) {
-      setEntries([]);
-      setFiles([]);
-      return;
-    }
-    const id = window.setInterval(() => {
+    if (activeModal === "trace" || activeModal === "files") {
       void fetchLogs();
-    }, 2500);
-    return () => window.clearInterval(id);
-  }, [runId, fetchLogs]);
+    }
+  }, [activeModal, fetchLogs]);
 
   const openFile = useCallback(async (filename: string) => {
     if (!runId) return;
@@ -152,24 +148,26 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
     setTimeout(() => setCopyFeedback(false), 2000);
   };
 
-  const latestEvent = runEvents.length > 0 ? runEvents[runEvents.length - 1] : null;
+  const latestEvent = visibleEvents.length > 0 ? visibleEvents[visibleEvents.length - 1] : null;
   const latestTrace = entries.length > 0 ? entries[entries.length - 1] : null;
   const latestFile = files.length > 0 ? files[files.length - 1] : null;
   const hasError = entries.some(
-    (e) => e.phase === "gateway_error" || e.phase === "parse_error" || e.phase === "normalize_error"
+    (e) => typeof e.phase === "string" && e.phase.endsWith("_error"),
   );
 
   return (
     <>
-      <div className="space-y-3 p-3.5 rounded-[var(--radius-md)] neu-card border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+      {/* Right Sidebar Compact Tile Widget */}
+      <div className="p-3 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] flex flex-col gap-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-[var(--text-secondary)]">Run diagnostics</span>
-            {loading && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />}
-            {hasError && <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-error)]" title="Error in logs" />}
+            <span className="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">
+              Diagnostics
+            </span>
+            {loading && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />}
           </div>
           {runId && (
-            <span className="text-[10px] font-mono text-[var(--text-tertiary)]">
+            <span className="text-[10px] font-mono text-[var(--text-tertiary)] truncate max-w-[120px]">
               run:{runId.slice(0, 8)}
             </span>
           )}
@@ -183,9 +181,9 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
           <div className="flex items-center justify-between text-[11px] font-medium text-[var(--text-secondary)] mb-1">
             <div className="flex items-center gap-1.5">
               <span>Run transcript</span>
-              {runEvents.length > 0 && (
+              {visibleEvents.length > 0 && (
                 <span className="text-[10px] px-1.5 py-0.2 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] text-[var(--text-tertiary)] font-mono border border-[var(--border-subtle)]">
-                  {runEvents.length}
+                  {visibleEvents.length}
                 </span>
               )}
             </div>
@@ -272,11 +270,11 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
             className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] w-full max-w-3xl h-[80vh] flex flex-col overflow-hidden"
             onClick={(ev) => ev.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-4 border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)]">
+            <div className="flex items-center justify-between p-4 border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] select-none">
               <div className="flex items-center gap-2.5">
                 <span className="text-sm font-medium text-[var(--text-primary)]">Run transcript</span>
                 <span className="text-xs px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] font-mono text-[var(--text-secondary)]">
-                  {runEvents.length} {runEvents.length === 1 ? "event" : "events"}
+                  {visibleEvents.length} {visibleEvents.length === 1 ? "event" : "events"}
                 </span>
                 {runId && <span className="text-[11px] font-mono text-[var(--text-tertiary)] ml-2">run:{runId.slice(0, 8)}</span>}
               </div>
@@ -289,22 +287,22 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
               </button>
             </div>
 
-            <div className="flex-1 overflow-hidden p-4">
-              {runEvents.length === 0 ? (
+            <div className="flex-1 overflow-hidden p-4 select-text">
+              {visibleEvents.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-xs text-[var(--text-tertiary)] italic">
                   No run events recorded yet.
                 </div>
               ) : (
-                <div className="h-full overflow-y-auto space-y-1.5 pr-2">
-                  {runEvents.map((e, idx) => (
+                <div className="h-full overflow-y-auto space-y-1.5 pr-2 select-text">
+                  {visibleEvents.map((e, idx) => (
                     <div
                       key={idx}
-                      className="flex items-start gap-3 p-2.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs font-mono"
+                      className="flex items-start gap-3 p-2.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs font-mono select-text"
                     >
-                      <span className="text-[var(--text-tertiary)] shrink-0 w-5 text-center mt-0.5">{iconFor(e)}</span>
-                      <div className="flex-1 break-words">
-                        <span className="text-[var(--text-tertiary)] mr-2">[{e.type}]</span>
-                        <span className="text-[var(--text-primary)]">{labelFor(e)}</span>
+                      <span className="text-[var(--text-tertiary)] shrink-0 w-5 text-center mt-0.5 select-none">{iconFor(e)}</span>
+                      <div className="flex-1 break-words select-text">
+                        <span className="text-[var(--text-tertiary)] mr-2 select-text">[{e.type}]</span>
+                        <span className="text-[var(--text-primary)] select-text">{labelFor(e)}</span>
                       </div>
                     </div>
                   ))}
@@ -394,7 +392,7 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
                               {copyFeedback ? "Copied" : "Copy payload"}
                             </button>
                           </div>
-                          <pre className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-all bg-[var(--bg-canvas)] rounded-[var(--radius-sm)] border border-[var(--border-subtle)] text-[var(--text-primary)] p-3 max-h-[300px] overflow-auto">
+                          <pre className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-all bg-[var(--bg-canvas)] rounded-[var(--radius-sm)] border border-[var(--border-subtle)] text-[var(--text-primary)] p-3 max-h-[300px] overflow-auto select-text">
                             {JSON.stringify(entry, null, 2)}
                           </pre>
                         </div>
@@ -418,7 +416,7 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
             className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-[var(--radius-md)] w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
             onClick={(ev) => ev.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-4 border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)]">
+            <div className="flex items-center justify-between p-4 border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] select-none">
               <div className="flex items-center gap-2.5">
                 <span className="text-sm font-medium text-[var(--text-primary)]">Per-request files</span>
                 <span className="text-xs px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] font-mono text-[var(--text-secondary)]">
@@ -446,7 +444,7 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
               </div>
             </div>
 
-            <div className="flex-1 overflow-hidden p-4">
+            <div className="flex-1 overflow-hidden p-4 select-text">
               {files.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-xs text-[var(--text-tertiary)] italic">
                   No per-request trace files generated yet for this run.
@@ -469,11 +467,11 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
                     ))}
                   </div>
 
-                  <div className="flex-1 bg-[var(--bg-canvas)] rounded-[var(--radius-sm)] border border-[var(--border-subtle)] overflow-hidden flex flex-col">
-                    <div className="p-2.5 px-4 bg-[var(--bg-surface-raised)] border-b border-[var(--border-subtle)] text-xs font-mono text-[var(--text-secondary)] flex justify-between">
+                  <div className="flex-1 bg-[var(--bg-canvas)] rounded-[var(--radius-sm)] border border-[var(--border-subtle)] overflow-hidden flex flex-col select-text">
+                    <div className="p-2.5 px-4 bg-[var(--bg-surface-raised)] border-b border-[var(--border-subtle)] text-xs font-mono text-[var(--text-secondary)] flex justify-between select-none">
                       <span>{selectedFileName ?? "Select a file to inspect"}</span>
                     </div>
-                    <pre className="p-4 text-xs font-mono leading-relaxed whitespace-pre-wrap break-all overflow-auto flex-1 text-[var(--text-primary)]">
+                    <pre className="p-4 text-xs font-mono leading-relaxed whitespace-pre-wrap break-all overflow-auto flex-1 text-[var(--text-primary)] select-text">
                       {selectedFileContent != null
                         ? typeof selectedFileContent === "string"
                           ? selectedFileContent
