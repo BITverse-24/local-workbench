@@ -121,6 +121,7 @@ type RunEvent =
   | { type: "run_state"; runId: string; state: RunState }
   | { type: "routing"; runId: string; taskType: "vision" | "draft" | "code"; modelId: string; reason: string }
   | { type: "plan_step"; runId: string; index: number; text: string }
+  | { type: "agent_thinking"; runId: string; text: string; turn?: number }
   | { type: "tool_call"; runId: string; tool: string; summary: string }
   | { type: "tool_result"; runId: string; tool: string; summary: string }
   | { type: "confirmation_required"; runId: string; action: PendingAction }

@@ -83,6 +83,7 @@ export type RunEvent =
   | { type: "run_state"; runId: string; state: RunState }
   | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number; devWorkload?: boolean; providerEndpoint?: string }
   | { type: "plan_step"; runId: string; index: number; text: string }
+  | { type: "agent_thinking"; runId: string; text: string; turn?: number }
   | { type: "tool_call"; runId: string; tool: ToolName; summary: string }
   | { type: "tool_result"; runId: string; tool: ToolName; summary: string }
   | { type: "confirmation_required"; runId: string; action: PendingAction }
@@ -196,4 +197,48 @@ export interface OnboardingStatus {
 export interface DevModeStatus {
   devOpenRouter: boolean;
   hasOpenRouterKey: boolean;
+}
+
+// ── Sovereign Workbench v2 Unified Agent Tool Contracts ────────────────────
+
+export interface FunctionToolParameterProperty {
+  type: string;
+  description?: string;
+  enum?: readonly string[] | string[];
+  items?: Record<string, unknown>;
+  properties?: Record<string, unknown>;
+  required?: readonly string[] | string[];
+}
+
+export interface FunctionToolParameters {
+  type: "object";
+  properties: Record<string, FunctionToolParameterProperty>;
+  required?: readonly string[] | string[];
+}
+
+export interface AgentFunctionDefinition {
+  name: string;
+  description: string;
+  parameters: FunctionToolParameters;
+}
+
+export interface AgentToolDefinition {
+  type: "function";
+  function: AgentFunctionDefinition;
+}
+
+export interface AgentToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface AgentTurnResponse {
+  content: string | null;
+  tool_calls: AgentToolCall[] | null;
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    durationMs?: number;
+  };
 }

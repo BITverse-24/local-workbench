@@ -2,7 +2,17 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { AIResult, ModelHealth, ModelId, ModelRequest, ModelResponse, ModelRegistryEntry } from "../../shared/contracts.js";
+import type {
+  AIResult,
+  AgentToolCall,
+  AgentToolDefinition,
+  AgentTurnResponse,
+  ModelHealth,
+  ModelId,
+  ModelRegistryEntry,
+  ModelRequest,
+  ModelResponse,
+} from "../../shared/contracts.js";
 import type { ModelClient } from "../models/ports.js";
 import {
   defaultLocalRegistry,
@@ -831,6 +841,297 @@ export class ModelGateway implements ModelClient {
       return { modelId, available: response.status >= 200 && response.status < 300, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started };
     } catch (error) {
       return { modelId, available: false, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started, message: error instanceof Error ? error.message : "health check failed" };
+    }
+  }
+
+  // Capability cache: remembers whether a provider endpoint rejected the native `tools` param
+  private readonly toolParamCapabilities = new Map<string, boolean>();
+
+  /**
+   * Sovereign Workbench v2 Unified Agent Loop native function calling interface.
+   * Dispatches conversation turns with native `tools` and `tool_choice: "auto"`.
+   * Automatically falls back to prompt-injected schema if provider rejects `tools`.
+   */
+  async chatWithTools(
+    modelId: ModelId,
+    messages: Array<{ role: string; content: any; tool_calls?: any[]; tool_call_id?: string }>,
+    tools: AgentToolDefinition[],
+    options?: {
+      runId?: string;
+      temperature?: number;
+      maxTokens?: number;
+      timeoutMs?: number;
+      onChunk?: (delta: string) => void;
+      devWorkload?: boolean;
+    },
+  ): Promise<AIResult<AgentTurnResponse>> {
+    const isDev = this.isDevRoutingActive(options?.devWorkload !== undefined ? ({ devWorkload: options.devWorkload } as any) : undefined);
+    const activeRegistry = isDev && this.devRegistry.size > 0 ? this.devRegistry : this.dbRegistry;
+    let model: ModelRegistryEntry | undefined = activeRegistry.get(modelId);
+    if (!model && isDev) model = this.dbRegistry.get(modelId);
+    if (!model) {
+      return {
+        ok: false,
+        error: {
+          kind: "ai-error",
+          code: "model_unavailable",
+          message: `Model ${modelId} not found in active registry`,
+          retryable: false,
+          modelId,
+        },
+      };
+    }
+
+    const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
+    if (model.runtime === "openrouter" && !key) {
+      return {
+        ok: false,
+        error: {
+          kind: "ai-error",
+          code: "model_rejected_request",
+          message: `Missing environment credential ${model.apiKeyEnv}`,
+          retryable: false,
+          modelId,
+        },
+      };
+    }
+
+    const isLocal = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/i.test(model.baseUrl) ||
+      model.runtime === "ollama" ||
+      model.runtime === "mlx-lm" ||
+      model.runtime === "llama-server";
+
+    const endpointKey = `${model.baseUrl}:${model.model}`;
+    const knownSupportsTools = this.toolParamCapabilities.get(endpointKey) ?? true;
+    const effectiveTimeout = Math.max(options?.timeoutMs ?? 0, model.requestTimeoutMs ?? 0, 60000);
+    const effectiveMaxTokens = options?.maxTokens ?? model.maxOutputTokens ?? 4096;
+    const effectiveTemperature = options?.temperature ?? 0.2;
+
+    const runId = options?.runId ?? "run-agent-loop";
+    const requestId = randomUUID();
+
+    // 1. If tools are available and provider hasn't rejected tools previously:
+    if (tools.length > 0 && knownSupportsTools) {
+      const payload: Record<string, any> = {
+        model: model.model,
+        messages,
+        tools,
+        tool_choice: "auto",
+        temperature: effectiveTemperature,
+        max_tokens: effectiveMaxTokens,
+      };
+
+      try {
+        const body = JSON.stringify(payload);
+        const t0 = Date.now();
+        let response: { status: number; text(): Promise<string> };
+
+        if (options?.onChunk && this.transport.streamRequest) {
+          response = await this.transport.streamRequest(
+            `${model.baseUrl}/chat/completions`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
+              body,
+            },
+            effectiveTimeout,
+            options.onChunk,
+          );
+        } else {
+          response = await this.transport.request(
+            `${model.baseUrl}/chat/completions`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
+              body,
+            },
+            effectiveTimeout,
+          );
+        }
+
+        const rawText = await response.text();
+        const durationMs = Date.now() - t0;
+
+        // Check if provider returned 400 specifically rejecting `tools` parameter
+        if (response.status === 400 && /tools|tool_choice|unsupported parameter/i.test(rawText)) {
+          this.toolParamCapabilities.set(endpointKey, false);
+          // Downgrade and fall through to fallback prompt injection
+        } else if (response.status >= 200 && response.status < 300) {
+          const envelope = JSON.parse(rawText);
+          const choice = envelope.choices?.[0];
+          const msg = choice?.message;
+          const rawToolCalls = msg?.tool_calls;
+          const parsedCalls: AgentToolCall[] = [];
+
+          if (Array.isArray(rawToolCalls)) {
+            for (const call of rawToolCalls) {
+              if (call.function?.name) {
+                let parsedArgs: Record<string, unknown> = {};
+                try {
+                  parsedArgs = typeof call.function.arguments === "string"
+                    ? JSON.parse(call.function.arguments)
+                    : (call.function.arguments ?? {});
+                } catch {
+                  parsedArgs = { raw: call.function.arguments };
+                }
+                parsedCalls.push({
+                  id: call.id || randomUUID(),
+                  name: call.function.name,
+                  arguments: parsedArgs,
+                });
+              }
+            }
+          }
+
+          const content = msg?.content ? String(msg.content) : null;
+          return {
+            ok: true,
+            value: {
+              content,
+              tool_calls: parsedCalls.length > 0 ? parsedCalls : null,
+              usage: {
+                inputTokens: envelope.usage?.prompt_tokens,
+                outputTokens: envelope.usage?.completion_tokens,
+                durationMs,
+              },
+            },
+          };
+        } else {
+          return {
+            ok: false,
+            error: {
+              kind: "ai-error",
+              code: "model_rejected_request",
+              message: `Provider status ${response.status}: ${rawText.slice(0, 500)}`,
+              retryable: response.status >= 500,
+              modelId,
+              requestId,
+              runId,
+            },
+          };
+        }
+      } catch (err: any) {
+        if (!/tools/i.test(err?.message ?? "")) {
+          return {
+            ok: false,
+            error: {
+              kind: "ai-error",
+              code: "model_timeout",
+              message: err instanceof Error ? err.message : String(err),
+              retryable: true,
+              modelId,
+              requestId,
+              runId,
+            },
+          };
+        }
+      }
+    }
+
+    // 2. Fallback Path: JSON-in-Prompt Emulation when native tools parameter is unsupported
+    const toolDescriptions = tools
+      .map((t) => `- ${t.function.name}: ${t.function.description}\n  Arguments schema: ${JSON.stringify(t.function.parameters)}`)
+      .join("\n\n");
+
+    const fallbackSystemPromptAddition = `\n\nAVAILABLE TOOLS:\n${toolDescriptions}\n\nTo use a tool, respond with JSON matching:\n{"content": "reasoning or response", "tool_calls": [{"name": "tool_name", "arguments": { ... }}]}\nIf no tool is needed, respond with:\n{"content": "your response", "tool_calls": null}`;
+
+    const fallbackMessages = messages.map((m, idx) => {
+      if (idx === 0 && m.role === "system") {
+        return { ...m, content: `${m.content}${fallbackSystemPromptAddition}` };
+      }
+      return m;
+    });
+
+    try {
+      const fallbackBody = JSON.stringify({
+        model: model.model,
+        messages: fallbackMessages,
+        temperature: effectiveTemperature,
+        max_tokens: effectiveMaxTokens,
+        response_format: isLocal ? { type: "json_object" } : undefined,
+      });
+
+      const t0 = Date.now();
+      const response = await this.transport.request(
+        `${model.baseUrl}/chat/completions`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
+          body: fallbackBody,
+        },
+        effectiveTimeout,
+      );
+
+      const rawText = await response.text();
+      const durationMs = Date.now() - t0;
+
+      if (response.status >= 200 && response.status < 300) {
+        const envelope = JSON.parse(rawText);
+        const choice = envelope.choices?.[0];
+        const rawContent = choice?.message?.content;
+        let parsedJson: any = null;
+
+        if (typeof rawContent === "string") {
+          try {
+            const stripped = rawContent.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+            parsedJson = JSON.parse(stripped);
+          } catch {
+            parsedJson = { content: rawContent, tool_calls: null };
+          }
+        }
+
+        const toolCalls: AgentToolCall[] = [];
+        if (Array.isArray(parsedJson?.tool_calls)) {
+          for (const tc of parsedJson.tool_calls) {
+            if (tc.name) {
+              toolCalls.push({
+                id: tc.id || randomUUID(),
+                name: tc.name,
+                arguments: tc.arguments ?? {},
+              });
+            }
+          }
+        }
+
+        return {
+          ok: true,
+          value: {
+            content: parsedJson?.content ? String(parsedJson.content) : (typeof rawContent === "string" ? rawContent : null),
+            tool_calls: toolCalls.length > 0 ? toolCalls : null,
+            usage: {
+              inputTokens: envelope.usage?.prompt_tokens,
+              outputTokens: envelope.usage?.completion_tokens,
+              durationMs,
+            },
+          },
+        };
+      }
+
+      return {
+        ok: false,
+        error: {
+          kind: "ai-error",
+          code: "model_rejected_request",
+          message: `Fallback status ${response.status}: ${rawText.slice(0, 500)}`,
+          retryable: response.status >= 500,
+          modelId,
+          requestId,
+          runId,
+        },
+      };
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: {
+          kind: "ai-error",
+          code: "model_unavailable",
+          message: err instanceof Error ? err.message : String(err),
+          retryable: false,
+          modelId,
+          requestId,
+          runId,
+        },
+      };
     }
   }
 }
