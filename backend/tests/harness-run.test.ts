@@ -713,6 +713,78 @@ describe("Workspace Task Execution Loop (HARNESS.md)", () => {
     expect(artifactEvents[0].artifact.filename).toBe("repaired-script.py");
   });
 
+  it("deletes file when model calls delete_file tool in workspace", async () => {
+    const targetFile = path.join(workspaceRoot, "obsolete-script.py");
+    writeFileSync(targetFile, "print('remove me')\n", "utf8");
+    expect(existsSync(targetFile)).toBe(true);
+
+    const mockGateway = createMockGateway((_req, count) => {
+      if (count === 1) {
+        return {
+          thought: "Deleting the obsolete script",
+          action: "tool_call",
+          tool: "delete_file",
+          args: { path: "obsolete-script.py" },
+        };
+      }
+      return {
+        thought: "Done",
+        action: "final_answer",
+        text: "The file 'obsolete-script.py' has been deleted from the workspace.",
+      };
+    });
+
+    manager = new RunManager(mockGateway as any, (event) => runEvents.push(event));
+    harness = new HarnessManager(undefined, (event) => runEvents.push(event));
+    manager.setHarness(harness);
+    harness.registerWorkspace(workspaceRoot);
+
+    await manager.start({ userText: "Delete the obsolete-script.py file in the workspace" });
+    await waitForCompletion(runEvents);
+
+    expect(existsSync(targetFile)).toBe(false);
+    const artifactReadyEvents = runEvents.filter((e) => e.type === "artifact_ready");
+    expect(artifactReadyEvents).toHaveLength(0);
+  });
+
+  it("safeguards against model attempting write_file with empty content to delete file", async () => {
+    const targetFile = path.join(workspaceRoot, "repaired-broken-vendor-log-parser.py");
+    writeFileSync(targetFile, "print('should be deleted')\n", "utf8");
+    expect(existsSync(targetFile)).toBe(true);
+
+    // Simulate the exact scenario from user's screenshot: model calls write_file with empty content
+    const mockGateway = createMockGateway((_req, count) => {
+      if (count === 1) {
+        return {
+          thought: "To remove the file, I need to call the write_file tool with an empty content string and the path of the file.",
+          action: "tool_call",
+          tool: "write_file",
+          args: { path: "repaired-broken-vendor-log-parser.py", content: "" },
+        };
+      }
+      return {
+        thought: "The file has been successfully removed.",
+        action: "final_answer",
+        text: "The file 'repaired-broken-vendor-log-parser.py' has been removed from the workspace.",
+      };
+    });
+
+    manager = new RunManager(mockGateway as any, (event) => runEvents.push(event));
+    harness = new HarnessManager(undefined, (event) => runEvents.push(event));
+    manager.setHarness(harness);
+    harness.registerWorkspace(workspaceRoot);
+
+    await manager.start({ userText: "Remove the file in the workspace (there is only one right now)" });
+    await waitForCompletion(runEvents);
+
+    // The file should be truly deleted, not left as 0 bytes!
+    expect(existsSync(targetFile)).toBe(false);
+
+    // No 0-byte artifact ready card should be emitted to the user!
+    const artifactReadyEvents = runEvents.filter((e) => e.type === "artifact_ready");
+    expect(artifactReadyEvents).toHaveLength(0);
+  });
+
   it("manager.health returns distinct models keyed by port without repeating for multiple roles", async () => {
     const mockGateway = {
       isDevRoutingActive: () => false,

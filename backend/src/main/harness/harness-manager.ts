@@ -7,6 +7,7 @@ import { listDir, type DirEntry } from "./tools/list-dir.js";
 import { readFile } from "./tools/read-file.js";
 import { search, type SearchMatch } from "./tools/search.js";
 import { writeFile, type WriteResult } from "./tools/write-file.js";
+import { deleteFile, type DeleteResult } from "./tools/delete-file.js";
 import { runCommand, type CommandResult } from "./tools/run-command.js";
 import { getDb } from "../persistence/db.js";
 import { writeRunFile } from "../run/filesystem.js";
@@ -156,6 +157,12 @@ export class HarnessManager {
         break;
       }
 
+      case "delete_file": {
+        const delRes = deleteFile(ws.root, call.args.path);
+        result = { tool: "delete_file", result: delRes };
+        break;
+      }
+
       case "run_command": {
         const cmdRes = await runCommand(ws.root, call.args.command);
         result = { tool: "run_command", result: cmdRes };
@@ -178,10 +185,15 @@ export class HarnessManager {
       summary: resultSummary,
     });
 
-    if (toolName === "write_file" || toolName === "run_command") {
+    if (toolName === "write_file" || toolName === "run_command" || toolName === "delete_file") {
       try {
         this.emitWorkspace({ type: "workspace_tree", entries: this.getDirectoryTree() });
       } catch {}
+    }
+
+    if (call.tool === "delete_file" && runId) {
+      const filename = path.basename(call.args.path);
+      this.createdArtifactsByRun.delete(`${runId}:${filename}`);
     }
 
     if (runId && this.emitRun) {
@@ -321,6 +333,8 @@ export class HarnessManager {
         return `searching for: "${call.args.query}" in ${call.args.path ?? "."}`;
       case "write_file":
         return `writing file: ${call.args.path}`;
+      case "delete_file":
+        return `deleting file: ${call.args.path}`;
       case "run_command":
         return `running command: ${call.args.command.slice(0, 80)}`;
     }
@@ -336,6 +350,8 @@ export class HarnessManager {
         return `${result.result.length} matches found`;
       case "write_file":
         return result.result.diff ?? "file written";
+      case "delete_file":
+        return `deleted ${result.result.deleted}${result.result.backedUp ? " (backed up)" : ""}`;
       case "run_command":
         return `exit code ${result.result.exitCode}${result.result.timedOut ? " (timed out)" : ""}`;
     }

@@ -2091,7 +2091,7 @@ Option 1: To call a tool:
 {
   "thought": "brief explanation of why you are taking this action",
   "action": "tool_call",
-  "tool": "list_dir" | "read_file" | "search" | "write_file" | "run_command",
+  "tool": "list_dir" | "read_file" | "search" | "write_file" | "delete_file" | "run_command",
   "args": { ... tool arguments ... }
 }
 
@@ -2100,6 +2100,7 @@ Tool argument details:
 - read_file: {"path": "relative/path/to/file"}
 - search: {"query": "search query", "path": "."}
 - write_file: {"path": "relative/path/to/file", "content": "complete file content"}
+- delete_file: {"path": "relative/path/to/file"}
 - run_command: {"command": "shell command"}
 
 Option 2: When you have finished the task and want to report back:
@@ -2110,7 +2111,8 @@ Option 2: When you have finished the task and want to report back:
 }
 
 IMPORTANT: If the user asks to write, create, update, or edit a file, you MUST call write_file with the path and content! Never merely output the file content in the text field without calling write_file.
-If the user asks to run, execute, or test code or commands, or to delete/clean files, call run_command! Never claim you lack access or permissions to execute commands or interact with the filesystem.
+If the user asks to delete, remove, or clean up a file or directory, you MUST call delete_file with the path! Never attempt to delete a file by calling write_file with empty content.
+If the user asks to run, execute, or test code or commands, call run_command! Never claim you lack access or permissions to execute commands or interact with the filesystem.
 `;
 
     const MAX_TURNS = 10;
@@ -2191,7 +2193,20 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
       }
 
       // Execute tool
-      const toolCall = action.call;
+      let toolCall = action.call;
+      const thought = (parsed as any)?.thought ?? "";
+      if (
+        toolCall.tool === "write_file" &&
+        toolCall.args.content.trim() === "" &&
+        (/\b(delete|deleted|remove|removed|cleanup|clean|wipe|rm|erase|purge)\b/i.test(text) ||
+         /\b(delete|deleted|remove|removed|cleanup|clean|wipe|rm|erase|purge)\b/i.test(thought))
+      ) {
+        toolCall = {
+          tool: "delete_file",
+          args: { path: toolCall.args.path },
+        };
+      }
+
       let toolResultSummary = "";
 
       try {
@@ -2234,14 +2249,22 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
           const result = await this.harness.executeTool(toolCall, runId);
           toolResultSummary = JSON.stringify(result.result);
 
-          // If a file was written, register as artifact so user can view/open it in ArtifactPane
-          if (toolCall.tool === "write_file") {
+          // If a file was written, register as artifact only if it has non-empty content
+          if (toolCall.tool === "write_file" && toolCall.args.content.trim() !== "") {
             if (!writtenWorkspaceArtifacts.has(toolCall.args.path)) {
               writtenWorkspaceArtifacts.add(toolCall.args.path);
               try {
                 this.harness.createWorkspaceArtifact(runId, toolCall.args.path);
               } catch {}
             }
+          } else if (toolCall.tool === "delete_file") {
+            writtenWorkspaceArtifacts.delete(toolCall.args.path);
+            try {
+              const filename = path.basename(toolCall.args.path);
+              getDb()
+                .prepare("DELETE FROM artifacts WHERE run_id = ? AND filename = ?")
+                .run(runId, filename);
+            } catch {}
           }
         }
       } catch (err: any) {
@@ -2274,13 +2297,15 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
     const obj = raw as Record<string, unknown>;
 
     // 1. Explicit tool_call action
-    const VALID_HARNESS_TOOLS = ["list_dir", "read_file", "search", "write_file", "run_command"] as const;
+    const VALID_HARNESS_TOOLS = ["list_dir", "read_file", "search", "write_file", "delete_file", "run_command"] as const;
     let toolName = (obj.tool ?? obj.name) as string | undefined;
     if (!toolName && typeof obj.action === "string") {
       if (VALID_HARNESS_TOOLS.includes(obj.action as any)) {
         toolName = obj.action;
       } else if (obj.action === "tool_call" && obj.tool) {
         toolName = String(obj.tool);
+      } else if (obj.action === "delete" || obj.action === "remove") {
+        toolName = "delete_file";
       }
     }
 
@@ -2326,6 +2351,16 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
               },
             },
           };
+        case "delete_file":
+          return {
+            type: "tool_call",
+            call: {
+              tool: "delete_file",
+              args: {
+                path: String(args.path ?? args.file ?? args.filename ?? ""),
+              },
+            },
+          };
         case "run_command":
           return {
             type: "tool_call",
@@ -2338,7 +2373,7 @@ If the user asks to run, execute, or test code or commands, or to delete/clean f
     }
 
     // 2. Check if a tool name is used as the key: e.g. { "write_file": { "path": ..., "content": ... } }
-    for (const t of ["list_dir", "read_file", "search", "write_file", "run_command"] as const) {
+    for (const t of ["list_dir", "read_file", "search", "write_file", "delete_file", "run_command"] as const) {
       if (obj[t] && typeof obj[t] === "object") {
         return this.parseWorkspaceAction({ tool: t, args: obj[t] });
       }

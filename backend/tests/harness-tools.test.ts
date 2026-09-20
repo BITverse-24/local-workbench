@@ -14,6 +14,7 @@ import {
   readFile,
   search,
   writeFile,
+  deleteFile,
   runCommand,
 } from "../src/main/harness/tools/index.js";
 import { PermissionError } from "../src/main/harness/path-guard.js";
@@ -165,6 +166,37 @@ describe("Harness Tools", () => {
     it("rejects path escape", () => {
       expect(() => writeFile(root, "../outside.txt", "content")).toThrow(PermissionError);
       expect(() => writeFile(root, "/tmp/bad.txt", "content")).toThrow(PermissionError);
+    });
+  });
+
+  // ── delete_file ───────────────────────────────────────────────
+  describe("deleteFile", () => {
+    it("deletes a file and creates a backup in .harness_backups", () => {
+      const original = readFileSync(path.join(root, "README.md"), "utf8");
+      const res = deleteFile(root, "README.md");
+
+      expect(res.deleted).toBe("README.md");
+      expect(res.backedUp).toBe(true);
+      expect(res.backupPath).toBeTruthy();
+      expect(existsSync(path.join(root, "README.md"))).toBe(false);
+
+      // Verify backup exists with original content
+      const fullBackup = path.join(root, res.backupPath!);
+      expect(existsSync(fullBackup)).toBe(true);
+      expect(readFileSync(fullBackup, "utf8")).toBe(original);
+    });
+
+    it("throws when deleting non-existent file", () => {
+      expect(() => deleteFile(root, "non-existent.txt")).toThrow("does not exist");
+    });
+
+    it("rejects deleting workspace root directory", () => {
+      expect(() => deleteFile(root, ".")).toThrow("Cannot delete workspace root directory");
+    });
+
+    it("rejects path escape", () => {
+      expect(() => deleteFile(root, "../outside.txt")).toThrow(PermissionError);
+      expect(() => deleteFile(root, "/etc/passwd")).toThrow(PermissionError);
     });
   });
 

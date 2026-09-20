@@ -30,18 +30,20 @@ describe("Harness Prompt & Tool Definitions", () => {
     expect(prompt).toContain("search");
     expect(prompt).toContain("read_file");
     expect(prompt).toContain("write_file");
+    expect(prompt).toContain("delete_file");
     expect(prompt).toContain("run_command");
     expect(prompt).toContain("NEVER use absolute paths");
   });
 
-  it("defines exactly the 5 harness tools matching OpenAI function schema", () => {
-    expect(HARNESS_TOOL_DEFINITIONS.length).toBe(5);
+  it("defines exactly the 6 harness tools matching OpenAI function schema", () => {
+    expect(HARNESS_TOOL_DEFINITIONS.length).toBe(6);
     const names = HARNESS_TOOL_DEFINITIONS.map((t) => t.function.name);
     expect(names).toEqual([
       "list_dir",
       "read_file",
       "search",
       "write_file",
+      "delete_file",
       "run_command",
     ]);
 

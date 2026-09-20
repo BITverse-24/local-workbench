@@ -36,7 +36,7 @@ const EXECUTION_FOLLOWUP_PATTERN =
 // ── Action Verbs & Noun Categories ──────────────────────────────────────
 
 const FILE_ACTION_VERBS =
-  /\b(create|write|save|make|add|generate|gen|edit|modify|update|touch|delete|remove|append|produce|build|draft|output|export|dump|render|prepare|put|place)\b/i;
+  /\b(create|creates|created|creating|write|writes|written|writing|save|saves|saved|saving|make|makes|made|making|add|adds|added|adding|generate|generates|generated|generating|gen|edit|edits|edited|editing|modify|modifies|modified|modifying|update|updates|updated|updating|touch|touching|delete|deletes|deleted|deleting|remove|removes|removed|removing|erase|erases|erased|erasing|clean|cleans|cleaned|cleaning|clear|clears|cleared|clearing|wipe|wipes|wiped|wiping|purge|purges|purged|purging|append|produce|build|draft|output|export|dump|render|prepare|put|place)\b/i;
 
 const FILE_CONTAINER_NOUNS =
   /\b(file|files|txt file|script|scripts|archive)\b/i;
@@ -64,7 +64,7 @@ const EXPLICIT_FILENAME_PATTERN =
   /\b([a-zA-Z0-9_\-]+\.(?:txt|js|ts|jsx|tsx|json|md|py|csv|html|css|yaml|yml|sh|env|sql|xml|rs|go|java|c|cpp|h|toml|ini))\b/i;
 
 const DIRECTORY_CONTEXT_PHRASES =
-  /\b(?:in|into|to|inside|within)\s+(?:the\s+|this\s+|my\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:directory|folder|dir|workspace|project|repo|repository|codebase|root|ws)\b/i;
+  /\b(?:in|into|to|inside|within|from|out of|off)\s+(?:the\s+|this\s+|my\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:directory|folder|dir|workspace|project|repo|repository|codebase|root|ws)\b/i;
 
 const PROJECT_PATH_SYNTAX =
   /(?:^|\s)(?:\.\/|\.\.\/|src\/|tests?\/|lib\/|app\/|pkg\/|scripts\/|config\/)[a-zA-Z0-9_\-./]+/i;
@@ -520,27 +520,27 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     });
   }
 
-  // Case D: Explicit Workspace Targeted Write / Save Action
-  // If the user explicitly asks to write/save/copy/move a file/script into the workspace/directory,
+  // Case D: Explicit Workspace Targeted Write / Save / Delete Action
+  // If the user explicitly asks to write/save/copy/move/delete/remove a file/script into or from the workspace/directory,
   // route to harness regardless of whether historical CSV/code attachments exist in the chat!
-  const isWorkspaceTargetedWrite =
+  const isWorkspaceTargetedOp =
     isWorkspaceActive &&
     !hasNegativeWorkspaceConstraint &&
     !hasStandaloneHint &&
     (
       hasDirectoryContext ||
       (hasFileActionVerb && hasWorkspaceNoun) ||
-      /\b(?:write|save|copy|move|transfer|export|dump|put|place)\b.*\b(?:workspace|directory|folder|dir|repo|root)\b/i.test(lower) ||
-      /\b(?:into|in|to|inside)\s+(?:the\s+|this\s+|my\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:workspace|directory|folder|dir|repo|root)\b/i.test(lower)
+      /\b(?:write|save|copy|move|transfer|export|dump|put|place|delete|remove|clean|clear|wipe|erase|purge)\b.*\b(?:workspace|directory|folder|dir|repo|root)\b/i.test(lower) ||
+      /\b(?:into|in|to|inside|within|from|out of|off)\s+(?:the\s+|this\s+|my\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:workspace|directory|folder|dir|repo|root)\b/i.test(lower)
     ) &&
     (hasFileActionVerb || hasReferentialNoun || hasRecentArtifacts || hasFileContainerNoun || hasFileExtension);
 
-  if (isWorkspaceTargetedWrite) {
+  if (isWorkspaceTargetedOp) {
     return withGrounding({
       taskType: "code",
       modelId: "code-qwen25coder",
       actionTarget: "harness",
-      reason: "workspace file write/save request",
+      reason: "workspace file operation request",
       isWorkspaceAction: true,
       extractedFilename,
       suggestedExtension,
@@ -548,12 +548,20 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     });
   }
 
+  // Guard for Case E and Case F: Do NOT hijack requests if active workspace is set
+  // and user is asking to delete/remove/inspect files in the workspace/directory.
+  const isWorkspaceFileInquiry =
+    isWorkspaceActive &&
+    (hasWorkspaceNoun ||
+      hasDirectoryContext ||
+      /\b(delete|deleted|deleting|remove|removed|removing|clean|cleaned|wipe|purge|workspace|directory)\b/i.test(lower));
+
   // Case E: Python script + CSV / log repair intent (Flow B)
   const hasPythonAttachment = allAttachments.some(
     (a) => a.filename?.endsWith(".py") || a.mediaType === "text/x-python" || a.mediaType === "application/x-python-code",
   );
   const hasCsvAttachment = allAttachments.some((a) => a.mediaType === "text/csv" || a.filename?.endsWith(".csv"));
-  if (hasPythonAttachment && (hasCsvAttachment || /\b(fix|crash|broken|parser|error|traceback)\b/i.test(lower))) {
+  if (!isWorkspaceFileInquiry && hasPythonAttachment && (hasCsvAttachment || /\b(fix|crash|broken|parser|error|traceback)\b/i.test(lower))) {
     return withGrounding({
       taskType: "code",
       modelId: "code-qwen25coder",
@@ -566,8 +574,8 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
 
   // Case F: Data Intent (CSV attachment or explicit CSV/data processing with attachment)
   if (
-    hasCsvAttachment ||
-    (allAttachments.length > 0 && DATA_ANALYSIS_KEYWORDS.test(lower))
+    !isWorkspaceFileInquiry &&
+    (hasCsvAttachment || (allAttachments.length > 0 && DATA_ANALYSIS_KEYWORDS.test(lower)))
   ) {
     return withGrounding({
       taskType: "code",

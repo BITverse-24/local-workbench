@@ -469,5 +469,57 @@ describe("Intelligent Intent Classifier", () => {
       expect(decision.isWorkspaceAction).toBe(false);
     });
   });
+
+  describe("Workspace File Deletion & Follow-up Routing", () => {
+    const historicalAttachments = [
+      { mediaType: "text/x-python", filename: "broken-vendor-log-parser.py" },
+      { mediaType: "text/csv", filename: "vendor-maintenance-log.csv" },
+    ];
+
+    it("routes 'Remove the file in the workspace' to harness even with historical attachments", () => {
+      const decision = classifyIntent({
+        userText: "Remove the file in the workspace (there is only one right now)",
+        isWorkspaceActive: true,
+        attachments: historicalAttachments,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.isWorkspaceAction).toBe(true);
+      expect(decision.modelId).toBe("code-qwen25coder");
+    });
+
+    it("routes 'Still hasnt been deleted from the directory' to harness even with historical attachments", () => {
+      const decision = classifyIntent({
+        userText: "Still hasnt been deleted from the directory",
+        isWorkspaceActive: true,
+        attachments: historicalAttachments,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.isWorkspaceAction).toBe(true);
+      expect(decision.modelId).toBe("code-qwen25coder");
+    });
+
+    it("routes 'Delete the damn file from the workspace bruh' to harness even with historical attachments", () => {
+      const decision = classifyIntent({
+        userText: "Delete the damn file from the workspace bruh",
+        isWorkspaceActive: true,
+        attachments: historicalAttachments,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.isWorkspaceAction).toBe(true);
+      expect(decision.modelId).toBe("code-qwen25coder");
+    });
+
+    it("routes 'clean up the generated files from the folder' to harness", () => {
+      const decision = classifyIntent({
+        userText: "clean up the generated files from the folder",
+        isWorkspaceActive: true,
+        attachments: historicalAttachments,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.isWorkspaceAction).toBe(true);
+      expect(decision.modelId).toBe("code-qwen25coder");
+    });
+  });
 });
+
 

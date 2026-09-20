@@ -444,12 +444,23 @@ describe("model gateway health checks", () => {
       new Map([[model.id, model]]),
     );
 
+    const dataRoot = process.env.WORKBENCH_DATA_ROOT!;
+    mkdirSync(dataRoot, { recursive: true });
+    writeFileSync(path.join(dataRoot, "scan.png"), Buffer.from([0, 1, 2, 3]));
+
     const result = await gateway.execute({
       requestId: "req-local-opt",
       runId: RUN_ID,
       taskType: "vision",
       modelId: "vision-qwen25vl",
       responseFormat: "vision-result",
+      attachment: {
+        attachmentId: "att-opt",
+        filename: "scan.png",
+        mediaType: "image/png",
+        relativePath: "scan.png",
+        sizeBytes: 100,
+      },
       inputMode: "typed-scan",
       systemPrompt: "Extract findings.",
       userPrompt: "Find data.",

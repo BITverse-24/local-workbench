@@ -13,13 +13,13 @@ export function buildHarnessSystemPrompt(directoryTree: string): string {
 WORKSPACE DIRECTORY TREE:
 ${directoryTree}
 
-You have five tools to explore, understand, modify, and verify code.
+You have tools to explore, understand, modify, delete, and verify code.
 
 TASK LOOP (follow this sequence — HARNESS.md §6):
 1. Call list_dir to see the shape of the project.
 2. Call search for likely-relevant filenames/keywords.
 3. Call read_file on what you find.
-4. Propose a change, call write_file to apply it.
+4. Propose a change, call write_file to apply it (or delete_file to remove files).
 5. Call run_command to execute/verify it.
 6. If verification fails, read the error, edit again, re-run.
 7. Report what changed, referencing the actual diff/backup.
@@ -30,13 +30,14 @@ RULES:
 - Do not hardcode file paths — use search to discover them.
 - Always verify your changes work by running the relevant test/build command.
 - When you write a file, report the diff summary from write_file's output.
+- To delete or remove a file or directory, call delete_file. NEVER attempt to delete a file by calling write_file with empty content.
 - If a file is >200KB, use search instead of read_file.
-- YOU HAVE FULL PERMISSION and tool capability to interact with the filesystem (via write_file/read_file) and execute shell commands (via run_command). NEVER claim that you "cannot directly interact with the filesystem", "cannot run code or execute files", or "lack permissions". Always use your tools.`;
+- YOU HAVE FULL PERMISSION and tool capability to interact with the filesystem (via write_file/delete_file/read_file) and execute shell commands (via run_command). NEVER claim that you "cannot directly interact with the filesystem", "cannot run code or execute files", or "lack permissions". Always use your tools.`;
 }
 
 /**
- * OpenAI function-calling tool definitions for the 5 harness tools.
- * These are passed in the \`tools\` parameter of the chat completions API.
+ * OpenAI function-calling tool definitions for the harness tools.
+ * These are passed in the `tools` parameter of the chat completions API.
  * Compatible with OpenRouter, Ollama, and all OpenAI-compatible providers.
  */
 export const HARNESS_TOOL_DEFINITIONS = [
@@ -118,6 +119,24 @@ export const HARNESS_TOOL_DEFINITIONS = [
           },
         },
         required: ["path", "content"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "delete_file",
+      description:
+        "Delete a file or directory from the workspace. Automatically creates a timestamped backup before deleting.",
+      parameters: {
+        type: "object" as const,
+        properties: {
+          path: {
+            type: "string",
+            description: "Relative path to the file or directory to delete.",
+          },
+        },
+        required: ["path"],
       },
     },
   },

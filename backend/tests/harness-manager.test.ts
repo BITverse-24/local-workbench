@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdirSync, writeFileSync, rmSync, realpathSync, readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, realpathSync, readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { HarnessManager } from "../src/main/harness/harness-manager.js";
@@ -110,6 +110,26 @@ describe("HarnessManager", () => {
     if (result.tool !== "write_file") throw new Error("expected write_file");
     expect(result.result.backedUp).toBe(true);
     expect(readFileSync(path.join(root, "src", "app.ts"), "utf8")).toBe('console.log("updated");\n');
+  });
+
+  it("executes delete_file tool and emits workspace_tree event", async () => {
+    manager.registerWorkspace(root);
+    const initialTreeCount = workspaceEvents.filter((e) => e.type === "workspace_tree").length;
+
+    const result = await manager.executeTool(
+      { tool: "delete_file", args: { path: "src/app.ts" } },
+      "run-123",
+    );
+
+    expect(result.tool).toBe("delete_file");
+    if (result.tool !== "delete_file") throw new Error("expected delete_file");
+    expect(result.result.deleted).toBe("src/app.ts");
+    expect(result.result.backedUp).toBe(true);
+    expect(existsSync(path.join(root, "src", "app.ts"))).toBe(false);
+
+    // Verify workspace_tree was emitted upon deletion
+    const afterTreeCount = workspaceEvents.filter((e) => e.type === "workspace_tree").length;
+    expect(afterTreeCount).toBeGreaterThan(initialTreeCount);
   });
 
   it("executes run_command tool", async () => {

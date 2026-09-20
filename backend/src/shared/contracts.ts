@@ -106,7 +106,7 @@ export interface SubtaskPlan {
 
 // ── Harness types (HARNESS.md) ──────────────────────────────────────────
 
-export type HarnessToolName = "list_dir" | "read_file" | "search" | "write_file" | "run_command";
+export type HarnessToolName = "list_dir" | "read_file" | "search" | "write_file" | "delete_file" | "run_command";
 
 export interface WorkspaceInfo {
   root: string;
@@ -132,6 +132,12 @@ export interface HarnessWriteResult {
   diff?: string;
 }
 
+export interface HarnessDeleteResult {
+  deleted: string;
+  backedUp: boolean;
+  backupPath?: string;
+}
+
 export interface HarnessCommandResult {
   stdout: string;
   stderr: string;
@@ -145,6 +151,7 @@ export type HarnessToolCall =
   | { tool: "read_file"; args: { path: string } }
   | { tool: "search"; args: { query: string; path?: string } }
   | { tool: "write_file"; args: { path: string; content: string } }
+  | { tool: "delete_file"; args: { path: string } }
   | { tool: "run_command"; args: { command: string } };
 
 export type HarnessToolResult =
@@ -152,6 +159,7 @@ export type HarnessToolResult =
   | { tool: "read_file"; result: string }
   | { tool: "search"; result: HarnessSearchMatch[] }
   | { tool: "write_file"; result: HarnessWriteResult }
+  | { tool: "delete_file"; result: HarnessDeleteResult }
   | { tool: "run_command"; result: HarnessCommandResult };
 
 export type WorkspaceEvent =
