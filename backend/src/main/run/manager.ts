@@ -60,6 +60,9 @@ import {
 import { createConfirmation, cancelPending, decide } from "../confirmation/store.js";
 import { routeTask } from "../router/deterministic-router.js";
 import { classifyIntent, type IntentDecision } from "../router/intent-classifier.js";
+import { composeTools } from "../router/tool-compositor.js";
+import { pickDriverModel } from "../router/driver-router.js";
+import { AgentLoop } from "../agent/agent-loop.js";
 import { executePython } from "../tools/python.js";
 import { generateDocx, generateXlsx } from "../tools/artifacts.js";
 import { sanitizePythonSource } from "../validators/responses.js";
@@ -724,6 +727,98 @@ export class RunManager {
     const chatId = this.chatIdForRunIfPresent(runId);
     const history = chatId ? this.getRecentChatHistory(chatId, text) : [];
     const chatArtifacts = chatId ? this.getChatArtifacts(chatId) : [];
+
+    // Feature switch: Enabled by default unless explicitly disabled, or when running legacy test suites
+    const useUnifiedAgentV2 = process.env.WORKBENCH_AGENT_V2 !== "false";
+
+    if (useUnifiedAgentV2) {
+      // ── Unified Agent Loop (Sovereign Workbench v2) ────────────────────────
+      this.state(runId, "classifying");
+
+      const driverDecision = pickDriverModel(text, attachments, isWorkspaceActive);
+      const requestId = randomUUID();
+      recordRouting(runId, requestId, driverDecision.taskType, driverDecision.modelId, driverDecision.reason);
+      this.emit({ type: "routing", runId, ...driverDecision });
+
+      this.state(runId, "planning");
+
+      // Compose tools strictly from runtime environment state
+      const kbStats = this.ragService?.getStats();
+      const hasKnowledgeBaseDocs = Boolean(kbStats && kbStats.docCount > 0 && kbStats.chunkCount > 0);
+      const tools = composeTools(
+        {
+          hasWorkspace: isWorkspaceActive,
+          hasAttachments: attachments.length > 0,
+          hasKnowledgeBaseDocs,
+        },
+        driverDecision.modelId,
+      );
+
+      const workspaceRoot = isWorkspaceActive && this.harness
+        ? this.harness.requireActiveWorkspace().root
+        : resolveRunPath(runId, "intermediate", "intermediate");
+
+      const toolContext = {
+        runId,
+        workspaceRoot,
+        gateway: this.gateway,
+        harness: this.harness,
+        grounding: this.grounding as any,
+        emitRunEvent: (event: any) => this.emit(event),
+        devWorkload: this.runDevWorkload.get(runId) ?? false,
+      };
+
+      const systemPrompt = `You are Sovereign Workbench, an expert engineering assistant with access to local tools.
+Solve the user's task step-by-step.
+Follow these operational guidelines:
+1. When inspecting files, explore and read the existing code/data first before proposing modifications.
+2. When performing calculations or fixing bugs, verify code execution in the sandbox.
+3. If an error occurs during tool execution, diagnose the error and retry with a corrected action.
+4. When finished, provide a clear, grounded summary of the actions taken. Do not invoke further tools once done.`;
+
+      this.state(runId, "acting");
+
+      const agentLoop = new AgentLoop();
+      try {
+        const loopResult = await agentLoop.run({
+          runId,
+          driverModelId: driverDecision.modelId,
+          userPrompt: text,
+          systemPrompt,
+          tools,
+          context: toolContext,
+          recentChatHistory: history,
+          maxTurns: 15,
+          devWorkload: this.runDevWorkload.get(runId) ?? false,
+          onPlanConfirmationRequired: async (planText, firstCalls) => {
+            return new Promise<boolean>((resolve) => {
+              const firstActionsSummary = firstCalls.map((c: any) => c.name).join(", ");
+              const prompt = `Agent proposed execution plan:\n${planText.slice(0, 300)}\n\nFirst proposed actions: ${firstActionsSummary}\nApprove execution?`;
+
+              void this.awaitConfirmation(
+                runId,
+                "execute_python",
+                async () => resolve(true),
+                planText,
+                prompt,
+              ).catch(() => resolve(false));
+            });
+          },
+          emitEvent: (event) => this.emit(event),
+        });
+
+        if (loopResult.completed) {
+          this.persistAssistant(runId, loopResult.finalText, loopResult.modelId);
+          this.complete(runId);
+        }
+        return;
+      } catch (err: any) {
+        this.fail(runId, err);
+        return;
+      }
+    }
+
+    // ── Legacy Multi-Branch Path (Kept for Phase 4 strangler verification) ──
     const intent = classifyIntent({
       userText: text,
       attachment,
@@ -733,7 +828,7 @@ export class RunManager {
       hasRecentArtifacts: chatArtifacts.length > 0,
     });
 
-    // 1. Standalone file deliverable branch (negative workspace constraint or isolated deliverable requested)
+    // 1. Standalone file deliverable branch
     if (intent.actionTarget === "standalone_file") {
       await this.executeStandaloneFileCreation(runId, text, intent);
       return;
@@ -746,8 +841,6 @@ export class RunManager {
         return;
       }
 
-      // If user specifically requested writing/creating a file but no workspace is active,
-      // create it in run output as an artifact so user can view/download it, and guide them.
       if (
         /\b(create|write|save|make|add|generate)\b/i.test(text) &&
         /\b(file|\.txt|\.js|\.ts|\.json|\.md|\.py|\.csv|\.html)\b/i.test(text)
@@ -757,7 +850,7 @@ export class RunManager {
       }
     }
 
-    // 3. Vision action branch (PDF / image multimodal attachments)
+    // 3. Vision action branch
     if (intent.actionTarget === "vision" && attachments.length > 0) {
       await this.executeVisionTask(runId, text, attachments, intent);
       return;
@@ -765,7 +858,6 @@ export class RunManager {
 
     this.state(runId, "classifying");
     
-    // Dynamically generate the plan
     const { generatePlan } = await import("../router/planner.js");
     const { routeSubtask, routeTask } = await import("../router/deterministic-router.js");
     
@@ -773,7 +865,6 @@ export class RunManager {
 
     this.state(runId, "planning");
     
-    // Emit plan steps to the UI
     plan.tasks.forEach((task, idx) => {
       this.emit({
         type: "plan_step",
@@ -785,19 +876,15 @@ export class RunManager {
 
     this.state(runId, "acting");
 
-    // Execute the subtask plan sequentially
     for (const task of plan.tasks) {
-      // 1. Route specific to this subtask
       const route = plan.tasks.length === 1
         ? routeTask(text, attachments.length > 0 ? attachments : attachment)
         : routeSubtask(task.type);
       
-      // 2. Record and emit routing decision
-      const requestId = randomUUID();
-      recordRouting(runId, requestId, route.taskType, route.modelId, route.reason);
+      const reqId = randomUUID();
+      recordRouting(runId, reqId, route.taskType, route.modelId, route.reason);
       this.emit({ type: "routing", runId, ...route });
 
-      // 3. Execute subtask
       if (route.taskType === "code") {
         if (attachments.length > 0) {
           await this.executeDataTask(runId, text, attachments);
