@@ -63,9 +63,8 @@ export function listDir(
   relativePath: string = ".",
   maxDepth: number = 4,
 ): DirEntry[] {
-<<<<<<< HEAD
   if (maxDepth < 1) return [];
-=======
+
   const cacheKey = `${workspaceRoot}:${relativePath}:${maxDepth}`;
   const cached = listDirCache.get(cacheKey);
   const now = Date.now();
@@ -77,7 +76,6 @@ export function listDir(
     // Return shallow copy to prevent callers from mutating cached array
     return [...cached.entries];
   }
->>>>>>> origin/main
 
   const target = resolveSafe(workspaceRoot, relativePath);
   const entries: DirEntry[] = [];
