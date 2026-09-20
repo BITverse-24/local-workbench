@@ -181,23 +181,25 @@ data/
 
 ## 5. Core Execution Lifecycles
 
-### 5.1 Agent Task Execution Loop (`RunManager`)
+### 5.1 Unified Agent Execution Loop (`RunManager` & `AgentLoop` — v2 Architecture)
 ```
 1. User enters prompt (and optional attachment) in InputBar
 2. Frontend calls workbench:startRun(input)
 3. RunManager creates Run ID and directory data/runs/<runId>/
-4. Intent Classifier & Deterministic Router analyze prompt + attachment
+4. Driver Router selects lead model based on request modality (code vs draft)
    - Emits 'routing' event (TaskType + ModelId + Reason) to UI
-5. RunManager transitions to 'planning' -> streams execution plan
-   - Emits 'plan_step' events to UI transcript
-6. RunManager transitions to 'acting' -> executes tools
-   - Invokes specialized tools: vision extraction tool (vision-qwen25vl for OCR/drawings), RAG grounding (retrieve_sop), sandboxed Python (execute_python), or deliverable tools (.docx / .xlsx / .md)
-   - If tool requires approval (e.g. execute_python, generate_docx), creates PendingAction
-   - Emits 'confirmation_required' -> UI shows ConfirmationModal
-   - User approves -> workbench:confirmAction() -> execution proceeds
-7. Generated files written to data/runs/<runId>/output/
-   - Emits 'artifact_ready' event -> UI renders artifact chip in ArtifactPane
-8. RunManager transitions to 'completed' -> writes assistant summary to chat
+5. Tool Surface Compositor inspects runtime environment (workspace mounted? attachments? KB docs?)
+   - Assembles available tools: file tools (list_dir, read_file, write_file...), specialist tools (extract_document, generate_code, generate_text, retrieve_knowledge, execute_python, generate_deliverable)
+6. AgentLoop dispatches turn to driver model with native `tools` and `tool_choice: "auto"`
+   - Model outputs scratchpad thinking/plan -> emits 'agent_thinking' event to UI transcript
+   - Pure Chat: If model emits no tool calls on turn 1, completes immediately with zero tool overhead
+   - Agentic Plan Confirmation Gate: If model invokes tools on turn 1, pauses for upfront user review of plan + proposed actions
+7. Autonomous Tool Execution:
+   - ToolDispatcher runs independent tool calls concurrently via Promise.all()
+   - Emits 'tool_call', 'tool_result', and 'artifact_ready' events to UI
+   - Sliding-Window Context Compaction automatically summarizes tool outputs older than 2 turns to protect local GPU VRAM
+8. Loop repeats (up to maxTurns) until model provides final text answer
+9. RunManager persists assistant message to SQLite and transitions to 'completed'
 ```
 
 ### 5.2 Workspace Harness Loop (`HarnessManager`)
