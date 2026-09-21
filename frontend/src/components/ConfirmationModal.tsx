@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { BasicMarkdown } from "./ChatArea";
 
 type Props = {
   open: boolean;
@@ -95,14 +96,25 @@ export default function ConfirmationModal({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onApprove, onReject]);
 
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (!open || !action) return;
+    setNow(Date.now());
+    const interval = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [open, action]);
+
   const expiresIn = useMemo(() => {
     if (!action) return "";
-    const ms = Date.parse(action.expiresAt) - Date.now();
+    const ms = Date.parse(action.expiresAt) - now;
     if (ms <= 0) return "expired";
     const m = Math.floor(ms / 60000);
     const s = Math.floor((ms % 60000) / 1000);
     return `${m}:${String(s).padStart(2, "0")} remaining`;
-  }, [action]);
+  }, [action, now]);
 
   const handleCopyCode = useCallback(async () => {
     if (!action?.preview) return;
@@ -255,42 +267,8 @@ export default function ConfirmationModal({
 
             {/* Viewport Content */}
             {isPlan ? (
-              <div className="flex-1 overflow-auto max-h-[440px] min-h-[180px] p-4 select-text text-sm leading-relaxed text-[var(--text-primary)] space-y-2">
-                {previewLines.map((line, idx) => {
-                  const trimmed = line.trim();
-                  if (!trimmed) return <div key={idx} className="h-1.5" />;
-                  const isNumbered = /^\d+\./.test(trimmed);
-                  const isBullet = /^[-*•]/.test(trimmed);
-                  const isHeader = /^#+/.test(trimmed);
-
-                  if (isNumbered || isBullet) {
-                    const firstSpace = trimmed.indexOf(" ");
-                    const bullet = firstSpace > 0 ? trimmed.slice(0, firstSpace) : "•";
-                    const rest = firstSpace > 0 ? trimmed.slice(firstSpace + 1) : trimmed;
-                    return (
-                      <div key={idx} className="flex items-start gap-2.5 pl-1.5">
-                        <span className="font-mono text-xs text-[var(--accent)] font-semibold mt-0.5 shrink-0 bg-[var(--accent)]/10 px-1.5 py-0.5 rounded">
-                          {bullet}
-                        </span>
-                        <span className="text-[var(--text-primary)]">
-                          {rest}
-                        </span>
-                      </div>
-                    );
-                  }
-                  if (isHeader) {
-                    return (
-                      <div key={idx} className="font-semibold text-sm text-[var(--text-primary)] pt-1 pb-0.5 border-b border-[var(--border-subtle)]">
-                        {trimmed.replace(/^#+\s*/, "")}
-                      </div>
-                    );
-                  }
-                  return (
-                    <div key={idx} className="text-[var(--text-secondary)]">
-                      {line}
-                    </div>
-                  );
-                })}
+              <div className="flex-1 overflow-auto max-h-[440px] min-h-[180px] p-4 select-text text-sm leading-relaxed text-[var(--text-primary)]">
+                <BasicMarkdown text={action.preview || ""} />
               </div>
             ) : (
               /* Scrollable Code Content with Line Numbers */

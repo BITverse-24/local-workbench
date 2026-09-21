@@ -159,7 +159,7 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   );
 }
 
-const BasicMarkdown = React.memo(function BasicMarkdown({ text }: { text: string }) {
+export const BasicMarkdown = React.memo(function BasicMarkdown({ text }: { text: string }) {
   if (!text) return null;
   const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
   const segments: Array<{ type: 'text' | 'code'; content: string; lang?: string }> = [];

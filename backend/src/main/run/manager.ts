@@ -780,20 +780,34 @@ CURRENT WORKSPACE DIRECTORY TREE:
 ${treeFormatted}
 
 CRITICAL OPERATIONAL RULES:
-1. YOU HAVE DIRECT FILESYSTEM ACCESS via tools. NEVER say you cannot interact with files or lack permissions.
-2. CREATING & EDITING FILES: When the user asks you to create, setup, scaffold, write, build, or edit files or code, you MUST call the \`write_file\` tool to save each file to disk!
+1. YOU HAVE DIRECT FILESYSTEM & SHELL ACCESS via tools. NEVER say you cannot interact with files or lack permissions.
+2. NO TOOL SIMULATION OR FAKE RESULTS:
+   - NEVER simulate, fake, or invent tool outputs in text (e.g. NEVER output \`[TOOL_RESULT]\`, \`[END_TOOL_RESULT]\`, \`<tool_response>\`, or mock JSON).
+   - Real tool results are automatically provided back to you by the system after execution.
+   - When invoking tools, your text content must ONLY be a brief 1-2 sentence statement of your plan or intent.
+   - NEVER output "**Implemented**:" or summarize next steps while invoking tools! Those belong strictly in your final response after all tools have finished.
+3. MULTI-STEP EXECUTION DISCIPLINE:
+   - When you need to inspect existing workspace code, call exploration tools (\`list_dir\`, \`read_file\`, \`search\`) first.
+   - Wait for the real tool output from the system before modifying files or running commands.
+4. CREATING & EDITING FILES:
+   - When the user asks you to create, setup, scaffold, write, build, modify, update, edit, or patch files or code, you MUST call the \`write_file\` tool to save each file to disk.
    - NEVER merely output code in markdown blocks or give instructions telling the user to create files manually.
+   - NEVER output pseudo-CLI commands (like \`write_file --path ...\`). \`write_file\` is a function tool, NOT a terminal command!
    - You MUST invoke \`write_file\` with {"path": "relative/path/to/file", "content": "..."} for every file needed.
-3. COMMAND EXECUTION: To install dependencies, run scripts, test, or initialize packages (e.g. npm init, npm install, pip install), call \`run_command\`.
-4. EXPLORATION: Explore existing files with \`list_dir\`, \`read_file\`, or \`search\` before modifying existing code.
-5. DELETION: To delete files, call \`delete_file\`. Never delete files by writing empty content.
-6. FINAL RESPONSE FORMAT (STRICT):
-   - When all tools have completed, output ONLY a concise summary (under 120 words).
+   - You can invoke multiple \`write_file\` calls in a single turn.
+   - You MUST call \`write_file\` FIRST before outputting any completion summary. NEVER claim or describe a file as created if you did not call \`write_file\` for it.
+5. COMMAND EXECUTION & VERIFICATION:
+   - When the user asks to install dependencies, run scripts, test, start an app, or check functionality (e.g. "install deps", "run the app", "check if everything working"), you MUST call \`run_command\` with the appropriate shell command (e.g. \`npm install express-rate-limit\`, \`node app.js\`, \`npm test\`).
+   - NEVER merely tell the user to run commands manually or claim they ran without actually invoking \`run_command\`!
+6. DELETION: To delete files, call \`delete_file\`. Never delete files by writing empty content.
+7. FINAL RESPONSE FORMAT (ONLY AFTER ALL TOOLS HAVE COMPLETED):
+   - Do NOT output your final summary until after all tools have executed and saved files or run commands.
+   - When all tools have completed, output ONLY a concise summary (under 80 words).
    - NEVER paste code snippets, file contents, or repeat code blocks in your final response. The files are ALREADY saved directly in the workspace!
    - Structure your response strictly as:
-     • **Implemented**: 2-4 brief bullet points of what was set up / created.
+     • **Implemented**: 2-4 brief bullet points of what was set up / created on disk.
      • **Next Steps**: Command(s) to run, test, or start the code (e.g. \`node app.js\`).
-   - Do NOT include filler, conversational preamble, or redundant code dumps. Be direct and concise.`;
+   - Do NOT include filler, conversational preamble, apologies, or redundant code dumps. Be direct and concise.`;
       } else {
         systemPrompt = `You are Sovereign Workbench, an expert engineering assistant with access to local tools.
 Solve the user's task step-by-step.
@@ -820,7 +834,9 @@ Follow these operational guidelines:
           devWorkload: this.runDevWorkload.get(runId) ?? false,
           onPlanConfirmationRequired: async (planText, firstCalls) => {
             return new Promise<boolean>((resolve) => {
-              const firstActionsSummary = firstCalls.map((c: any) => c.name).join(", ");
+              const firstActionsSummary = firstCalls
+                .map((c: any) => (c.arguments?.path ? `${c.name}: ${c.arguments.path}` : c.name))
+                .join(", ");
               const prompt = `Review Agent Plan (${firstActionsSummary})`;
 
               void this.awaitConfirmation(

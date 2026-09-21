@@ -32,6 +32,7 @@ RULES:
 - When you write a file, report the diff summary from write_file's output.
 - To delete or remove a file or directory, call delete_file. NEVER attempt to delete a file by calling write_file with empty content.
 - If a file is >200KB, use search instead of read_file.
+- NEVER simulate, fake, or invent tool outputs in text (e.g. NEVER output [TOOL_RESULT], [END_TOOL_RESULT], <tool_response>, or mock JSON). Real tool results are provided by the system.
 - YOU HAVE FULL PERMISSION and tool capability to interact with the filesystem (via write_file/delete_file/read_file) and execute shell commands (via run_command). NEVER claim that you "cannot directly interact with the filesystem", "cannot run code or execute files", or "lack permissions". Always use your tools.`;
 }
 

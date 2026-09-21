@@ -3,7 +3,12 @@ import type { ModelId, RunEvent } from "../../shared/contracts.js";
 import type { AgentTool, ToolExecutionContext } from "../tools/types.js";
 import { ToolDispatcher } from "./tool-dispatcher.js";
 import { compactConversationHistory, type AgentMessage } from "./context-manager.js";
-import { extractCodeBlocksWithFilenames, cleanFinalSummary } from "./code-extractor.js";
+import {
+  extractCodeBlocksWithFilenames,
+  cleanFinalSummary,
+  cleanPlanPreview,
+  extractShellCommands,
+} from "./code-extractor.js";
 
 export interface AgentLoopOptions {
   runId: string;
@@ -99,37 +104,79 @@ export class AgentLoop {
       let effectiveToolCalls: any[] | null = tool_calls;
 
       // 4. Guardrail: If model lazily output conversational text/code without invoking tools
-      // when the user requested creating or setting up files in the workspace:
-      // CRITICAL: Only synthesize tool calls if tools have NOT yet executed in this run!
+      // when the user requested creating files, setting up projects, or running commands/tests:
+      // CRITICAL: Only synthesize tool calls or nudge if tools have NOT yet executed in this run!
       // Once tools have executed, any subsequent text without tool calls is the model's completion summary!
-      if (!hasExecutedTools && (!effectiveToolCalls || effectiveToolCalls.length === 0) && dispatcher.getTool("write_file")) {
-        const extracted = extractCodeBlocksWithFilenames(content ?? "");
-        if (extracted.length > 0) {
-          effectiveToolCalls = extracted.map((file) => ({
-            id: `call_${randomUUID().slice(0, 8)}`,
-            name: "write_file",
-            arguments: {
-              path: file.path,
-              content: file.content,
-            },
-          }));
-        } else if (
-          turn === 1 &&
-          /\b(create|write|setup|set up|scaffold|build|make|add|generate|init|initialize)\b/i.test(userPrompt) &&
-          /\b(file|files|app|application|project|code|server|api|repo|directory|folder|script|express|react|node|python)\b/i.test(userPrompt)
-        ) {
-          // Nudge model to invoke write_file
-          messages.push({
-            role: "assistant",
-            content,
-            turn,
-          });
-          messages.push({
-            role: "user",
-            content: `[SYSTEM FEEDBACK]: You answered with conversational instructions or text, but the user requested creating or setting up files in the workspace. No files were written to disk. You MUST invoke the \`write_file\` tool (with {"path": "relative/path/to/file", "content": "..."}) for each file to create them on disk. Please call \`write_file\` now.`,
-            turn,
-          });
-          continue;
+      if (!hasExecutedTools && (!effectiveToolCalls || effectiveToolCalls.length === 0)) {
+        // A. File creation extraction: If model provided file code blocks
+        if (dispatcher.getTool("write_file")) {
+          const extractedFiles = extractCodeBlocksWithFilenames(content ?? "");
+          if (extractedFiles.length > 0) {
+            effectiveToolCalls = extractedFiles.map((file) => ({
+              id: `call_${randomUUID().slice(0, 8)}`,
+              name: "write_file",
+              arguments: {
+                path: file.path,
+                content: file.content,
+              },
+            }));
+          }
+        }
+
+        // B. Shell command extraction: If model provided shell code blocks for an execution/install request
+        if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && dispatcher.getTool("run_command")) {
+          const extractedCmds = extractShellCommands(content ?? "");
+          if (
+            extractedCmds.length > 0 &&
+            /\b(install|deps|dependencies|run|start|execute|test|check|verify|launch|build|npm|pip|node|python)\b/i.test(userPrompt)
+          ) {
+            effectiveToolCalls = extractedCmds.map((cmd) => ({
+              id: `call_${randomUUID().slice(0, 8)}`,
+              name: "run_command",
+              arguments: {
+                command: cmd,
+              },
+            }));
+          }
+        }
+
+        // C. System Nudges: If model still returned no tool calls on turn 1 despite actionable requests
+        if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && turn === 1) {
+          const isCommandRequest =
+            dispatcher.getTool("run_command") &&
+            /\b(install|deps|dependencies|run|start|execute|test|check|verify|launch|build|npm|pip|node|python)\b/i.test(userPrompt);
+
+          const isFileCreationRequest =
+            dispatcher.getTool("write_file") &&
+            ((/\b(create|write|setup|set up|scaffold|build|make|add|generate|init|initialize|implement|put|modify|update|edit|change|patch|fix|refactor|apply|replace|do it)\b/i.test(userPrompt) ||
+              /\b(created|implemented|added|written|generated|modified|updated|edited|patched)\b/i.test(content ?? "")) &&
+             /\b(file|files|app|application|project|code|server|api|repo|directory|folder|script|express|react|node|python|route|routes|middleware|endpoint|endpoints|handler|handlers|service|component|module|auth)\b/i.test(userPrompt + " " + (content ?? "")));
+
+          if (isCommandRequest) {
+            messages.push({
+              role: "assistant",
+              content,
+              turn,
+            });
+            messages.push({
+              role: "user",
+              content: `[SYSTEM FEEDBACK]: The user requested executing commands or installing dependencies ("${userPrompt.trim()}"), but no tools were invoked. You MUST invoke the \`run_command\` tool (with {"command": "..."}) to execute these actions on disk. Please invoke \`run_command\` now.`,
+              turn,
+            });
+            continue;
+          } else if (isFileCreationRequest) {
+            messages.push({
+              role: "assistant",
+              content,
+              turn,
+            });
+            messages.push({
+              role: "user",
+              content: `[SYSTEM FEEDBACK]: You provided code or conversational text, but did not execute tools. DO NOT dump code in chat or output pseudo CLI commands. You MUST invoke the native \`write_file\` tool (with {"path": "relative/path/to/file", "content": "..."}) to write files directly to disk. Please call \`write_file\` now.`,
+              turn,
+            });
+            continue;
+          }
         }
       }
 
@@ -161,7 +208,22 @@ export class AgentLoop {
 
       // 6. Single-gate confirmation check on turn 1
       if (turn === 1 && !confirmed && onPlanConfirmationRequired) {
-        const planDescription = content || `Executing ${effectiveToolCalls.length} initial actions.`;
+        const actionsList = effectiveToolCalls
+          .map((c: any) => {
+            const detail = c.arguments?.command
+              ? `\`${c.arguments.command}\``
+              : c.arguments?.path
+              ? `\`${c.arguments.path}\``
+              : Object.keys(c.arguments || {}).length > 0
+              ? `\`${JSON.stringify(c.arguments)}\``
+              : "";
+            return detail ? `• **${c.name}**: ${detail}` : `• **${c.name}**`;
+          })
+          .join("\n");
+        const cleanedContent = cleanPlanPreview(content ?? "");
+        const planDescription = cleanedContent
+          ? `${cleanedContent}\n\n**Proposed Operations**:\n${actionsList}`
+          : `**Proposed Operations**:\n${actionsList}`;
         const approved = await onPlanConfirmationRequired(planDescription, effectiveToolCalls);
         if (!approved) {
           emitEvent({

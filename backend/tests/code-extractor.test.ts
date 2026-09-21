@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { extractCodeBlocksWithFilenames, cleanFinalSummary } from "../src/main/agent/code-extractor.js";
+import {
+  extractCodeBlocksWithFilenames,
+  cleanFinalSummary,
+  cleanPlanPreview,
+  extractShellCommands,
+} from "../src/main/agent/code-extractor.js";
 
 describe("extractCodeBlocksWithFilenames", () => {
   it("extracts files when filename is in comment on line 1", () => {
@@ -150,5 +155,162 @@ npm start
     expect(result).not.toContain("router.get");
     expect(result).toContain("**Implemented**:");
     expect(result).toContain("npm start");
+  });
+});
+
+describe("cleanPlanPreview", () => {
+  it("strips hallucinated [TOOL_RESULT] JSON blocks from turn-1 model responses", () => {
+    const rawTurn1 = `
+[TOOL_RESULT]
+{
+  "files": [
+    {
+      "name": "app.js",
+      "type": "file",
+      "size": 12000000
+    },
+    {
+      "name": "package.json",
+      "type": "file",
+      "size": 2870
+    }
+  ]
+}
+[END_TOOL_RESULT]
+
+To add a simple rate limiter middleware to the Express app, we need to follow these steps:
+
+1. Install \`express-rate-limit\` package.
+2. Create a rate limiter middleware.
+3. Apply the rate limiter middleware to specific routes or the entire app.
+
+Let's start by installing \`express-rate-limit\`.
+
+\`\`\`bash
+npm install express-rate-limit
+\`\`\`
+
+**Implemented**:
+- Created \`middleware/rateLimiter.js\` file with rate limiter middleware.
+- Updated \`app.js\` to use the rate limiter middleware.
+
+**Next Steps**:
+Run the server using \`node app.js\` to start the Express application with the rate limiter in place.
+`;
+
+    const cleaned = cleanPlanPreview(rawTurn1);
+
+    // [TOOL_RESULT] and JSON should be completely gone
+    expect(cleaned).not.toContain("[TOOL_RESULT]");
+    expect(cleaned).not.toContain("[END_TOOL_RESULT]");
+    expect(cleaned).not.toContain('"files": [');
+
+    // Code blocks should be stripped from plan preview
+    expect(cleaned).not.toContain("```bash");
+
+    // Premature "Implemented" and "Next Steps" should be stripped
+    expect(cleaned).not.toContain("**Implemented**");
+    expect(cleaned).not.toContain("middleware/rateLimiter.js");
+    expect(cleaned).not.toContain("**Next Steps**");
+
+    // The genuine step-by-step plan rationale should remain
+    expect(cleaned).toContain("To add a simple rate limiter middleware to the Express app, we need to follow these steps:");
+    expect(cleaned).toContain("1. Install `express-rate-limit` package.");
+    expect(cleaned).toContain("2. Create a rate limiter middleware.");
+    expect(cleaned).toContain("3. Apply the rate limiter middleware to specific routes or the entire app.");
+  });
+
+  it("strips <tool_response> and <tool_call> tags", () => {
+    const raw = `<tool_response>{"ok": true}</tool_response>I will set up the routes and configure authentication.`;
+    expect(cleanPlanPreview(raw)).toBe("I will set up the routes and configure authentication.");
+  });
+});
+
+describe("extractShellCommands", () => {
+  it("extracts commands from bash/sh code blocks", () => {
+    const text = `
+To install and start:
+\`\`\`bash
+npm install express-rate-limit
+node app.js
+\`\`\`
+`;
+    const cmds = extractShellCommands(text);
+    expect(cmds).toEqual(["npm install express-rate-limit", "node app.js"]);
+  });
+
+  it("strips leading prompt symbols ($ )", () => {
+    const text = `
+\`\`\`sh
+$ npm install
+$ npm test
+\`\`\`
+`;
+    const cmds = extractShellCommands(text);
+    expect(cmds).toEqual(["npm install", "npm test"]);
+  });
+});
+
+describe("extractCodeBlocksWithFilenames robust patterns", () => {
+  it("extracts files with @ prefix and 'Here is the updated code for' phrasing", () => {
+    const text = `
+I apologize for the oversight. Let's correct this by invoking the \`write_file\` tool to save the updated \`@middleware/rateLimiter.js\` and \`app.js\` files.
+
+Here is the updated code for \`@middleware/rateLimiter.js\`:
+
+\`\`\`javascript
+const rateLimit = require('express-rate-limit');
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
+module.exports = limiter;
+\`\`\`
+
+And here is the updated code for \`app.js\`:
+
+\`\`\`javascript
+const express = require('express');
+const rateLimiter = require('./middleware/rateLimiter');
+const app = express();
+app.use(rateLimiter);
+module.exports = app;
+\`\`\`
+`;
+    const files = extractCodeBlocksWithFilenames(text);
+    expect(files).toHaveLength(2);
+    expect(files[0].path).toBe("middleware/rateLimiter.js");
+    expect(files[0].content).toContain("rateLimit = require");
+    expect(files[1].path).toBe("app.js");
+    expect(files[1].content).toContain("app.use(rateLimiter)");
+  });
+
+  it("extracts from pseudo-CLI write_file calls", () => {
+    const text = `
+Save the file using:
+write_file --path @middleware/rateLimiter.js --content "const x = 1;"
+`;
+    const files = extractCodeBlocksWithFilenames(text);
+    expect(files).toHaveLength(1);
+    expect(files[0].path).toBe("middleware/rateLimiter.js");
+    expect(files[0].content).toBe("const x = 1;");
+  });
+
+  it("cleans dangling intro lines in cleanFinalSummary", () => {
+    const text = `
+Here is the updated code for \`@middleware/rateLimiter.js\`:
+
+\`\`\`javascript
+const x = 1;
+\`\`\`
+
+Implemented:
+- Updated middleware/rateLimiter.js.
+
+Next Steps:
+- Run node app.js.
+`;
+    const cleaned = cleanFinalSummary(text, true);
+    expect(cleaned).not.toContain("Here is the updated code");
+    expect(cleaned).not.toContain("const x = 1");
+    expect(cleaned).toContain("Implemented:");
+    expect(cleaned).toContain("Next Steps:");
   });
 });
