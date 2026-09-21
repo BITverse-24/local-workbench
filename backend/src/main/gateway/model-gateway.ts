@@ -1307,7 +1307,8 @@ export class ModelGateway implements ModelClient {
     const endpointKey = `${model.baseUrl}:${model.model}`;
     const knownSupportsTools = this.toolParamCapabilities.get(endpointKey) ?? true;
     const effectiveTimeout = Math.max(options?.timeoutMs ?? 0, model.requestTimeoutMs ?? 0, 60000);
-    const effectiveMaxTokens = options?.maxTokens ?? model.maxOutputTokens ?? 4096;
+    const requestedMaxTokens = options?.maxTokens ?? model.maxOutputTokens ?? 4096;
+    const effectiveMaxTokens = isLocal ? Math.min(requestedMaxTokens, 2048) : requestedMaxTokens;
     const effectiveTemperature = options?.temperature ?? 0.2;
 
     const runId = options?.runId ?? "run-agent-loop";

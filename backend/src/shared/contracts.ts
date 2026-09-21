@@ -84,8 +84,8 @@ export type RunEvent =
   | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number; devWorkload?: boolean; providerEndpoint?: string }
   | { type: "plan_step"; runId: string; index: number; text: string }
   | { type: "agent_thinking"; runId: string; text: string; turn?: number }
-  | { type: "tool_call"; runId: string; tool: ToolName; summary: string }
-  | { type: "tool_result"; runId: string; tool: ToolName; summary: string }
+  | { type: "tool_call"; runId: string; tool: ToolName; summary: string; callId?: string; args?: Record<string, unknown> }
+  | { type: "tool_result"; runId: string; tool: ToolName; summary: string; callId?: string; output?: string; durationMs?: number }
   | { type: "confirmation_required"; runId: string; action: PendingAction }
   | { type: "artifact_ready"; runId: string; artifact: ArtifactRef }
   | { type: "assistant_message_chunk"; runId: string; messageId: string; delta: string; modelId: ModelId }

@@ -192,8 +192,26 @@ export function findReferencedWorkspaceFiles(
     }
   }
 
+  // If user requests deletion/removal of files, do NOT pre-load their contents into the prompt.
+  // The directory tree listing is already present in the prompt to inform tool calls.
+  const isDeletionIntent = /\b(?:delete|remove|rm|clean|wipe|unlink|destroy|clear)\b/i.test(combinedUserText);
+  if (isDeletionIntent) {
+    return [];
+  }
+
+  const IGNORED_EXTENSIONS = /\.(?:lock|map|min\.js|min\.css|png|jpg|jpeg|svg|ico|pdf|wasm|bin|gz|zip)$/i;
+  const IGNORED_FILENAMES = /^(?:package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|composer\.lock|\.DS_Store)$/i;
+
   const loadedFiles: Array<{ path: string; content: string }> = [];
+  let totalChars = 0;
+  const MAX_TOTAL_CHARS = 10000;
+  const MAX_PER_FILE_CHARS = 3000;
+
   for (const p of referencedPaths) {
+    if (totalChars >= MAX_TOTAL_CHARS) break;
+    const baseName = path.basename(p);
+    if (IGNORED_FILENAMES.test(baseName) || IGNORED_EXTENSIONS.test(baseName)) continue;
+
     const directMatch = allWorkspaceFiles.find(
       (f) =>
         f.toLowerCase() === p.toLowerCase() ||
@@ -203,14 +221,18 @@ export function findReferencedWorkspaceFiles(
     const targetRel = directMatch ?? p;
     try {
       const content = readFile(workspaceRoot, targetRel);
-      const truncated = content.length > 50000 ? `${content.slice(0, 50000)}\n... [truncated]` : content;
-      loadedFiles.push({ path: targetRel, content: truncated });
+      let formatted = content;
+      if (formatted.length > MAX_PER_FILE_CHARS) {
+        formatted = `${formatted.slice(0, MAX_PER_FILE_CHARS)}\n... [truncated remaining ${content.length - MAX_PER_FILE_CHARS} chars]`;
+      }
+      totalChars += formatted.length;
+      loadedFiles.push({ path: targetRel, content: formatted });
     } catch {
       // file might not exist yet or too large
     }
   }
 
-  return loadedFiles.slice(0, 10);
+  return loadedFiles.slice(0, 8);
 }
 
 type AttachmentRow = AttachmentReference & { runId: string; chatId: string };

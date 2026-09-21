@@ -64,9 +64,14 @@ export default function App() {
   const [serviceHealth, setServiceHealth] = useState<ModelHealth[] | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
   const [groundingEnabled, setGroundingEnabled] = useState(true);
-  const [groundingStatus, setGroundingStatus] = useState<{ status: "retrieving" | "injected" | "skipped"; chunkCount?: number } | null>(null);
+  const [, setGroundingStatus] = useState<{ status: "retrieving" | "injected" | "skipped"; chunkCount?: number } | null>(null);
   const activeRunRef = useRef<string | null>(null);
   activeRunRef.current = activeRunId;
+  const runEventsRef = useRef<RunEvent[]>([]);
+  runEventsRef.current = runEvents;
+  const activeRouteRef = useRef<{ taskType: string; modelId: string; reason: string } | null>(null);
+  activeRouteRef.current = activeRoute;
+  const runStartTimeRef = useRef<number | null>(null);
   const isRunning = runState !== null && !["completed", "failed", "cancelled"].includes(runState);
 
   // Onboarding state
@@ -180,16 +185,42 @@ export default function App() {
           setActiveRunId(rid);
         }
         if (event.type !== "assistant_message_chunk") {
-          setRunEvents((prev) => [...prev, event]);
+          setRunEvents((prev) => {
+            const next = [...prev, event];
+            runEventsRef.current = next;
+            return next;
+          });
         }
         switch (event.type) {
           case "run_state":
             setRunState(event.state);
             if (event.state === "completed" || event.state === "failed" || event.state === "cancelled") {
               setPendingConfirmation(null);
+              const currentEvents = [...runEventsRef.current];
+              if (currentEvents.length > 0) {
+                setMessages((prev) => {
+                  const lastIdx = prev.length - 1;
+                  if (lastIdx >= 0 && prev[lastIdx]?.role === "assistant" && !prev[lastIdx]?.execution) {
+                    const updated = [...prev];
+                    updated[lastIdx] = {
+                      ...updated[lastIdx]!,
+                      execution: {
+                        modelId: activeRouteRef.current?.modelId,
+                        taskType: activeRouteRef.current?.taskType,
+                        reason: activeRouteRef.current?.reason,
+                        events: currentEvents,
+                        durationMs: runStartTimeRef.current ? Date.now() - runStartTimeRef.current : undefined,
+                      },
+                    };
+                    return updated;
+                  }
+                  return prev;
+                });
+              }
             }
             break;
           case "routing":
+            activeRouteRef.current = { taskType: event.taskType, modelId: event.modelId, reason: event.reason };
             setActiveRoute({ taskType: event.taskType, modelId: event.modelId, reason: event.reason });
             break;
           case "confirmation_required":
@@ -254,20 +285,29 @@ export default function App() {
             break;
           case "assistant_message":
             setMessages((prev) => {
+              const currentEvents = [...runEventsRef.current];
+              const executionData = currentEvents.length > 0 ? {
+                modelId: event.modelId || activeRouteRef.current?.modelId,
+                taskType: activeRouteRef.current?.taskType,
+                reason: activeRouteRef.current?.reason,
+                events: currentEvents,
+                durationMs: runStartTimeRef.current ? Date.now() - runStartTimeRef.current : undefined,
+              } : undefined;
+
               const last = prev[prev.length - 1];
               if (last && (last.id === event.messageId || (last.role === "assistant" && (!last.text || last.id.startsWith("artifact-msg-"))))) {
                 return [
                   ...prev.slice(0, -1),
-                  { ...last, id: event.messageId, text: event.text },
+                  { ...last, id: event.messageId, text: event.text, runId: rid, execution: executionData ?? last.execution },
                 ];
               }
               const existingIdx = prev.findIndex((m) => m.id === event.messageId);
               if (existingIdx !== -1) {
                 const updated = [...prev];
-                updated[existingIdx] = { ...updated[existingIdx], text: event.text };
+                updated[existingIdx] = { ...updated[existingIdx], text: event.text, runId: rid, execution: executionData ?? updated[existingIdx]?.execution };
                 return updated;
               }
-              return [...prev, { id: event.messageId, role: "assistant", text: event.text }];
+              return [...prev, { id: event.messageId, role: "assistant", text: event.text, runId: rid, execution: executionData }];
             });
             break;
           case "grounding_context":
@@ -598,6 +638,8 @@ export default function App() {
           setHistory((prev) => prev.map((c) => (c.id === cid ? { ...c, updated_at: new Date().toISOString() } : c)));
 
           // Reset run UI
+          runStartTimeRef.current = Date.now();
+          runEventsRef.current = [];
           setRunEvents([]);
           setRunArtifacts([]);
           setRunError(null);
@@ -627,7 +669,13 @@ export default function App() {
           try {
             const latest = await wb.getMessages(cid);
             if (latest && latest.length > 0) {
-              setMessages(toChatMessages(latest));
+              setMessages((prev) => {
+                const loaded = toChatMessages(latest);
+                return loaded.map((m) => {
+                  const existing = prev.find((p) => p.id === m.id);
+                  return existing?.execution ? { ...m, execution: existing.execution } : m;
+                });
+              });
             }
           } catch {}
 
@@ -761,23 +809,6 @@ export default function App() {
               <span className="opacity-70 text-xs cursor-text">Full model response is in Model Trace (Settings sidebar & terminal logs) — expand provider_content_raw / normalized to see what the model returned.</span>
             </div>
           )}
-          {isRunning && (
-            <div className="mx-4 mt-2 flex items-center gap-2.5 text-sm text-[var(--text-secondary)]">
-              <span className="w-2 h-2 rounded-full bg-[var(--accent)]" />
-              <span className="font-medium">{runState === "awaiting_confirmation" ? "Awaiting confirmation" : `Run ${runState}...`}</span>
-              {groundingStatus && (
-                <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
-                  {groundingStatus.status === "retrieving"
-                    ? "Retrieving SOP context..."
-                    : groundingStatus.status === "injected"
-                    ? `Grounding: ${groundingStatus.chunkCount ?? 0} SOP chunks`
-                    : "Grounding: No SOP found"}
-                </span>
-              )}
-              <button onClick={handleCancelRun} className="ml-auto px-3 py-1 rounded-[var(--radius-sm)] neu-button text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Cancel</button>
-            </div>
-          )}
           <ChatArea
             messages={messages}
             onEditMessage={handleEditMessage}
@@ -787,6 +818,7 @@ export default function App() {
             runState={runState}
             activeRoute={activeRoute}
             runEvents={runEvents}
+            onCancel={handleCancelRun}
           />
           <InputBar
             input={input}

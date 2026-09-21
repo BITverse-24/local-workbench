@@ -8,6 +8,45 @@ export interface ExecutedToolOutput {
   result: ToolExecutionResult;
 }
 
+export function formatToolCallSummary(toolName: string, args: Record<string, unknown>): string {
+  const p = typeof args?.path === "string" ? args.path : (typeof args?.filePath === "string" ? args.filePath : (typeof args?.filename === "string" ? args.filename : ""));
+  const cmd = typeof args?.command === "string" ? args.command : (typeof args?.cmd === "string" ? args.cmd : "");
+  const q = typeof args?.query === "string" ? args.query : (typeof args?.search_query === "string" ? args.search_query : "");
+
+  switch (toolName) {
+    case "read_file":
+      return p ? `Reading "${p}"` : `Reading file`;
+    case "write_file":
+      return p ? `Writing "${p}"` : `Writing file`;
+    case "delete_file":
+      return p ? `Deleting "${p}"` : `Deleting file`;
+    case "search":
+      return q ? `Searching for "${q}"` : `Searching workspace`;
+    case "list_dir":
+      return p && p !== "." ? `Listing directory "${p}"` : `Listing workspace directory`;
+    case "run_command":
+      return cmd ? `Running: ${cmd}` : `Running terminal command`;
+    case "execute_python":
+      return `Executing Python script in sandbox`;
+    case "draft_code":
+      return `Drafting verified code`;
+    case "draft_note":
+      return `Drafting engineering review note`;
+    case "extract_document":
+    case "ocr_extract":
+      return p ? `Extracting document "${p}"` : `Extracting document`;
+    case "inspect_drawing":
+      return p ? `Inspecting drawing "${p}"` : `Inspecting engineering drawing`;
+    case "retrieve_sop":
+    case "retrieve_knowledge":
+      return q ? `Querying knowledge base for "${q}"` : `Querying local knowledge base`;
+    case "generate_deliverable":
+      return p ? `Generating deliverable "${p}"` : `Generating deliverable`;
+    default:
+      return `Executing ${toolName}`;
+  }
+}
+
 export class ToolDispatcher {
   private readonly toolMap = new Map<string, AgentTool>();
 
@@ -51,17 +90,22 @@ export class ToolDispatcher {
         }
 
         // Notify UI about tool execution
+        const callSummary = formatToolCallSummary(call.name, call.arguments);
         if (context.emitRunEvent) {
           context.emitRunEvent({
             type: "tool_call",
             runId: context.runId,
             tool: call.name,
-            summary: `Executing ${call.name}`,
+            summary: callSummary,
+            callId: call.id,
+            args: call.arguments,
           });
         }
 
+        const t0 = Date.now();
         try {
           const result = await tool.execute(call.arguments, context);
+          const durationMs = Date.now() - t0;
 
           // Notify UI about tool completion
           if (context.emitRunEvent) {
@@ -70,6 +114,9 @@ export class ToolDispatcher {
               runId: context.runId,
               tool: call.name,
               summary: result.summary,
+              callId: call.id,
+              output: typeof result.output === "string" ? result.output.slice(0, 4000) : JSON.stringify(result.output ?? "").slice(0, 4000),
+              durationMs,
             });
             if (result.artifacts && result.artifacts.length > 0) {
               for (const artifact of result.artifacts) {
@@ -89,6 +136,7 @@ export class ToolDispatcher {
             result,
           };
         } catch (err: any) {
+          const durationMs = Date.now() - t0;
           const errorResult: ToolExecutionResult = {
             output: `Error executing tool "${call.name}": ${err?.message ?? String(err)}`,
             summary: `Error in ${call.name}: ${err?.message ?? String(err)}`,
@@ -100,6 +148,9 @@ export class ToolDispatcher {
               runId: context.runId,
               tool: call.name,
               summary: errorResult.summary,
+              callId: call.id,
+              output: errorResult.output,
+              durationMs,
             });
           }
 

@@ -57,6 +57,31 @@ describe("findReferencedWorkspaceFiles", () => {
       const paths = res3.map((r) => r.path);
       expect(paths).toContain("app.js");
       expect(paths).toContain("middleware/rateLimiter.js");
+
+      // 4. Deletion requests do NOT pre-load file contents
+      const resDelete = findReferencedWorkspaceFiles(
+        "Delete all files in the workspace directory",
+        [],
+        tmpDir,
+        tree,
+        ["middleware/rateLimiter.js", "app.js", "package.json"],
+      );
+      expect(resDelete).toHaveLength(0);
+
+      // 5. Lockfiles are never loaded
+      const treeWithLock: DirEntry[] = [
+        ...tree,
+        { name: "package-lock.json", type: "file", size: 35000 },
+      ];
+      fs.writeFileSync(path.join(tmpDir, "package-lock.json"), "large lock content", "utf8");
+      const resLock = findReferencedWorkspaceFiles(
+        "Check package-lock.json",
+        [],
+        tmpDir,
+        treeWithLock,
+        ["package-lock.json"],
+      );
+      expect(resLock).toHaveLength(0);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

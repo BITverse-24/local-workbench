@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import ArtifactCard from './ArtifactCard';
 import RunWaitingIndicator from './RunWaitingIndicator';
+import AgentExecutionTimeline from './AgentExecutionTimeline';
 
 export type ChatFile = {
   name: string;
@@ -13,6 +14,14 @@ export type ChatMessage = {
   text: string;
   files?: Array<File | ChatFile>;
   artifacts?: ArtifactRef[];
+  runId?: string;
+  execution?: {
+    modelId?: string;
+    taskType?: string;
+    reason?: string;
+    durationMs?: number;
+    events: RunEvent[];
+  };
 };
 
 type Props = {
@@ -24,6 +33,7 @@ type Props = {
   runState?: RunState | null;
   activeRoute?: { taskType: string; modelId: string; reason: string } | null;
   runEvents?: RunEvent[];
+  onCancel?: () => void;
 };
 
 function formatSize(bytes: number): string {
@@ -323,6 +333,22 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
                 msg.text && <p className="text-[15px] sm:text-base leading-relaxed whitespace-pre-wrap break-words select-text">{msg.text}</p>
               ) : (
                 <>
+                  {msg.execution && msg.execution.events && msg.execution.events.length > 0 && (
+                    <div className="w-full mb-2">
+                      <AgentExecutionTimeline
+                        events={msg.execution.events}
+                        isRunning={false}
+                        activeRoute={{
+                          taskType: msg.execution.taskType ?? "code",
+                          modelId: msg.execution.modelId ?? "agent-loop",
+                          reason: msg.execution.reason ?? "",
+                        }}
+                        defaultExpanded={false}
+                        compact={true}
+                        totalDurationMs={msg.execution.durationMs}
+                      />
+                    </div>
+                  )}
                   {msg.text && <BasicMarkdown text={msg.text} />}
                   {msg.artifacts && msg.artifacts.length > 0 && (
                     <div className="w-full space-y-2.5 mt-2">
@@ -403,6 +429,7 @@ export default function ChatArea({
   runState = null,
   activeRoute = null,
   runEvents = [],
+  onCancel,
 }: Props) {
   const hasMessages = messages.length > 0;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -581,6 +608,7 @@ export default function ChatArea({
             runState={runState ?? null}
             activeRoute={activeRoute}
             runEvents={runEvents}
+            onCancel={onCancel}
           />
         )}
 
