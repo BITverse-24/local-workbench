@@ -91,6 +91,10 @@ export class AgentLoop {
       const activeMessages = compactConversationHistory(messages, turn, 2);
 
       // 2. Dispatch turn to model gateway with native tools
+      // When tools have already executed, the model is formulating its final summary.
+      // Capping maxTokens to 350 prevents verbose runaway text and saves 10-20s of local generation time.
+      const turnMaxTokens = hasExecutedTools ? 350 : undefined;
+
       const turnResponse = await context.gateway.chatWithTools(
         driverModelId,
         activeMessages,
@@ -98,6 +102,7 @@ export class AgentLoop {
         {
           runId,
           temperature: 0.2,
+          maxTokens: turnMaxTokens,
           devWorkload,
         },
       );
@@ -280,7 +285,7 @@ export class AgentLoop {
       }
       previousCallSignature = currentCallSignature;
 
-      // 6. Single-gate confirmation check on turn 1
+      // 6. Single-gate plan confirmation check on turn 1
       if (turn === 1 && !confirmed && onPlanConfirmationRequired) {
         const actionsList = effectiveToolCalls
           .map((c: any) => {

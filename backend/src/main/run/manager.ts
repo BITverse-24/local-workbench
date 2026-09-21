@@ -165,6 +165,23 @@ export function findReferencedWorkspaceFiles(
     }
   }
 
+  // 4. Proactive domain-concept matching: if user requests routes, middleware, or server files
+  const lowerUserText = combinedUserText.toLowerCase();
+  if (referencedPaths.size === 0) {
+    if (/\broutes?\b/i.test(lowerUserText)) {
+      const routeFiles = allWorkspaceFiles.filter((f) => f.startsWith("routes/") || f.includes("route"));
+      for (const rf of routeFiles.slice(0, 2)) referencedPaths.add(rf);
+    }
+    if (/\bmiddleware\b/i.test(lowerUserText)) {
+      const mwFiles = allWorkspaceFiles.filter((f) => f.startsWith("middleware/") || f.includes("middleware"));
+      for (const mf of mwFiles.slice(0, 2)) referencedPaths.add(mf);
+    }
+    if (/\b(?:server|app|express)\b/i.test(lowerUserText)) {
+      const entryFiles = allWorkspaceFiles.filter((f) => /^(?:app|server|index)\.[jt]sx?$/i.test(f));
+      for (const ef of entryFiles.slice(0, 2)) referencedPaths.add(ef);
+    }
+  }
+
   const loadedFiles: Array<{ path: string; content: string }> = [];
   for (const p of referencedPaths) {
     const directMatch = allWorkspaceFiles.find(
@@ -879,9 +896,11 @@ CRITICAL OPERATIONAL RULES:
    - Real tool results are automatically provided back to you by the system after execution.
    - When invoking tools, your text content must ONLY be a brief 1-2 sentence statement of your plan or intent.
    - NEVER output "**Implemented**:" or summarize next steps while invoking tools! Those belong strictly in your final response after all tools have finished.
-3. MULTI-STEP EXECUTION DISCIPLINE:
-   - When you need to inspect existing workspace code not shown above, call exploration tools (\`list_dir\`, \`read_file\`, \`search\`) first.
-   - Wait for the real tool output from the system before modifying files or running commands.
+3. DIRECT EXECUTION DISCIPLINE (ZERO-DISCOVERY):
+   - The CURRENT WORKSPACE DIRECTORY TREE and relevant files are ALREADY provided above.
+   - Do NOT waste round-trips calling \`list_dir\` or \`read_file\` on directories or files that are already listed or shown above!
+   - Proceed directly to implementing the user's requested action using \`write_file\` or \`run_command\`.
+   - ONLY call \`read_file\` or \`search\` if you genuinely need to inspect an unlisted file whose contents are NOT shown above.
 4. CREATING & EDITING FILES:
    - When the user asks you to create, setup, scaffold, write, build, modify, update, edit, or patch files or code, you MUST invoke \`write_file\` with {"path": "relative/path/to/file", "content": "..."} for every file needed.
    - You can invoke multiple \`write_file\` calls in a single turn.
