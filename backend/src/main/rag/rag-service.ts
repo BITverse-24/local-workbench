@@ -10,6 +10,7 @@ import {
 } from "../../../../ai/rag/index.js";
 import { getSetting } from "../persistence/settings-store.js";
 import type { ModelConfigRow } from "../../shared/contracts.js";
+import type Database from "better-sqlite3";
 
 export interface RAGStats {
   docCount: number;
@@ -46,6 +47,12 @@ export class RAGService {
   private ingestion!: IngestionPipeline;
   private embeddingService!: EmbeddingService;
   private initialized = false;
+
+  // PERF OPTIMIZATION: Cache prepared SQLite statements to eliminate SQL string parsing
+  // and compilation overhead on repeated Knowledge Base telemetry polls and document listings.
+  private listDocsStmt: Database.Statement | null = null;
+  private countDocsStmt: Database.Statement | null = null;
+  private countChunksStmt: Database.Statement | null = null;
 
   constructor(
     private dataDir: string,
@@ -97,7 +104,10 @@ export class RAGService {
     if (!this.initialized) return [];
     const sqlite = RAGDatabase.getSqlite();
     try {
-      const rows = sqlite.prepare("SELECT * FROM documents ORDER BY indexed_at DESC").all() as any[];
+      if (!this.listDocsStmt) {
+        this.listDocsStmt = sqlite.prepare("SELECT * FROM documents ORDER BY indexed_at DESC");
+      }
+      const rows = this.listDocsStmt.all() as any[];
       return rows.map((r) => ({
         doc_id: r.doc_id,
         title: r.title,
@@ -121,8 +131,14 @@ export class RAGService {
     }
     const sqlite = RAGDatabase.getSqlite();
     try {
-      const docRow = sqlite.prepare("SELECT COUNT(*) as count FROM documents").get() as { count: number };
-      const chunkRow = sqlite.prepare("SELECT COUNT(*) as count FROM chunks_fts").get() as { count: number };
+      if (!this.countDocsStmt) {
+        this.countDocsStmt = sqlite.prepare("SELECT COUNT(*) as count FROM documents");
+      }
+      if (!this.countChunksStmt) {
+        this.countChunksStmt = sqlite.prepare("SELECT COUNT(*) as count FROM chunks_fts");
+      }
+      const docRow = this.countDocsStmt.get() as { count: number };
+      const chunkRow = this.countChunksStmt.get() as { count: number };
       return {
         docCount: docRow?.count ?? 0,
         chunkCount: chunkRow?.count ?? 0,
