@@ -35,43 +35,67 @@ const EXECUTION_FOLLOWUP_PATTERN =
 
 // ── Action Verbs & Noun Categories ──────────────────────────────────────
 
-const FILE_ACTION_VERBS =
-  /\b(create|creates|created|creating|write|writes|written|writing|save|saves|saved|saving|make|makes|made|making|add|adds|added|adding|generate|generates|generated|generating|gen|edit|edits|edited|editing|modify|modifies|modified|modifying|update|updates|updated|updating|touch|touching|delete|deletes|deleted|deleting|remove|removes|removed|removing|erase|erases|erased|erasing|clean|cleans|cleaned|cleaning|clear|clears|cleared|clearing|wipe|wipes|wiped|wiping|purge|purges|purged|purging|append|produce|build|draft|output|export|dump|render|prepare|put|place)\b/i;
+// ── Action Verbs & Noun Categories ──────────────────────────────────────
 
-const FILE_CONTAINER_NOUNS =
-  /\b(file|files|txt file|script|scripts|archive)\b/i;
+export const ACTION_VERB_WORDS = [
+  "create", "write", "save", "make", "add", "generate", "edit", "modify",
+  "update", "touch", "delete", "remove", "erase", "clean", "clear", "wipe",
+  "purge", "change", "patch", "fix", "refactor", "apply", "replace",
+  "implement", "scaffold", "setup", "insert", "inject", "adjust", "tweak",
+  "rewrite", "revise", "integrate", "configure", "construct", "wire", "hook",
+  "include", "attach", "init", "initialize", "produce", "build", "draft",
+  "export", "dump", "put", "place", "render", "prepare", "append", "commit",
+  "store", "persist", "drop", "keep", "populate",
+];
 
-const REFERENTIAL_DELIVERABLE_NOUNS =
+export const FILE_ACTION_VERBS =
+  /\b(create|creates|created|creating|write|writes|written|writing|save|saves|saved|saving|make|makes|made|making|add|adds|added|adding|generate|generates|generated|generating|gen|edit|edits|edited|editing|modify|modifies|modified|modifying|update|updates|updated|updating|touch|touching|delete|deletes|deleted|deleting|remove|removes|removed|removing|erase|erases|erased|erasing|clean|cleans|cleaned|cleaning|clear|clears|cleared|clearing|wipe|wipes|wiped|wiping|purge|purges|purged|purging|append|appends|appended|appending|produce|produces|produced|producing|build|builds|built|building|draft|drafts|drafted|drafting|output|outputs|export|exports|exported|exporting|dump|dumps|dumped|dumping|render|renders|rendered|rendering|prepare|prepares|prepared|preparing|put|puts|putting|place|places|placed|placing|change|changes|changed|changing|patch|patches|patched|patching|fix|fixes|fixed|fixing|refactor|refactors|refactored|refactoring|apply|applies|applied|applying|replace|replaces|replaced|replacing|implement|implements|implemented|implementing|scaffold|scaffolds|scaffolded|scaffolding|setup|set up|setting up|sets up|insert|inserts|inserted|inserting|inject|injects|injected|injecting|adjust|adjusts|adjusted|adjusting|tweak|tweaks|tweaked|tweaking|rewrite|rewrites|rewrote|rewriting|revise|revises|revised|revising|integrate|integrates|integrated|integrating|configure|configures|configured|configuring|construct|constructs|constructed|constructing|wire|wires|wired|wiring|hook|hooks|hooked|hooking|include|includes|included|including|attach|attaches|attached|attaching|init|inits|initialize|initializes|initialized|initializing|populate|populates|populated|populating)\b/i;
+
+export const FILE_CONTAINER_WORDS = [
+  "file", "files", "txt", "script", "scripts", "codebase", "app",
+  "application", "module", "modules", "component", "components",
+  "middleware", "middlewares", "route", "routes", "router", "routers",
+  "controller", "controllers", "service", "services", "handler", "handlers",
+  "model", "models", "config", "configuration", "endpoint", "endpoints",
+  "util", "utils", "utility", "utilities", "helper", "helpers",
+  "schema", "schemas", "package", "packages", "doc", "docs", "archive",
+  "repo", "repository", "directory", "folder",
+];
+
+export const FILE_CONTAINER_NOUNS =
+  /\b(file|files|txt file|script|scripts|archive|codebase|app|application|module|modules|component|components|middleware|middlewares|route|routes|router|routers|controller|controllers|service|services|handler|handlers|model|models|config|configuration|endpoint|endpoints|util|utils|utility|utilities|helper|helpers|schema|schemas|package|packages|doc|docs|repo|repository|directory|folder)\b/i;
+
+export const REFERENTIAL_DELIVERABLE_NOUNS =
   /\b(it|this|that|artifact|artefact|document|deliverable|output|note|draft|script|report)\b/i;
 
-const REFERENTIAL_FOLLOWUP_PATTERN =
+export const REFERENTIAL_FOLLOWUP_PATTERN =
   /\b(the artifact|the artefact|the deliverable|earlier|previous artifact|just generated|which you just|generated earlier)\b/i;
 
-const DRAFTING_INTENT_PATTERNS =
+export const DRAFTING_INTENT_PATTERNS =
   /\b(approval note|review note|audit memo|audit note|corrective[- ]action note|draft (?:an? )?(?:note|memo|letter|report|document|brief|summary|proposal)|write (?:an? )?(?:approval note|review note|audit memo|compliance note|memo|formal note|letter|recommendation)|nuclear reactor shutdown|maintenance shutdown|word document|\.docx|docx\b|executive summary|formal note|compliance note|clearance note|incident report|briefing note)\b/i;
 
-const SOP_REFERENCE = /\bSOP[-\s]?\d+/i;
-const GROUNDING_KEYWORDS =
+export const SOP_REFERENCE = /\bSOP[-\s]?\d+/i;
+export const GROUNDING_KEYWORDS =
   /\b(compliance|against\s+(?:the\s+)?(?:spec|sop|standard)|per\s+(?:the\s+)?sop|check.+spec|verify.+sop|grounding|cross[- ]?check|criteria)\b/i;
 
-const WORKSPACE_CONTAINER_NOUNS =
+export const WORKSPACE_CONTAINER_NOUNS =
   /\b(workspace|directory|dir|folder|codebase|repo|repository|project|disk|filesystem|cwd|root|ws)\b/i;
 
-const FILE_EXTENSION_PATTERN =
+export const FILE_EXTENSION_PATTERN =
   /\b[a-zA-Z0-9_\-.]+\.(txt|js|ts|jsx|tsx|json|md|py|csv|html|css|yaml|yml|sh|env|sql|xml|rs|go|java|c|cpp|h|toml|ini)\b/i;
 
-const EXPLICIT_FILENAME_PATTERN =
+export const EXPLICIT_FILENAME_PATTERN =
   /\b([a-zA-Z0-9_\-]+\.(?:txt|js|ts|jsx|tsx|json|md|py|csv|html|css|yaml|yml|sh|env|sql|xml|rs|go|java|c|cpp|h|toml|ini))\b/i;
 
-const DIRECTORY_CONTEXT_PHRASES =
+export const DIRECTORY_CONTEXT_PHRASES =
   /\b(?:in|into|to|inside|within|from|out of|off)\s+(?:the\s+|this\s+|my\s+)?(?:[a-zA-Z0-9_\-]+\s+)?(?:directory|folder|dir|workspace|project|repo|repository|codebase|root|ws)\b/i;
 
-const PROJECT_PATH_SYNTAX =
+export const PROJECT_PATH_SYNTAX =
   /(?:^|\s)(?:\.\/|\.\.\/|src\/|tests?\/|lib\/|app\/|pkg\/|scripts\/|config\/)[a-zA-Z0-9_\-./]+/i;
 
 // ── Language-to-Extension Map ───────────────────────────────────────────
 
-const LANGUAGE_EXTENSIONS: Record<string, string> = {
+export const LANGUAGE_EXTENSIONS: Record<string, string> = {
   python: "py",
   py: "py",
   typescript: "ts",
@@ -102,33 +126,53 @@ const LANGUAGE_EXTENSIONS: Record<string, string> = {
   "c++": "cpp",
 };
 
-const COMMAND_ACTION_VERBS = /\b(run|execute|test|build|compile|install|start|deploy)\b/i;
-const COMMAND_TARGET_NOUNS = /\b(command|cmd|terminal|shell|test suite|npm|pnpm|yarn|pip|git|pytest|vitest|cargo|make|file|files|script|scripts|program|programs|binary|binaries|executable|executables|code|solution|app|target|stdin|input|arg|args|arguments)\b/i;
+export const COMMAND_ACTION_WORDS = [
+  "run", "execute", "exec", "test", "build", "compile", "install", "start",
+  "deploy", "launch", "check", "verify", "serve", "boot", "restart", "stop",
+  "kill", "lint", "format", "benchmark", "bench", "eval", "evaluate",
+  "inspect", "diagnose", "spawn", "init", "initialize",
+];
 
-const EXPLORATION_PHRASES = /\b(list\s+files|show\s+files|browse\s+(?:directory|folder|repo|workspace)|search\s+in\s+(?:codebase|files|project|repo)|find\s+in\s+files|view\s+files|tree)\b/i;
+export const COMMAND_ACTION_VERBS =
+  /\b(run|runs|running|ran|execute|executes|executed|executing|exec|test|tests|tested|testing|build|builds|building|built|compile|compiles|compiled|compiling|install|installs|installed|installing|start|starts|started|starting|deploy|deploys|deployed|deploying|launch|launches|launched|launching|check|checks|checked|checking|verify|verifies|verified|verifying|serve|serves|served|serving|boot|boots|booting|restart|restarts|restarted|restarting|stop|stops|stopped|stopping|kill|kills|killed|killing|lint|lints|linted|linting|format|formats|formatted|formatting|benchmark|benchmarks|benchmarking|bench|eval|evals|evaluate|evaluates|evaluated|evaluating|inspect|inspects|inspected|inspecting|diagnose|diagnoses|diagnosed|diagnosing|spawn|spawns|spawned|spawning|init|inits|initialize|initializes|initialized|initializing)\b/i;
 
-const DATA_ANALYSIS_KEYWORDS = /\b(csv|calculation|calculate|dataset|rows|columns|data\s+transformation|out-of-range|summary\s+statistics|aggregat(?:e|ion)|sum|average|mean|median)\b/i;
+export const COMMAND_TARGET_WORDS = [
+  "command", "cmd", "terminal", "shell", "test", "tests", "suite", "npm",
+  "pnpm", "yarn", "pip", "git", "pytest", "vitest", "cargo", "make", "file",
+  "files", "script", "scripts", "program", "programs", "binary", "binaries",
+  "executable", "executables", "code", "solution", "app", "target", "stdin",
+  "input", "arg", "args", "arguments", "dep", "deps", "dependency",
+  "dependencies", "package", "packages", "module", "modules", "server", "api",
+  "service", "daemon", "process", "node", "python", "bun", "deno",
+];
+
+export const COMMAND_TARGET_NOUNS =
+  /\b(command|cmd|terminal|shell|test suite|npm|pnpm|yarn|pip|git|pytest|vitest|cargo|make|file|files|script|scripts|program|programs|binary|binaries|executable|executables|code|solution|app|target|stdin|input|arg|args|arguments|dep|deps|dependency|dependencies|package|packages|module|modules|server|api|service|daemon|process|node|python|bun|deno)\b/i;
+
+export const EXPLORATION_PHRASES = /\b(list\s+files|show\s+files|browse\s+(?:directory|folder|repo|workspace)|search\s+in\s+(?:codebase|files|project|repo)|find\s+in\s+files|view\s+files|tree)\b/i;
+
+export const DATA_ANALYSIS_KEYWORDS = /\b(csv|calculation|calculate|dataset|rows|columns|data\s+transformation|out-of-range|summary\s+statistics|aggregat(?:e|ion)|sum|average|mean|median)\b/i;
 
 // ── Token Proximity & Fuzzy Matching Helpers ────────────────────────────
 
-const NEGATOR_WORDS = [
+export const NEGATOR_WORDS = [
   "not", "no", "dont", "never", "without", "avoid", "skip", "refrain",
   "exclude", "cant", "wont", "non", "stop", "prevent", "omit", "disallow",
 ];
 
-const WORKSPACE_TARGET_WORDS = [
+export const WORKSPACE_TARGET_WORDS = [
   "workspace", "ws", "directory", "dir", "dirs", "folder", "repo",
   "repository", "codebase", "project", "disk", "filesystem", "root", "cwd",
 ];
 
-const SAVE_ACTION_WORDS = [
+export const SAVE_ACTION_WORDS = [
   "save", "saving", "write", "writing", "put", "putting", "store", "storing",
   "create", "creating", "commit", "committing", "touch", "touching", "dump",
   "dumping", "place", "placing", "persist", "persisting", "drop", "dropping",
   "keep", "keeping", "gen", "generate", "generating",
 ];
 
-const STANDALONE_WORDS = [
+export const STANDALONE_WORDS = [
   "artifact", "artefact", "standalone", "isolated", "sandbox", "scratch",
   "temp", "temporary", "downloadable", "deliverable", "preview",
 ];
@@ -136,7 +180,7 @@ const STANDALONE_WORDS = [
 /**
  * Normalizes user text into clean tokens, expanding common contractions & shorthands.
  */
-function normalizeTokens(text: string): string[] {
+export function normalizeTokens(text: string): string[] {
   return text
     .toLowerCase()
     .replace(/['’]/g, "") // don't -> dont
@@ -148,47 +192,99 @@ function normalizeTokens(text: string): string[] {
 }
 
 /**
- * Fast Levenshtein distance for typo-tolerant matching.
- * Performance optimized: Uses two 1D typed arrays (Int32Array) instead of allocating nested 2D arrays,
- * reducing memory allocation / GC overhead and providing ~4-5x speedup during intent classification.
+ * Damerau-Levenshtein distance for typo-tolerant matching.
+ * Handles insertions, deletions, substitutions, AND transpositions (e.g. "udpate" -> "update").
  */
-function editDistance(a: string, b: string): number {
+export function editDistance(a: string, b: string): number {
   if (a === b) return 0;
   const m = a.length;
   const n = b.length;
   if (Math.abs(m - n) > 2) return 3;
 
-  let prev = new Int32Array(n + 1);
-  let curr = new Int32Array(n + 1);
-
-  for (let j = 0; j <= n; j++) prev[j] = j;
+  const d: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) d[i][0] = i;
+  for (let j = 0; j <= n; j++) d[0][j] = j;
 
   for (let i = 1; i <= m; i++) {
-    curr[0] = i;
     for (let j = 1; j <= n; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1,       // deletion
+        d[i][j - 1] + 1,       // insertion
+        d[i - 1][j - 1] + cost, // substitution
+      );
+      // Damerau transposition check (swap of adjacent characters)
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      }
     }
-    const tmp = prev;
-    prev = curr;
-    curr = tmp;
   }
-  return prev[n];
+  return d[m][n];
 }
 
 /**
  * Fuzzy check matching exact words, stems, or small typo distances.
  */
-function fuzzyMatches(token: string, targetWords: string[]): boolean {
+export function fuzzyMatches(token: string, targetWords: string[]): boolean {
   for (const target of targetWords) {
     if (token === target) return true;
-    if (token.startsWith(target) || target.startsWith(token)) {
-      if (Math.min(token.length, target.length) >= 4) return true;
+    // Allow target to start with token if token is a meaningful prefix (>= 4 chars), e.g. "worksp" -> "workspace"
+    if (target.startsWith(token) && token.length >= 4) {
+      return true;
+    }
+    // Allow plural or common suffix on target (e.g. "scripts" -> "script", "folders" -> "folder")
+    if (token.startsWith(target) && token.length - target.length <= 3 && target.length >= 5) {
+      return true;
     }
     const maxAllowed = target.length >= 8 ? 2 : target.length >= 5 ? 1 : 0;
     if (maxAllowed > 0 && Math.abs(token.length - target.length) <= maxAllowed) {
       if (editDistance(token, target) <= maxAllowed) return true;
     }
+  }
+  return false;
+}
+
+/**
+ * Typo-tolerant check for file creation / modification action verbs.
+ */
+export function hasActionVerb(lower: string, tokens: string[]): boolean {
+  if (FILE_ACTION_VERBS.test(lower)) return true;
+  for (const token of tokens) {
+    if (fuzzyMatches(token, ACTION_VERB_WORDS)) return true;
+  }
+  return false;
+}
+
+/**
+ * Typo-tolerant check for file / codebase container nouns.
+ */
+export function hasContainerNoun(lower: string, tokens: string[]): boolean {
+  if (FILE_CONTAINER_NOUNS.test(lower)) return true;
+  for (const token of tokens) {
+    if (token === "code") continue;
+    if (fuzzyMatches(token, FILE_CONTAINER_WORDS)) return true;
+  }
+  return false;
+}
+
+/**
+ * Typo-tolerant check for command execution action verbs.
+ */
+export function hasCommandActionVerb(lower: string, tokens: string[]): boolean {
+  if (COMMAND_ACTION_VERBS.test(lower)) return true;
+  for (const token of tokens) {
+    if (fuzzyMatches(token, COMMAND_ACTION_WORDS)) return true;
+  }
+  return false;
+}
+
+/**
+ * Typo-tolerant check for command execution target nouns.
+ */
+export function hasCommandTargetNoun(lower: string, tokens: string[]): boolean {
+  if (COMMAND_TARGET_NOUNS.test(lower)) return true;
+  for (const token of tokens) {
+    if (fuzzyMatches(token, COMMAND_TARGET_WORDS)) return true;
   }
   return false;
 }
@@ -244,6 +340,7 @@ function detectStandaloneHint(tokens: string[], rawText: string): boolean {
 
   // 1. Any fuzzy token match (e.g. "artifct", "artefact", "standalone", "temp", "scratch")
   for (const token of tokens) {
+    if (["review", "reviews", "reviewed", "reviewing"].includes(token)) continue;
     if (fuzzyMatches(token, STANDALONE_WORDS)) return true;
   }
 
@@ -416,8 +513,8 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
   // Extract Syntactic and Semantic Features
   const hasNegativeWorkspaceConstraint = detectNegativeWorkspaceConstraint(tokens);
   const hasStandaloneHint = detectStandaloneHint(tokens, userText);
-  const hasFileActionVerb = FILE_ACTION_VERBS.test(lower);
-  const hasFileContainerNoun = FILE_CONTAINER_NOUNS.test(lower);
+  const hasFileActionVerb = hasActionVerb(lower, tokens);
+  const hasFileContainerNoun = hasContainerNoun(lower, tokens);
   const hasWorkspaceNoun = WORKSPACE_CONTAINER_NOUNS.test(lower);
   const hasFileExtension = FILE_EXTENSION_PATTERN.test(lower);
   const hasDirectoryContext = DIRECTORY_CONTEXT_PHRASES.test(lower);
@@ -599,9 +696,14 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     });
   }
 
+  const isInstallOrPkgManager = tokens.some((t) =>
+    fuzzyMatches(t, ["install", "npm", "pnpm", "yarn", "pip", "cargo", "bun"]),
+  );
+
   const hasCommandAction =
-    COMMAND_ACTION_VERBS.test(lower) &&
-    (COMMAND_TARGET_NOUNS.test(lower) ||
+    hasCommandActionVerb(lower, tokens) &&
+    (hasCommandTargetNoun(lower, tokens) ||
+      isInstallOrPkgManager ||
       hasDirectoryContext ||
       extractedFilename !== undefined ||
       FILE_EXTENSION_PATTERN.test(lower));

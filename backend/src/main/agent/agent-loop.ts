@@ -9,6 +9,13 @@ import {
   cleanPlanPreview,
   extractShellCommands,
 } from "./code-extractor.js";
+import {
+  hasActionVerb,
+  hasContainerNoun,
+  hasCommandActionVerb,
+  hasCommandTargetNoun,
+  normalizeTokens,
+} from "../router/intent-classifier.js";
 
 export interface AgentLoopOptions {
   runId: string;
@@ -126,10 +133,13 @@ export class AgentLoop {
         // B. Shell command extraction: If model provided shell code blocks for an execution/install request
         if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && dispatcher.getTool("run_command")) {
           const extractedCmds = extractShellCommands(content ?? "");
-          if (
-            extractedCmds.length > 0 &&
-            /\b(install|deps|dependencies|run|start|execute|test|check|verify|launch|build|npm|pip|node|python)\b/i.test(userPrompt)
-          ) {
+          const promptTokens = normalizeTokens(userPrompt);
+          const promptLower = userPrompt.toLowerCase();
+          const isCmdReq =
+            hasCommandActionVerb(promptLower, promptTokens) ||
+            hasCommandTargetNoun(promptLower, promptTokens);
+
+          if (extractedCmds.length > 0 && isCmdReq) {
             effectiveToolCalls = extractedCmds.map((cmd) => ({
               id: `call_${randomUUID().slice(0, 8)}`,
               name: "run_command",
@@ -142,15 +152,27 @@ export class AgentLoop {
 
         // C. System Nudges: If model still returned no tool calls on turn 1 despite actionable requests
         if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && turn === 1) {
+          const promptTokens = normalizeTokens(userPrompt);
+          const promptLower = userPrompt.toLowerCase();
+          const combinedLower = promptLower + " " + (content ?? "").toLowerCase();
+          const combinedTokens = normalizeTokens(combinedLower);
+
           const isCommandRequest =
-            dispatcher.getTool("run_command") &&
-            /\b(install|deps|dependencies|run|start|execute|test|check|verify|launch|build|npm|pip|node|python)\b/i.test(userPrompt);
+            Boolean(dispatcher.getTool("run_command")) &&
+            (hasCommandActionVerb(promptLower, promptTokens) ||
+              hasCommandTargetNoun(promptLower, promptTokens));
+
+          const hasUserAction = hasActionVerb(promptLower, promptTokens);
+          const hasContentAction =
+            /\b(created|implemented|added|written|generated|modified|updated|edited|patched)\b/i.test(
+              content ?? "",
+            );
+          const hasContainer = hasContainerNoun(combinedLower, combinedTokens);
 
           const isFileCreationRequest =
-            dispatcher.getTool("write_file") &&
-            ((/\b(create|write|setup|set up|scaffold|build|make|add|generate|init|initialize|implement|put|modify|update|edit|change|patch|fix|refactor|apply|replace|do it)\b/i.test(userPrompt) ||
-              /\b(created|implemented|added|written|generated|modified|updated|edited|patched)\b/i.test(content ?? "")) &&
-             /\b(file|files|app|application|project|code|server|api|repo|directory|folder|script|express|react|node|python|route|routes|middleware|endpoint|endpoints|handler|handlers|service|component|module|auth)\b/i.test(userPrompt + " " + (content ?? "")));
+            Boolean(dispatcher.getTool("write_file")) &&
+            (hasUserAction || hasContentAction) &&
+            hasContainer;
 
           if (isCommandRequest) {
             messages.push({

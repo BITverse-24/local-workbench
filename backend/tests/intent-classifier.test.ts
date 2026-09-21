@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { classifyIntent } from "../src/main/router/intent-classifier.js";
+import {
+  classifyIntent,
+  hasActionVerb,
+  hasContainerNoun,
+  hasCommandActionVerb,
+  hasCommandTargetNoun,
+  normalizeTokens,
+  editDistance,
+} from "../src/main/router/intent-classifier.js";
 
 describe("Intelligent Intent Classifier", () => {
   it("routes file writing requests with directory context to harness", () => {
@@ -518,6 +526,78 @@ describe("Intelligent Intent Classifier", () => {
       expect(decision.actionTarget).toBe("harness");
       expect(decision.isWorkspaceAction).toBe(true);
       expect(decision.modelId).toBe("code-qwen25coder");
+    });
+  });
+
+  describe("Typo Tolerance & Expanded Action Verbs", () => {
+    it("handles Damerau-Levenshtein transpositions and single-char edits", () => {
+      expect(editDistance("udpate", "update")).toBe(1);
+      expect(editDistance("isntall", "install")).toBe(1);
+      expect(editDistance("modfy", "modify")).toBe(1);
+      expect(editDistance("chck", "check")).toBe(1);
+      expect(editDistance("wrtie", "write")).toBe(1);
+    });
+
+    it("detects typoed action verbs and container nouns via helper functions", () => {
+      const text1 = "modfy the midleware to add rate limiting";
+      const tokens1 = normalizeTokens(text1);
+      expect(hasActionVerb(text1.toLowerCase(), tokens1)).toBe(true);
+      expect(hasContainerNoun(text1.toLowerCase(), tokens1)).toBe(true);
+
+      const text2 = "isntall express-rate-limit";
+      const tokens2 = normalizeTokens(text2);
+      expect(hasCommandActionVerb(text2.toLowerCase(), tokens2)).toBe(true);
+    });
+
+    it("routes typoed requests like 'modfy the midleware' to harness", () => {
+      const decision = classifyIntent({
+        userText: "modfy the midleware to add rate limiting",
+        isWorkspaceActive: true,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.taskType).toBe("code");
+      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.isWorkspaceAction).toBe(true);
+    });
+
+    it("routes typoed requests like 'udpate app.js to use rateLimiter' to harness", () => {
+      const decision = classifyIntent({
+        userText: "udpate app.js to use rateLimiter",
+        isWorkspaceActive: true,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.taskType).toBe("code");
+      expect(decision.isWorkspaceAction).toBe(true);
+    });
+
+    it("routes typoed requests like 'isntall express-rate-limit' to harness", () => {
+      const decision = classifyIntent({
+        userText: "isntall express-rate-limit",
+        isWorkspaceActive: true,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.taskType).toBe("code");
+      expect(decision.isWorkspaceAction).toBe(true);
+    });
+
+    it("routes typoed requests like 'chck if tests pass' to harness", () => {
+      const decision = classifyIntent({
+        userText: "chck if tests pass",
+        isWorkspaceActive: true,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.taskType).toBe("code");
+      expect(decision.isWorkspaceAction).toBe(true);
+    });
+
+    it("routes typoed requests like 'wrtie a file in the directroy' to harness", () => {
+      const decision = classifyIntent({
+        userText: "wrtie a file in the directroy",
+        isWorkspaceActive: true,
+      });
+      expect(decision.actionTarget).toBe("harness");
+      expect(decision.taskType).toBe("code");
+      expect(decision.isWorkspaceAction).toBe(true);
     });
   });
 });
