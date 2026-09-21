@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo, memo } from "react";
 import * as wb from "../lib/workbench";
 
 type Props = {
   runEvents?: RunEvent[];
   runId?: string | null;
 };
+
+const EMPTY_EVENTS: RunEvent[] = [];
 
 type TraceEntry = Record<string, unknown> & {
   phase?: string;
@@ -87,7 +89,9 @@ function tracePreview(entry: TraceEntry): string {
   return JSON.stringify(entry).slice(0, 160);
 }
 
-export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
+// PERF OPTIMIZATION: Memoize RunTelemetryWidget to prevent unnecessary re-renders
+// when parent components re-render during streaming.
+const RunTelemetryWidget = memo(function RunTelemetryWidget({ runEvents = EMPTY_EVENTS, runId }: Props) {
   const [entries, setEntries] = useState<TraceEntry[]>([]);
   const [files, setFiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -152,11 +156,19 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
     setTimeout(() => setCopyFeedback(false), 2000);
   };
 
-  const latestEvent = runEvents.length > 0 ? runEvents[runEvents.length - 1] : null;
-  const latestTrace = entries.length > 0 ? entries[entries.length - 1] : null;
-  const latestFile = files.length > 0 ? files[files.length - 1] : null;
-  const hasError = entries.some(
-    (e) => e.phase === "gateway_error" || e.phase === "parse_error" || e.phase === "normalize_error"
+  // PERF OPTIMIZATION: Memoize latest event, latest trace preview, and error flags to avoid re-evaluating string formatting on every render tick
+  const latestEvent = useMemo(() => (runEvents.length > 0 ? runEvents[runEvents.length - 1] : null), [runEvents]);
+  const latestEventIcon = useMemo(() => (latestEvent ? iconFor(latestEvent) : ""), [latestEvent]);
+  const latestEventLabel = useMemo(() => (latestEvent ? labelFor(latestEvent) : ""), [latestEvent]);
+
+  const latestTrace = useMemo(() => (entries.length > 0 ? entries[entries.length - 1] : null), [entries]);
+  const latestTracePreview = useMemo(() => (latestTrace ? tracePreview(latestTrace) : ""), [latestTrace]);
+  const latestTraceColor = useMemo(() => (latestTrace ? phaseColor(latestTrace.phase) : ""), [latestTrace]);
+
+  const latestFile = useMemo(() => (files.length > 0 ? files[files.length - 1] : null), [files]);
+  const hasError = useMemo(
+    () => entries.some((e) => e.phase === "gateway_error" || e.phase === "parse_error" || e.phase === "normalize_error"),
+    [entries]
   );
 
   return (
@@ -195,8 +207,8 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
           </div>
           {latestEvent ? (
             <div className="flex items-center gap-2 text-xs truncate">
-              <span className="text-[var(--text-tertiary)] shrink-0 font-mono">{iconFor(latestEvent)}</span>
-              <span className="text-[var(--text-primary)] truncate">{labelFor(latestEvent)}</span>
+              <span className="text-[var(--text-tertiary)] shrink-0 font-mono">{latestEventIcon}</span>
+              <span className="text-[var(--text-primary)] truncate">{latestEventLabel}</span>
             </div>
           ) : (
             <div className="text-[11px] text-[var(--text-tertiary)] italic">No transcript events yet</div>
@@ -223,10 +235,10 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
           </div>
           {latestTrace ? (
             <div className="flex items-center gap-2 text-xs truncate">
-              <span className={`text-[10px] font-mono shrink-0 ${phaseColor(latestTrace.phase)}`}>
+              <span className={`text-[10px] font-mono shrink-0 ${latestTraceColor}`}>
                 [{latestTrace.phase ?? "?"}]
               </span>
-              <span className="text-[var(--text-primary)] truncate font-mono text-[11px]">{tracePreview(latestTrace)}</span>
+              <span className="text-[var(--text-primary)] truncate font-mono text-[11px]">{latestTracePreview}</span>
             </div>
           ) : (
             <div className="text-[11px] text-[var(--text-tertiary)] italic">No model trace entries yet</div>
@@ -489,4 +501,6 @@ export default function RunTelemetryWidget({ runEvents = [], runId }: Props) {
       )}
     </>
   );
-}
+});
+
+export default RunTelemetryWidget;
