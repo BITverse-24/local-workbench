@@ -899,9 +899,55 @@ export class RunManager {
         gateway: this.gateway,
         harness: this.harness,
         grounding: this.grounding as any,
-        emitRunEvent: (event: any) => this.emit(event),
+        emitRunEvent: (event: any) => {
+          if (event.type === "artifact_ready" && event.artifact) {
+            this.persistArtifact(event.artifact);
+          }
+          this.emit(event);
+        },
         devWorkload: this.runDevWorkload.get(runId) ?? false,
       };
+
+      let attachedFilesSection = "";
+      if (attachments.length > 0) {
+        const inputDir = resolveRunPath(runId, "input", "input");
+        const dirFiles = existsSync(inputDir) ? readdirSync(inputDir) : [];
+        const parts: string[] = [];
+        for (const att of attachments) {
+          let filePath = att.relativePath ? absoluteDataPath(att.relativePath) : "";
+          if (!filePath || !existsSync(filePath)) {
+            const direct = path.join(inputDir, att.filename);
+            if (existsSync(direct)) {
+              filePath = direct;
+            } else {
+              const matched = dirFiles.find((f) => f === att.filename || f.endsWith(`-${att.filename}`));
+              if (matched) {
+                filePath = path.join(inputDir, matched);
+              }
+            }
+          }
+
+          if (filePath && existsSync(filePath)) {
+            try {
+              const stat = statSync(filePath);
+              const isText =
+                /\.(?:py|js|ts|jsx|tsx|json|csv|txt|sh|bash|md|html|css|yaml|yml|xml|sql)$/i.test(att.filename) ||
+                att.mediaType.startsWith("text/") ||
+                att.mediaType === "application/json" ||
+                att.mediaType === "application/javascript";
+              if (isText && stat.size < 200000) {
+                const content = readFileSync(filePath, "utf8");
+                parts.push(`--- ATTACHED FILE: ${att.filename} (${att.mediaType}, ${stat.size} bytes) ---\n${content}\n--- END ATTACHED FILE: ${att.filename} ---`);
+              } else {
+                parts.push(`--- ATTACHED FILE: ${att.filename} (${att.mediaType}, ${stat.size} bytes located at input/${att.filename}) ---`);
+              }
+            } catch {}
+          }
+        }
+        if (parts.length > 0) {
+          attachedFilesSection = `\nPRIMARY TARGET USER ATTACHMENTS (Attached directly in this chat):\n${parts.join("\n\n")}\n`;
+        }
+      }
 
       let systemPrompt: string;
       if (isWorkspaceActive && this.harness) {
@@ -916,24 +962,41 @@ export class RunManager {
                 .join("\n\n")}\n`
             : "";
 
-        systemPrompt = `You are Sovereign Workbench, an autonomous engineering and coding agent operating directly inside the user's project workspace.
+        const attachmentPriorityDirective = attachments.length > 0
+          ? `\nCRITICAL PRIORITY ON USER ATTACHMENTS:\n` +
+            `The user explicitly attached files (${attachments.map((a) => `"${a.filename}"`).join(", ")}) in this chat.\n` +
+            `• Your PRIMARY objective is to analyze, repair, run, or process THESE attached files.\n` +
+            `• Do NOT search the workspace directory for the attached files or logs — their full contents are already provided in the PRIMARY TARGET USER ATTACHMENTS section above!\n` +
+            `• To verify and test Python scripts against attached data files, invoke \`execute_python\` with the script code and \`input_files: [${attachments.map((a) => `"${a.filename}"`).join(", ")}]\`.\n`
+          : "";
 
+        systemPrompt = `You are Sovereign Workbench, an autonomous engineering and coding agent.
+${attachedFilesSection}
+${attachmentPriorityDirective}
 CURRENT WORKSPACE DIRECTORY TREE:
 ${treeFormatted}
 ${referencedFilesSection}
 CRITICAL OPERATIONAL RULES:
 1. YOU HAVE DIRECT FILESYSTEM & SHELL ACCESS via tools. NEVER say you cannot interact with files or lack permissions.
-2. NO TOOL SIMULATION OR FAKE RESULTS:
+2. NO TOOL SIMULATION OR FAKE RESULTS & FORMAL PLAN DISCIPLINE:
+   - When invoking tools, your text content must be a brief, formal, task-based statement of your engineering plan.
+   - NEVER dump code, code blocks, or full script implementations in your text when invoking tools! All code MUST be passed strictly inside tool arguments (e.g. \`code\` of \`execute_python\` or \`content\` of \`write_file\`).
+   - NEVER output conversational filler (e.g. "Here is the updated script:", "Now let's execute this...").
    - NEVER simulate, fake, or invent tool outputs in text (e.g. NEVER output \`[TOOL_RESULT]\`, \`[END_TOOL_RESULT]\`, \`<tool_response>\`, or mock JSON).
    - Real tool results are automatically provided back to you by the system after execution.
-   - When invoking tools, your text content must ONLY be a brief 1-2 sentence statement of your plan or intent.
    - NEVER output "**Implemented**:" or summarize next steps while invoking tools! Those belong strictly in your final response after all tools have finished.
 3. DIRECT EXECUTION DISCIPLINE (ZERO-DISCOVERY):
-   - The CURRENT WORKSPACE DIRECTORY TREE and relevant files are ALREADY provided above.
-   - Do NOT waste round-trips calling \`list_dir\` or \`read_file\` on directories or files that are already listed or shown above!
-   - Proceed directly to implementing the user's requested action using \`write_file\` or \`run_command\`.
+   - The user attachments, workspace directory tree, and relevant files are ALREADY provided above.
+   - If user attachments are provided above, focus directly on them. Do NOT search the workspace tree for files that were attached in chat!
+   - Proceed directly to implementing the user's requested action using \`execute_python\`, \`write_file\`, or \`run_command\`.
    - ONLY call \`read_file\` or \`search\` if you genuinely need to inspect an unlisted file whose contents are NOT shown above.
-4. CREATING & EDITING FILES:
+4. ATTACHED FILES, SCRIPTS & REPAIRS:
+   - When user attachments are provided above (e.g. broken scripts, log CSVs), inspect their code and data directly from the prompt.
+   - To execute, verify, or fix Python scripts against attached data files, invoke \`execute_python\` with the script code and \`input_files: ["<filename.csv>"]\`.
+   - The repaired script will automatically be tested and saved as a verified artifact deliverable.
+   - To write, update, or save files to the workspace, invoke \`write_file\`.
+   - To create official output deliverables or export artifacts, invoke \`generate_deliverable\` or \`execute_python\`.
+5. CREATING & EDITING FILES:
    - When the user asks you to create, setup, scaffold, write, build, modify, update, edit, patch, convert, migrate, or refactor files or code:
      • You MUST invoke \`write_file\` with {"path": "relative/path/to/file", "content": "..."} for every file needed.
      • When converting files (e.g. JavaScript to TypeScript), you MUST physically write the converted/new files (e.g. \`tsconfig.json\`, \`app.ts\`, \`middleware/rateLimiter.ts\`, \`package.json\`) using \`write_file\`, and remove replaced files using \`delete_file\`.
@@ -941,11 +1004,16 @@ CRITICAL OPERATIONAL RULES:
      • If your model environment outputs markdown code blocks instead of native function calls, you MUST specify the file path on the first line or header (e.g. \`// path/to/file.ts\` or \`### path/to/file.ts\`) so the system can automatically extract and write the files to disk.
      • NEVER merely describe the steps in text or call \`generate_text\`! You must physically create and update the files on disk using \`write_file\`.
      • NEVER claim files were created, converted, or modified if no tools were executed and no code was written to disk.
-5. COMMAND EXECUTION & VERIFICATION:
+6. COMMAND EXECUTION & VERIFICATION:
    - When the user asks to install dependencies, run scripts, test, start an app, or check functionality (e.g. "install deps", "run the app", "check if everything working"), invoke \`run_command\` with the appropriate shell command (e.g. \`npm install express-rate-limit\`, \`node app.js\`, \`npm test\`).
-6. DELETION: To delete files, call \`delete_file\`. Never delete files by writing empty content.
-7. FINAL RESPONSE FORMAT (ONLY AFTER ALL TOOLS HAVE COMPLETED):
-   - When all tools have completed and files are saved on disk, do NOT repeat redundant full code blocks in your final response.
+7. DELETION: To delete files, call \`delete_file\`. Never delete files by writing empty content.
+8. QUESTIONS, EXPLANATIONS, REVIEWS & CHAT:
+   - When the user asks a question, requests an explanation, seeks architectural review, asks for debugging guidance, or has conversational chat:
+     • You do NOT need to modify files or run terminal commands on disk.
+     • You may freely inspect relevant files using \`read_file\` or \`search\` if needed to answer accurately with real code context.
+     • Provide a direct, thorough, and clear markdown answer explaining the concepts, architecture, or code requested.
+9. FINAL RESPONSE FORMAT FOR FILE MODIFICATIONS (ONLY WHEN TOOLS MUTATED DISK):
+   - When tools have modified or created files on disk, do NOT repeat redundant full code blocks in your final response.
    - Output a concise summary (under 80 words):
      • **Implemented**: 2-4 brief bullet points of what was set up / created on disk.
      • **Next Steps**: Command(s) to run, test, or start the code (e.g. \`node app.js\`).
@@ -953,11 +1021,16 @@ CRITICAL OPERATIONAL RULES:
       } else {
         systemPrompt = `You are Sovereign Workbench, an expert engineering assistant with access to local tools.
 Solve the user's task step-by-step.
-Follow these operational guidelines:
-1. When asked to write code, create files, or generate deliverables, invoke the appropriate tools (e.g. write_file, execute_python, generate_deliverable).
-2. When performing calculations or fixing bugs, verify code execution in the sandbox.
-3. If an error occurs during tool execution, diagnose the error and retry with a corrected action.
-4. When finished, provide a clear, concise summary of the actions taken without dumping redundant code blocks. Do not invoke further tools once done.`;
+${attachedFilesSection}
+OPERATIONAL & PLAN GUIDELINES:
+1. FORMAL TASK-BASED PLAN:
+   - When invoking tools, your text content must be a brief, formal, task-based statement of your engineering plan.
+   - NEVER dump code, code blocks, or script implementations in your text when invoking tools! All code MUST be passed strictly inside tool arguments (e.g. \`code\` of \`execute_python\` or \`content\` of \`write_file\`).
+   - NEVER write conversational filler like "Here is the updated script:" or "Now let's execute...".
+2. When asked to write code, create files, or generate deliverables, invoke the appropriate tools (e.g. write_file, execute_python, generate_deliverable).
+3. When performing calculations or fixing bugs, verify code execution in the sandbox using \`execute_python\`.
+4. If an error occurs during tool execution, diagnose the error and retry with a corrected action.
+5. When finished, provide a clear, concise summary of the actions taken without dumping redundant code blocks. Do not invoke further tools once done.`;
       }
 
       this.state(runId, "acting");
@@ -976,11 +1049,28 @@ Follow these operational guidelines:
           maxTurns: 100,
           devWorkload: this.runDevWorkload.get(runId) ?? false,
           isCancelled: () => getState(runId) === "cancelled",
-          onPlanConfirmationRequired: async (planText, firstCalls) => {
+          onPlanConfirmationRequired: async (planText, mutatingCalls) => {
             return new Promise<boolean>((resolve) => {
-              const firstActionsSummary = firstCalls
-                .map((c: any) => (c.arguments?.path ? `${c.name}: ${c.arguments.path}` : c.name))
-                .join(", ");
+              const summaryItems: string[] = [];
+              for (const c of mutatingCalls) {
+                if (c.name === "execute_python") {
+                  const inputs = Array.isArray(c.arguments?.input_files) && c.arguments.input_files.length > 0
+                    ? c.arguments.input_files.join(", ")
+                    : "";
+                  summaryItems.push(inputs ? `Python verification (${inputs})` : "Python sandbox execution");
+                } else if (c.name === "write_file") {
+                  summaryItems.push(`Write ${c.arguments?.path || "file"}`);
+                } else if (c.name === "delete_file") {
+                  summaryItems.push(`Delete ${c.arguments?.path || "file"}`);
+                } else if (c.name === "run_command") {
+                  summaryItems.push(c.arguments?.command ? `Run \`${c.arguments.command}\`` : "Run command");
+                } else if (c.arguments?.path) {
+                  summaryItems.push(`${c.name}: ${c.arguments.path}`);
+                } else {
+                  summaryItems.push(c.name);
+                }
+              }
+              const firstActionsSummary = summaryItems.join(", ");
               const prompt = `Review Agent Plan (${firstActionsSummary})`;
 
               void this.awaitConfirmation(

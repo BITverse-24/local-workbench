@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import type { AgentTool, ToolExecutionContext, ToolExecutionResult } from "./types.js";
 import { listDir } from "../harness/tools/list-dir.js";
 import { readFile } from "../harness/tools/read-file.js";
@@ -5,6 +8,19 @@ import { search } from "../harness/tools/search.js";
 import { writeFile } from "../harness/tools/write-file.js";
 import { deleteFile } from "../harness/tools/delete-file.js";
 import { runCommand } from "../harness/tools/run-command.js";
+import { resolveRunPath } from "../run/filesystem.js";
+import type { ArtifactKind, ArtifactRef } from "../../shared/contracts.js";
+
+function inferArtifactKind(filename: string): ArtifactKind {
+  const ext = path.extname(filename).toLowerCase();
+  if (ext === ".docx") return "docx";
+  if (ext === ".xlsx") return "xlsx";
+  if (ext === ".csv") return "csv";
+  if (ext === ".json") return "json";
+  if (ext === ".md") return "md";
+  if (ext === ".pdf") return "pdf";
+  return "txt";
+}
 
 export function extractPathArg(args: Record<string, unknown>): string {
   if (!args) return "";
@@ -158,7 +174,30 @@ export const readFileTool: AgentTool = {
     if (!relPath) {
       throw new Error(`path parameter is required. Received arguments: ${JSON.stringify(args).slice(0, 150)}. Expected format: {"path": "relative/path/to/file"}`);
     }
-    const content = readFile(context.workspaceRoot, relPath);
+    let content: string;
+    try {
+      content = readFile(context.workspaceRoot, relPath);
+    } catch (err) {
+      if (context.runId) {
+        const inputDir = resolveRunPath(context.runId, "input", "input");
+        const base = path.basename(relPath);
+        let inputFilePath = path.join(inputDir, base);
+        if (!existsSync(inputFilePath)) {
+          const files = existsSync(inputDir) ? readdirSync(inputDir) : [];
+          const matched = files.find((f) => f === base || f.endsWith(`-${base}`));
+          if (matched) {
+            inputFilePath = path.join(inputDir, matched);
+          }
+        }
+        if (existsSync(inputFilePath)) {
+          content = readFileSync(inputFilePath, "utf8");
+        } else {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
     const lines = content.split("\n");
     let formattedContent = content;
     if (lines.length > 300) {
@@ -240,9 +279,33 @@ export const writeFileTool: AgentTool = {
         context.harness.notifyWorkspaceTreeUpdated();
       } catch {}
     }
+
+    // Mirror to run output directory as an artifact deliverable
+    const artifacts: ArtifactRef[] = [];
+    if (context.runId) {
+      try {
+        const baseName = path.basename(relPath);
+        const outDir = resolveRunPath(context.runId, "output", "output");
+        mkdirSync(outDir, { recursive: true });
+        const outPath = path.join(outDir, baseName);
+        writeFileSync(outPath, content, "utf8");
+        const kind = inferArtifactKind(baseName);
+        artifacts.push({
+          artifactId: randomUUID(),
+          runId: context.runId,
+          kind,
+          filename: baseName,
+          relativePath: `runs/${context.runId}/output/${baseName}`,
+          sizeBytes: Buffer.byteLength(content, "utf8"),
+          createdAt: new Date().toISOString(),
+        });
+      } catch {}
+    }
+
     return {
       output: JSON.stringify(res),
       summary: `Wrote "${relPath}" (${res.diff ?? "updated"})`,
+      artifacts: artifacts.length > 0 ? artifacts : undefined,
       sideEffects: [`modified:${relPath}`],
     };
   },

@@ -44,7 +44,14 @@ function stageInputs(runId: string, inputFiles: string[], aliases: InputAlias[])
     const alias = aliases.find((item) => item.logical === filename);
     const sourceName = alias?.source ?? filename;
     if (path.basename(sourceName) !== sourceName || sourceName === "." || sourceName === "..") throw new Error("Python input alias must be a run-local filename");
-    const source = path.join(inputDir, sourceName);
+    let source = path.join(inputDir, sourceName);
+    if (!existsSync(source)) {
+      const files = existsSync(inputDir) ? readdirSync(inputDir) : [];
+      const matched = files.find((f) => f === sourceName || f.endsWith(`-${sourceName}`));
+      if (matched) {
+        source = path.join(inputDir, matched);
+      }
+    }
     if (!existsSync(source)) throw new Error(`Python input file not found: ${filename}`);
     copyFileSync(source, path.join(outputDir, filename));
     stagedInputs.push(filename);

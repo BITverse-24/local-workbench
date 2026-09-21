@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentTool, ToolExecutionContext, ToolExecutionResult } from "./types.js";
 import { requestBase } from "../gateway/model-gateway.js";
@@ -7,12 +7,25 @@ import { executePython } from "./python.js";
 import { generateDocx, generateXlsx } from "./artifacts.js";
 import { resolveRunPath } from "../run/filesystem.js";
 import type {
+  ArtifactKind,
   ArtifactRef,
   CodeModelRequest,
   DraftModelRequest,
   PythonExecutionResult,
   VisionModelRequest,
 } from "../../shared/contracts.js";
+
+function inferArtifactKind(filename: string): ArtifactKind {
+  const ext = path.extname(filename).toLowerCase();
+  if (ext === ".docx") return "docx";
+  if (ext === ".xlsx") return "xlsx";
+  if (ext === ".csv") return "csv";
+  if (ext === ".py") return "txt";
+  if (ext === ".json") return "json";
+  if (ext === ".md") return "md";
+  if (ext === ".pdf") return "pdf";
+  return "txt";
+}
 
 /**
  * 1. extract_document: Dispatches multimodal document/image inspection to vision model.
@@ -304,9 +317,49 @@ export const executePythonTool: AgentTool = {
     const execResult = await executePython(context.runId, filename, inputFiles, []);
     const summary = `Executed Python (${filename}): exit ${execResult.exitCode} in ${execResult.durationMs}ms`;
 
+    const artifacts: ArtifactRef[] = [];
+    const outputDir = resolveRunPath(context.runId, "output", "output");
+
+    // Collect any output files created during execution
+    for (const outFile of execResult.outputFiles) {
+      const outPath = path.join(outputDir, outFile);
+      if (existsSync(outPath)) {
+        try {
+          const stat = statSync(outPath);
+          artifacts.push({
+            artifactId: randomUUID(),
+            runId: context.runId,
+            kind: inferArtifactKind(outFile),
+            filename: outFile,
+            relativePath: `runs/${context.runId}/output/${outFile}`,
+            sizeBytes: stat.size,
+            createdAt: new Date().toISOString(),
+          });
+        } catch {}
+      }
+    }
+
+    // Also persist the executed/repaired script itself as an artifact
+    try {
+      const scriptBase = path.basename(filename);
+      const artifactScriptFilename = scriptBase.startsWith("repaired-") ? scriptBase : `repaired-${scriptBase}`;
+      const scriptOutPath = path.join(outputDir, artifactScriptFilename);
+      writeFileSync(scriptOutPath, code, "utf8");
+      artifacts.push({
+        artifactId: randomUUID(),
+        runId: context.runId,
+        kind: "txt",
+        filename: artifactScriptFilename,
+        relativePath: `runs/${context.runId}/output/${artifactScriptFilename}`,
+        sizeBytes: Buffer.byteLength(code, "utf8"),
+        createdAt: new Date().toISOString(),
+      });
+    } catch {}
+
     return {
       output: JSON.stringify(execResult, null, 2),
       summary,
+      artifacts: artifacts.length > 0 ? artifacts : undefined,
       sideEffects: [`executed:${filename}`],
     };
   },

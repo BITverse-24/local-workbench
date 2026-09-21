@@ -35,9 +35,13 @@ Analyze the user's latest request in the context of the ongoing conversation, at
 Determine the user's primary goal, the appropriate specialized lead model, whether disk/terminal action is required, and any target files.
 
 Available lead models:
-- "code-qwen25coder": for creating/modifying code, debugging, workspace file operations, command execution, and coding questions.
+- "code-qwen25coder": for creating/modifying code, debugging, workspace file operations, command execution, and coding questions/explanations.
 - "draft-qwen3": for drafting formal engineering memos, compliance approval notes, deliverables, and general conceptual reasoning.
 - "vision-qwen25vl": for reading scanned inspection reports, engineering drawings, or diagrams.
+
+CRITICAL ACTIONABILITY RULE:
+- If the user is asking questions, seeking explanations, requesting an architectural review, or having general conversation (even inside an active workspace), set "isActionable": false and "intentType": "general_qa" or "pure_chat".
+- ONLY set "isActionable": true if the user explicitly asks to create, modify, delete, build, install, or run code/files on disk ("intentType": "code_modification" or "command_execution").
 
 Output strictly valid JSON matching this schema:
 {
@@ -59,6 +63,7 @@ export function extractReferencedFiles(
   text: string,
   history: Array<{ role: string; content: string }> = [],
   workspaceFiles: string[] = [],
+  attachmentFiles: string[] = [],
 ): string[] {
   const referenced = new Set<string>();
   const combined = [
@@ -74,14 +79,24 @@ export function extractReferencedFiles(
     if (p) referenced.add(p);
   }
 
-  // Match files known to exist in the workspace
-  for (const f of workspaceFiles) {
+  // Match files known to exist in the workspace or attachments
+  const allKnownFiles = [...workspaceFiles, ...attachmentFiles];
+  for (const f of allKnownFiles) {
     const base = path.basename(f);
     const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const escapedRel = f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const wordRx = new RegExp(`(?:@|\\b)(?:${escapedRel}|${escapedBase})\\b`, "i");
     if (wordRx.test(combined)) {
       referenced.add(f);
+    }
+  }
+
+  // When prompt refers to script/code/fix/broken and attachments exist, include code attachments
+  if (referenced.size === 0 && /\b(?:script|parser|code|fix|broken|python|csv|utility)\b/i.test(combined)) {
+    for (const f of attachmentFiles) {
+      if (/\.(?:py|js|ts|json|csv|sh)$/i.test(f)) {
+        referenced.add(f);
+      }
     }
   }
 
@@ -145,9 +160,11 @@ export async function resolveSemanticIntent(
     lowerPrompt,
   );
 
+  const attachmentFileNames = attachments.map((a) => a.filename).filter(Boolean) as string[];
+
   // Document drafting / synthesis task: draft model drives (delegates to vision via extract_document tool)
   if (isExplicitDrafting) {
-    const referencedFiles = extractReferencedFiles(userPrompt, history, workspaceFiles);
+    const referencedFiles = extractReferencedFiles(userPrompt, history, workspaceFiles, attachmentFileNames);
     return {
       driverModel: "draft-qwen3",
       taskType: "draft",
@@ -172,12 +189,11 @@ export async function resolveSemanticIntent(
     };
   }
 
-  // Pure conversational greeting without any context
+  // Pure conversational greeting without attachments
   if (
-    !hasWorkspace &&
     attachments.length === 0 &&
     history.length === 0 &&
-    /^(?:hi|hello|hey|greetings|good\s*(?:morning|evening|afternoon))[\s!.]*$/i.test(lowerPrompt)
+    /^(?:hi|hello|hey|greetings|good\s*(?:morning|evening|afternoon)|who are you)[\s!.]*$/i.test(lowerPrompt)
   ) {
     return {
       driverModel: "draft-qwen3",
@@ -264,7 +280,7 @@ LATEST USER REQUEST:
             ? parsed.targetFiles
                 .map((f: any) => String(f).replace(/^@\/?/, "").replace(/^\.\//, "").trim())
                 .filter((f: string) => f.length > 0)
-            : extractReferencedFiles(userPrompt, history, workspaceFiles);
+            : extractReferencedFiles(userPrompt, history, workspaceFiles, attachmentFileNames);
 
           return {
             driverModel: validDriverModel,
@@ -284,7 +300,20 @@ LATEST USER REQUEST:
 
   // 3. Resilient Contextual Fallback (No Brittle Regexes)
   // Understands role and context based on active workspace, conversation history, and explicit document requests.
-  const referencedFiles = extractReferencedFiles(userPrompt, history, workspaceFiles);
+  const referencedFiles = extractReferencedFiles(userPrompt, history, workspaceFiles, attachmentFileNames);
+
+  if (isCodeAttachment) {
+    const codeTargetFiles = attachments.map((a) => a.filename).filter(Boolean) as string[];
+    return {
+      driverModel: "code-qwen25coder",
+      taskType: "code",
+      primaryGoal: `Process and repair attached code: ${codeTargetFiles.join(", ")}`,
+      isActionable: true,
+      targetFiles: codeTargetFiles,
+      intentType: "code_modification",
+      reason: "code or data attachment provided; prioritizing attached files",
+    };
+  }
 
   if (hasWorkspace) {
     if (isExplicitDrafting) {
@@ -299,6 +328,28 @@ LATEST USER REQUEST:
       };
     }
 
+    // Check if the user is asking an informational question, conceptual explanation, architecture review,
+    // or general Q&A vs asking for active code modifications or disk actions.
+    const isExplicitAction = /\b(?:create|write|add|delete|remove|rm|fix|repair|patch|modify|update|edit|refactor|scaffold|convert|migrate|implement|build|install|npm|run|exec|test)\b/i.test(
+      lowerPrompt,
+    );
+    const isQuestionOrInquiry =
+      /\b(?:what|why|how|explain|walk\s*through|tell\s*me\s*about|describe|review|compare|difference|where\s*is|which|meaning|summarize|summary|help\s*me\s*understand|can\s*you\s*(?:explain|clarify|summarize|review))\b/i.test(
+        lowerPrompt,
+      ) || promptTrimmed.endsWith("?");
+
+    if (isQuestionOrInquiry && !isExplicitAction) {
+      return {
+        driverModel: "code-qwen25coder",
+        taskType: "code",
+        primaryGoal: referencedFiles.length > 0 ? `Explain ${referencedFiles.join(", ")}` : "Workspace code inquiry & explanation",
+        isActionable: false,
+        targetFiles: referencedFiles,
+        intentType: "general_qa",
+        reason: "workspace active: code inquiry and conceptual explanation without disk mutation",
+      };
+    }
+
     return {
       driverModel: "code-qwen25coder",
       taskType: "code",
@@ -307,18 +358,6 @@ LATEST USER REQUEST:
       targetFiles: referencedFiles,
       intentType: "code_modification",
       reason: "workspace active; routing to code engineering driver",
-    };
-  }
-
-  if (isCodeAttachment) {
-    return {
-      driverModel: "code-qwen25coder",
-      taskType: "code",
-      primaryGoal: "Process code or data attachment",
-      isActionable: true,
-      targetFiles: attachments.map((a) => a.filename).filter(Boolean) as string[],
-      intentType: "code_modification",
-      reason: "code script or data file attached",
     };
   }
 

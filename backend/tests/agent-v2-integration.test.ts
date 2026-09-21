@@ -78,8 +78,8 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
                   id: "call_1",
                   type: "function",
                   function: {
-                    name: "list_dir",
-                    arguments: "{}",
+                    name: "delete_file",
+                    arguments: JSON.stringify({ path: "temp.txt" }),
                   },
                 },
               ],
@@ -142,6 +142,74 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
 
     expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
     expect(events.some((e) => e.type === "assistant_message" && (e as any).text.includes("Workspace cleaned up successfully"))).toBe(true);
+
+    closeDb();
+    delete process.env.WORKBENCH_DATA_ROOT;
+    delete process.env.WORKBENCH_AGENT_V2;
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("bypasses confirmation gate when turn 1 tool calls are strictly read-only", async () => {
+    tempDir = mkdtempSync(path.join(process.cwd(), ".tmp-v2-readonly-"));
+    process.env.WORKBENCH_DATA_ROOT = path.join(tempDir, "data");
+    process.env.WORKBENCH_AGENT_V2 = "true";
+    initDb(path.join(tempDir, "workbench.sqlite"));
+
+    const events: RunEvent[] = [];
+    let callTurn = 0;
+
+    const mockGateway = {
+      async chatWithTools() {
+        callTurn++;
+        if (callTurn === 1) {
+          return {
+            ok: true,
+            value: {
+              content: "I will search the repository and list the files.",
+              tool_calls: [
+                {
+                  id: "call_search",
+                  type: "function",
+                  function: {
+                    name: "search",
+                    arguments: JSON.stringify({ query: "SyntaxError" }),
+                  },
+                },
+              ],
+            },
+          };
+        }
+        return {
+          ok: true,
+          value: {
+            content: "Analysis completed with no mutating changes needed.",
+            tool_calls: null,
+          },
+        };
+      },
+      health() {
+        return Promise.resolve([]);
+      },
+    } as unknown as ModelGateway;
+
+    const manager = new RunManager(mockGateway, (event) => events.push(event));
+    await manager.start({ userText: "Search for syntax errors" });
+
+    // Wait for completed state
+    await new Promise((resolve) => {
+      const interval = setInterval(() => {
+        if (events.some((e) => e.type === "run_state" && e.state === "completed")) {
+          clearInterval(interval);
+          resolve(true);
+        }
+      }, 20);
+    });
+
+    // Verify confirmation_required was NEVER emitted
+    expect(events.some((e) => e.type === "confirmation_required")).toBe(false);
+    expect(events.some((e) => e.type === "run_state" && e.state === "awaiting_confirmation")).toBe(false);
+    expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
+    expect(events.some((e) => e.type === "assistant_message" && (e as any).text.includes("Analysis completed"))).toBe(true);
 
     closeDb();
     delete process.env.WORKBENCH_DATA_ROOT;

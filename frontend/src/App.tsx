@@ -63,7 +63,7 @@ export default function App() {
   const [runError, setRunError] = useState<{ code: string; message: string } | null>(null);
   const [serviceHealth, setServiceHealth] = useState<ModelHealth[] | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
-  const [groundingEnabled, setGroundingEnabled] = useState(true);
+  const [groundingEnabled, setGroundingEnabled] = useState(false);
   const [, setGroundingStatus] = useState<{ status: "retrieving" | "injected" | "skipped"; chunkCount?: number } | null>(null);
   const activeRunRef = useRef<string | null>(null);
   activeRunRef.current = activeRunId;

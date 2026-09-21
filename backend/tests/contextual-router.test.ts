@@ -158,5 +158,31 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
     expect(intent.isActionable).toBe(true);
     expect(intent.primaryGoal).toBe("Convert JavaScript codebase to TypeScript");
   });
+
+  it("routes conversational greeting in an active workspace to draft-qwen3 as pure_chat without requiring disk action", async () => {
+    const intent = await resolveSemanticIntent({
+      userPrompt: "hello",
+      hasWorkspace: true,
+      workspaceFiles: ["app.js", "package.json"],
+    });
+
+    expect(intent.driverModel).toBe("draft-qwen3");
+    expect(intent.taskType).toBe("draft");
+    expect(intent.isActionable).toBe(false);
+    expect(intent.intentType).toBe("pure_chat");
+  });
+
+  it("routes questions and explanations in an active workspace with isActionable false", async () => {
+    const intent = await resolveSemanticIntent({
+      userPrompt: "How does the authentication flow work in this project?",
+      hasWorkspace: true,
+      workspaceFiles: ["app.js", "auth/jwt.js", "package.json"],
+    });
+
+    expect(intent.driverModel).toBe("code-qwen25coder");
+    expect(intent.taskType).toBe("code");
+    expect(intent.isActionable).toBe(false);
+    expect(intent.intentType).toBe("general_qa");
+  });
 });
 

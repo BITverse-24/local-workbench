@@ -247,4 +247,89 @@ Next Steps:
     expect(result.finalText).toContain("Implemented:");
     expect(result.finalText).toContain("Next Steps:");
   });
+
+  it("formats formal task-based plan for execute_python without dumping raw code or JSON blobs", async () => {
+    const loop = new AgentLoop();
+    let presentedPlan = "";
+
+    const mockPyTool: AgentTool = {
+      name: "execute_python",
+      definition: {
+        type: "function",
+        function: {
+          name: "execute_python",
+          description: "Execute python in sandbox",
+          parameters: {
+            type: "object",
+            properties: {
+              code: { type: "string" },
+              input_files: { type: "array", items: { type: "string" } },
+            },
+          },
+        },
+      },
+      async execute() {
+        return { output: "ROWS 5; MALFORMED 1; ABOVE_LIMIT 1", summary: "verified" };
+      },
+    };
+
+    const pythonCodeSnippet = `import csv\nimport sys\ndef summarize(path: str):\n    counts = {'ok': 0}\n    return counts`;
+
+    const mockGateway = {
+      async chatWithTools() {
+        return {
+          ok: true,
+          value: {
+            content: `Here is the updated script:
+
+\`\`\`python
+${pythonCodeSnippet}
+\`\`\`
+
+Now, let's execute this updated script using the execute_python tool:`,
+            tool_calls: [
+              {
+                id: "call_py",
+                name: "execute_python",
+                arguments: {
+                  code: pythonCodeSnippet,
+                  input_files: ["broken-vendor-log-parser.py", "vendor-maintenance-log.csv"],
+                },
+              },
+            ],
+          },
+        };
+      },
+    };
+
+    await loop.run({
+      runId: "test-py-plan",
+      driverModelId: "code-qwen25coder",
+      userPrompt: "This is crashing on our vendor log files. Fix it and make sure it actually works.",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockPyTool],
+      context: { runId: "test-py-plan", workspaceRoot: ".", gateway: mockGateway as any },
+      onPlanConfirmationRequired: async (plan) => {
+        presentedPlan = plan;
+        return false; // Stop after capturing the presented plan
+      },
+      emitEvent: () => {},
+    });
+
+    // 1. Must NOT contain conversational preamble or tool-calling chat
+    expect(presentedPlan).not.toContain("Here is the updated script");
+    expect(presentedPlan).not.toContain("Now, let's execute");
+    // 2. Must NOT contain raw code blocks or code dumps
+    expect(presentedPlan).not.toContain("```python");
+    expect(presentedPlan).not.toContain("def summarize");
+    expect(presentedPlan).not.toContain("import csv");
+    // 3. Must NOT dump raw JSON stringified arguments
+    expect(presentedPlan).not.toContain('{"code":');
+    expect(presentedPlan).not.toContain('"input_files":');
+    // 4. Must contain formal, task-based structure
+    expect(presentedPlan).toContain("### Objective");
+    expect(presentedPlan).toContain("Diagnose and repair reported script/code defects");
+    expect(presentedPlan).toContain("### Proposed Operations");
+    expect(presentedPlan).toContain("• **execute_python**: Run sandboxed script verification using `broken-vendor-log-parser.py, vendor-maintenance-log.csv`");
+  });
 });

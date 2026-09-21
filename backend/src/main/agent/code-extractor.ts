@@ -12,7 +12,7 @@ const EXTENSION_REGEX = /\.(js|ts|jsx|tsx|json|py|html|css|md|txt|env|ya?ml|mjs|
  * - `Create a file named path/to/file.ext` or `File: path/to/file.ext` preceding code block
  * - Preceding headers like `### routes/users.js`
  */
-export function extractCodeBlocksWithFilenames(text: string): ExtractedFileBlock[] {
+export function extractCodeBlocksWithFilenames(text: string, fallbackFilenames: string[] = []): ExtractedFileBlock[] {
   if (!text) return [];
 
   const results: ExtractedFileBlock[] = [];
@@ -85,6 +85,19 @@ export function extractCodeBlocksWithFilenames(text: string): ExtractedFileBlock
             break;
           }
         }
+      }
+    }
+
+    // 2.5 Fallback to provided target/attached filenames
+    if (!foundPath && fallbackFilenames.length > 0) {
+      if (fallbackFilenames.length === 1) {
+        foundPath = fallbackFilenames[0];
+      } else if (lang) {
+        const matched = fallbackFilenames.find((f) => {
+          const ext = f.split(".").pop()?.toLowerCase();
+          return ext === lang || (lang === "python" && ext === "py") || (lang === "typescript" && ext === "ts") || (lang === "javascript" && ext === "js");
+        });
+        if (matched) foundPath = matched;
       }
     }
 
@@ -203,8 +216,9 @@ export function cleanFinalSummary(text: string, hasExecutedTools: boolean): stri
  *    <tool_response>...</tool_response>, or <tool_call>...</tool_call>.
  * 2. Strips premature completion markers (e.g. "**Implemented**:", "Next Steps:") which
  *    make no sense in an upfront implementation plan before tools have executed.
- * 3. Strips raw source code blocks that clutter the plan view.
- * 4. Normalizes whitespace and returns a clean, human-readable plan rationale.
+ * 3. Strips raw source code blocks and unfenced code lines that clutter the plan view.
+ * 4. Strips conversational filler and tool-calling preambles (e.g. "Here is the updated script:", "Now let's execute...").
+ * 5. Normalizes whitespace and returns a clean, human-readable plan rationale.
  */
 export function cleanPlanPreview(text: string): string {
   if (!text) return "";
@@ -215,17 +229,44 @@ export function cleanPlanPreview(text: string): string {
     .replace(/<tool_response>[\s\S]*?<\/tool_response>/gi, "")
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
 
-  // 2. Strip code blocks from plan preview (the actual operations are listed separately)
-  cleaned = cleaned.replace(/```[a-zA-Z0-9_-]*\r?\n[\s\S]*?```/g, "");
+  // 2. Strip all fenced code blocks (fenced by 3 or more backticks)
+  cleaned = cleaned.replace(/```[\s\S]*?```/g, "");
 
-  // 3. Strip premature "Implemented:" or "Next Steps:" sections that make no sense before tools have run
+  // 3. Strip premature "Implemented:" or "Next Steps:" or "Proposed Operations:" sections
   cleaned = cleaned.replace(/\*{0,2}Implemented\*{0,2}:?[\s\S]*?(?=\n\s*\*{0,2}(?:Next Steps|Proposed Operations)\*{0,2}|$)/i, "");
   cleaned = cleaned.replace(/\*{0,2}Next Steps\*{0,2}:?[\s\S]*?(?=\n\s*\*{0,2}Proposed Operations\*{0,2}|$)/i, "");
+  cleaned = cleaned.replace(/\*{0,2}Proposed Operations\*{0,2}:?[\s\S]*?(?=\n\n|$)/gi, "");
 
-  // 4. Normalize multiple blank lines and trim
+  // 4. Strip raw unfenced code lines (e.g. multi-line imports, defs, returns)
+  cleaned = cleaned
+    .split(/\r?\n/)
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return true;
+      if (/^(import|from)\s+[a-zA-Z0-9_.]+\s+(import|as)?/i.test(t)) return false;
+      if (/^(def|class)\s+[a-zA-Z0-9_]+\s*[:(]/i.test(t)) return false;
+      if (/^(return|yield|raise|assert)\s+/i.test(t)) return false;
+      if (/^(with\s+open|for\s+row\s+in|if\s+["'])/i.test(t)) return false;
+      if (/^(const|let|var)\s+[a-zA-Z0-9_]+\s*=/i.test(t)) return false;
+      return true;
+    })
+    .join("\n");
+
+  // 5. Strip conversational preambles and tool chatter lines
+  cleaned = cleaned
+    .replace(/(?:^|\n)\s*(?:(?:Here|Below|Above)\s+(?:is|are)\s+(?:the\s+)?(?:updated\s+|repaired\s+|fixed\s+|new\s+|created\s+)?(?:code|script|implementation|file|changes|solution)[^\n.:]*[.:]?)\s*(?=\n|$)/gi, "")
+    .replace(/(?:^|\n)\s*(?:Now(?:,)?\s+)?(?:let'?s|I\s+will|we\s+will|going\s+to)\s+(?:execute|run|test|apply|use|call)\s+(?:this\s+)?(?:updated\s+)?(?:script|code|tool|command)[^\n.:]*[.:]?\s*(?=\n|$)/gi, "")
+    .replace(/(?:^|\n)\s*I\s+have\s+(?:updated|fixed|repaired|modified|written|created)\s+[^\n.:]*[.:]?\s*(?=\n|$)/gi, "");
+
+  // 6. Normalize multiple blank lines and trim
   cleaned = cleaned
     .replace(/\r?\n{3,}/g, "\n\n")
     .trim();
+
+  // If only a tiny fragment or punctuation remains, treat as empty so formal plan is used
+  if (cleaned.length < 15 || /^[^a-zA-Z0-9]+$/.test(cleaned)) {
+    return "";
+  }
 
   return cleaned;
 }

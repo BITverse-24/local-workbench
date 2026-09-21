@@ -227,7 +227,7 @@ export default function ConfirmationModal({
                   {isPlan ? "execution-plan.md" : isPython ? "task.py" : "output-preview"}
                 </span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] text-[var(--text-tertiary)] font-mono border border-[var(--border-subtle)]">
-                  {isPlan ? `${previewLines.length} sections` : `${previewLines.length} lines`}
+                  {isPlan ? "task plan" : `${previewLines.length} lines`}
                 </span>
               </div>
               <div className="flex items-center gap-2">

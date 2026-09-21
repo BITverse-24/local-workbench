@@ -415,6 +415,27 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
             </button>
           </div>
         )}
+        {!isUser && Boolean(msg.text) && (
+          <div className="flex items-center gap-1.5 pl-2 pt-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
+            <button
+              onClick={() => onCopy(msg)}
+              className="w-7 h-7 grid place-items-center rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              title={isCopied ? 'Copied' : 'Copy response'}
+              aria-label={isCopied ? 'Copied' : 'Copy response'}
+            >
+              {isCopied ? (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--status-success)]">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+              ) : (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3.5" />
+                </svg>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

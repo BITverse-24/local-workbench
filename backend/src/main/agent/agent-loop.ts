@@ -35,6 +35,91 @@ export interface AgentLoopResult {
   messageId?: string;
 }
 
+/**
+ * Formats a tool invocation into a clean, task-based summary without dumping raw code or JSON payloads.
+ */
+export function formatToolActionSummary(name: string, args: any): string {
+  if (!args || typeof args !== "object") {
+    return `• **${name}**`;
+  }
+
+  switch (name) {
+    case "execute_python": {
+      const inputs = Array.isArray(args.input_files) && args.input_files.length > 0
+        ? ` using \`${args.input_files.join(", ")}\``
+        : "";
+      return `• **execute_python**: Run sandboxed script verification${inputs}`;
+    }
+    case "write_file": {
+      const targetPath = args.path || args.filename || "file";
+      return `• **write_file**: Write \`${targetPath}\``;
+    }
+    case "delete_file": {
+      const targetPath = args.path || args.filename || "file";
+      return `• **delete_file**: Remove \`${targetPath}\``;
+    }
+    case "edit_file": {
+      const targetPath = args.path || args.filename || "file";
+      return `• **edit_file**: Patch modifications in \`${targetPath}\``;
+    }
+    case "run_command": {
+      const cmd = args.command ? `\`${args.command}\`` : "command";
+      return `• **run_command**: ${cmd}`;
+    }
+    case "generate_deliverable": {
+      const kind = args.kind ? `${String(args.kind).toUpperCase()} ` : "";
+      const filename = args.filename || args.path || "deliverable";
+      return `• **generate_deliverable**: Generate ${kind}artifact (\`${filename}\`)`;
+    }
+    case "generate_code": {
+      const lang = args.language || "code";
+      const target = args.filename ? ` for \`${args.filename}\`` : "";
+      return `• **generate_code**: Generate ${lang}${target}`;
+    }
+    case "generate_text": {
+      return `• **generate_text**: Compose formal deliverable text`;
+    }
+    default: {
+      if (args.command) return `• **${name}**: \`${args.command}\``;
+      if (args.path) return `• **${name}**: \`${args.path}\``;
+      if (args.filename) return `• **${name}**: \`${args.filename}\``;
+      const safeKeys = Object.keys(args).filter((k) => !["code", "content", "body", "text", "source"].includes(k));
+      if (safeKeys.length > 0) {
+        const compactObj: Record<string, unknown> = {};
+        for (const k of safeKeys) compactObj[k] = args[k];
+        return `• **${name}**: \`${JSON.stringify(compactObj)}\``;
+      }
+      return `• **${name}**`;
+    }
+  }
+}
+
+/**
+ * Derives a formal, task-based plan when the model did not supply clean plan text.
+ */
+export function deriveFormalPlan(userPrompt: string, mutatingCalls: any[]): string {
+  const actionsList = mutatingCalls
+    .map((c: any) => formatToolActionSummary(c.name, c.arguments))
+    .join("\n");
+
+  const promptLower = userPrompt.toLowerCase();
+  let objective = "";
+  if (/\b(fix|repair|crash|crashing|broken|bug|error|traceback)\b/i.test(promptLower)) {
+    objective = "Diagnose and repair reported script/code defects, then verify execution inside the isolated sandbox.";
+  } else if (/\b(convert|migrate|refactor|typescript|ts)\b/i.test(promptLower)) {
+    objective = "Perform codebase refactor and migration to target specifications with verified integrity.";
+  } else if (/\b(install|deps|build|run|test|start)\b/i.test(promptLower)) {
+    objective = "Execute requested environment setup and verification commands.";
+  } else if (/\b(create|add|write|scaffold|implement)\b/i.test(promptLower)) {
+    objective = "Implement requested application components and write required files to the workspace.";
+  } else {
+    const cleanPrompt = userPrompt.replace(/\s+/g, " ").trim();
+    objective = cleanPrompt.length > 120 ? `${cleanPrompt.slice(0, 117)}...` : cleanPrompt;
+  }
+
+  return `### Objective\n${objective}\n\n### Proposed Operations\n${actionsList}`;
+}
+
 export class AgentLoop {
   async run(options: AgentLoopOptions): Promise<AgentLoopResult> {
     const {
@@ -150,20 +235,40 @@ export class AgentLoop {
         });
       }
 
-      let effectiveToolCalls: any[] | null = tool_calls;
+      let effectiveToolCalls: any[] | null = null;
+      if (Array.isArray(tool_calls)) {
+        effectiveToolCalls = tool_calls.map((c: any) => {
+          const name = c.name || c.function?.name || "";
+          let args = c.arguments || c.function?.arguments || {};
+          if (typeof args === "string") {
+            try {
+              args = JSON.parse(args);
+            } catch {
+              args = {};
+            }
+          }
+          return {
+            id: c.id || `call_${randomUUID().slice(0, 8)}`,
+            name,
+            arguments: typeof args === "object" && args !== null ? args : {},
+          };
+        });
+      }
 
       // 4. Guardrail: If model lazily output conversational text/code without invoking tools
       // when disk mutations have NOT yet executed in this run:
       if (!hasExecutedDiskMutations && (!effectiveToolCalls || effectiveToolCalls.length === 0)) {
+        const semanticTargets = semanticIntent?.targetFiles ?? [];
+
         // A. File creation extraction: If model provided file code blocks in current content or recent assistant messages
         if (dispatcher.getTool("write_file")) {
-          let extractedFiles = extractCodeBlocksWithFilenames(content ?? "");
+          let extractedFiles = extractCodeBlocksWithFilenames(content ?? "", semanticTargets);
           if (extractedFiles.length === 0) {
             // Inspect recent assistant messages for code blocks that weren't persisted
             for (let i = messages.length - 1; i >= 0 && i >= messages.length - 4; i--) {
               const m = messages[i];
               if (m.role === "assistant" && typeof m.content === "string" && m.content.includes("```")) {
-                const fromMsg = extractCodeBlocksWithFilenames(m.content);
+                const fromMsg = extractCodeBlocksWithFilenames(m.content, semanticTargets);
                 if (fromMsg.length > 0) {
                   extractedFiles = fromMsg;
                   break;
@@ -201,19 +306,23 @@ export class AgentLoop {
         // C. System Nudges: If model still returned no tool calls on turn 1 despite actionable requests
         if (turn === 1 && (!effectiveToolCalls || effectiveToolCalls.length === 0)) {
           const isSemanticActionable = semanticIntent?.isActionable;
-          const semanticTargets = semanticIntent?.targetFiles ?? [];
+          const hasActionVerb = /\b(?:create|write|add|delete|remove|rm|fix|repair|patch|modify|update|edit|refactor|scaffold|setup|set\s*up|convert|migrate|implement|build|install|npm|run|exec|test)\b/i.test(userPrompt);
           const isCommandIntent =
-            semanticIntent
+            isSemanticActionable !== false &&
+            (semanticIntent
               ? semanticIntent.intentType === "command_execution"
               : Boolean(dispatcher.getTool("run_command")) &&
                 (!dispatcher.getTool("write_file") ||
-                  /\b(?:npm|npx|run|install|test|start|build|node|exec)\b/i.test(userPrompt));
+                  /\b(?:npm|npx|run|install|test|start|build|node|exec)\b/i.test(userPrompt)));
           const isCodeIntent =
-            semanticIntent
-              ? semanticIntent.intentType === "code_modification" ||
-                (isSemanticActionable && semanticTargets.length > 0)
+            isSemanticActionable !== false &&
+            semanticIntent?.intentType !== "general_qa" &&
+            semanticIntent?.intentType !== "pure_chat" &&
+            (semanticIntent
+              ? (semanticIntent.intentType === "code_modification" && (hasActionVerb || semanticTargets.length > 0))
               : Boolean(dispatcher.getTool("write_file")) &&
-                (driverModelId === "code-qwen25coder" || !isCommandIntent);
+                (driverModelId === "code-qwen25coder" || hasActionVerb) &&
+                !isCommandIntent);
 
           if (isCommandIntent && dispatcher.getTool("run_command")) {
             messages.push({
@@ -250,8 +359,21 @@ export class AgentLoop {
       // 5. Pure chat detection / completion: If no tool calls and no synthesized actions, we are done!
       if (!effectiveToolCalls || effectiveToolCalls.length === 0) {
         if (!hasExecutedDiskMutations) {
-          const isSemanticActionable = semanticIntent?.isActionable;
           const semanticTargets = semanticIntent?.targetFiles ?? [];
+
+          // If content contains code blocks, try one final extraction before giving up
+          if (dispatcher.getTool("write_file") && content && content.includes("```")) {
+            const finalExtracted = extractCodeBlocksWithFilenames(content, semanticTargets);
+            if (finalExtracted.length > 0) {
+              for (const file of finalExtracted) {
+                try {
+                  await dispatcher.getTool("write_file")!.execute({ path: file.path, content: file.content }, context);
+                  hasExecutedDiskMutations = true;
+                  modifiedFiles.add(file.path);
+                } catch {}
+              }
+            }
+          }
 
           const claimsDiskAction =
             /\b(implemented|created|updated|modified|added|written|patched|converted|migrated|refactored|configured|installed)\b/i.test(
@@ -261,14 +383,14 @@ export class AgentLoop {
               content ?? "",
             );
 
-          const isActionRequest =
-            semanticIntent
-              ? isSemanticActionable ||
-                semanticIntent.intentType === "code_modification" ||
-                semanticIntent.intentType === "command_execution"
-              : driverModelId === "code-qwen25coder" && toolDefinitions.length > 0;
+          // Only reject if model made a hollow claim without actually producing code or explanation
+          const isMerelyEmptyClaim =
+            claimsDiskAction &&
+            !content?.includes("```") &&
+            (content?.length ?? 0) < 150 &&
+            !hasExecutedDiskMutations;
 
-          if (claimsDiskAction || (isActionRequest && semanticTargets.length > 0)) {
+          if (isMerelyEmptyClaim) {
             const targetHint = semanticTargets.length > 0 ? ` for ${semanticTargets.join(", ")}` : "";
             finalText = `No files were modified on disk${targetHint}. The model did not execute file tools or output code blocks for disk persistence. Please provide the code or confirm the file target.`;
             return {
@@ -327,25 +449,29 @@ export class AgentLoop {
       }
       previousCallSignature = currentCallSignature;
 
-      // 6. Single-gate plan confirmation check on turn 1
-      if (turn === 1 && !confirmed && onPlanConfirmationRequired) {
-        const actionsList = effectiveToolCalls
-          .map((c: any) => {
-            const detail = c.arguments?.command
-              ? `\`${c.arguments.command}\``
-              : c.arguments?.path
-              ? `\`${c.arguments.path}\``
-              : Object.keys(c.arguments || {}).length > 0
-              ? `\`${JSON.stringify(c.arguments)}\``
-              : "";
-            return detail ? `• **${c.name}**: ${detail}` : `• **${c.name}**`;
-          })
+      // 6. Plan confirmation check: ONLY pause for confirmation if there are mutating tool calls
+      const READ_ONLY_TOOLS = new Set([
+        "read_file",
+        "list_dir",
+        "search",
+        "retrieve_sop",
+        "retrieve_knowledge",
+        "extract_document",
+        "ocr_extract",
+        "inspect_drawing",
+        "get_file_info",
+      ]);
+
+      const mutatingCalls = (effectiveToolCalls || []).filter((c: any) => !READ_ONLY_TOOLS.has(c.name));
+      if (!confirmed && mutatingCalls.length > 0 && onPlanConfirmationRequired) {
+        const actionsList = mutatingCalls
+          .map((c: any) => formatToolActionSummary(c.name, c.arguments))
           .join("\n");
         const cleanedContent = cleanPlanPreview(content ?? "");
         const planDescription = cleanedContent
-          ? `${cleanedContent}\n\n**Proposed Operations**:\n${actionsList}`
-          : `**Proposed Operations**:\n${actionsList}`;
-        const approved = await onPlanConfirmationRequired(planDescription, effectiveToolCalls);
+          ? `### Plan Overview\n${cleanedContent}\n\n### Proposed Operations\n${actionsList}`
+          : deriveFormalPlan(userPrompt, mutatingCalls);
+        const approved = await onPlanConfirmationRequired(planDescription, mutatingCalls);
         if (!approved) {
           emitEvent({
             type: "error",

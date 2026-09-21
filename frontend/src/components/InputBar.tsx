@@ -58,7 +58,7 @@ function FileTypeIcon({ file }: { file: File }) {
   return <span className="w-7 h-7 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] grid place-items-center shrink-0 text-[9px] font-mono text-[var(--text-secondary)]">{label.slice(0, 4)}</span>;
 }
 
-export default function InputBar({ input, setInput, onSend, attachedFiles = [], onAttachFiles, onRemoveFile, disabled, groundingEnabled = true, setGroundingEnabled }: Props) {
+export default function InputBar({ input, setInput, onSend, attachedFiles = [], onAttachFiles, onRemoveFile, disabled, groundingEnabled = false, setGroundingEnabled }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
