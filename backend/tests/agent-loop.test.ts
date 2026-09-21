@@ -346,4 +346,272 @@ module.exports = app;
     expect(result.completed).toBe(false);
     expect(result.finalText).toContain("cancelled");
   });
+
+  it("streams free-text responses via assistant_message_chunk on pure chat turns and returns messageId", async () => {
+    const loop = new AgentLoop();
+    const emittedEvents: any[] = [];
+
+    const mockGateway = {
+      async chatWithTools(_model: string, _msgs: any[], _tools: any[], options?: any) {
+        if (options?.onChunk) {
+          options.onChunk("Thinking ");
+          options.onChunk("and explaining.");
+        }
+        return {
+          ok: true,
+          value: {
+            content: "Thinking and explaining.",
+            tool_calls: null,
+          },
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-stream-pure",
+      driverModelId: "draft-qwen3",
+      userPrompt: "Explain how heat exchangers work",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [],
+      semanticIntent: {
+        driverModel: "draft-qwen3",
+        taskType: "draft",
+        primaryGoal: "Explanation",
+        isActionable: false,
+        targetFiles: [],
+        intentType: "general_qa",
+        reason: "General question",
+      },
+      context: { runId: "test-stream-pure", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: (e) => emittedEvents.push(e),
+    });
+
+    expect(result.completed).toBe(true);
+    expect(result.messageId).toBeDefined();
+
+    const chunks = emittedEvents.filter((e) => e.type === "assistant_message_chunk");
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].delta).toBe("Thinking ");
+    expect(chunks[1].delta).toBe("and explaining.");
+    expect(chunks[0].messageId).toBe(result.messageId);
+  });
+
+  it("streams post-tool summary turn via assistant_message_chunk", async () => {
+    const loop = new AgentLoop();
+    const emittedEvents: any[] = [];
+    let turnCount = 0;
+
+    const mockTool: AgentTool = {
+      name: "write_file",
+      definition: {
+        type: "function",
+        function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } },
+      },
+      async execute() {
+        return { output: "created", summary: "file written" };
+      },
+    };
+
+    const mockGateway = {
+      async chatWithTools(_model: string, _msgs: any[], _tools: any[], options?: any) {
+        turnCount++;
+        if (turnCount === 1) {
+          // Turn 1: tool call (no streaming chunks)
+          return {
+            ok: true,
+            value: {
+              content: null,
+              tool_calls: [{ id: "c1", name: "write_file", arguments: { path: "a.js", content: "1" } }],
+            },
+          };
+        } else {
+          // Turn 2: summary turn (should stream!)
+          expect(options?.onChunk).toBeDefined();
+          if (options?.onChunk) {
+            options.onChunk("File ");
+            options.onChunk("created successfully.");
+          }
+          return {
+            ok: true,
+            value: {
+              content: "File created successfully.",
+              tool_calls: null,
+            },
+          };
+        }
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-stream-summary",
+      driverModelId: "code-qwen25coder",
+      userPrompt: "Create a.js",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockTool],
+      semanticIntent: {
+        driverModel: "code-qwen25coder",
+        taskType: "code",
+        primaryGoal: "Create a.js",
+        isActionable: true,
+        targetFiles: ["a.js"],
+        intentType: "code_modification",
+        reason: "file creation",
+      },
+      context: { runId: "test-stream-summary", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: (e) => emittedEvents.push(e),
+    });
+
+    expect(result.completed).toBe(true);
+    expect(result.turns).toBe(2);
+
+    const chunks = emittedEvents.filter((e) => e.type === "assistant_message_chunk");
+    expect(chunks.length).toBe(2);
+    expect(chunks.map((c) => c.delta).join("")).toBe("File created successfully.");
+    expect(chunks[0].messageId).toBe(result.messageId);
+  });
+
+  it("does not treat read-only search as a disk mutation, maintains full token budget on turn 2, and intercepts code blocks", async () => {
+    const loop = new AgentLoop();
+    let turnCount = 0;
+    const writtenFiles: { path: string; content: string }[] = [];
+    const maxTokensPerTurn: (number | undefined)[] = [];
+
+    const mockSearchTool: AgentTool = {
+      name: "search",
+      definition: {
+        type: "function",
+        function: { name: "search", description: "Search workspace", parameters: { type: "object", properties: { query: { type: "string" } } } },
+      },
+      async execute(args) {
+        return { output: JSON.stringify(["app.js"]), summary: "Found app.js" };
+      },
+    };
+
+    const mockWriteFileTool: AgentTool = {
+      name: "write_file",
+      definition: {
+        type: "function",
+        function: { name: "write_file", description: "Write file", parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } } } },
+      },
+      async execute(args) {
+        writtenFiles.push({ path: args.path as string, content: args.content as string });
+        return { output: `Saved ${args.path}`, summary: `Saved ${args.path}` };
+      },
+    };
+
+    const mockGateway = {
+      async chatWithTools(_model: string, _msgs: any[], _tools: any[], options?: any) {
+        turnCount++;
+        maxTokensPerTurn.push(options?.maxTokens);
+
+        if (turnCount === 1) {
+          // Turn 1: Model calls search (read-only inspection)
+          return {
+            ok: true,
+            value: {
+              content: "I will search for JavaScript files in the workspace.",
+              tool_calls: [{ id: "call_search_1", name: "search", arguments: { query: "app.js" } }],
+            },
+          };
+        } else if (turnCount === 2) {
+          // Turn 2: Model outputs code block for converted TypeScript file
+          return {
+            ok: true,
+            value: {
+              content: "Here is the converted TypeScript code:\n```typescript\n// app.ts\nimport express from 'express';\nconst app = express();\nexport default app;\n```\n",
+              tool_calls: null,
+            },
+          };
+        } else {
+          // Turn 3: Final summary
+          return {
+            ok: true,
+            value: {
+              content: "Successfully converted app.js to app.ts.",
+              tool_calls: null,
+            },
+          };
+        }
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-search-no-mutation",
+      driverModelId: "code-qwen25coder",
+      userPrompt: "Convert codebase to TypeScript",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockSearchTool, mockWriteFileTool],
+      semanticIntent: {
+        driverModel: "code-qwen25coder",
+        taskType: "code",
+        primaryGoal: "Convert codebase to TypeScript",
+        isActionable: true,
+        targetFiles: ["app.ts"],
+        intentType: "code_modification",
+        reason: "TypeScript conversion",
+      },
+      context: { runId: "test-search-no-mutation", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: () => {},
+    });
+
+    expect(result.completed).toBe(true);
+    // Turn 1: undefined maxTokens (full budget)
+    expect(maxTokensPerTurn[0]).toBeUndefined();
+    // Turn 2: should NOT be capped to 350 because search is read-only!
+    expect(maxTokensPerTurn[1]).toBeUndefined();
+    // Turn 3: capped to 350 because write_file mutated disk on turn 2
+    expect(maxTokensPerTurn[2]).toBe(350);
+    // Code block was intercepted as write_file tool call and written to disk
+    expect(writtenFiles.length).toBe(1);
+    expect(writtenFiles[0].path).toBe("app.ts");
+    expect(writtenFiles[0].content).toContain("import express from 'express';");
+  });
+
+  it("terminates and reports error when tool calls repeatedly fail in an error loop", async () => {
+    const loop = new AgentLoop();
+    let callCount = 0;
+    const emittedEvents: any[] = [];
+
+    const mockFailingTool: AgentTool = {
+      name: "write_file",
+      definition: {
+        type: "function",
+        function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } },
+      },
+      async execute() {
+        return { output: "Error in write_file: path parameter is required", summary: "Failed" };
+      },
+    };
+
+    const mockGateway = {
+      async chatWithTools() {
+        callCount++;
+        return {
+          ok: true,
+          value: {
+            content: "I apologize for the repeated errors. Let's manually correct the file content and write it using write_file.",
+            tool_calls: [{ id: `call_${callCount}`, name: "write_file", arguments: {} }],
+          },
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-failing-loop",
+      driverModelId: "code-qwen25coder",
+      userPrompt: "Convert codebase to TypeScript",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockFailingTool],
+      context: { runId: "test-failing-loop", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: (e) => emittedEvents.push(e),
+    });
+
+    expect(callCount).toBe(2);
+    expect(result.completed).toBe(false);
+    expect(result.finalText).toContain("Execution stopped: The model repeatedly encountered errors");
+    const errorEvent = emittedEvents.find((e) => e.type === "error" && e.code === "tool_loop_detected");
+    expect(errorEvent).toBeDefined();
+  });
 });
+
+

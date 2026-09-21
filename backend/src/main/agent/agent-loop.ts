@@ -9,13 +9,6 @@ import {
   cleanPlanPreview,
   extractShellCommands,
 } from "./code-extractor.js";
-import {
-  hasActionVerb,
-  hasContainerNoun,
-  hasCommandActionVerb,
-  hasCommandTargetNoun,
-  normalizeTokens,
-} from "../router/intent-classifier.js";
 import type { SemanticIntent } from "../router/contextual-router.js";
 
 export interface AgentLoopOptions {
@@ -39,6 +32,7 @@ export interface AgentLoopResult {
   turns: number;
   completed: boolean;
   modelId: ModelId;
+  messageId?: string;
 }
 
 export class AgentLoop {
@@ -72,8 +66,14 @@ export class AgentLoop {
     let finalText = "";
     let confirmed = false;
     let hasExecutedTools = false;
+    let hasExecutedDiskMutations = false;
+    let lastExecutionHadError = false;
+    let lastErrorMessage = "";
+    const modifiedFiles = new Set<string>();
+    const executedCommands: string[] = [];
     let previousCallSignature: string | null = null;
     let lastContent: string | null = null;
+    let assistantMessageId = randomUUID();
 
     while (turn < maxTurns) {
       if (options.isCancelled?.()) {
@@ -82,6 +82,7 @@ export class AgentLoop {
           turns: turn,
           completed: false,
           modelId: driverModelId,
+          messageId: assistantMessageId,
         };
       }
 
@@ -91,9 +92,31 @@ export class AgentLoop {
       const activeMessages = compactConversationHistory(messages, turn, 2);
 
       // 2. Dispatch turn to model gateway with native tools
-      // When tools have already executed, the model is formulating its final summary.
-      // Capping maxTokens to 350 prevents verbose runaway text and saves 10-20s of local generation time.
-      const turnMaxTokens = hasExecutedTools ? 350 : undefined;
+      // Only cap maxTokens to 350 when disk-modifying actions have already succeeded and the model is formulating its final summary.
+      // If only inspection/read tools (search, read_file) ran, do NOT cap tokens, because the model still needs full token budget to output complete code files or multi-tool calls!
+      const turnMaxTokens = hasExecutedDiskMutations ? 350 : undefined;
+
+      // Stream free-text responses whenever structured output is not necessary:
+      // 1) Post-disk mutation turns (final summary)
+      // 2) Non-actionable pure chat / informational turns or when no tools exist
+      const isFreeTextTurn =
+        hasExecutedDiskMutations ||
+        toolDefinitions.length === 0 ||
+        semanticIntent?.isActionable === false ||
+        semanticIntent?.intentType === "pure_chat" ||
+        semanticIntent?.intentType === "general_qa";
+
+      const onChunk = isFreeTextTurn
+        ? (delta: string) => {
+            emitEvent({
+              type: "assistant_message_chunk",
+              runId,
+              messageId: assistantMessageId,
+              delta,
+              modelId: driverModelId,
+            });
+          }
+        : undefined;
 
       const turnResponse = await context.gateway.chatWithTools(
         driverModelId,
@@ -104,6 +127,7 @@ export class AgentLoop {
           temperature: 0.2,
           maxTokens: turnMaxTokens,
           devWorkload,
+          onChunk,
         },
       );
 
@@ -129,13 +153,24 @@ export class AgentLoop {
       let effectiveToolCalls: any[] | null = tool_calls;
 
       // 4. Guardrail: If model lazily output conversational text/code without invoking tools
-      // when the user requested creating files, setting up projects, or running commands/tests:
-      // CRITICAL: Only synthesize tool calls or nudge if tools have NOT yet executed in this run!
-      // Once tools have executed, any subsequent text without tool calls is the model's completion summary!
-      if (!hasExecutedTools && (!effectiveToolCalls || effectiveToolCalls.length === 0)) {
-        // A. File creation extraction: If model provided file code blocks
+      // when disk mutations have NOT yet executed in this run:
+      if (!hasExecutedDiskMutations && (!effectiveToolCalls || effectiveToolCalls.length === 0)) {
+        // A. File creation extraction: If model provided file code blocks in current content or recent assistant messages
         if (dispatcher.getTool("write_file")) {
-          const extractedFiles = extractCodeBlocksWithFilenames(content ?? "");
+          let extractedFiles = extractCodeBlocksWithFilenames(content ?? "");
+          if (extractedFiles.length === 0) {
+            // Inspect recent assistant messages for code blocks that weren't persisted
+            for (let i = messages.length - 1; i >= 0 && i >= messages.length - 4; i--) {
+              const m = messages[i];
+              if (m.role === "assistant" && typeof m.content === "string" && m.content.includes("```")) {
+                const fromMsg = extractCodeBlocksWithFilenames(m.content);
+                if (fromMsg.length > 0) {
+                  extractedFiles = fromMsg;
+                  break;
+                }
+              }
+            }
+          }
           if (extractedFiles.length > 0) {
             effectiveToolCalls = extractedFiles.map((file) => ({
               id: `call_${randomUUID().slice(0, 8)}`,
@@ -148,16 +183,11 @@ export class AgentLoop {
           }
         }
 
-        // B. Shell command extraction: If model provided shell code blocks for an execution/install request
+        // B. Shell command extraction: If model provided shell code blocks
         if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && dispatcher.getTool("run_command")) {
+          const isCommandIntent = semanticIntent?.intentType === "command_execution";
           const extractedCmds = extractShellCommands(content ?? "");
-          const promptTokens = normalizeTokens(userPrompt);
-          const promptLower = userPrompt.toLowerCase();
-          const isCmdReq =
-            hasCommandActionVerb(promptLower, promptTokens) ||
-            hasCommandTargetNoun(promptLower, promptTokens);
-
-          if (extractedCmds.length > 0 && isCmdReq) {
+          if (extractedCmds.length > 0 && isCommandIntent) {
             effectiveToolCalls = extractedCmds.map((cmd) => ({
               id: `call_${randomUUID().slice(0, 8)}`,
               name: "run_command",
@@ -169,35 +199,23 @@ export class AgentLoop {
         }
 
         // C. System Nudges: If model still returned no tool calls on turn 1 despite actionable requests
-        if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && turn === 1) {
+        if (turn === 1 && (!effectiveToolCalls || effectiveToolCalls.length === 0)) {
           const isSemanticActionable = semanticIntent?.isActionable;
           const semanticTargets = semanticIntent?.targetFiles ?? [];
-          const isCommandIntent = semanticIntent?.intentType === "command_execution";
+          const isCommandIntent =
+            semanticIntent
+              ? semanticIntent.intentType === "command_execution"
+              : Boolean(dispatcher.getTool("run_command")) &&
+                (!dispatcher.getTool("write_file") ||
+                  /\b(?:npm|npx|run|install|test|start|build|node|exec)\b/i.test(userPrompt));
+          const isCodeIntent =
+            semanticIntent
+              ? semanticIntent.intentType === "code_modification" ||
+                (isSemanticActionable && semanticTargets.length > 0)
+              : Boolean(dispatcher.getTool("write_file")) &&
+                (driverModelId === "code-qwen25coder" || !isCommandIntent);
 
-          const promptTokens = normalizeTokens(userPrompt);
-          const promptLower = userPrompt.toLowerCase();
-          const combinedLower = promptLower + " " + (content ?? "").toLowerCase();
-          const combinedTokens = normalizeTokens(combinedLower);
-
-          const isCommandRequest =
-            Boolean(dispatcher.getTool("run_command")) &&
-            (isCommandIntent ||
-              hasCommandActionVerb(promptLower, promptTokens) ||
-              hasCommandTargetNoun(promptLower, promptTokens));
-
-          const hasUserAction = hasActionVerb(promptLower, promptTokens);
-          const hasContentAction =
-            /\b(created|implemented|added|written|generated|modified|updated|edited|patched)\b/i.test(
-              content ?? "",
-            );
-          const hasContainer = hasContainerNoun(combinedLower, combinedTokens);
-
-          const isFileCreationRequest =
-            Boolean(dispatcher.getTool("write_file")) &&
-            (Boolean(isSemanticActionable && semanticTargets.length > 0) ||
-              ((hasUserAction || hasContentAction) && hasContainer));
-
-          if (isCommandRequest) {
+          if (isCommandIntent && dispatcher.getTool("run_command")) {
             messages.push({
               role: "assistant",
               content,
@@ -209,7 +227,7 @@ export class AgentLoop {
               turn,
             });
             continue;
-          } else if (isFileCreationRequest) {
+          } else if (isCodeIntent && dispatcher.getTool("write_file")) {
             messages.push({
               role: "assistant",
               content,
@@ -221,7 +239,7 @@ export class AgentLoop {
                 : "";
             messages.push({
               role: "user",
-              content: `[SYSTEM FEEDBACK]: You did not execute tools or write files to disk${targetHint}. You MUST invoke the native \`write_file\` tool (with {"path": "relative/path/to/file", "content": "..."}) or output markdown code blocks with the target path on the first line (e.g. \`\`\`javascript\n// relative/path/to/file.js\n...\`\`\`) so the files can be saved to the workspace. Please do this now.`,
+              content: `[SYSTEM FEEDBACK]: You did not execute tools or write files to disk${targetHint}. You MUST invoke the native \`write_file\` tool (with {"path": "relative/path/to/file", "content": "..."}) or output markdown code blocks with the target path on the first line (e.g. \`\`\`typescript\n// relative/path/to/file.ts\n...\`\`\`) so the files can be saved to the workspace. Please do this now.`,
               turn,
             });
             continue;
@@ -231,25 +249,26 @@ export class AgentLoop {
 
       // 5. Pure chat detection / completion: If no tool calls and no synthesized actions, we are done!
       if (!effectiveToolCalls || effectiveToolCalls.length === 0) {
-        if (!hasExecutedTools) {
+        if (!hasExecutedDiskMutations) {
           const isSemanticActionable = semanticIntent?.isActionable;
           const semanticTargets = semanticIntent?.targetFiles ?? [];
 
-          const promptLower = userPrompt.toLowerCase();
-          const promptTokens = normalizeTokens(promptLower);
-          const hasUserAction = hasActionVerb(promptLower, promptTokens);
           const claimsDiskAction =
-            /\b(implemented|created|updated|modified|added|written|patched)\b/i.test(content ?? "") &&
-            /\b(file|middleware|route|component|server|script|code|package\.json|\.js|\.ts|\.py|\.json)\b/i.test(
+            /\b(implemented|created|updated|modified|added|written|patched|converted|migrated|refactored|configured|installed)\b/i.test(
+              content ?? "",
+            ) &&
+            /\b(file|files|middleware|route|routes|component|server|script|code|package\.json|\.js|\.ts|\.py|\.json|typescript|codebase)\b/i.test(
               content ?? "",
             );
-          const mentionsFileOrPath =
-            /@?[a-zA-Z0-9_.\-/]+\.(?:js|ts|jsx|tsx|py|json|html|css|md)\b/i.test(userPrompt);
 
-          if (
-            (claimsDiskAction || isSemanticActionable) &&
-            (semanticTargets.length > 0 || hasUserAction || mentionsFileOrPath)
-          ) {
+          const isActionRequest =
+            semanticIntent
+              ? isSemanticActionable ||
+                semanticIntent.intentType === "code_modification" ||
+                semanticIntent.intentType === "command_execution"
+              : driverModelId === "code-qwen25coder" && toolDefinitions.length > 0;
+
+          if (claimsDiskAction || (isActionRequest && semanticTargets.length > 0)) {
             const targetHint = semanticTargets.length > 0 ? ` for ${semanticTargets.join(", ")}` : "";
             finalText = `No files were modified on disk${targetHint}. The model did not execute file tools or output code blocks for disk persistence. Please provide the code or confirm the file target.`;
             return {
@@ -257,16 +276,18 @@ export class AgentLoop {
               turns: turn,
               completed: true,
               modelId: driverModelId,
+              messageId: assistantMessageId,
             };
           }
         }
 
-        finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedTools);
+        finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedDiskMutations);
         return {
           finalText,
           turns: turn,
           completed: true,
           modelId: driverModelId,
+          messageId: assistantMessageId,
         };
       }
 
@@ -275,12 +296,33 @@ export class AgentLoop {
         effectiveToolCalls.map((c: any) => ({ name: c.name, args: c.arguments })),
       );
       if (previousCallSignature && previousCallSignature === currentCallSignature) {
-        finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedTools);
+        if (lastExecutionHadError) {
+          const modifiedList = modifiedFiles.size > 0
+            ? `Files modified so far: ${Array.from(modifiedFiles).join(", ")}.`
+            : "No files were modified on disk.";
+          const failureSummary = `Execution stopped: The model repeatedly encountered errors invoking \`${effectiveToolCalls[0]?.name}\` (${lastErrorMessage}). ${modifiedList} Please check the workspace or specify the file targets.`;
+          emitEvent({
+            type: "error",
+            runId,
+            code: "tool_loop_detected",
+            message: failureSummary,
+          });
+          return {
+            finalText: failureSummary,
+            turns: turn,
+            completed: false,
+            modelId: driverModelId,
+            messageId: assistantMessageId,
+          };
+        }
+
+        finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedDiskMutations);
         return {
           finalText,
           turns: turn,
           completed: true,
           modelId: driverModelId,
+          messageId: assistantMessageId,
         };
       }
       previousCallSignature = currentCallSignature;
@@ -316,6 +358,7 @@ export class AgentLoop {
             turns: turn,
             completed: false,
             modelId: driverModelId,
+            messageId: assistantMessageId,
           };
         }
         confirmed = true;
@@ -336,12 +379,37 @@ export class AgentLoop {
           turns: turn,
           completed: false,
           modelId: driverModelId,
+          messageId: assistantMessageId,
         };
       }
+
+      // If tools are being dispatched, ensure subsequent summary turn gets a fresh messageId
+      assistantMessageId = randomUUID();
 
       const executed = await dispatcher.dispatchConcurrent(effectiveToolCalls, context);
       if (executed.length > 0) {
         hasExecutedTools = true;
+        let anyError = false;
+        for (const exec of executed) {
+          const isError = typeof exec.result.output === "string" && exec.result.output.startsWith("Error");
+          if (isError) {
+            anyError = true;
+            lastErrorMessage = exec.result.output;
+          } else {
+            if (exec.name === "write_file" || exec.name === "delete_file") {
+              const p = (effectiveToolCalls.find((c: any) => c.id === exec.id)?.arguments as any)?.path;
+              if (p) modifiedFiles.add(p);
+              hasExecutedDiskMutations = true;
+            } else if (exec.name === "run_command") {
+              const cmd = (effectiveToolCalls.find((c: any) => c.id === exec.id)?.arguments as any)?.command;
+              if (cmd) executedCommands.push(cmd);
+              hasExecutedDiskMutations = true;
+            } else if (exec.name === "generate_deliverable" || exec.name === "execute_python") {
+              hasExecutedDiskMutations = true;
+            }
+          }
+        }
+        lastExecutionHadError = anyError;
       }
 
       // 9. Record each tool's result in the conversation history
@@ -359,13 +427,14 @@ export class AgentLoop {
     // Hit maxTurns without returning text
     const overflowText = cleanFinalSummary(
       lastContent || `Completed ${turn} operations.`,
-      hasExecutedTools,
+      hasExecutedDiskMutations,
     );
     return {
       finalText: overflowText,
       turns: turn,
       completed: true,
       modelId: driverModelId,
+      messageId: assistantMessageId,
     };
   }
 }

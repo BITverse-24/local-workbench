@@ -85,6 +85,21 @@ export function extractReferencedFiles(
     }
   }
 
+  // When prompt refers to codebase/project-level tasks without naming individual files,
+  // collect primary source files and package.json
+  if (referenced.size === 0 && /\b(?:codebase|project|typescript|ts|convert|migrate|refactor)\b/i.test(combined)) {
+    const codeFiles = workspaceFiles.filter(
+      (f) =>
+        /\.(?:js|jsx|ts|tsx|json|py)$/i.test(f) &&
+        !f.includes("package-lock") &&
+        !f.includes("node_modules") &&
+        !f.startsWith("."),
+    );
+    for (const f of codeFiles.slice(0, 10)) {
+      referenced.add(f);
+    }
+  }
+
   return Array.from(referenced);
 }
 
@@ -175,45 +190,6 @@ export async function resolveSemanticIntent(
     };
   }
 
-  // Fast Deterministic Short-Circuit for Workspace Engineering & Coding Requests:
-  // When an active workspace is open with no document attachments, clear coding/file/terminal
-  // operations route directly to code-qwen25coder without paying a ~7-second LLM classification latency penalty.
-  const isDirectCodeAction =
-    hasWorkspace &&
-    attachments.length === 0 &&
-    (/\b(?:add|create|implement|write|update|modify|edit|fix|patch|refactor|build|install|setup|run|test|lint|debug)\b/i.test(lowerPrompt) ||
-     /\b(?:route|routes|endpoint|controller|middleware|express|component|server|function|script|api|package\.json)\b/i.test(lowerPrompt));
-
-  if (isDirectCodeAction) {
-    const referencedFiles = extractReferencedFiles(userPrompt, history, workspaceFiles);
-    if (referencedFiles.length === 0) {
-      if (/\broutes?\b/i.test(lowerPrompt)) {
-        const routeFiles = workspaceFiles.filter((f) => f.startsWith("routes/"));
-        if (routeFiles.length > 0) referencedFiles.push(...routeFiles.slice(0, 3));
-      }
-      if (/\bmiddleware\b/i.test(lowerPrompt)) {
-        const mwFiles = workspaceFiles.filter((f) => f.startsWith("middleware/"));
-        if (mwFiles.length > 0) referencedFiles.push(...mwFiles.slice(0, 3));
-      }
-      if (/\b(?:server|app)\b/i.test(lowerPrompt)) {
-        const appFiles = workspaceFiles.filter((f) => /^(app|server|index)\.[jt]sx?$/i.test(f));
-        if (appFiles.length > 0) referencedFiles.push(...appFiles.slice(0, 2));
-      }
-    }
-
-    const isCommand = /\b(?:npm|npx|pnpm|yarn|pip|install|run\s*(?:test|server|app|build)|execute)\b/i.test(lowerPrompt);
-
-    return {
-      driverModel: "code-qwen25coder",
-      taskType: "code",
-      primaryGoal: promptTrimmed.slice(0, 60),
-      isActionable: true,
-      targetFiles: referencedFiles,
-      intentType: isCommand ? "command_execution" : "code_modification",
-      reason: "Fast-path deterministic match for workspace code engineering request",
-    };
-  }
-
   // 2. Semantic LLM Resolution Call
   if (gateway && typeof gateway.execute === "function") {
     try {
@@ -257,10 +233,18 @@ LATEST USER REQUEST:
 
       const response = await gateway.execute(request);
       if (response.ok) {
-        let rawJson = (response.value.result as any)?.text ?? "";
-        rawJson = rawJson.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+        let parsed: any = null;
+        const resValue = response.value.result as any;
+        if (resValue && typeof resValue === "object" && typeof resValue.primaryGoal === "string") {
+          parsed = resValue;
+        } else {
+          let rawJson = resValue?.text ?? (typeof resValue === "string" ? resValue : "");
+          rawJson = rawJson.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+          try {
+            parsed = JSON.parse(rawJson);
+          } catch {}
+        }
 
-        const parsed = JSON.parse(rawJson);
         if (parsed && typeof parsed.primaryGoal === "string") {
           const validDriverModel: ModelId = ["code-qwen25coder", "draft-qwen3", "vision-qwen25vl"].includes(
             parsed.driverModel,
@@ -276,7 +260,7 @@ LATEST USER REQUEST:
             ? "code"
             : "draft";
 
-          const targetFiles = Array.isArray(parsed.targetFiles)
+          const targetFiles = Array.isArray(parsed.targetFiles) && parsed.targetFiles.length > 0
             ? parsed.targetFiles
                 .map((f: any) => String(f).replace(/^@\/?/, "").replace(/^\.\//, "").trim())
                 .filter((f: string) => f.length > 0)

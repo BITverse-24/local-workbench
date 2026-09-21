@@ -342,4 +342,106 @@ describe("ModelGateway.chatWithTools", () => {
     expect(result.value.tool_calls?.[0].name).toBe("read_file");
     expect(result.value.tool_calls?.[0].arguments).toEqual({ path: "app.js" });
   });
+
+  it("streams free-text chunks and sets stream: true in payload when onChunk is provided", async () => {
+    let capturedBody: any;
+    const streamedChunks: string[] = [];
+
+    const mockTransport = {
+      async request() {
+        throw new Error("should use streamRequest");
+      },
+      async streamRequest(_url: string, init: any, _timeout: number, onChunk: (chunk: string) => void) {
+        capturedBody = JSON.parse(init.body);
+        onChunk("Hello ");
+        onChunk("streaming ");
+        onChunk("world!");
+        return {
+          status: 200,
+          async text() {
+            return JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    role: "assistant",
+                    content: "Hello streaming world!",
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+              usage: { prompt_tokens: 20, completion_tokens: 5 },
+            });
+          },
+        };
+      },
+    };
+
+    const gateway = new ModelGateway(mockTransport);
+    const result = await gateway.chatWithTools(
+      "draft-qwen3",
+      [{ role: "user", content: "Say hello" }],
+      [],
+      {
+        onChunk: (chunk) => streamedChunks.push(chunk),
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.content).toBe("Hello streaming world!");
+    expect(capturedBody.stream).toBe(true);
+    expect(streamedChunks).toEqual(["Hello ", "streaming ", "world!"]);
+  });
+
+  it("accumulates streaming tool calls correctly via native transport streamRequest", async () => {
+    // Test the built-in native transport streamRequest with SSE chunks
+    const sseChunks = [
+      'data: {"choices":[{"delta":{"role":"assistant","content":"I will inspect"}}]}\n\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{\\"pa"}}]}}]}\n\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"th\\":\\"index.js\\"}"}}]}}]}\n\n',
+      'data: {"choices":[{"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":30,"completion_tokens":15}}\n\n',
+      "data: [DONE]\n\n",
+    ];
+
+    const emittedTextDeltas: string[] = [];
+    const mockResponseStream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const chunk of sseChunks) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      },
+    });
+
+    // Directly test ModelGateway default nativeTransport streamRequest
+    const gateway = new ModelGateway();
+    // Override global fetch temporarily for this test
+    const origFetch = global.fetch;
+    global.fetch = async () =>
+      new Response(mockResponseStream, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+
+    try {
+      const resp = await (gateway as any).transport.streamRequest(
+        "http://127.0.0.1:11434/v1/chat/completions",
+        { method: "POST", body: JSON.stringify({ model: "test" }) },
+        5000,
+        (delta: string) => emittedTextDeltas.push(delta),
+      );
+
+      const parsedEnvelope = JSON.parse(await resp.text());
+      expect(emittedTextDeltas).toEqual(["I will inspect"]);
+      expect(parsedEnvelope.choices[0].message.content).toBe("I will inspect");
+      expect(parsedEnvelope.choices[0].message.tool_calls).toHaveLength(1);
+      expect(parsedEnvelope.choices[0].message.tool_calls[0].function.name).toBe("read_file");
+      expect(parsedEnvelope.choices[0].message.tool_calls[0].function.arguments).toBe('{"path":"index.js"}');
+      expect(parsedEnvelope.choices[0].finish_reason).toBe("tool_calls");
+    } finally {
+      global.fetch = origFetch;
+    }
+  });
 });

@@ -105,6 +105,13 @@ const nativeTransport: GatewayTransport = {
       const decoder = new TextDecoder("utf-8");
       let buffer = "";
       let accumulatedText = "";
+      const accumulatedToolCalls: Array<{
+        id: string;
+        type: string;
+        function: { name: string; arguments: string };
+      }> = [];
+      let finishReason: string | null = null;
+      let usage: any = undefined;
 
       try {
         while (true) {
@@ -122,10 +129,45 @@ const nativeTransport: GatewayTransport = {
               const jsonStr = trimmed.slice(6);
               try {
                 const parsed = JSON.parse(jsonStr);
-                const delta = parsed.choices?.[0]?.delta?.content ?? "";
-                if (typeof delta === "string" && delta.length > 0) {
-                  accumulatedText += delta;
-                  onChunk(delta);
+                if (parsed.usage) {
+                  usage = parsed.usage;
+                }
+                const choice = parsed.choices?.[0];
+                if (choice) {
+                  if (choice.finish_reason) {
+                    finishReason = choice.finish_reason;
+                  }
+                  const delta = choice.delta;
+                  if (delta) {
+                    if (typeof delta.content === "string" && delta.content.length > 0) {
+                      accumulatedText += delta.content;
+                      onChunk(delta.content);
+                    }
+                    if (Array.isArray(delta.tool_calls)) {
+                      for (const tc of delta.tool_calls) {
+                        const idx = typeof tc.index === "number" ? tc.index : accumulatedToolCalls.length;
+                        if (!accumulatedToolCalls[idx]) {
+                          accumulatedToolCalls[idx] = {
+                            id: tc.id ?? `call_${idx}`,
+                            type: tc.type ?? "function",
+                            function: {
+                              name: tc.function?.name ?? "",
+                              arguments: tc.function?.arguments ?? "",
+                            },
+                          };
+                        } else {
+                          if (tc.id) accumulatedToolCalls[idx].id = tc.id;
+                          if (tc.type) accumulatedToolCalls[idx].type = tc.type;
+                          if (tc.function?.name) {
+                            accumulatedToolCalls[idx].function.name += tc.function.name;
+                          }
+                          if (tc.function?.arguments) {
+                            accumulatedToolCalls[idx].function.arguments += tc.function.arguments;
+                          }
+                        }
+                      }
+                    }
+                  }
                 }
               } catch {
                 // Incomplete or malformed SSE line, skip
@@ -137,8 +179,22 @@ const nativeTransport: GatewayTransport = {
         if (streamErr.name === "AbortError") throw streamErr;
       }
 
+      const messageObj: Record<string, any> = {
+        role: "assistant",
+        content: accumulatedText.length > 0 ? accumulatedText : (accumulatedToolCalls.length > 0 ? null : ""),
+      };
+      if (accumulatedToolCalls.length > 0) {
+        messageObj.tool_calls = accumulatedToolCalls;
+      }
+
       const syntheticEnvelope = JSON.stringify({
-        choices: [{ message: { content: accumulatedText, role: "assistant" }, finish_reason: "stop" }],
+        choices: [
+          {
+            message: messageObj,
+            finish_reason: finishReason ?? (accumulatedToolCalls.length > 0 ? "tool_calls" : "stop"),
+          },
+        ],
+        usage,
       });
 
       return {
@@ -279,6 +335,71 @@ export function formatMessagesForFallback(
   });
 }
  
+export function parseToolCallArguments(raw: unknown): Record<string, unknown> {
+  if (!raw) return {};
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  if (typeof raw !== "string") return {};
+
+  const str = raw.trim();
+  if (!str) return {};
+
+  // 1. Direct standard JSON.parse
+  try {
+    const parsed = JSON.parse(str);
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    if (typeof parsed === "string" && parsed.trim().startsWith("{")) {
+      const doubleParsed = JSON.parse(parsed.trim());
+      if (typeof doubleParsed === "object" && doubleParsed !== null && !Array.isArray(doubleParsed)) {
+        return doubleParsed;
+      }
+    }
+  } catch {}
+
+  // 2. Repair raw newlines and tabs inside string literals (common when LLMs emit code inside JSON)
+  try {
+    const repaired = str.replace(/"((?:\\.|[^"\\])*)"/gs, (match) => {
+      return match.replace(/\r\n|\n|\r/g, "\\n").replace(/\t/g, "\\t");
+    });
+    const parsed = JSON.parse(repaired);
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch {}
+
+  // 3. Regex extraction of key fields if JSON is truncated or has syntax flaws
+  const result: Record<string, unknown> = { raw: str };
+  const pathMatch = str.match(/["']?(?:path|filePath|file_path|filename|fileName|file|target)["']?\s*:\s*["']([^"'\r\n]+)["']/i);
+  if (pathMatch && pathMatch[1]) {
+    result.path = pathMatch[1].trim();
+  }
+
+  const contentMatch = str.match(/["']?(?:content|code|body|fileContent|text)["']?\s*:\s*["']([\s\S]*?)(?:["']\s*(?:,\s*["']|\})|$)/);
+  if (contentMatch && contentMatch[1]) {
+    result.content = contentMatch[1]
+      .replace(/["']\s*\}?\s*$/, "")
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, "\t")
+      .replace(/\\\\/g, "\\");
+  }
+
+  const commandMatch = str.match(/["']?(?:command|cmd|shell_command|script|exec)["']?\s*:\s*["']([^"'\r\n]+)["']/i);
+  if (commandMatch && commandMatch[1]) {
+    result.command = commandMatch[1].trim();
+  }
+
+  const queryMatch = str.match(/["']?(?:query|search_query|pattern)["']?\s*:\s*["']([^"'\r\n]+)["']/i);
+  if (queryMatch && queryMatch[1]) {
+    result.query = queryMatch[1].trim();
+  }
+
+  return result;
+}
+
 export function extractEmbeddedToolCalls(rawContent: string): { toolCalls: AgentToolCall[]; cleanedContent: string | null } {
   const toolCalls: AgentToolCall[] = [];
   let cleaned = rawContent;
@@ -291,19 +412,25 @@ export function extractEmbeddedToolCalls(rawContent: string): { toolCalls: Agent
     try {
       const parsed = JSON.parse(jsonCandidate);
       if (parsed && typeof parsed.name === "string") {
-        let args = parsed.arguments ?? parsed.parameters ?? {};
-        if (typeof args === "string") {
-          try {
-            args = JSON.parse(args);
-          } catch {}
-        }
+        const args = parseToolCallArguments(parsed.arguments ?? parsed.parameters ?? {});
         toolCalls.push({
           id: parsed.id || `call_${randomUUID().slice(0, 8)}`,
           name: parsed.name,
           arguments: args,
         });
       }
-    } catch {}
+    } catch {
+      // Try repair / extraction directly on candidate string
+      const args = parseToolCallArguments(jsonCandidate);
+      const nameMatch = jsonCandidate.match(/["']?name["']?\s*:\s*["']([^"'\r\n]+)["']/i);
+      if (nameMatch && nameMatch[1]) {
+        toolCalls.push({
+          id: `call_${randomUUID().slice(0, 8)}`,
+          name: nameMatch[1].trim(),
+          arguments: args,
+        });
+      }
+    }
   }
 
   if (toolCalls.length > 0) {
@@ -317,12 +444,7 @@ export function extractEmbeddedToolCalls(rawContent: string): { toolCalls: Agent
     try {
       const parsed = JSON.parse(trimmed);
       if (parsed && typeof parsed.name === "string" && (parsed.arguments || parsed.parameters)) {
-        let args = parsed.arguments ?? parsed.parameters ?? {};
-        if (typeof args === "string") {
-          try {
-            args = JSON.parse(args);
-          } catch {}
-        }
+        const args = parseToolCallArguments(parsed.arguments ?? parsed.parameters ?? {});
         toolCalls.push({
           id: parsed.id || `call_${randomUUID().slice(0, 8)}`,
           name: parsed.name,
@@ -332,12 +454,7 @@ export function extractEmbeddedToolCalls(rawContent: string): { toolCalls: Agent
       } else if (Array.isArray(parsed.tool_calls)) {
         for (const tc of parsed.tool_calls) {
           if (tc && typeof tc.name === "string") {
-            let args = tc.arguments ?? tc.parameters ?? {};
-            if (typeof args === "string") {
-              try {
-                args = JSON.parse(args);
-              } catch {}
-            }
+            const args = parseToolCallArguments(tc.arguments ?? tc.parameters ?? {});
             toolCalls.push({
               id: tc.id || `call_${randomUUID().slice(0, 8)}`,
               name: tc.name,
@@ -1196,17 +1313,22 @@ export class ModelGateway implements ModelClient {
     const runId = options?.runId ?? "run-agent-loop";
     const requestId = randomUUID();
 
-    // 1. If tools are available and provider hasn't rejected tools previously:
-    if (tools.length > 0 && knownSupportsTools) {
+    // 1. If provider hasn't rejected tools previously (or tools array is empty):
+    if (knownSupportsTools || tools.length === 0) {
       const nativeMessages = formatMessagesForNativeTools(messages);
       const payload: Record<string, any> = {
         model: model.model,
         messages: nativeMessages,
-        tools,
-        tool_choice: "auto",
         temperature: effectiveTemperature,
         max_tokens: effectiveMaxTokens,
       };
+      if (tools.length > 0) {
+        payload.tools = tools;
+        payload.tool_choice = "auto";
+      }
+      if (options?.onChunk && this.transport.streamRequest) {
+        payload.stream = true;
+      }
 
       try {
         const body = JSON.stringify(payload);
@@ -1236,6 +1358,19 @@ export class ModelGateway implements ModelClient {
           );
         }
 
+        if (options?.runId) {
+          persistGatewayTrace(options.runId, requestId, {
+            phase: "chat_turn_request",
+            modelId,
+            providerModel: model.model,
+            mode: "native_tools",
+            messagesCount: messages.length,
+            toolsCount: tools.length,
+            bodyPreview: body.slice(0, 4000),
+            bodyChars: body.length,
+          });
+        }
+
         const rawText = await response.text();
         const durationMs = Date.now() - t0;
 
@@ -1252,18 +1387,12 @@ export class ModelGateway implements ModelClient {
 
           if (Array.isArray(rawToolCalls)) {
             for (const call of rawToolCalls) {
-              if (call.function?.name) {
-                let parsedArgs: Record<string, unknown> = {};
-                try {
-                  parsedArgs = typeof call.function.arguments === "string"
-                    ? JSON.parse(call.function.arguments)
-                    : (call.function.arguments ?? {});
-                } catch {
-                  parsedArgs = { raw: call.function.arguments };
-                }
+              const callName = call.function?.name || call.name;
+              if (callName) {
+                const parsedArgs = parseToolCallArguments(call.function?.arguments ?? call.arguments);
                 parsedCalls.push({
                   id: call.id || randomUUID(),
-                  name: call.function.name,
+                  name: callName,
                   arguments: parsedArgs,
                 });
               }
@@ -1277,6 +1406,20 @@ export class ModelGateway implements ModelClient {
               parsedCalls.push(...embedded.toolCalls);
               content = embedded.cleanedContent;
             }
+          }
+
+          if (options?.runId) {
+            persistGatewayTrace(options.runId, requestId, {
+              phase: "chat_turn_response",
+              modelId,
+              mode: "native_tools",
+              status: response.status,
+              latencyMs: durationMs,
+              content,
+              toolCalls: parsedCalls,
+              rawTextChars: rawText.length,
+              rawText: rawText.slice(0, 4000),
+            });
           }
 
           return {
@@ -1341,6 +1484,19 @@ export class ModelGateway implements ModelClient {
         response_format: isLocal ? { type: "json_object" } : undefined,
       });
 
+      if (options?.runId) {
+        persistGatewayTrace(options.runId, requestId, {
+          phase: "chat_turn_request",
+          modelId,
+          providerModel: model.model,
+          mode: "fallback_prompt_injection",
+          messagesCount: fallbackMessages.length,
+          toolsCount: tools.length,
+          bodyPreview: fallbackBody.slice(0, 4000),
+          bodyChars: fallbackBody.length,
+        });
+      }
+
       const t0 = Date.now();
       const response = await this.transport.request(
         `${model.baseUrl}/chat/completions`,
@@ -1373,11 +1529,12 @@ export class ModelGateway implements ModelClient {
         const toolCalls: AgentToolCall[] = [];
         if (Array.isArray(parsedJson?.tool_calls)) {
           for (const tc of parsedJson.tool_calls) {
-            if (tc.name) {
+            const callName = tc.name || tc.function?.name;
+            if (callName) {
               toolCalls.push({
                 id: tc.id || randomUUID(),
-                name: tc.name,
-                arguments: tc.arguments ?? {},
+                name: callName,
+                arguments: parseToolCallArguments(tc.arguments ?? tc.parameters ?? {}),
               });
             }
           }
@@ -1390,6 +1547,20 @@ export class ModelGateway implements ModelClient {
             toolCalls.push(...embedded.toolCalls);
             finalContent = embedded.cleanedContent;
           }
+        }
+
+        if (options?.runId) {
+          persistGatewayTrace(options.runId, requestId, {
+            phase: "chat_turn_response",
+            modelId,
+            mode: "fallback_prompt_injection",
+            status: response.status,
+            latencyMs: durationMs,
+            content: finalContent,
+            toolCalls,
+            rawTextChars: rawText.length,
+            rawText: rawText.slice(0, 4000),
+          });
         }
 
         return {

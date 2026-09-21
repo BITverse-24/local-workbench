@@ -123,4 +123,40 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
     expect(intent.targetFiles).toEqual(["middleware/rateLimiter.js"]);
     expect(intent.isActionable).toBe(true);
   });
+
+  it("handles pre-parsed object results from gateway planner without throwing SyntaxError", async () => {
+    const mockGateway = {
+      async execute(_req: any) {
+        return {
+          ok: true,
+          value: {
+            result: {
+              intentType: "code_modification",
+              taskType: "code",
+              driverModel: "code-qwen25coder",
+              primaryGoal: "Convert JavaScript codebase to TypeScript",
+              targetFiles: ["app.ts"],
+              isActionable: true,
+              reason: "User requested converting JS to TS",
+            },
+          },
+        };
+      },
+    };
+
+    const intent = await resolveSemanticIntent(
+      {
+        userPrompt: "Convert this codebase to typescript",
+        hasWorkspace: true,
+        workspaceFiles: ["app.js", "package.json"],
+      },
+      mockGateway as any,
+    );
+
+    expect(intent.driverModel).toBe("code-qwen25coder");
+    expect(intent.taskType).toBe("code");
+    expect(intent.isActionable).toBe(true);
+    expect(intent.primaryGoal).toBe("Convert JavaScript codebase to TypeScript");
+  });
 });
+

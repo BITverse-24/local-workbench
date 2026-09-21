@@ -168,6 +168,16 @@ export function findReferencedWorkspaceFiles(
   // 4. Proactive domain-concept matching: if user requests routes, middleware, or server files
   const lowerUserText = combinedUserText.toLowerCase();
   if (referencedPaths.size === 0) {
+    if (/\b(?:typescript|ts|convert|migrate|codebase|project)\b/i.test(lowerUserText)) {
+      const codeFiles = allWorkspaceFiles.filter(
+        (f) =>
+          /\.(?:js|jsx|ts|tsx|json|py)$/i.test(f) &&
+          !f.includes("package-lock") &&
+          !f.includes("node_modules") &&
+          !f.startsWith("."),
+      );
+      for (const cf of codeFiles.slice(0, 10)) referencedPaths.add(cf);
+    }
     if (/\broutes?\b/i.test(lowerUserText)) {
       const routeFiles = allWorkspaceFiles.filter((f) => f.startsWith("routes/") || f.includes("route"));
       for (const rf of routeFiles.slice(0, 2)) referencedPaths.add(rf);
@@ -200,7 +210,7 @@ export function findReferencedWorkspaceFiles(
     }
   }
 
-  return loadedFiles.slice(0, 5);
+  return loadedFiles.slice(0, 10);
 }
 
 type AttachmentRow = AttachmentReference & { runId: string; chatId: string };
@@ -902,10 +912,13 @@ CRITICAL OPERATIONAL RULES:
    - Proceed directly to implementing the user's requested action using \`write_file\` or \`run_command\`.
    - ONLY call \`read_file\` or \`search\` if you genuinely need to inspect an unlisted file whose contents are NOT shown above.
 4. CREATING & EDITING FILES:
-   - When the user asks you to create, setup, scaffold, write, build, modify, update, edit, or patch files or code, you MUST invoke \`write_file\` with {"path": "relative/path/to/file", "content": "..."} for every file needed.
-   - You can invoke multiple \`write_file\` calls in a single turn.
-   - If your model environment outputs markdown code blocks instead of native function calls, you MUST specify the file path on the first line or header (e.g. \`// path/to/file.js\` or \`### path/to/file.js\`) so the system can automatically extract and write the files to disk.
-   - NEVER claim files were created or modified if no tools were executed and no code was provided.
+   - When the user asks you to create, setup, scaffold, write, build, modify, update, edit, patch, convert, migrate, or refactor files or code:
+     • You MUST invoke \`write_file\` with {"path": "relative/path/to/file", "content": "..."} for every file needed.
+     • When converting files (e.g. JavaScript to TypeScript), you MUST physically write the converted/new files (e.g. \`tsconfig.json\`, \`app.ts\`, \`middleware/rateLimiter.ts\`, \`package.json\`) using \`write_file\`, and remove replaced files using \`delete_file\`.
+     • You can invoke multiple \`write_file\` calls in a single turn.
+     • If your model environment outputs markdown code blocks instead of native function calls, you MUST specify the file path on the first line or header (e.g. \`// path/to/file.ts\` or \`### path/to/file.ts\`) so the system can automatically extract and write the files to disk.
+     • NEVER merely describe the steps in text or call \`generate_text\`! You must physically create and update the files on disk using \`write_file\`.
+     • NEVER claim files were created, converted, or modified if no tools were executed and no code was written to disk.
 5. COMMAND EXECUTION & VERIFICATION:
    - When the user asks to install dependencies, run scripts, test, start an app, or check functionality (e.g. "install deps", "run the app", "check if everything working"), invoke \`run_command\` with the appropriate shell command (e.g. \`npm install express-rate-limit\`, \`node app.js\`, \`npm test\`).
 6. DELETION: To delete files, call \`delete_file\`. Never delete files by writing empty content.
@@ -961,7 +974,7 @@ Follow these operational guidelines:
         });
 
         if (loopResult.completed && getState(runId) !== "cancelled") {
-          this.persistAssistant(runId, loopResult.finalText, loopResult.modelId);
+          this.persistAssistant(runId, loopResult.finalText, loopResult.modelId, loopResult.messageId);
           this.complete(runId);
         }
         return;

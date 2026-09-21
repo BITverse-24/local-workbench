@@ -50,8 +50,10 @@ export function composeTools(env: EnvironmentState, driverModelId: ModelId): Age
     tools.push(generateCodeTool);
   }
 
-  // If the driver is NOT the drafting model, provide text drafting capability
-  if (driverModelId !== "draft-qwen3") {
+  // If the driver is NOT the drafting model, provide text drafting capability.
+  // In an active workspace without document attachments, the code model must write/refactor
+  // code directly using workspace tools, NOT offload coding tasks to generate_text.
+  if (driverModelId !== "draft-qwen3" && (!env.hasWorkspace || env.hasAttachments)) {
     tools.push(generateTextTool);
   }
 

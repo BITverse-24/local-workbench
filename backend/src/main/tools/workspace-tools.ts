@@ -6,6 +6,109 @@ import { writeFile } from "../harness/tools/write-file.js";
 import { deleteFile } from "../harness/tools/delete-file.js";
 import { runCommand } from "../harness/tools/run-command.js";
 
+export function extractPathArg(args: Record<string, unknown>): string {
+  if (!args) return "";
+  const candidateKeys = [
+    "path", "filePath", "filepath", "file_path", "filename", "fileName",
+    "file", "target", "destination", "dest", "targetPath", "target_path",
+  ];
+  for (const k of candidateKeys) {
+    if (typeof args[k] === "string" && (args[k] as string).trim()) {
+      return (args[k] as string).trim();
+    }
+  }
+
+  for (const wrapper of ["parameters", "arguments", "input", "params"]) {
+    const val = args[wrapper];
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      const nested = extractPathArg(val as Record<string, unknown>);
+      if (nested) return nested;
+    } else if (typeof val === "string" && val.trim().startsWith("{")) {
+      try {
+        const parsed = JSON.parse(val);
+        if (parsed && typeof parsed === "object") {
+          const nested = extractPathArg(parsed);
+          if (nested) return nested;
+        }
+      } catch {}
+    }
+  }
+
+  const rawStr = typeof args.raw === "string" ? args.raw : "";
+  if (rawStr) {
+    const m = rawStr.match(/["']?(?:path|filePath|file_path|filename|fileName|file|target)["']?\s*:\s*["']([^"'\r\n]+)["']/i);
+    if (m && m[1]) return m[1].trim();
+  }
+
+  return "";
+}
+
+export function extractContentArg(args: Record<string, unknown>): string {
+  if (!args) return "";
+  const candidateKeys = [
+    "content", "fileContent", "file_content", "code", "body", "text", "data",
+  ];
+  for (const k of candidateKeys) {
+    if (typeof args[k] === "string") {
+      return args[k] as string;
+    }
+  }
+
+  for (const wrapper of ["parameters", "arguments", "input", "params"]) {
+    const val = args[wrapper];
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      const nested = extractContentArg(val as Record<string, unknown>);
+      if (nested) return nested;
+    } else if (typeof val === "string" && val.trim().startsWith("{")) {
+      try {
+        const parsed = JSON.parse(val);
+        if (parsed && typeof parsed === "object") {
+          const nested = extractContentArg(parsed);
+          if (nested) return nested;
+        }
+      } catch {}
+    }
+  }
+
+  const rawStr = typeof args.raw === "string" ? args.raw : "";
+  if (rawStr) {
+    const m = rawStr.match(/["']?(?:content|code|body|fileContent|text)["']?\s*:\s*["']([\s\S]*?)(?:["']\s*(?:,\s*["']|\})|$)/);
+    if (m && m[1]) {
+      return m[1]
+        .replace(/["']\s*\}?\s*$/, "")
+        .replace(/\\"/g, '"')
+        .replace(/\\n/g, "\n")
+        .replace(/\\t/g, "\t")
+        .replace(/\\\\/g, "\\");
+    }
+  }
+
+  return "";
+}
+
+export function extractCommandArg(args: Record<string, unknown>): string {
+  if (!args) return "";
+  const candidateKeys = ["command", "cmd", "shell_command", "script", "exec"];
+  for (const k of candidateKeys) {
+    if (typeof args[k] === "string" && (args[k] as string).trim()) {
+      return (args[k] as string).trim();
+    }
+  }
+  for (const wrapper of ["parameters", "arguments", "input", "params"]) {
+    const val = args[wrapper];
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      const nested = extractCommandArg(val as Record<string, unknown>);
+      if (nested) return nested;
+    }
+  }
+  const rawStr = typeof args.raw === "string" ? args.raw : "";
+  if (rawStr) {
+    const m = rawStr.match(/["']?(?:command|cmd|shell_command|script|exec)["']?\s*:\s*["']([^"'\r\n]+)["']/i);
+    if (m && m[1]) return m[1].trim();
+  }
+  return "";
+}
+
 export const listDirTool: AgentTool = {
   name: "list_dir",
   definition: {
@@ -22,7 +125,7 @@ export const listDirTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const relPath = typeof args.path === "string" ? args.path : ".";
+    const relPath = extractPathArg(args) || ".";
     const entries = listDir(context.workspaceRoot, relPath);
     // Truncate listing if very large (guard context buffer)
     const truncatedEntries = entries.slice(0, 50);
@@ -51,8 +154,10 @@ export const readFileTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const relPath = String(args.path ?? "");
-    if (!relPath) throw new Error("path parameter is required");
+    const relPath = extractPathArg(args);
+    if (!relPath) {
+      throw new Error(`path parameter is required. Received arguments: ${JSON.stringify(args).slice(0, 150)}. Expected format: {"path": "relative/path/to/file"}`);
+    }
     const content = readFile(context.workspaceRoot, relPath);
     const lines = content.split("\n");
     let formattedContent = content;
@@ -92,9 +197,11 @@ export const searchTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const query = String(args.query ?? "");
-    const relPath = typeof args.path === "string" ? args.path : ".";
-    if (!query) throw new Error("query parameter is required");
+    const query = String(args.query ?? args.search_query ?? args.pattern ?? args.text ?? args.q ?? "");
+    const relPath = extractPathArg(args) || ".";
+    if (!query) {
+      throw new Error(`query parameter is required. Received arguments: ${JSON.stringify(args).slice(0, 150)}. Expected format: {"query": "pattern"}`);
+    }
     const matches = search(context.workspaceRoot, query, relPath);
     const topMatches = matches.slice(0, 30);
     return {
@@ -122,9 +229,11 @@ export const writeFileTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const relPath = String(args.path ?? "");
-    const content = String(args.content ?? "");
-    if (!relPath) throw new Error("path parameter is required");
+    const relPath = extractPathArg(args);
+    const content = extractContentArg(args);
+    if (!relPath) {
+      throw new Error(`path parameter is required. Received arguments: ${JSON.stringify(args).slice(0, 150)}. Expected format: {"path": "relative/path/to/file", "content": "..."}`);
+    }
     const res = writeFile(context.workspaceRoot, relPath, content);
     if (context.harness) {
       try {
@@ -156,8 +265,10 @@ export const deleteFileTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const relPath = String(args.path ?? "");
-    if (!relPath) throw new Error("path parameter is required");
+    const relPath = extractPathArg(args);
+    if (!relPath) {
+      throw new Error(`path parameter is required. Received arguments: ${JSON.stringify(args).slice(0, 150)}. Expected format: {"path": "relative/path/to/file"}`);
+    }
     const res = deleteFile(context.workspaceRoot, relPath);
     if (context.harness) {
       try {
@@ -189,8 +300,10 @@ export const runCommandTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const command = String(args.command ?? "");
-    if (!command) throw new Error("command parameter is required");
+    const command = extractCommandArg(args);
+    if (!command) {
+      throw new Error(`command parameter is required. Received arguments: ${JSON.stringify(args).slice(0, 150)}. Expected format: {"command": "npm test"}`);
+    }
     const res = await runCommand(context.workspaceRoot, command);
     const summary = `Command exit ${res.exitCode} in ${res.durationMs}ms: "${command.slice(0, 40)}"`;
     return {
