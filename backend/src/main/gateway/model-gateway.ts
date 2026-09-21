@@ -278,6 +278,83 @@ export function formatMessagesForFallback(
     };
   });
 }
+ 
+export function extractEmbeddedToolCalls(rawContent: string): { toolCalls: AgentToolCall[]; cleanedContent: string | null } {
+  const toolCalls: AgentToolCall[] = [];
+  let cleaned = rawContent;
+
+  // 1. Match <tool_call>...</tool_call> blocks (common in Qwen 2.5 Coder, Hermes, etc.)
+  const xmlPattern = /<tool_call>([\s\S]*?)<\/tool_call>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = xmlPattern.exec(rawContent)) !== null) {
+    const jsonCandidate = match[1].trim();
+    try {
+      const parsed = JSON.parse(jsonCandidate);
+      if (parsed && typeof parsed.name === "string") {
+        let args = parsed.arguments ?? parsed.parameters ?? {};
+        if (typeof args === "string") {
+          try {
+            args = JSON.parse(args);
+          } catch {}
+        }
+        toolCalls.push({
+          id: parsed.id || `call_${randomUUID().slice(0, 8)}`,
+          name: parsed.name,
+          arguments: args,
+        });
+      }
+    } catch {}
+  }
+
+  if (toolCalls.length > 0) {
+    cleaned = cleaned.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "").trim();
+    return { toolCalls, cleanedContent: cleaned.length > 0 ? cleaned : null };
+  }
+
+  // 2. Match JSON object with name & arguments or tool_calls
+  const trimmed = rawContent.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed.name === "string" && (parsed.arguments || parsed.parameters)) {
+        let args = parsed.arguments ?? parsed.parameters ?? {};
+        if (typeof args === "string") {
+          try {
+            args = JSON.parse(args);
+          } catch {}
+        }
+        toolCalls.push({
+          id: parsed.id || `call_${randomUUID().slice(0, 8)}`,
+          name: parsed.name,
+          arguments: args,
+        });
+        return { toolCalls, cleanedContent: null };
+      } else if (Array.isArray(parsed.tool_calls)) {
+        for (const tc of parsed.tool_calls) {
+          if (tc && typeof tc.name === "string") {
+            let args = tc.arguments ?? tc.parameters ?? {};
+            if (typeof args === "string") {
+              try {
+                args = JSON.parse(args);
+              } catch {}
+            }
+            toolCalls.push({
+              id: tc.id || `call_${randomUUID().slice(0, 8)}`,
+              name: tc.name,
+              arguments: args,
+            });
+          }
+        }
+        if (toolCalls.length > 0) {
+          const c = parsed.content ? String(parsed.content).trim() : null;
+          return { toolCalls, cleanedContent: c && c.length > 0 ? c : null };
+        }
+      }
+    } catch {}
+  }
+
+  return { toolCalls: [], cleanedContent: rawContent };
+}
 
 export interface VisionUploadInfo { originalBytes: number; finalBytes: number; resized: boolean; mediaType: string; }
 export class ModelGateway implements ModelClient {
@@ -1193,7 +1270,15 @@ export class ModelGateway implements ModelClient {
             }
           }
 
-          const content = msg?.content ? String(msg.content) : null;
+          let content = msg?.content ? String(msg.content) : null;
+          if (parsedCalls.length === 0 && content) {
+            const embedded = extractEmbeddedToolCalls(content);
+            if (embedded.toolCalls.length > 0) {
+              parsedCalls.push(...embedded.toolCalls);
+              content = embedded.cleanedContent;
+            }
+          }
+
           return {
             ok: true,
             value: {
@@ -1298,10 +1383,19 @@ export class ModelGateway implements ModelClient {
           }
         }
 
+        let finalContent = parsedJson?.content ? String(parsedJson.content) : (typeof rawContent === "string" ? rawContent : null);
+        if (toolCalls.length === 0 && finalContent) {
+          const embedded = extractEmbeddedToolCalls(finalContent);
+          if (embedded.toolCalls.length > 0) {
+            toolCalls.push(...embedded.toolCalls);
+            finalContent = embedded.cleanedContent;
+          }
+        }
+
         return {
           ok: true,
           value: {
-            content: parsedJson?.content ? String(parsedJson.content) : (typeof rawContent === "string" ? rawContent : null),
+            content: finalContent,
             tool_calls: toolCalls.length > 0 ? toolCalls : null,
             usage: {
               inputTokens: envelope.usage?.prompt_tokens,

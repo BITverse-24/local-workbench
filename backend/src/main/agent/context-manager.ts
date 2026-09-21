@@ -78,6 +78,14 @@ export function compactConversationHistory(
       };
     }
 
+    // Safety guard: even on recent turns, prevent a single giant tool output from overflowing model context
+    if (msg.role === "tool" && msg.content && msg.content.length > 24000) {
+      return {
+        ...msg,
+        content: `${msg.content.slice(0, 16000)}\n... [compacted ${msg.content.length - 20000} chars to preserve model context] ...\n${msg.content.slice(-4000)}`,
+      };
+    }
+
     return msg;
   });
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentTool, ToolExecutionContext, ToolExecutionResult } from "./types.js";
 import { requestBase } from "../gateway/model-gateway.js";
@@ -298,6 +298,7 @@ export const executePythonTool: AgentTool = {
 
     const intermediateDir = resolveRunPath(context.runId, "intermediate", "intermediate");
     const scriptPath = path.join(intermediateDir, filename);
+    mkdirSync(path.dirname(scriptPath), { recursive: true });
     writeFileSync(scriptPath, code, "utf8");
 
     const execResult = await executePython(context.runId, filename, inputFiles, []);
@@ -359,6 +360,7 @@ export const generateDeliverableTool: AgentTool = {
     } else {
       const outDir = resolveRunPath(context.runId, "output", "output");
       const outPath = path.join(outDir, filename);
+      mkdirSync(path.dirname(outPath), { recursive: true });
       writeFileSync(outPath, content, "utf8");
       artifacts.push({
         artifactId: randomUUID(),

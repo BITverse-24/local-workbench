@@ -230,4 +230,38 @@ describe("Harness Tools", () => {
       await expect(runCommand(root, "")).rejects.toThrow("non-empty string");
     });
   });
+
+  // ── Cache Invalidation ───────────────────────────────────────
+  describe("Cache Invalidation", () => {
+    it("invalidates listDir cache immediately after writeFile", () => {
+      const before = listDir(root);
+      expect(before.some((e) => e.name === "new-file.txt")).toBe(false);
+
+      writeFile(root, "new-file.txt", "content");
+
+      const after = listDir(root);
+      expect(after.some((e) => e.name === "new-file.txt")).toBe(true);
+    });
+
+    it("invalidates listDir cache immediately after deleteFile", () => {
+      writeFile(root, "to-delete.txt", "content");
+      const before = listDir(root);
+      expect(before.some((e) => e.name === "to-delete.txt")).toBe(true);
+
+      deleteFile(root, "to-delete.txt");
+
+      const after = listDir(root);
+      expect(after.some((e) => e.name === "to-delete.txt")).toBe(false);
+    });
+
+    it("invalidates listDir cache immediately after runCommand mutates disk", async () => {
+      const before = listDir(root);
+      expect(before.some((e) => e.name === "cmd-created.txt")).toBe(false);
+
+      await runCommand(root, "touch cmd-created.txt");
+
+      const after = listDir(root);
+      expect(after.some((e) => e.name === "cmd-created.txt")).toBe(true);
+    });
+  });
 });

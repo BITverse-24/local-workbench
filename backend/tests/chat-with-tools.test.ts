@@ -264,4 +264,82 @@ describe("ModelGateway.chatWithTools", () => {
     expect(toolMsg.turn).toBeUndefined(); // internal property stripped
     expect(toolMsg.toolName).toBeUndefined(); // internal property stripped
   });
+
+  it("parses embedded <tool_call> XML blocks from local model message content", async () => {
+    const mockTransport = {
+      async request() {
+        return {
+          status: 200,
+          async text() {
+            return JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    role: "assistant",
+                    content: "I will update the rate limiter now.\n<tool_call>\n{\"name\": \"write_file\", \"arguments\": {\"path\": \"middleware/rateLimiter.js\", \"content\": \"module.exports = {};\"}}\n</tool_call>",
+                  },
+                },
+              ],
+              usage: { prompt_tokens: 100, completion_tokens: 50 },
+            });
+          },
+        };
+      },
+    };
+
+    const gateway = new ModelGateway(mockTransport);
+    const result = await gateway.chatWithTools(
+      "code-qwen25coder",
+      [{ role: "user", content: "Update rate limiter" }],
+      sampleTools,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.tool_calls).toHaveLength(1);
+    expect(result.value.tool_calls?.[0].name).toBe("write_file");
+    expect(result.value.tool_calls?.[0].arguments).toEqual({
+      path: "middleware/rateLimiter.js",
+      content: "module.exports = {};",
+    });
+    expect(result.value.content).toBe("I will update the rate limiter now.");
+  });
+
+  it("parses raw JSON object tool calls from local model message content", async () => {
+    const mockTransport = {
+      async request() {
+        return {
+          status: 200,
+          async text() {
+            return JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    role: "assistant",
+                    content: "```json\n{\"name\": \"read_file\", \"arguments\": {\"path\": \"app.js\"}}\n```",
+                  },
+                },
+              ],
+              usage: { prompt_tokens: 80, completion_tokens: 20 },
+            });
+          },
+        };
+      },
+    };
+
+    const gateway = new ModelGateway(mockTransport);
+    const result = await gateway.chatWithTools(
+      "code-qwen25coder",
+      [{ role: "user", content: "Inspect app.js" }],
+      sampleTools,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.tool_calls).toHaveLength(1);
+    expect(result.value.tool_calls?.[0].name).toBe("read_file");
+    expect(result.value.tool_calls?.[0].arguments).toEqual({ path: "app.js" });
+  });
 });

@@ -29,6 +29,8 @@ import { ChatModel } from "../models/chat-model.js";
 import { HarnessManager } from "../harness/harness-manager.js";
 import { resolveSafe } from "../harness/path-guard.js";
 import { buildHarnessSystemPrompt, formatTreeForPrompt } from "../harness/harness-prompt.js";
+import { readFile } from "../harness/tools/read-file.js";
+import type { DirEntry } from "../harness/tools/list-dir.js";
 import type { HarnessToolCall } from "../../shared/contracts.js";
 import type { GroundingProvider } from "../grounding/provider.js";
 import {
@@ -62,6 +64,7 @@ import { routeTask } from "../router/deterministic-router.js";
 import { classifyIntent, type IntentDecision } from "../router/intent-classifier.js";
 import { composeTools } from "../router/tool-compositor.js";
 import { pickDriverModel } from "../router/driver-router.js";
+import { resolveSemanticIntent, extractReferencedFiles } from "../router/contextual-router.js";
 import { AgentLoop } from "../agent/agent-loop.js";
 import { executePython } from "../tools/python.js";
 import { generateDocx, generateXlsx } from "../tools/artifacts.js";
@@ -125,6 +128,62 @@ export function deriveMarkdownFilename(text: string, entity?: string): string {
     return item ? `${item}-inspection-note.md` : "inspection-note.md";
   }
   return item ? `${item}-review-note.md` : "review-note.md";
+}
+
+export function findReferencedWorkspaceFiles(
+  text: string,
+  history: Array<{ role: string; content: string }>,
+  workspaceRoot: string,
+  tree: DirEntry[],
+  explicitFiles?: string[],
+): Array<{ path: string; content: string }> {
+  const referencedPaths = new Set<string>(explicitFiles ?? []);
+
+  // 1. Combine recent user messages and current text
+  const combinedUserText = [
+    ...history.filter((m) => m.role === "user").slice(-3).map((m) => m.content),
+    text,
+  ].join("\n");
+
+  // 2. Look for @path/to/file mentions
+  const atPathRegex = /@([a-zA-Z0-9_.\-/]+\.[a-zA-Z0-9]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = atPathRegex.exec(combinedUserText)) !== null) {
+    const raw = match[1].replace(/^\.?\//, "");
+    referencedPaths.add(raw);
+  }
+
+  // 3. Extract all file paths from tree
+  const allWorkspaceFiles = tree.filter((e) => e.type === "file").map((e) => e.name);
+  for (const relPath of allWorkspaceFiles) {
+    const baseName = path.basename(relPath);
+    const escapedBase = baseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escapedRel = relPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const wordPattern = new RegExp(`(?:@|\\b)(?:${escapedRel}|${escapedBase})\\b`, "i");
+    if (wordPattern.test(combinedUserText)) {
+      referencedPaths.add(relPath);
+    }
+  }
+
+  const loadedFiles: Array<{ path: string; content: string }> = [];
+  for (const p of referencedPaths) {
+    const directMatch = allWorkspaceFiles.find(
+      (f) =>
+        f.toLowerCase() === p.toLowerCase() ||
+        f.toLowerCase().endsWith(`/${p.toLowerCase()}`) ||
+        path.basename(f).toLowerCase() === p.toLowerCase(),
+    );
+    const targetRel = directMatch ?? p;
+    try {
+      const content = readFile(workspaceRoot, targetRel);
+      const truncated = content.length > 50000 ? `${content.slice(0, 50000)}\n... [truncated]` : content;
+      loadedFiles.push({ path: targetRel, content: truncated });
+    } catch {
+      // file might not exist yet or too large
+    }
+  }
+
+  return loadedFiles.slice(0, 5);
 }
 
 type AttachmentRow = AttachmentReference & { runId: string; chatId: string };
@@ -326,29 +385,38 @@ export class RunManager {
       // that workspace so tools and sandbox can resolve filenames.
       const newAttachments: AttachmentRow[] = [];
       for (const att of attachments) {
-        const bytes = readFileSync(absoluteDataPath(att.relativePath));
-        const copied = saveAttachment(runId, {
-          filename: att.filename,
-          mediaType: att.mediaType,
-          sizeBytes: bytes.length,
-          base64OrBuffer: bytes,
-        });
-        const fullCopied: AttachmentRow = { ...copied, runId, chatId: effectiveChatId };
-        this.attachments.set(fullCopied.attachmentId, fullCopied);
-        db.prepare(
-          "INSERT INTO attachments(attachment_id, chat_id, run_id, filename, media_type, size_bytes, relative_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        ).run(
-          fullCopied.attachmentId,
-          effectiveChatId,
-          runId,
-          fullCopied.filename,
-          fullCopied.mediaType,
-          fullCopied.sizeBytes,
-          fullCopied.relativePath,
-          new Date().toISOString(),
-        );
-        insertRunAtt.run(runId, fullCopied.attachmentId);
-        newAttachments.push(fullCopied);
+        try {
+          const fullPath = absoluteDataPath(att.relativePath);
+          if (!existsSync(fullPath)) {
+            console.warn(`[run:${runId.slice(0, 8)}] attachment file not found on disk, skipping: ${att.relativePath}`);
+            continue;
+          }
+          const bytes = readFileSync(fullPath);
+          const copied = saveAttachment(runId, {
+            filename: att.filename,
+            mediaType: att.mediaType,
+            sizeBytes: bytes.length,
+            base64OrBuffer: bytes,
+          });
+          const fullCopied: AttachmentRow = { ...copied, runId, chatId: effectiveChatId };
+          this.attachments.set(fullCopied.attachmentId, fullCopied);
+          db.prepare(
+            "INSERT INTO attachments(attachment_id, chat_id, run_id, filename, media_type, size_bytes, relative_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          ).run(
+            fullCopied.attachmentId,
+            effectiveChatId,
+            runId,
+            fullCopied.filename,
+            fullCopied.mediaType,
+            fullCopied.sizeBytes,
+            fullCopied.relativePath,
+            new Date().toISOString(),
+          );
+          insertRunAtt.run(runId, fullCopied.attachmentId);
+          newAttachments.push(fullCopied);
+        } catch (copyErr) {
+          console.warn(`[run:${runId.slice(0, 8)}] failed copying attachment ${att.filename}:`, copyErr);
+        }
       }
       attachments = newAttachments;
       if (attachments[0]) {
@@ -737,10 +805,26 @@ export class RunManager {
       // ── Unified Agent Loop (Sovereign Workbench v2) ────────────────────────
       this.state(runId, "classifying");
 
-      const driverDecision = pickDriverModel(text, attachments, isWorkspaceActive);
+      const workspaceFiles = isWorkspaceActive && this.harness
+        ? this.harness.getDirectoryTree().filter((e) => e.type === "file").map((e) => e.name)
+        : [];
+
+      const semanticIntent = await resolveSemanticIntent(
+        {
+          userPrompt: text,
+          runId,
+          attachments,
+          hasWorkspace: isWorkspaceActive,
+          workspaceFiles,
+          history,
+          devWorkload: this.runDevWorkload.get(runId) ?? false,
+        },
+        this.gateway,
+      );
+
       const requestId = randomUUID();
-      recordRouting(runId, requestId, driverDecision.taskType, driverDecision.modelId, driverDecision.reason);
-      this.emit({ type: "routing", runId, ...driverDecision });
+      recordRouting(runId, requestId, semanticIntent.taskType, semanticIntent.driverModel, semanticIntent.reason);
+      this.emit({ type: "routing", runId, taskType: semanticIntent.taskType, modelId: semanticIntent.driverModel, reason: semanticIntent.reason });
 
       this.state(runId, "planning");
 
@@ -753,7 +837,7 @@ export class RunManager {
           hasAttachments: attachments.length > 0,
           hasKnowledgeBaseDocs,
         },
-        driverDecision.modelId,
+        semanticIntent.driverModel,
       );
 
       const workspaceRoot = isWorkspaceActive && this.harness
@@ -774,11 +858,20 @@ export class RunManager {
       if (isWorkspaceActive && this.harness) {
         const tree = this.harness.getDirectoryTree();
         const treeFormatted = formatTreeForPrompt(tree);
+        const explicitTargets = semanticIntent.targetFiles || [];
+        const referencedFiles = findReferencedWorkspaceFiles(text, history, workspaceRoot, tree, explicitTargets);
+        const referencedFilesSection =
+          referencedFiles.length > 0
+            ? `\nCURRENT RELEVANT WORKSPACE FILES:\n${referencedFiles
+                .map((f) => `--- ${f.path} ---\n${f.content}\n--- end ${f.path} ---`)
+                .join("\n\n")}\n`
+            : "";
+
         systemPrompt = `You are Sovereign Workbench, an autonomous engineering and coding agent operating directly inside the user's project workspace.
 
 CURRENT WORKSPACE DIRECTORY TREE:
 ${treeFormatted}
-
+${referencedFilesSection}
 CRITICAL OPERATIONAL RULES:
 1. YOU HAVE DIRECT FILESYSTEM & SHELL ACCESS via tools. NEVER say you cannot interact with files or lack permissions.
 2. NO TOOL SIMULATION OR FAKE RESULTS:
@@ -787,24 +880,19 @@ CRITICAL OPERATIONAL RULES:
    - When invoking tools, your text content must ONLY be a brief 1-2 sentence statement of your plan or intent.
    - NEVER output "**Implemented**:" or summarize next steps while invoking tools! Those belong strictly in your final response after all tools have finished.
 3. MULTI-STEP EXECUTION DISCIPLINE:
-   - When you need to inspect existing workspace code, call exploration tools (\`list_dir\`, \`read_file\`, \`search\`) first.
+   - When you need to inspect existing workspace code not shown above, call exploration tools (\`list_dir\`, \`read_file\`, \`search\`) first.
    - Wait for the real tool output from the system before modifying files or running commands.
 4. CREATING & EDITING FILES:
-   - When the user asks you to create, setup, scaffold, write, build, modify, update, edit, or patch files or code, you MUST call the \`write_file\` tool to save each file to disk.
-   - NEVER merely output code in markdown blocks or give instructions telling the user to create files manually.
-   - NEVER output pseudo-CLI commands (like \`write_file --path ...\`). \`write_file\` is a function tool, NOT a terminal command!
-   - You MUST invoke \`write_file\` with {"path": "relative/path/to/file", "content": "..."} for every file needed.
+   - When the user asks you to create, setup, scaffold, write, build, modify, update, edit, or patch files or code, you MUST invoke \`write_file\` with {"path": "relative/path/to/file", "content": "..."} for every file needed.
    - You can invoke multiple \`write_file\` calls in a single turn.
-   - You MUST call \`write_file\` FIRST before outputting any completion summary. NEVER claim or describe a file as created if you did not call \`write_file\` for it.
+   - If your model environment outputs markdown code blocks instead of native function calls, you MUST specify the file path on the first line or header (e.g. \`// path/to/file.js\` or \`### path/to/file.js\`) so the system can automatically extract and write the files to disk.
+   - NEVER claim files were created or modified if no tools were executed and no code was provided.
 5. COMMAND EXECUTION & VERIFICATION:
-   - When the user asks to install dependencies, run scripts, test, start an app, or check functionality (e.g. "install deps", "run the app", "check if everything working"), you MUST call \`run_command\` with the appropriate shell command (e.g. \`npm install express-rate-limit\`, \`node app.js\`, \`npm test\`).
-   - NEVER merely tell the user to run commands manually or claim they ran without actually invoking \`run_command\`!
+   - When the user asks to install dependencies, run scripts, test, start an app, or check functionality (e.g. "install deps", "run the app", "check if everything working"), invoke \`run_command\` with the appropriate shell command (e.g. \`npm install express-rate-limit\`, \`node app.js\`, \`npm test\`).
 6. DELETION: To delete files, call \`delete_file\`. Never delete files by writing empty content.
 7. FINAL RESPONSE FORMAT (ONLY AFTER ALL TOOLS HAVE COMPLETED):
-   - Do NOT output your final summary until after all tools have executed and saved files or run commands.
-   - When all tools have completed, output ONLY a concise summary (under 80 words).
-   - NEVER paste code snippets, file contents, or repeat code blocks in your final response. The files are ALREADY saved directly in the workspace!
-   - Structure your response strictly as:
+   - When all tools have completed and files are saved on disk, do NOT repeat redundant full code blocks in your final response.
+   - Output a concise summary (under 80 words):
      • **Implemented**: 2-4 brief bullet points of what was set up / created on disk.
      • **Next Steps**: Command(s) to run, test, or start the code (e.g. \`node app.js\`).
    - Do NOT include filler, conversational preamble, apologies, or redundant code dumps. Be direct and concise.`;
@@ -824,14 +912,16 @@ Follow these operational guidelines:
       try {
         const loopResult = await agentLoop.run({
           runId,
-          driverModelId: driverDecision.modelId,
+          driverModelId: semanticIntent.driverModel,
           userPrompt: text,
           systemPrompt,
+          semanticIntent,
           tools,
           context: toolContext,
           recentChatHistory: history,
           maxTurns: 100,
           devWorkload: this.runDevWorkload.get(runId) ?? false,
+          isCancelled: () => getState(runId) === "cancelled",
           onPlanConfirmationRequired: async (planText, firstCalls) => {
             return new Promise<boolean>((resolve) => {
               const firstActionsSummary = firstCalls
@@ -851,7 +941,7 @@ Follow these operational guidelines:
           emitEvent: (event) => this.emit(event),
         });
 
-        if (loopResult.completed) {
+        if (loopResult.completed && getState(runId) !== "cancelled") {
           this.persistAssistant(runId, loopResult.finalText, loopResult.modelId);
           this.complete(runId);
         }

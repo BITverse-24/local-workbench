@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 import { resolveSafe } from "../path-guard.js";
+import { clearListDirCache } from "./list-dir.js";
 
 const exec = promisify(execFile);
 
@@ -35,16 +36,24 @@ export async function runCommand(
   const started = Date.now();
 
   // Linux: use Bubblewrap if installed for network and filesystem confinement
+  let result: CommandResult;
   if (process.platform === "linux") {
     const bwrapCandidates = ["/usr/bin/bwrap", "/bin/bwrap"];
     const bwrap = bwrapCandidates.find((p) => existsSync(p));
     if (bwrap) {
-      return execSandboxedLinux(bwrap, canonicalRoot, command, timeoutMs, started);
+      result = await execSandboxedLinux(bwrap, canonicalRoot, command, timeoutMs, started);
+    } else {
+      result = await execDirect(canonicalRoot, command, timeoutMs, started);
     }
+  } else {
+    // macOS / Windows / Linux-without-bwrap fallback: direct shell with locked cwd
+    result = await execDirect(canonicalRoot, command, timeoutMs, started);
   }
 
-  // macOS / Windows / Linux-without-bwrap fallback: direct shell with locked cwd
-  return execDirect(canonicalRoot, command, timeoutMs, started);
+  // Clear listDir cache so files created or modified by the command are reflected immediately
+  clearListDirCache();
+
+  return result;
 }
 
 async function execSandboxedLinux(

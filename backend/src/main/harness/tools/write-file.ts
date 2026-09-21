@@ -3,10 +3,13 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { resolveSafe } from "../path-guard.js";
+import { clearListDirCache } from "./list-dir.js";
 
 export interface WriteResult {
   written: string;
@@ -47,8 +50,26 @@ export function writeFile(
   }
 
   // Ensure parent directory exists before writing
-  mkdirSync(path.dirname(target), { recursive: true });
-  writeFileSync(target, content, "utf8");
+  const parentDir = path.dirname(target);
+  mkdirSync(parentDir, { recursive: true });
+
+  // Atomic write via temporary file to prevent partial file corruption
+  const tmpTarget = `${target}.tmp.${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  try {
+    writeFileSync(tmpTarget, content, "utf8");
+    renameSync(tmpTarget, target);
+  } catch {
+    if (existsSync(tmpTarget)) {
+      try {
+        rmSync(tmpTarget, { force: true });
+      } catch {}
+    }
+    // Direct write fallback
+    writeFileSync(target, content, "utf8");
+  }
+
+  // Invalidate listDir cache so subsequent directory queries reflect the written file immediately
+  clearListDirCache();
 
   // Generate a clear diff summary
   let diff: string;

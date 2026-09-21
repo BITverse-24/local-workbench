@@ -299,4 +299,51 @@ module.exports = app;
     expect(callCount).toBe(2);
     expect(result.completed).toBe(true);
   });
+
+  it("aborts execution immediately when isCancelled returns true", async () => {
+    const loop = new AgentLoop();
+    let callCount = 0;
+
+    const mockTool: AgentTool = {
+      name: "write_file",
+      definition: {
+        type: "function",
+        function: { name: "write_file", description: "w", parameters: { type: "object", properties: {} } },
+      },
+      async execute() {
+        return { output: "ok", summary: "ok" };
+      },
+    };
+
+    let cancelled = false;
+    const mockGateway = {
+      async chatWithTools() {
+        callCount++;
+        // Trigger cancellation after first model invocation
+        cancelled = true;
+        return {
+          ok: true,
+          value: {
+            content: "Step 1 done",
+            tool_calls: [{ id: "c1", name: "write_file", arguments: { path: "a.js", content: "1" } }],
+          },
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-cancel",
+      driverModelId: "code-qwen25coder",
+      userPrompt: "Do something long",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockTool],
+      context: { runId: "test-cancel", workspaceRoot: ".", gateway: mockGateway as any },
+      isCancelled: () => cancelled,
+      emitEvent: () => {},
+    });
+
+    expect(callCount).toBe(1);
+    expect(result.completed).toBe(false);
+    expect(result.finalText).toContain("cancelled");
+  });
 });

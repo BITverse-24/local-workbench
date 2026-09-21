@@ -28,6 +28,22 @@ describe("Driver Router & Tool Surface Compositor", () => {
     expect(decision.taskType).toBe("code");
   });
 
+  it("routes active workspace follow-ups without explicit code keywords to code-qwen25coder", () => {
+    const turn1 = pickDriverModel("I think it still uses a fixed 15 min window for 100 requests", [], true);
+    expect(turn1.modelId).toBe("code-qwen25coder");
+    expect(turn1.taskType).toBe("code");
+
+    const turn2 = pickDriverModel("U instead made it into 10 requests per minute bruh", [], true);
+    expect(turn2.modelId).toBe("code-qwen25coder");
+    expect(turn2.taskType).toBe("code");
+  });
+
+  it("routes explicit document drafting in active workspace to draft-qwen3", () => {
+    const decision = pickDriverModel("Draft an approval note for this project", [], true);
+    expect(decision.modelId).toBe("draft-qwen3");
+    expect(decision.taskType).toBe("draft");
+  });
+
   it("routes document analysis / drafting to draft-qwen3", () => {
     const pdfAttachment: AttachmentReference = {
       attachmentId: "2",

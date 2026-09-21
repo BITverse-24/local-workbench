@@ -16,18 +16,21 @@ import {
   hasCommandTargetNoun,
   normalizeTokens,
 } from "../router/intent-classifier.js";
+import type { SemanticIntent } from "../router/contextual-router.js";
 
 export interface AgentLoopOptions {
   runId: string;
   driverModelId: ModelId;
   userPrompt: string;
   systemPrompt: string;
+  semanticIntent?: SemanticIntent;
   tools: AgentTool[];
   context: ToolExecutionContext;
   recentChatHistory?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   maxTurns?: number;
   devWorkload?: boolean;
   onPlanConfirmationRequired?: (plan: string, firstCalls: any[]) => Promise<boolean>;
+  isCancelled?: () => boolean;
   emitEvent: (event: RunEvent) => void;
 }
 
@@ -45,6 +48,7 @@ export class AgentLoop {
       driverModelId,
       userPrompt,
       systemPrompt,
+      semanticIntent,
       tools,
       context,
       recentChatHistory = [],
@@ -72,6 +76,15 @@ export class AgentLoop {
     let lastContent: string | null = null;
 
     while (turn < maxTurns) {
+      if (options.isCancelled?.()) {
+        return {
+          finalText: "Run cancelled by user.",
+          turns: turn,
+          completed: false,
+          modelId: driverModelId,
+        };
+      }
+
       turn++;
 
       // 1. Sliding window context compaction for turns > 2
@@ -152,6 +165,10 @@ export class AgentLoop {
 
         // C. System Nudges: If model still returned no tool calls on turn 1 despite actionable requests
         if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && turn === 1) {
+          const isSemanticActionable = semanticIntent?.isActionable;
+          const semanticTargets = semanticIntent?.targetFiles ?? [];
+          const isCommandIntent = semanticIntent?.intentType === "command_execution";
+
           const promptTokens = normalizeTokens(userPrompt);
           const promptLower = userPrompt.toLowerCase();
           const combinedLower = promptLower + " " + (content ?? "").toLowerCase();
@@ -159,7 +176,8 @@ export class AgentLoop {
 
           const isCommandRequest =
             Boolean(dispatcher.getTool("run_command")) &&
-            (hasCommandActionVerb(promptLower, promptTokens) ||
+            (isCommandIntent ||
+              hasCommandActionVerb(promptLower, promptTokens) ||
               hasCommandTargetNoun(promptLower, promptTokens));
 
           const hasUserAction = hasActionVerb(promptLower, promptTokens);
@@ -171,8 +189,8 @@ export class AgentLoop {
 
           const isFileCreationRequest =
             Boolean(dispatcher.getTool("write_file")) &&
-            (hasUserAction || hasContentAction) &&
-            hasContainer;
+            (Boolean(isSemanticActionable && semanticTargets.length > 0) ||
+              ((hasUserAction || hasContentAction) && hasContainer));
 
           if (isCommandRequest) {
             messages.push({
@@ -192,9 +210,13 @@ export class AgentLoop {
               content,
               turn,
             });
+            const targetHint =
+              semanticTargets.length > 0
+                ? ` for ${semanticTargets.join(", ")}`
+                : "";
             messages.push({
               role: "user",
-              content: `[SYSTEM FEEDBACK]: You provided code or conversational text, but did not execute tools. DO NOT dump code in chat or output pseudo CLI commands. You MUST invoke the native \`write_file\` tool (with {"path": "relative/path/to/file", "content": "..."}) to write files directly to disk. Please call \`write_file\` now.`,
+              content: `[SYSTEM FEEDBACK]: You did not execute tools or write files to disk${targetHint}. You MUST invoke the native \`write_file\` tool (with {"path": "relative/path/to/file", "content": "..."}) or output markdown code blocks with the target path on the first line (e.g. \`\`\`javascript\n// relative/path/to/file.js\n...\`\`\`) so the files can be saved to the workspace. Please do this now.`,
               turn,
             });
             continue;
@@ -204,6 +226,36 @@ export class AgentLoop {
 
       // 5. Pure chat detection / completion: If no tool calls and no synthesized actions, we are done!
       if (!effectiveToolCalls || effectiveToolCalls.length === 0) {
+        if (!hasExecutedTools) {
+          const isSemanticActionable = semanticIntent?.isActionable;
+          const semanticTargets = semanticIntent?.targetFiles ?? [];
+
+          const promptLower = userPrompt.toLowerCase();
+          const promptTokens = normalizeTokens(promptLower);
+          const hasUserAction = hasActionVerb(promptLower, promptTokens);
+          const claimsDiskAction =
+            /\b(implemented|created|updated|modified|added|written|patched)\b/i.test(content ?? "") &&
+            /\b(file|middleware|route|component|server|script|code|package\.json|\.js|\.ts|\.py|\.json)\b/i.test(
+              content ?? "",
+            );
+          const mentionsFileOrPath =
+            /@?[a-zA-Z0-9_.\-/]+\.(?:js|ts|jsx|tsx|py|json|html|css|md)\b/i.test(userPrompt);
+
+          if (
+            (claimsDiskAction || isSemanticActionable) &&
+            (semanticTargets.length > 0 || hasUserAction || mentionsFileOrPath)
+          ) {
+            const targetHint = semanticTargets.length > 0 ? ` for ${semanticTargets.join(", ")}` : "";
+            finalText = `No files were modified on disk${targetHint}. The model did not execute file tools or output code blocks for disk persistence. Please provide the code or confirm the file target.`;
+            return {
+              finalText,
+              turns: turn,
+              completed: true,
+              modelId: driverModelId,
+            };
+          }
+        }
+
         finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedTools);
         return {
           finalText,
@@ -273,6 +325,15 @@ export class AgentLoop {
       });
 
       // 8. Execute tool calls concurrently
+      if (options.isCancelled?.()) {
+        return {
+          finalText: "Run cancelled by user.",
+          turns: turn,
+          completed: false,
+          modelId: driverModelId,
+        };
+      }
+
       const executed = await dispatcher.dispatchConcurrent(effectiveToolCalls, context);
       if (executed.length > 0) {
         hasExecutedTools = true;

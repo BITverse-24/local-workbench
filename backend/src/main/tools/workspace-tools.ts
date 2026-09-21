@@ -64,6 +64,9 @@ export const readFileTool: AgentTool = {
         ...lines.slice(-100),
       ].join("\n");
     }
+    if (formattedContent.length > 24000) {
+      formattedContent = `${formattedContent.slice(0, 16000)}\n\n... [TRUNCATED ${formattedContent.length - 20000} CHARS — file exceeds context budget, use search tool for specific sections] ...\n\n${formattedContent.slice(-4000)}`;
+    }
     return {
       output: formattedContent,
       summary: `Read "${relPath}" (${content.length} chars, ${lines.length} lines)`,

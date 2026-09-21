@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { resolveSafe } from "../path-guard.js";
+import { clearListDirCache } from "./list-dir.js";
 
 export interface DeleteResult {
   deleted: string;
@@ -57,6 +58,8 @@ export function deleteFile(
     backupPath = path.join(".harness_backups", timestamp, relFromRoot);
     rmSync(target, { force: true });
   }
+
+  clearListDirCache();
 
   return {
     deleted: relativePath,
