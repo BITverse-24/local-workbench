@@ -177,6 +177,17 @@ export const STANDALONE_WORDS = [
   "temp", "temporary", "downloadable", "deliverable", "preview",
 ];
 
+// PERF OPTIMIZATION: Pre-computed Sets for O(1) exact token lookups.
+// Avoids linear scanning over arrays of 30-50+ target words for every prompt token.
+const ACTION_VERB_SET = new Set(ACTION_VERB_WORDS);
+const FILE_CONTAINER_SET = new Set(FILE_CONTAINER_WORDS);
+const COMMAND_ACTION_SET = new Set(COMMAND_ACTION_WORDS);
+const COMMAND_TARGET_SET = new Set(COMMAND_TARGET_WORDS);
+const NEGATOR_SET = new Set(NEGATOR_WORDS);
+const WORKSPACE_TARGET_SET = new Set(WORKSPACE_TARGET_WORDS);
+const SAVE_ACTION_SET = new Set(SAVE_ACTION_WORDS);
+const STANDALONE_SET = new Set(STANDALONE_WORDS);
+
 /**
  * Normalizes user text into clean tokens, expanding common contractions & shorthands.
  */
@@ -191,6 +202,14 @@ export function normalizeTokens(text: string): string[] {
     .filter(Boolean);
 }
 
+// PERF OPTIMIZATION: Zero-allocation Damerau-Levenshtein distance.
+// Reuses static 1D row buffers (d0, d1, d2) instead of allocating 2D matrix arrays
+// (`Array.from(...)`) on every string pair comparison.
+const MAX_WORD_LEN = 32;
+const d0 = new Int32Array(MAX_WORD_LEN);
+const d1 = new Int32Array(MAX_WORD_LEN);
+const d2 = new Int32Array(MAX_WORD_LEN);
+
 /**
  * Damerau-Levenshtein distance for typo-tolerant matching.
  * Handles insertions, deletions, substitutions, AND transpositions (e.g. "udpate" -> "update").
@@ -200,32 +219,40 @@ export function editDistance(a: string, b: string): number {
   const m = a.length;
   const n = b.length;
   if (Math.abs(m - n) > 2) return 3;
+  if (m >= MAX_WORD_LEN || n >= MAX_WORD_LEN) return 3;
 
-  const d: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 0; i <= m; i++) d[i][0] = i;
-  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let j = 0; j <= n; j++) d0[j] = j;
 
   for (let i = 1; i <= m; i++) {
+    d1[0] = i;
     for (let j = 1; j <= n; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      d[i][j] = Math.min(
-        d[i - 1][j] + 1,       // deletion
-        d[i][j - 1] + 1,       // insertion
-        d[i - 1][j - 1] + cost, // substitution
+      let min = Math.min(
+        d0[j] + 1,       // deletion
+        d1[j - 1] + 1,   // insertion
+        d0[j - 1] + cost // substitution
       );
       // Damerau transposition check (swap of adjacent characters)
       if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
-        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+        min = Math.min(min, d2[j - 2] + 1);
       }
+      d1[j] = min;
+    }
+    // Shift row buffers
+    for (let j = 0; j <= n; j++) {
+      d2[j] = d0[j];
+      d0[j] = d1[j];
     }
   }
-  return d[m][n];
+  return d0[n];
 }
 
 /**
  * Fuzzy check matching exact words, stems, or small typo distances.
  */
-export function fuzzyMatches(token: string, targetWords: string[]): boolean {
+export function fuzzyMatches(token: string, targetWords: string[], targetSet?: Set<string>): boolean {
+  if (targetSet && targetSet.has(token)) return true;
+
   for (const target of targetWords) {
     if (token === target) return true;
     // Allow target to start with token if token is a meaningful prefix (>= 4 chars), e.g. "worksp" -> "workspace"
@@ -250,7 +277,7 @@ export function fuzzyMatches(token: string, targetWords: string[]): boolean {
 export function hasActionVerb(lower: string, tokens: string[]): boolean {
   if (FILE_ACTION_VERBS.test(lower)) return true;
   for (const token of tokens) {
-    if (fuzzyMatches(token, ACTION_VERB_WORDS)) return true;
+    if (fuzzyMatches(token, ACTION_VERB_WORDS, ACTION_VERB_SET)) return true;
   }
   return false;
 }
@@ -262,7 +289,7 @@ export function hasContainerNoun(lower: string, tokens: string[]): boolean {
   if (FILE_CONTAINER_NOUNS.test(lower)) return true;
   for (const token of tokens) {
     if (token === "code") continue;
-    if (fuzzyMatches(token, FILE_CONTAINER_WORDS)) return true;
+    if (fuzzyMatches(token, FILE_CONTAINER_WORDS, FILE_CONTAINER_SET)) return true;
   }
   return false;
 }
@@ -273,7 +300,7 @@ export function hasContainerNoun(lower: string, tokens: string[]): boolean {
 export function hasCommandActionVerb(lower: string, tokens: string[]): boolean {
   if (COMMAND_ACTION_VERBS.test(lower)) return true;
   for (const token of tokens) {
-    if (fuzzyMatches(token, COMMAND_ACTION_WORDS)) return true;
+    if (fuzzyMatches(token, COMMAND_ACTION_WORDS, COMMAND_ACTION_SET)) return true;
   }
   return false;
 }
@@ -284,7 +311,7 @@ export function hasCommandActionVerb(lower: string, tokens: string[]): boolean {
 export function hasCommandTargetNoun(lower: string, tokens: string[]): boolean {
   if (COMMAND_TARGET_NOUNS.test(lower)) return true;
   for (const token of tokens) {
-    if (fuzzyMatches(token, COMMAND_TARGET_WORDS)) return true;
+    if (fuzzyMatches(token, COMMAND_TARGET_WORDS, COMMAND_TARGET_SET)) return true;
   }
   return false;
 }
@@ -301,17 +328,17 @@ function detectNegativeWorkspaceConstraint(tokens: string[]): boolean {
     // Case 1: "outside" within 3 tokens of a workspace target
     if (token === "outside") {
       for (let j = i + 1; j <= Math.min(i + 3, tokens.length - 1); j++) {
-        if (fuzzyMatches(tokens[j], WORKSPACE_TARGET_WORDS)) return true;
+        if (fuzzyMatches(tokens[j], WORKSPACE_TARGET_WORDS, WORKSPACE_TARGET_SET)) return true;
       }
     }
 
     // Case 2: Negator token within 5 tokens of a workspace target
-    if (fuzzyMatches(token, NEGATOR_WORDS)) {
+    if (fuzzyMatches(token, NEGATOR_WORDS, NEGATOR_SET)) {
       for (let j = i + 1; j <= Math.min(i + 5, tokens.length - 1); j++) {
-        if (fuzzyMatches(tokens[j], WORKSPACE_TARGET_WORDS)) {
+        if (fuzzyMatches(tokens[j], WORKSPACE_TARGET_WORDS, WORKSPACE_TARGET_SET)) {
           // Verify that between the negator and workspace target, there is an action verb, preposition, or direct adjacency
           const intermediate = tokens.slice(i + 1, j);
-          const hasSaveAction = intermediate.some((t) => fuzzyMatches(t, SAVE_ACTION_WORDS));
+          const hasSaveAction = intermediate.some((t) => fuzzyMatches(t, SAVE_ACTION_WORDS, SAVE_ACTION_SET));
           const hasPreposition = intermediate.some((t) => ["in", "to", "into", "on", "at", "my", "the", "this"].includes(t));
           if (intermediate.length === 0 || hasSaveAction || hasPreposition) {
             return true;
@@ -341,7 +368,7 @@ function detectStandaloneHint(tokens: string[], rawText: string): boolean {
   // 1. Any fuzzy token match (e.g. "artifct", "artefact", "standalone", "temp", "scratch")
   for (const token of tokens) {
     if (["review", "reviews", "reviewed", "reviewing"].includes(token)) continue;
-    if (fuzzyMatches(token, STANDALONE_WORDS)) return true;
+    if (fuzzyMatches(token, STANDALONE_WORDS, STANDALONE_SET)) return true;
   }
 
   // 2. Chat-only or preview-only intent
@@ -356,7 +383,7 @@ function detectStandaloneHint(tokens: string[], rawText: string): boolean {
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i] === "outside") {
       for (let j = i + 1; j <= Math.min(i + 3, tokens.length - 1); j++) {
-        if (fuzzyMatches(tokens[j], WORKSPACE_TARGET_WORDS)) return true;
+        if (fuzzyMatches(tokens[j], WORKSPACE_TARGET_WORDS, WORKSPACE_TARGET_SET)) return true;
       }
     }
   }

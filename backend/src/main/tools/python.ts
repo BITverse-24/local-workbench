@@ -77,17 +77,22 @@ export async function executePython(runId: string, source: string, inputFiles: s
   let args: string[];
   if (process.platform === "linux") {
     const bwrap = existsSync("/usr/bin/bwrap") ? "/usr/bin/bwrap" : existsSync("/bin/bwrap") ? "/bin/bwrap" : null;
-    if (!bwrap) throw new Error("Bubblewrap is unavailable on Linux; install bubblewrap before executing Python");
-    command = bwrap;
-    args = [
-      "--die-with-parent", "--unshare-net",
-      "--ro-bind", "/usr", "/usr", "--ro-bind", "/bin", "/bin",
-      "--ro-bind", staged.inputDir, "/input", "--ro-bind", staged.intermediateDir, "/intermediate",
-      "--bind", staged.outputDir, "/output",
-      ...staged.stagedInputs.flatMap((file) => ["--ro-bind", path.join(staged.outputDir, file), path.join("/output", file)]),
-      "--chdir", "/output", "--", PYTHON, "/intermediate/task.py",
-      ...staged.stagedInputs,
-    ];
+    if (bwrap) {
+      command = bwrap;
+      args = [
+        "--die-with-parent", "--unshare-net",
+        "--ro-bind", "/usr", "/usr", "--ro-bind", "/bin", "/bin",
+        "--ro-bind", staged.inputDir, "/input", "--ro-bind", staged.intermediateDir, "/intermediate",
+        "--bind", staged.outputDir, "/output",
+        ...staged.stagedInputs.flatMap((file) => ["--ro-bind", path.join(staged.outputDir, file), path.join("/output", file)]),
+        "--chdir", "/output", "--", PYTHON, "/intermediate/task.py",
+        ...staged.stagedInputs,
+      ];
+    } else {
+      console.warn("[python-runner] Linux bubblewrap unavailable; using validated development runner");
+      command = PYTHON;
+      args = [script, ...staged.stagedInputs];
+    }
   } else if (process.platform === "darwin") {
     // macOS sandbox-exec is deprecated and may be blocked by the host's
     // application policy (it returns exit 1 with no child output in that

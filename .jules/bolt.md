@@ -9,3 +9,7 @@
 ## 2026-09-21 - [Prepared SQLite Statements in Frequently Polled Services & React Default Prop Allocations]
 **Learning:** Repeatedly preparing raw SQL strings (`sqlite.prepare(...)`) inside methods invoked during frequent telemetry/polling (such as Knowledge Base status queries) incurs constant SQL parsing and AST bytecode compilation overhead. Reusing cached `Statement` instances across calls reduces query execution overhead by >90%. Additionally, default prop allocations like `runEvents = []` allocate a new array instance on every function evaluation, causing `React.memo` shallow prop comparison to fail when props are undefined.
 **Action:** Cache prepared SQLite `Statement` objects in service class fields, and always declare default empty arrays/objects as module-level constants outside React components.
+
+## 2026-09-22 - [$O(1)$ Token Lookups and Zero-Allocation Edit Distance for Intent Classification]
+**Learning:** In multi-turn intent routing, matching prompt tokens against word dictionaries via array iteration creates $O(N \times M)$ linear scans and allocates hundreds of temporary 2D matrices when calculating edit distance. Pre-building module-level `Set` instances provides $O(1)$ exact matches before fuzzy logic, and sharing static 1D row buffers (`d0`, `d1`, `d2`) for Damerau-Levenshtein distance eliminates matrix allocations entirely during synchronous string evaluation.
+**Action:** Always complement fuzzy word lists with pre-computed `Set` instances for $O(1)$ exact token lookups, and reuse 1D row buffers for edit-distance algorithms.
