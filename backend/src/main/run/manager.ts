@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { createChat } from "../persistence/chats.js";
 import { addMessage, listMessages } from "../persistence/messages.js";
@@ -912,6 +912,24 @@ export class RunManager {
       if (attachments.length > 0) {
         const inputDir = resolveRunPath(runId, "input", "input");
         const dirFiles = existsSync(inputDir) ? readdirSync(inputDir) : [];
+
+        // If no project workspace is mounted, stage clean attachment files into intermediateDir
+        // so that workspace tools (read_file, list_dir) can immediately see and access them
+        if (!isWorkspaceActive) {
+          const intermediateDir = resolveRunPath(runId, "intermediate", "intermediate");
+          mkdirSync(intermediateDir, { recursive: true });
+          for (const f of dirFiles) {
+            if (!f.startsWith(".")) {
+              const cleanName = f.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, "");
+              const src = path.join(inputDir, f);
+              const dst = path.join(intermediateDir, cleanName);
+              if (!existsSync(dst) && statSync(src).isFile()) {
+                try { copyFileSync(src, dst); } catch {}
+              }
+            }
+          }
+        }
+
         const parts: string[] = [];
         for (const att of attachments) {
           let filePath = att.relativePath ? absoluteDataPath(att.relativePath) : "";
@@ -1014,7 +1032,7 @@ CRITICAL OPERATIONAL RULES:
      • Provide a direct, thorough, and clear markdown answer explaining the concepts, architecture, or code requested.
 9. FINAL RESPONSE FORMAT FOR FILE MODIFICATIONS (ONLY WHEN TOOLS MUTATED DISK):
    - When tools have modified or created files on disk, do NOT repeat redundant full code blocks in your final response.
-   - Output a concise summary (under 80 words):
+   - Output a concise summary:
      • **Implemented**: 2-4 brief bullet points of what was set up / created on disk.
      • **Next Steps**: Command(s) to run, test, or start the code (e.g. \`node app.js\`).
    - Do NOT include filler, conversational preamble, apologies, or redundant code dumps. Be direct and concise.`;
@@ -1023,14 +1041,11 @@ CRITICAL OPERATIONAL RULES:
 Solve the user's task step-by-step.
 ${attachedFilesSection}
 OPERATIONAL & PLAN GUIDELINES:
-1. FORMAL TASK-BASED PLAN:
-   - When invoking tools, your text content must be a brief, formal, task-based statement of your engineering plan.
-   - NEVER dump code, code blocks, or script implementations in your text when invoking tools! All code MUST be passed strictly inside tool arguments (e.g. \`code\` of \`execute_python\` or \`content\` of \`write_file\`).
-   - NEVER write conversational filler like "Here is the updated script:" or "Now let's execute...".
-2. When asked to write code, create files, or generate deliverables, invoke the appropriate tools (e.g. write_file, execute_python, generate_deliverable).
-3. When performing calculations or fixing bugs, verify code execution in the sandbox using \`execute_python\`.
-4. If an error occurs during tool execution, diagnose the error and retry with a corrected action.
-5. When finished, provide a clear, concise summary of the actions taken without dumping redundant code blocks. Do not invoke further tools once done.`;
+1. When asked to write code, create files, fix bugs, or test scripts, invoke the appropriate tools (e.g. \`execute_python\`, \`write_file\`, \`generate_deliverable\`).
+2. When performing calculations, fixing bugs, or verifying scripts with attachments, verify code execution in the sandbox using \`execute_python\`.
+3. Do not waste tokens outputting code blocks or full script implementations in chat while a task is still ongoing. All code must be passed strictly inside tool arguments (e.g. \`code\` of \`execute_python\` or \`content\` of \`write_file\`), unless the user explicitly asks for the code itself in chat.
+4. If an error occurs during tool execution, diagnose the error and retry with a corrected action using \`execute_python\`.
+5. When finished and verified, provide a clear, concise summary of the actions taken and results without dumping redundant code blocks. Do not invoke further tools once done.`;
       }
 
       this.state(runId, "acting");

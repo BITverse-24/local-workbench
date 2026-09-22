@@ -612,6 +612,106 @@ module.exports = app;
     const errorEvent = emittedEvents.find((e) => e.type === "error" && e.code === "tool_loop_detected");
     expect(errorEvent).toBeDefined();
   });
+
+  it("suppresses assistant_message_chunk during intermediate tool-calling turns and emits only clean summary on final turn", async () => {
+    const loop = new AgentLoop();
+    const emittedEvents: any[] = [];
+    let turnCount = 0;
+
+    const mockTool: AgentTool = {
+      name: "execute_python",
+      definition: {
+        type: "function",
+        function: { name: "execute_python", description: "run", parameters: { type: "object", properties: {} } },
+      },
+      async execute() {
+        if (turnCount === 1) {
+          // Turn 1 fails with error exitCode
+          return {
+            output: JSON.stringify({ exitCode: 1, stderr: "IndexError: list index out of range", stdout: "" }),
+            summary: "Exit code 1",
+          };
+        } else {
+          // Turn 2 succeeds
+          return {
+            output: JSON.stringify({ exitCode: 0, stderr: "", stdout: "{'ok': 3, 'malformed': 1, 'high': 1}" }),
+            summary: "Exit code 0",
+          };
+        }
+      },
+    };
+
+    const mockGateway = {
+      async chatWithTools(_model: string, _msgs: any[], _tools: any[], options?: any) {
+        turnCount++;
+        if (turnCount === 1) {
+          return {
+            ok: true,
+            value: {
+              content: "Let us run the script with execute_python.",
+              tool_calls: [{ id: "c1", name: "execute_python", arguments: { code: "import sys..." } }],
+            },
+          };
+        } else if (turnCount === 2) {
+          // Turn 2: model attempts to stream code before calling execute_python again
+          if (options?.onChunk) {
+            options.onChunk("The script crashed on sys.argv[1]. Let's update it:\n```python\nimport sys\n```");
+          }
+          return {
+            ok: true,
+            value: {
+              content: "The script crashed on sys.argv[1]. Let's update it:\n```python\nimport sys\n```\nNow let us execute it.",
+              tool_calls: [{ id: "c2", name: "execute_python", arguments: { code: "import sys\nif len(sys.argv) > 1: ..." } }],
+            },
+          };
+        } else {
+          // Turn 3: final summary
+          if (options?.onChunk) {
+            options.onChunk("The script has been repaired and verified to handle missing arguments.");
+          }
+          return {
+            ok: true,
+            value: {
+              content: "The script has been repaired and verified to handle missing arguments.",
+              tool_calls: null,
+            },
+          };
+        }
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-multiturn-chunk-suppression",
+      driverModelId: "code-qwen25coder",
+      userPrompt: "Fix the crashing script",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockTool],
+      semanticIntent: {
+        driverModel: "code-qwen25coder",
+        taskType: "code",
+        primaryGoal: "Fix script",
+        isActionable: true,
+        targetFiles: ["task.py"],
+        intentType: "code_modification",
+        reason: "bug fix",
+      },
+      context: { runId: "test-multiturn-chunk-suppression", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: (e) => emittedEvents.push(e),
+    });
+
+    expect(result.completed).toBe(true);
+    expect(result.turns).toBe(3);
+
+    // Chunks from Turn 2 (which called tools) MUST NOT be emitted as assistant_message_chunk!
+    const chunks = emittedEvents.filter((e) => e.type === "assistant_message_chunk");
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].delta).toBe("The script has been repaired and verified to handle missing arguments.");
+    expect(chunks[0].messageId).toBe(result.messageId);
+
+    // Intermediate scratchpad was emitted as agent_thinking instead of assistant_message_chunk
+    const thinking = emittedEvents.filter((e) => e.type === "agent_thinking");
+    expect(thinking.some((t) => t.turn === 2 && t.text.includes("The script crashed"))).toBe(true);
+  });
 });
 
 

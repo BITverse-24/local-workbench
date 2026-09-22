@@ -294,19 +294,56 @@ export default function App() {
                 durationMs: runStartTimeRef.current ? Date.now() - runStartTimeRef.current : undefined,
               } : undefined;
 
-              const last = prev[prev.length - 1];
-              if (last && (last.id === event.messageId || (last.role === "assistant" && (!last.text || last.id.startsWith("artifact-msg-"))))) {
-                return [
-                  ...prev.slice(0, -1),
-                  { ...last, id: event.messageId, text: event.text, runId: rid, execution: executionData ?? last.execution },
-                ];
-              }
-              const existingIdx = prev.findIndex((m) => m.id === event.messageId);
+              // Find any existing assistant message for this run (by messageId, runId, or empty artifact-msg)
+              const existingIdx = prev.findIndex(
+                (m) =>
+                  m.id === event.messageId ||
+                  (Boolean(rid) && m.runId === rid && m.role === "assistant") ||
+                  (m.role === "assistant" && (!m.text || m.id.startsWith("artifact-msg-"))),
+              );
+
               if (existingIdx !== -1) {
-                const updated = [...prev];
-                updated[existingIdx] = { ...updated[existingIdx], text: event.text, runId: rid, execution: executionData ?? updated[existingIdx]?.execution };
-                return updated;
+                // Merge all artifacts from any assistant messages matching this run
+                const matchedArtifacts: any[] = [];
+                for (const m of prev) {
+                  if (
+                    m.id === event.messageId ||
+                    (Boolean(rid) && m.runId === rid && m.role === "assistant") ||
+                    m.id.startsWith("artifact-msg-")
+                  ) {
+                    if (m.artifacts) {
+                      for (const a of m.artifacts) {
+                        if (!matchedArtifacts.some((existing) => existing.artifactId === a.artifactId || existing.filename === a.filename)) {
+                          matchedArtifacts.push(a);
+                        }
+                      }
+                    }
+                  }
+                }
+
+                // Filter out duplicate assistant messages for this run, keeping just the consolidated one
+                const filtered = prev.filter(
+                  (m, idx) =>
+                    idx === existingIdx ||
+                    !(
+                      (Boolean(rid) && m.runId === rid && m.role === "assistant") ||
+                      (m.role === "assistant" && (!m.text || m.id.startsWith("artifact-msg-")))
+                    ),
+                );
+                const targetIdx = filtered.findIndex((m) => m.id === prev[existingIdx].id);
+                if (targetIdx !== -1) {
+                  filtered[targetIdx] = {
+                    ...filtered[targetIdx],
+                    id: event.messageId,
+                    text: event.text,
+                    runId: rid,
+                    artifacts: matchedArtifacts.length > 0 ? matchedArtifacts : filtered[targetIdx].artifacts,
+                    execution: executionData ?? filtered[targetIdx]?.execution,
+                  };
+                  return filtered;
+                }
               }
+
               return [...prev, { id: event.messageId, role: "assistant", text: event.text, runId: rid, execution: executionData }];
             });
             break;

@@ -178,20 +178,19 @@ export class AgentLoop {
 
       // 2. Dispatch turn to model gateway with native tools
       // Only cap maxTokens to 350 when disk-modifying actions have already succeeded and the model is formulating its final summary.
-      // If only inspection/read tools (search, read_file) ran, do NOT cap tokens, because the model still needs full token budget to output complete code files or multi-tool calls!
-      const turnMaxTokens = hasExecutedDiskMutations ? 350 : undefined;
+      // If an execution error occurred or only read tools ran, do NOT cap tokens, because the model still needs full token budget to output complete code files or multi-tool calls!
+      const turnMaxTokens = (hasExecutedDiskMutations && !lastExecutionHadError) ? 350 : undefined;
 
       // Stream free-text responses whenever structured output is not necessary:
-      // 1) Post-disk mutation turns (final summary)
-      // 2) Non-actionable pure chat / informational turns or when no tools exist
-      const isFreeTextTurn =
-        hasExecutedDiskMutations ||
+      // 1) Non-actionable pure chat / informational turns or when no tools exist
+      const isPureChatTurn =
         toolDefinitions.length === 0 ||
         semanticIntent?.isActionable === false ||
         semanticIntent?.intentType === "pure_chat" ||
         semanticIntent?.intentType === "general_qa";
 
-      const onChunk = isFreeTextTurn
+      let bufferedChunks: string[] = [];
+      const onChunk = isPureChatTurn
         ? (delta: string) => {
             emitEvent({
               type: "assistant_message_chunk",
@@ -200,6 +199,10 @@ export class AgentLoop {
               delta,
               modelId: driverModelId,
             });
+          }
+        : (hasExecutedDiskMutations && !lastExecutionHadError)
+        ? (delta: string) => {
+            bufferedChunks.push(delta);
           }
         : undefined;
 
@@ -336,7 +339,7 @@ export class AgentLoop {
               turn,
             });
             continue;
-          } else if (isCodeIntent && dispatcher.getTool("write_file")) {
+          } else if (isCodeIntent && (dispatcher.getTool("execute_python") || dispatcher.getTool("write_file"))) {
             messages.push({
               role: "assistant",
               content,
@@ -346,9 +349,16 @@ export class AgentLoop {
               semanticTargets.length > 0
                 ? ` for ${semanticTargets.join(", ")}`
                 : "";
+            const isPythonTask =
+              Boolean(dispatcher.getTool("execute_python")) &&
+              (/\b(?:python|\.py|crash|crashing|script|parser|csv)\b/i.test(userPrompt) ||
+                semanticTargets.some((t) => t.endsWith(".py")));
+            const toolInstruction = isPythonTask
+              ? `You MUST invoke the native \`execute_python\` tool (with {"code": "..."}) to run and verify the fix in the sandbox.`
+              : `You MUST invoke the native \`write_file\` tool (with {"path": "relative/path/to/file", "content": "..."}) or output markdown code blocks with the target path on the first line (e.g. \`\`\`typescript\n// relative/path/to/file.ts\n...\`\`\`) so the files can be saved to the workspace.`;
             messages.push({
               role: "user",
-              content: `[SYSTEM FEEDBACK]: You did not execute tools or write files to disk${targetHint}. You MUST invoke the native \`write_file\` tool (with {"path": "relative/path/to/file", "content": "..."}) or output markdown code blocks with the target path on the first line (e.g. \`\`\`typescript\n// relative/path/to/file.ts\n...\`\`\`) so the files can be saved to the workspace. Please do this now.`,
+              content: `[SYSTEM FEEDBACK]: You did not execute tools or write files to disk${targetHint}. ${toolInstruction} Please do this now.`,
               turn,
             });
             continue;
@@ -404,6 +414,30 @@ export class AgentLoop {
         }
 
         finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedDiskMutations);
+
+        // If chunks were buffered during this summary turn, emit them now (or emit the cleaned summary)
+        if (bufferedChunks.length > 0) {
+          if (finalText === content) {
+            for (const chunk of bufferedChunks) {
+              emitEvent({
+                type: "assistant_message_chunk",
+                runId,
+                messageId: assistantMessageId,
+                delta: chunk,
+                modelId: driverModelId,
+              });
+            }
+          } else {
+            emitEvent({
+              type: "assistant_message_chunk",
+              runId,
+              messageId: assistantMessageId,
+              delta: finalText,
+              modelId: driverModelId,
+            });
+          }
+        }
+
         return {
           finalText,
           turns: turn,
@@ -509,18 +543,30 @@ export class AgentLoop {
         };
       }
 
-      // If tools are being dispatched, ensure subsequent summary turn gets a fresh messageId
-      assistantMessageId = randomUUID();
-
       const executed = await dispatcher.dispatchConcurrent(effectiveToolCalls, context);
       if (executed.length > 0) {
         hasExecutedTools = true;
         let anyError = false;
         for (const exec of executed) {
-          const isError = typeof exec.result.output === "string" && exec.result.output.startsWith("Error");
+          let isError = typeof exec.result.output === "string" && exec.result.output.startsWith("Error");
+          if (!isError && exec.name === "execute_python" && typeof exec.result.output === "string") {
+            try {
+              const parsed = JSON.parse(exec.result.output);
+              if (typeof parsed.exitCode === "number" && parsed.exitCode !== 0) {
+                isError = true;
+                lastErrorMessage = parsed.stderr || `Python script exited with code ${parsed.exitCode}`;
+              } else if (parsed.timedOut) {
+                isError = true;
+                lastErrorMessage = "Python script execution timed out";
+              }
+            } catch {}
+          }
+
           if (isError) {
             anyError = true;
-            lastErrorMessage = exec.result.output;
+            if (!lastErrorMessage) {
+              lastErrorMessage = exec.result.output;
+            }
           } else {
             if (exec.name === "write_file" || exec.name === "delete_file") {
               const p = (effectiveToolCalls.find((c: any) => c.id === exec.id)?.arguments as any)?.path;

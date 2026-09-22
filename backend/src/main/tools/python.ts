@@ -52,6 +52,12 @@ function stageInputs(runId: string, inputFiles: string[], aliases: InputAlias[])
         source = path.join(inputDir, matched);
       }
     }
+    if (!existsSync(source)) {
+      const intermediateSource = path.join(intermediateDir, sourceName);
+      if (existsSync(intermediateSource)) {
+        source = intermediateSource;
+      }
+    }
     if (!existsSync(source)) throw new Error(`Python input file not found: ${filename}`);
     copyFileSync(source, path.join(outputDir, filename));
     stagedInputs.push(filename);

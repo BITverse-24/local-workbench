@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentTool, ToolExecutionContext, ToolExecutionResult } from "./types.js";
 import { requestBase } from "../gateway/model-gateway.js";
@@ -307,12 +307,31 @@ export const executePythonTool: AgentTool = {
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
     const code = String(args.code ?? "");
     const filename = String(args.filename ?? "task.py");
-    const inputFiles = Array.isArray(args.input_files) ? args.input_files.map(String) : [];
+    let inputFiles = Array.isArray(args.input_files) ? args.input_files.map(String) : [];
+
+    // Automatically stage run attachments if input_files is omitted or incomplete
+    const inputDir = resolveRunPath(context.runId, "input", "input");
+    if (existsSync(inputDir)) {
+      const entries = readdirSync(inputDir, { withFileTypes: true });
+      const cleanFiles = entries
+        .filter((e: any) => e.isFile() && !e.name.startsWith("."))
+        .map((e: any) => e.name.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, ""));
+      for (const f of cleanFiles) {
+        if (!inputFiles.includes(f)) {
+          inputFiles.push(f);
+        }
+      }
+    }
 
     const intermediateDir = resolveRunPath(context.runId, "intermediate", "intermediate");
     const scriptPath = path.join(intermediateDir, filename);
     mkdirSync(path.dirname(scriptPath), { recursive: true });
     writeFileSync(scriptPath, code, "utf8");
+
+    // Ensure task.py is present for the python runner
+    if (filename !== "task.py") {
+      writeFileSync(path.join(intermediateDir, "task.py"), code, "utf8");
+    }
 
     const execResult = await executePython(context.runId, filename, inputFiles, []);
     const summary = `Executed Python (${filename}): exit ${execResult.exitCode} in ${execResult.durationMs}ms`;
