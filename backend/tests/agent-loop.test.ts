@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compactConversationHistory, compactToolResult, type AgentMessage } from "../src/main/agent/context-manager.js";
 import { ToolDispatcher } from "../src/main/agent/tool-dispatcher.js";
-import { AgentLoop } from "../src/main/agent/agent-loop.js";
+import { AgentLoop, extractInChatFindings, deriveFormalPlan, isSubstantiveReportOrFindings } from "../src/main/agent/agent-loop.js";
 import type { AgentTool } from "../src/main/tools/types.js";
 
 describe("Agent Loop Engine & Context Manager", () => {
@@ -300,6 +300,62 @@ module.exports = app;
     expect(result.completed).toBe(true);
   });
 
+  it("detects and terminates 2-cycle alternating tool call loops (A -> B -> A -> B)", async () => {
+    const loop = new AgentLoop();
+    let callCount = 0;
+
+    const mockToolA: AgentTool = {
+      name: "generate_deliverable",
+      definition: { type: "function", function: { name: "generate_deliverable", description: "gen", parameters: { type: "object", properties: {} } } },
+      async execute() {
+        return { output: "deliverable created", summary: "done" };
+      },
+    };
+
+    const mockToolB: AgentTool = {
+      name: "read_file",
+      definition: { type: "function", function: { name: "read_file", description: "read", parameters: { type: "object", properties: { path: { type: "string" } } } } },
+      async execute() {
+        return { output: "deliverable content", summary: "read" };
+      },
+    };
+
+    const mockGateway = {
+      async chatWithTools() {
+        callCount++;
+        // Alternating pattern: Turn 1: tool A, Turn 2: tool B, Turn 3: tool A, Turn 4: tool B
+        const isToolA = callCount % 2 === 1;
+        return {
+          ok: true,
+          value: {
+            content: isToolA ? "Generating doc" : "Reading doc",
+            tool_calls: [
+              {
+                id: `call_${callCount}`,
+                name: isToolA ? "generate_deliverable" : "read_file",
+                arguments: isToolA ? { filename: "approval-note.docx" } : { path: "approval-note.docx" },
+              },
+            ],
+          },
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-alternating-loop",
+      driverModelId: "draft-qwen3",
+      userPrompt: "Draft approval note",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockToolA, mockToolB],
+      context: { runId: "test-alternating-loop", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: () => {},
+    });
+
+    // Should stop at turn 4 because [A, B, A, B] was detected!
+    expect(callCount).toBe(4);
+    expect(result.completed).toBe(true);
+  });
+
   it("aborts execution immediately when isCancelled returns true", async () => {
     const loop = new AgentLoop();
     let callCount = 0;
@@ -559,8 +615,8 @@ module.exports = app;
     expect(maxTokensPerTurn[0]).toBeUndefined();
     // Turn 2: should NOT be capped to 350 because search is read-only!
     expect(maxTokensPerTurn[1]).toBeUndefined();
-    // Turn 3: capped to 2048 because write_file mutated disk on turn 2
-    expect(maxTokensPerTurn[2]).toBe(2048);
+    // Turn 3: capped to 4096 because write_file mutated disk on turn 2
+    expect(maxTokensPerTurn[2]).toBe(4096);
     // Code block was intercepted as write_file tool call and written to disk
     expect(writtenFiles.length).toBe(1);
     expect(writtenFiles[0].path).toBe("app.ts");
@@ -711,6 +767,458 @@ module.exports = app;
     // Intermediate scratchpad was emitted as agent_thinking instead of assistant_message_chunk
     const thinking = emittedEvents.filter((e) => e.type === "agent_thinking");
     expect(thinking.some((t) => t.turn === 2 && t.text.includes("The script crashed"))).toBe(true);
+  });
+
+  it("auto-generates deliverable when model drafts approval note without explicit tool call on turn 2", async () => {
+    const loop = new AgentLoop();
+    let turnCount = 0;
+    const generatedDeliverables: any[] = [];
+    const emittedEvents: any[] = [];
+
+    const mockReadTool: AgentTool = {
+      name: "read_file",
+      definition: {
+        type: "function",
+        function: {
+          name: "read_file",
+          description: "Read file",
+          parameters: { type: "object", properties: { path: { type: "string" } } },
+        },
+      },
+      execute: async () => ({
+        output: "Inspection report: Heat Exchanger E-201 wall thickness 2.4mm (allowable min 3.0mm).",
+        summary: "Read report",
+      }),
+    };
+
+    const mockDeliverableTool: AgentTool = {
+      name: "generate_deliverable",
+      definition: {
+        type: "function",
+        function: {
+          name: "generate_deliverable",
+          description: "Generate deliverable",
+          parameters: {
+            type: "object",
+            properties: {
+              type: { type: "string" },
+              title: { type: "string" },
+              content: { type: "string" },
+              filename: { type: "string" },
+            },
+          },
+        },
+      },
+      execute: async (args) => {
+        generatedDeliverables.push(args);
+        return {
+          output: `Generated deliverable "${args.filename}" (4500 bytes)`,
+          summary: `Generated deliverable "${args.filename}"`,
+          artifacts: [
+            {
+              artifactId: "art-1",
+              runId: "test-auto-deliv",
+              kind: "docx",
+              filename: String(args.filename),
+              relativePath: `runs/test-auto-deliv/output/${args.filename}`,
+              sizeBytes: 4500,
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        };
+      },
+    };
+
+    const mockGateway = {
+      chatWithTools: async (_model: string, _msgs: any[], _tools: any[], options?: any) => {
+        turnCount++;
+        if (turnCount === 1) {
+          return {
+            ok: true as const,
+            value: {
+              content: "Reading inspection report...",
+              tool_calls: [
+                {
+                  id: "call_read_1",
+                  name: "read_file",
+                  arguments: { path: "report.pdf" },
+                },
+              ],
+            },
+          };
+        } else {
+          // Turn 2: Model outputs full structured approval note in content without invoking generate_deliverable!
+          const noteText = `# Technical Inspection Approval Note\n\n**Subject:** Heat Exchanger E-201 Clearance\n\n| Equipment | Measured Value | Allowable Limit | Status |\n| E-201 | 2.4mm | 3.0mm | REJECT |\n\n## Action Items\n1. Re-inspect weld joints.\n2. Replace degraded bundle.`;
+          // It streams chunks if onChunk provided
+          if (options?.onChunk) {
+            options.onChunk("Key findings: E-201 wall thinning detected.");
+          }
+          return {
+            ok: true as const,
+            value: {
+              content: noteText,
+              tool_calls: [],
+            },
+          };
+        }
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-auto-deliv",
+      driverModelId: "draft-qwen3",
+      userPrompt: "Read these inspection reports, pull out key findings, and draft an approval note for the plant manager in a docx file",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockReadTool, mockDeliverableTool],
+      semanticIntent: {
+        driverModel: "draft-qwen3",
+        taskType: "draft",
+        primaryGoal: "Draft approval note",
+        isActionable: true,
+        targetFiles: [],
+        intentType: "document_drafting",
+        reason: "Document drafting",
+      },
+      context: { runId: "test-auto-deliv", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: (e) => emittedEvents.push(e),
+    });
+
+    expect(result.completed).toBe(true);
+    // Deliverable tool must have been executed automatically!
+    expect(generatedDeliverables.length).toBe(1);
+    expect(generatedDeliverables[0].filename).toBe("approval-note.docx");
+    expect(generatedDeliverables[0].title).toBe("Technical Inspection Approval Note");
+    expect(generatedDeliverables[0].content).toContain("Heat Exchanger E-201");
+
+    // Artifact ready event must have been emitted!
+    const artEvent = emittedEvents.find((e) => e.type === "artifact_ready");
+    expect(artEvent).toBeDefined();
+    expect(artEvent.artifact.filename).toBe("approval-note.docx");
+
+    // Final text must notify user about the generated file!
+    expect(result.finalText).toContain("approval-note.docx");
+  });
+
+  it("nudges model on turn 1 when model returns a brief placeholder without invoking generate_deliverable", async () => {
+    const loop = new AgentLoop();
+    let callTurn = 0;
+    let receivedMessagesOnTurn2: any[] = [];
+    const generatedDeliverables: any[] = [];
+    const emittedEvents: any[] = [];
+
+    const mockDeliverableTool: AgentTool = {
+      name: "generate_deliverable",
+      definition: {
+        type: "function",
+        function: {
+          name: "generate_deliverable",
+          description: "Generate deliverable",
+          parameters: {
+            type: "object",
+            properties: {
+              type: { type: "string" },
+              title: { type: "string" },
+              content: { type: "string" },
+              filename: { type: "string" },
+            },
+          },
+        },
+      },
+      execute: async (args) => {
+        generatedDeliverables.push(args);
+        return {
+          output: `Generated deliverable "${args.filename}" (4500 bytes)`,
+          summary: `Generated deliverable "${args.filename}"`,
+          artifacts: [
+            {
+              artifactId: "art-nudge-1",
+              runId: "test-nudge-deliv",
+              kind: "docx",
+              filename: String(args.filename),
+              relativePath: `runs/test-nudge-deliv/output/${args.filename}`,
+              sizeBytes: 4500,
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        };
+      },
+    };
+
+    const mockGateway = {
+      chatWithTools: async (_model: string, messages: any[]) => {
+        callTurn++;
+        if (callTurn === 1) {
+          // Model lazily outputs ONLY a 1-sentence promise without calling generate_deliverable (exact run:a6aed379 bug)
+          return {
+            ok: true as const,
+            value: {
+              content: "Generating the technical approval note in approval-note.docx...",
+              tool_calls: null,
+            },
+          };
+        } else {
+          receivedMessagesOnTurn2 = messages;
+          // On turn 2, after receiving SYSTEM FEEDBACK, model calls generate_deliverable
+          return {
+            ok: true as const,
+            value: {
+              content: "Generating the document now.",
+              tool_calls: [
+                {
+                  id: "call_deliv_2",
+                  name: "generate_deliverable",
+                  arguments: {
+                    type: "docx",
+                    filename: "approval-note.docx",
+                    title: "Technical Inspection Approval Note",
+                    content: "# Approval Note\n\nFindings: Wall thickness 3.8mm below allowable.",
+                  },
+                },
+              ],
+            },
+          };
+        }
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-nudge-deliv",
+      driverModelId: "draft-qwen3",
+      userPrompt: "Read these inspection reports, pull out the key findings, and draft an approval note for the plant manager.",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockDeliverableTool],
+      semanticIntent: {
+        driverModel: "draft-qwen3",
+        taskType: "draft",
+        primaryGoal: "Draft approval note",
+        isActionable: true,
+        targetFiles: [],
+        intentType: "document_drafting",
+        reason: "Document drafting",
+      },
+      context: { runId: "test-nudge-deliv", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: (e) => emittedEvents.push(e),
+    });
+
+    // Loop should NOT have finished on turn 1 with just "Generating..."!
+    expect(callTurn).toBeGreaterThanOrEqual(2);
+    // Turn 2 messages should include system feedback pointing out the missing tool call
+    const feedbackMsg = receivedMessagesOnTurn2.find(
+      (m) => typeof m.content === "string" && m.content.includes("[SYSTEM FEEDBACK]"),
+    );
+    expect(feedbackMsg).toBeDefined();
+    expect(feedbackMsg.content).toContain("generate_deliverable");
+
+    // The deliverable was generated!
+    expect(generatedDeliverables.length).toBe(1);
+    expect(generatedDeliverables[0].filename).toBe("approval-note.docx");
+    expect(result.completed).toBe(true);
+  });
+
+  it("extractInChatFindings isolates key findings from draft approval note boilerplate", () => {
+    const rawContent = `### Key Findings from Inspection Reports
+
+**Report ID: IR-E201-2026-08-20**
+- **Equipment:** E-201 Heat Exchanger
+- **Tube Wall Thickness:**
+  - Rows 12-15 measured 3.8-4.2 mm.
+  - Minimum allowable tube wall thickness: 4.6 mm.
+  - **Deviation:** Below allowable limit.
+- **Corrosion:** Localised pitting corrosion at the shell inlet nozzle; depth 1.8 mm.
+
+### Draft Approval Note for Plant Manager
+
+**Header & Ref**
+- Subject: Inspection Report Summary
+- Classification: OFFICIAL
+
+| Equipment | Component | Status |
+|-----------|-----------|--------|
+| E-201     | Tube Wall | Rejected |`;
+
+    const extracted = extractInChatFindings(rawContent);
+    expect(extracted).toContain("### Key Findings from Inspection Reports");
+    expect(extracted).toContain("Rows 12-15 measured 3.8-4.2 mm.");
+    expect(extracted).not.toContain("### Draft Approval Note for Plant Manager");
+    expect(extracted).not.toContain("Classification: OFFICIAL");
+  });
+
+  it("preserves turn-1 in-chat key findings when turn-2 returns deliverable confirmation", async () => {
+    const loop = new AgentLoop();
+    let turnCount = 0;
+
+    const mockGateway = {
+      async chatWithTools(_modelId: string, _messages: any[], _tools: any[]) {
+        turnCount++;
+        if (turnCount === 1) {
+          return {
+            ok: true,
+            value: {
+              content: `### Key Findings from Inspection Reports
+
+**Report ID: IR-E201-2026-08-20**
+- **Equipment:** E-201 Heat Exchanger
+- **Tube Wall Thickness:** Rows 12-15 measured 3.8-4.2 mm (Allowable: 4.6 mm).
+- **Corrosion:** Localised pitting corrosion 1.8 mm depth.
+
+### Draft Approval Note for Plant Manager
+- Sign-off: Pending Repair`,
+              tool_calls: [
+                {
+                  id: "call_deliv_123",
+                  name: "generate_deliverable",
+                  arguments: {
+                    type: "docx",
+                    filename: "approval-note.docx",
+                    title: "Technical Approval Note",
+                    content: "Full document markdown",
+                  },
+                },
+              ],
+            },
+          };
+        }
+
+        // Turn 2: tool completed, model provides concise deliverable notification
+        return {
+          ok: true,
+          value: {
+            content: "The approval note for the E-201 inspection has been generated as \"approval-note.docx\" in the run output folder.",
+            tool_calls: null,
+          },
+        };
+      },
+    };
+
+    const mockDeliverableTool: AgentTool = {
+      name: "generate_deliverable",
+      definition: {
+        type: "function",
+        function: {
+          name: "generate_deliverable",
+          description: "Generate deliverable document",
+          parameters: { type: "object", properties: { filename: { type: "string" } } },
+        },
+      },
+      async execute(args: any) {
+        return {
+          output: `Generated deliverable "${args.filename || "approval-note.docx"}"`,
+          summary: "Deliverable generated",
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-preserve-findings",
+      driverModelId: "draft-qwen3",
+      userPrompt: "Review both inspection reports. Pull out all key findings, deviations, and annotations. Summarize them here first, then draft an official approval note for the plant manager.",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockDeliverableTool],
+      semanticIntent: {
+        driverModel: "draft-qwen3",
+        taskType: "draft",
+        primaryGoal: "Summarize findings and draft approval note",
+        isActionable: true,
+        targetFiles: [],
+        intentType: "document_drafting",
+        reason: "Document drafting",
+      },
+      context: { runId: "test-preserve-findings", workspaceRoot: ".", gateway: mockGateway as any },
+      onPlanConfirmationRequired: async () => true,
+      emitEvent: () => {},
+    });
+
+    expect(result.completed).toBe(true);
+    // Key findings from Turn 1 MUST be preserved in the final text displayed in chat!
+    expect(result.finalText).toContain("### Key Findings from Inspection Reports");
+    expect(result.finalText).toContain("Rows 12-15 measured 3.8-4.2 mm");
+    // AND the deliverable notification from Turn 2 must also be present!
+    expect(result.finalText).toContain("The approval note for the E-201 inspection has been generated as \"approval-note.docx\"");
+  });
+
+  it("presents a generic 2-step plan in confirmation modal instead of dumping report findings", async () => {
+    const loop = new AgentLoop();
+    let presentedPlan = "";
+    const emittedEvents: any[] = [];
+
+    const mockGateway = {
+      async chatWithTools() {
+        return {
+          ok: true,
+          value: {
+            content: `### Key Findings from Inspection Reports\n\n#### Report ID: IR-E201\n- Tube Wall Thickness: Rows 12-15 measured 3.8-4.2 mm (allowable: 4.6 mm).\n- Localised pitting corrosion: 1.8 mm.\n\n### Draft Approval Note\nSubject: Inspection Report Summary\nClearance: REJECTION PENDING REPAIRS`,
+            tool_calls: [
+              {
+                id: "call_deliv",
+                name: "generate_deliverable",
+                arguments: {
+                  type: "docx",
+                  filename: "approval-note.docx",
+                  content: "Full note content",
+                },
+              },
+            ],
+          },
+        };
+      },
+    };
+
+    const mockTool: AgentTool = {
+      name: "generate_deliverable",
+      definition: {
+        type: "function",
+        function: {
+          name: "generate_deliverable",
+          description: "Generate deliverable document",
+          parameters: { type: "object", properties: { filename: { type: "string" } } },
+        },
+      },
+      async execute() {
+        return { output: "Generated approval-note.docx", summary: "OK" };
+      },
+    };
+
+    await loop.run({
+      runId: "test-generic-plan-modal",
+      driverModelId: "draft-qwen3",
+      userPrompt: "Review both inspection reports. Pull out all key findings, deviations, and annotations. Summarize them here first, then draft an official approval note for the plant manager.",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockTool],
+      context: { runId: "test-generic-plan-modal", workspaceRoot: ".", gateway: mockGateway as any },
+      onPlanConfirmationRequired: async (plan) => {
+        presentedPlan = plan;
+        return false; // Stop after inspecting plan
+      },
+      emitEvent: (ev) => emittedEvents.push(ev),
+    });
+
+    // 1. When in-chat findings were already formulated/streamed, the confirmation focuses forward on compiling the deliverable:
+    expect(presentedPlan).toContain("### Proposed Action");
+    expect(presentedPlan).toContain("Compile and export the official deliverable document");
+    expect(presentedPlan).toContain("approval-note.docx");
+    expect(presentedPlan).toContain("### Proposed Operations");
+    expect(presentedPlan).toContain("• **generate_deliverable**: Generate DOCX artifact (`approval-note.docx`)");
+
+    // 2. The plan modal MUST NOT contain the 500-word findings dump:
+    expect(presentedPlan).not.toContain("Tube Wall Thickness: Rows 12-15 measured 3.8-4.2 mm");
+    expect(presentedPlan).not.toContain("Localised pitting corrosion");
+    expect(presentedPlan).not.toContain("Clearance: REJECTION PENDING REPAIRS");
+
+    // 3. The findings must have been emitted to the chat so they are visible as a first response:
+    const chunkEvents = emittedEvents.filter((e) => e.type === "assistant_message_chunk");
+    expect(chunkEvents.length).toBeGreaterThan(0);
+    const combinedEmittedText = chunkEvents.map((e) => e.delta).join("");
+    expect(combinedEmittedText).toContain("### Key Findings from Inspection Reports");
+
+    // 4. When no in-chat summary was produced yet, deriveFormalPlan produces standard N-step execution plan:
+    const upfrontPlan = deriveFormalPlan(
+      "Inspect reports and draft approval note",
+      [{ name: "generate_deliverable", arguments: { filename: "approval-note.docx" } }],
+      false,
+    );
+    expect(upfrontPlan).toContain("### Execution Plan");
+    expect(upfrontPlan).toContain("1. **Inspection & Analysis**");
+    expect(upfrontPlan).toContain("2. **Document Generation**");
   });
 });
 

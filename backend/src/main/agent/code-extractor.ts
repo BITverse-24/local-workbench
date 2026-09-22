@@ -144,14 +144,33 @@ export function extractCodeBlocksWithFilenames(text: string, fallbackFilenames: 
  * 3. Normalizes whitespace so the user receives a clean, concise, to-the-point summary.
  */
 export function cleanFinalSummary(text: string, hasExecutedTools: boolean): string {
-  if (!text || !hasExecutedTools) return text;
+  if (!text) return "";
+
+  // Strip any tool simulator output tags like [TOOL_RESULT]...[END_TOOL_RESULT], [ENDTOOLRESULT], [TOOL_CALL], etc.
+  let cleanedToolTags = text
+    .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT|ENDTOOLRESULT|TOOL_CALL|END_TOOL_CALL|ENDTOOLCALL)\]/gi, "")
+    .trim();
+
+  // If the summary contains or is an echoed tool result message (e.g. Generated deliverable "approval-note.docx" (...)):
+  cleanedToolTags = cleanedToolTags.replace(
+    /Generated deliverable\s+"([^"]+)"\s*(?:\([^)]+\))?/gi,
+    "The official deliverable document has been generated and saved as **$1**.",
+  );
+
+  const deliverableEchoMatch = cleanedToolTags.match(/^The official deliverable document has been generated and saved as \*\*([^*]+)\*\*\.?$/i);
+  if (deliverableEchoMatch) {
+    const filename = deliverableEchoMatch[1];
+    return `The official deliverable document has been generated and saved as **${filename}**.`;
+  }
+
+  if (!hasExecutedTools) return cleanedToolTags || text;
 
   // Replace code blocks:
   // - If explicitly tagged with shell/bash/sh/terminal commands, keep them.
   // - If untagged or generic, check if it's a short command list (e.g. `node app.js`, `npm test`).
   // - If it's source code (e.g. JS, TS, JSON, Python, etc.), strip it since files are already on disk.
   const codeBlockRegex = /```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)```/g;
-  const cleaned = text.replace(codeBlockRegex, (match: string, lang: string, code: string) => {
+  const cleaned = cleanedToolTags.replace(codeBlockRegex, (match: string, lang: string, code: string) => {
     const language = (lang || "").toLowerCase().trim();
     // Keep explicit shell command blocks
     if (["sh", "bash", "zsh", "shell", "terminal", "cmd", "powershell"].includes(language)) {

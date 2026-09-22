@@ -156,9 +156,12 @@ export async function resolveSemanticIntent(
       a.mediaType === "application/typescript",
   );
 
-  const isExplicitDrafting = /\b(?:draft|drafting|approval\s*note|memo|executive\s*summary|deliverable|\.docx|word\s*doc|compliance\s*report)\b/i.test(
-    lowerPrompt,
-  );
+  const isExplicitDrafting =
+    /\b(?:draft|drafting|approval\s*note|memo|executive\s*summary|deliverable|\.?docx|word\s*(?:doc|document|file)?|compliance\s*report|formal\s*report|write\s+(?:in\s+)?(?:a\s+)?(?:docx|doc|word|pdf|file)|create\s+(?:a\s+)?(?:docx|doc|word|report|deliverable)|generate\s+(?:a\s+)?(?:docx|doc|word|report|deliverable))\b/i.test(
+      lowerPrompt,
+    ) ||
+    (/\b(?:docx|doc|word|file|report|note)\b/i.test(lowerPrompt) &&
+      history.some((m) => /\b(?:draft|approval\s*note|inspection\s*report)\b/i.test(m.content)));
 
   const attachmentFileNames = attachments.map((a) => a.filename).filter(Boolean) as string[];
 

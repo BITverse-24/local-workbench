@@ -67,7 +67,7 @@ export function formatToolActionSummary(name: string, args: any): string {
       return `• **run_command**: ${cmd}`;
     }
     case "generate_deliverable": {
-      const kind = args.kind ? `${String(args.kind).toUpperCase()} ` : "";
+      const kind = (args.kind || args.type) ? `${String(args.kind || args.type).toUpperCase()} ` : "";
       const filename = args.filename || args.path || "deliverable";
       return `• **generate_deliverable**: Generate ${kind}artifact (\`${filename}\`)`;
     }
@@ -95,14 +95,57 @@ export function formatToolActionSummary(name: string, args: any): string {
 }
 
 /**
- * Derives a formal, task-based plan when the model did not supply clean plan text.
+ * Checks whether text contains substantive engineering inspection findings, analysis,
+ * or full report documentation rather than a concise execution plan statement.
  */
-export function deriveFormalPlan(userPrompt: string, mutatingCalls: any[]): string {
+export function isSubstantiveReportOrFindings(text: string): boolean {
+  if (!text) return false;
+  // If it contains inspection / report findings headers or draft document headers
+  if (/###?\s+(?:Key\s+)?Findings/i.test(text)) return true;
+  if (/###?\s+(?:Draft\s+)?(?:Approval\s*Note|Technical\s*Report|Deliverable|Compliance\s*Review)/i.test(text)) return true;
+  // If it contains markdown tables
+  if (/\|[^\n]+\|[^\n]+\|/m.test(text)) return true;
+  // If it contains extensive engineering measurements / evaluation
+  if (
+    text.length > 200 &&
+    /\b(measured|allowable|thickness|pitting|corrosion|deviation|compliant|rejection|clearance|weld|joint)\b/i.test(text)
+  ) {
+    return true;
+  }
+  // If it's overall long substantive text (genuine plan previews are concise, <= 250 chars)
+  if (text.length > 300) return true;
+  return false;
+}
+
+/**
+ * Derives a formal, task-based N-step plan for user confirmation.
+ */
+export function deriveFormalPlan(
+  userPrompt: string,
+  mutatingCalls: any[],
+  hasCompletedInChatSummary = false,
+): string {
   const actionsList = mutatingCalls
     .map((c: any) => formatToolActionSummary(c.name, c.arguments))
     .join("\n");
 
+  const cleanPrompt = userPrompt.replace(/\s+/g, " ").trim();
   const promptLower = userPrompt.toLowerCase();
+
+  const hasDeliverable = mutatingCalls.some((c) => c.name === "generate_deliverable");
+
+  // If in-chat technical evaluation has already been completed in chat,
+  // do not present a backward "Step 1: Inspect & Analyze" plan.
+  // Instead, present the pending export action directly.
+  if (hasCompletedInChatSummary) {
+    if (hasDeliverable) {
+      const delivCall = mutatingCalls.find((c) => c.name === "generate_deliverable");
+      const docName = delivCall?.arguments?.filename || delivCall?.arguments?.title || "deliverable document";
+      return `### Proposed Action\nCompile and export the official deliverable document (\`${docName}\`) incorporating the findings and recommendations detailed above.\n\n### Proposed Operations\n${actionsList}`;
+    }
+    return `### Proposed Action\nApply verified changes to the workspace based on the technical evaluation above.\n\n### Proposed Operations\n${actionsList}`;
+  }
+
   let objective = "";
   if (/\b(fix|repair|crash|crashing|broken|bug|error|traceback)\b/i.test(promptLower)) {
     objective = "Diagnose and repair reported script/code defects, then verify execution inside the isolated sandbox.";
@@ -112,12 +155,94 @@ export function deriveFormalPlan(userPrompt: string, mutatingCalls: any[]): stri
     objective = "Execute requested environment setup and verification commands.";
   } else if (/\b(create|add|write|scaffold|implement)\b/i.test(promptLower)) {
     objective = "Implement requested application components and write required files to the workspace.";
+  } else if (/\b(inspect|summarize|summary|findings|review|analyze|analysis|evaluate|check|report)\b/i.test(promptLower)) {
+    objective = "Review attached inspection reports, evaluate engineering criteria, and synthesize findings.";
   } else {
-    const cleanPrompt = userPrompt.replace(/\s+/g, " ").trim();
     objective = cleanPrompt.length > 120 ? `${cleanPrompt.slice(0, 117)}...` : cleanPrompt;
   }
 
-  return `### Objective\n${objective}\n\n### Proposed Operations\n${actionsList}`;
+  const steps: string[] = [];
+  // Step 1: Inspection / Analysis / Objective
+  if (/\b(inspect|summarize|summary|findings|review|analyze|analysis|evaluate|check|report)\b/i.test(promptLower)) {
+    steps.push("1. **Inspection & Analysis**: Review attached reports, data files, or workspace targets and formulate structured technical findings and evaluations in chat.");
+  } else if (/\b(diagnose|fix|repair|crash|crashing|bug|error|traceback)\b/i.test(promptLower)) {
+    steps.push("1. **Diagnosis & Root Cause**: Diagnose reported defects against attached datasets or workspace code.");
+  } else if (/\b(convert|migrate|refactor|typescript|ts)\b/i.test(promptLower)) {
+    steps.push("1. **Architecture & Scope**: Analyze existing source structure and prepare target file definitions.");
+  } else if (/\b(install|deps|build|run|test|start)\b/i.test(promptLower)) {
+    steps.push("1. **Environment Setup**: Prepare environment configuration and verify prerequisites.");
+  } else if (/\b(create|add|write|scaffold|implement)\b/i.test(promptLower)) {
+    steps.push("1. **Specification & Planning**: Review requested components and file layout.");
+  } else {
+    const shortPrompt = cleanPrompt.length > 100 ? `${cleanPrompt.slice(0, 97)}...` : cleanPrompt;
+    steps.push(`1. **Objective**: ${shortPrompt}`);
+  }
+
+  // Step 2..N: Proposed operations from mutatingCalls
+  const hasPython = mutatingCalls.some((c) => c.name === "execute_python");
+  const hasWrite = mutatingCalls.some((c) => c.name === "write_file");
+  const hasCommand = mutatingCalls.some((c) => c.name === "run_command");
+  const hasDelete = mutatingCalls.some((c) => c.name === "delete_file");
+
+  let stepNum = 2;
+  if (hasDeliverable) {
+    const delivCall = mutatingCalls.find((c) => c.name === "generate_deliverable");
+    const docName = delivCall?.arguments?.filename || delivCall?.arguments?.title || "deliverable document";
+    steps.push(`${stepNum++}. **Document Generation**: Compile and export formal publication-ready deliverable (\`${docName}\`).`);
+  }
+  if (hasPython) {
+    steps.push(`${stepNum++}. **Sandbox Verification**: Execute script in isolated Python environment with test data.`);
+  }
+  if (hasWrite) {
+    const writeFiles = mutatingCalls.filter((c) => c.name === "write_file").map((c) => c.arguments?.path || "target file");
+    steps.push(`${stepNum++}. **File Updates**: Persist verified changes to ${writeFiles.slice(0, 3).map((f: string) => `\`${f}\``).join(", ")}.`);
+  }
+  if (hasCommand) {
+    steps.push(`${stepNum++}. **Command Execution**: Run required shell environment commands.`);
+  }
+  if (hasDelete) {
+    steps.push(`${stepNum++}. **Cleanup**: Remove obsolete workspace files.`);
+  }
+
+  return `### Objective\n${objective}\n\n### Execution Plan\n${steps.join("\n")}\n\n### Proposed Operations\n${actionsList}`;
+}
+
+/**
+ * Extracts substantive engineering inspection findings or analysis from model output
+ * so they can be presented directly in chat even if tools (such as document compilers)
+ * execute across subsequent turns.
+ */
+export function extractInChatFindings(text: string): string {
+  if (!text) return "";
+  const cleaned = cleanPlanPreview(text);
+  if (!cleaned) return "";
+
+  // If the model produced both findings/analysis and a separate deliverable document structure in the text:
+  const documentHeaderMatch = cleaned.search(
+    /\n\s*#{1,3}\s+(?:Draft\s+)?(?:Approval\s*Note|Technical\s*Report|Deliverable|Compliance\s*Review|Official\s*Document|Executive\s*Summary)/i,
+  );
+  if (documentHeaderMatch > 0) {
+    const beforeDoc = cleaned.slice(0, documentHeaderMatch).trim();
+    if (beforeDoc.length > 50) {
+      return beforeDoc;
+    }
+  }
+
+  // If the model produced a findings section:
+  if (/###?\s+(?:Key\s+)?Findings/i.test(cleaned)) {
+    return cleaned;
+  }
+
+  // If it's substantive text with markdown structure (not just code or single sentence):
+  if (
+    cleaned.length > 120 &&
+    (/#+\s+/m.test(cleaned) || /\|[^\n]+\|[^\n]+\|/m.test(cleaned) || /^\s*[-*]\s+/m.test(cleaned)) &&
+    !/^\s*(?:I\s+will|Let's|Now\s+let's)\s+/i.test(cleaned)
+  ) {
+    return cleaned;
+  }
+
+  return "";
 }
 
 export class AgentLoop {
@@ -136,6 +261,10 @@ export class AgentLoop {
       onPlanConfirmationRequired,
       emitEvent,
     } = options;
+
+    if (!context.emitRunEvent && emitEvent) {
+      context.emitRunEvent = emitEvent;
+    }
 
     const dispatcher = new ToolDispatcher(tools);
     const toolDefinitions = dispatcher.getDefinitions();
@@ -157,7 +286,9 @@ export class AgentLoop {
     const modifiedFiles = new Set<string>();
     const executedCommands: string[] = [];
     let previousCallSignature: string | null = null;
+    const callHistory: string[] = [];
     let lastContent: string | null = null;
+    let accumulatedInChatFindings = "";
     let assistantMessageId = randomUUID();
 
     while (turn < maxTurns) {
@@ -177,21 +308,22 @@ export class AgentLoop {
       const activeMessages = compactConversationHistory(messages, turn, 2);
 
       // 2. Dispatch turn to model gateway with native tools
-      // Allocate generous 2048 token budget when disk-modifying actions have already succeeded so comprehensive technical inspection and deliverable summaries are never cut off.
+      // Allocate generous 4096 token budget when disk-modifying actions have already succeeded so comprehensive technical inspection and deliverable summaries are never cut off.
       // If an execution error occurred or only read tools ran, do NOT cap tokens, because the model still needs full token budget to output complete code files or multi-tool calls!
-      const turnMaxTokens = (hasExecutedDiskMutations && !lastExecutionHadError) ? 2048 : undefined;
+      const turnMaxTokens = (hasExecutedDiskMutations && !lastExecutionHadError) ? 4096 : undefined;
 
       // Stream free-text responses whenever structured output is not necessary:
       // 1) Non-actionable pure chat / informational turns or when no tools exist
-      // 2) Post-disk-mutation summary turns where tools have completed and the final result is being formulated
+      // 2) Post-tool turns (e.g. key findings after document extraction or final summaries after disk mutations)
       const isPureChatTurn =
         toolDefinitions.length === 0 ||
         semanticIntent?.isActionable === false ||
         semanticIntent?.intentType === "pure_chat" ||
         semanticIntent?.intentType === "general_qa";
 
-      const isSummaryTurn = hasExecutedDiskMutations && !lastExecutionHadError;
-      const shouldStreamLive = isPureChatTurn || isSummaryTurn;
+      const isTurn1 = turn === 1;
+      const isPostToolTurn = hasExecutedTools && !lastExecutionHadError;
+      const shouldStreamLive = isPureChatTurn || isPostToolTurn || isTurn1;
 
       let streamedChunks: string[] = [];
       const onChunk = shouldStreamLive
@@ -227,6 +359,20 @@ export class AgentLoop {
       const { content, tool_calls } = turnResponse.value;
       if (content) {
         lastContent = content;
+        const findings = extractInChatFindings(content);
+        if (findings) {
+          accumulatedInChatFindings = findings;
+          // If chunks were not streamed live to the UI, emit the findings so they appear in chat
+          if (streamedChunks.length === 0) {
+            emitEvent({
+              type: "assistant_message_chunk",
+              runId,
+              messageId: assistantMessageId,
+              delta: findings,
+              modelId: driverModelId,
+            });
+          }
+        }
       }
 
       // 3. Emit model thinking / scratchpad to UI if present
@@ -259,16 +405,18 @@ export class AgentLoop {
         });
       }
 
-      // If tool calls were returned on this turn, any streamed chunks were intermediate scratchpad.
-      // Reset the assistant message in UI so the final summary remains clean.
+      // If tool calls were returned on this turn, any streamed chunks were intermediate scratchpad UNLESS they contained substantive findings.
+      // Reset the assistant message in UI only if it was scratchpad filler, so findings remain in the chat.
       if (effectiveToolCalls && effectiveToolCalls.length > 0 && streamedChunks.length > 0) {
-        emitEvent({
-          type: "assistant_message_reset",
-          runId,
-          messageId: assistantMessageId,
-        });
-        assistantMessageId = randomUUID();
-        streamedChunks = [];
+        if (!accumulatedInChatFindings) {
+          emitEvent({
+            type: "assistant_message_reset",
+            runId,
+            messageId: assistantMessageId,
+          });
+          assistantMessageId = randomUUID();
+          streamedChunks = [];
+        }
       }
 
       // 4. Guardrail: If model lazily output conversational text/code without invoking tools
@@ -340,7 +488,28 @@ export class AgentLoop {
                 (driverModelId === "code-qwen25coder" || hasActionVerb) &&
                 !isCommandIntent);
 
+          const isDraftIntent =
+            isSemanticActionable !== false &&
+            semanticIntent?.intentType !== "general_qa" &&
+            semanticIntent?.intentType !== "pure_chat" &&
+            Boolean(dispatcher.getTool("generate_deliverable")) &&
+            (semanticIntent?.intentType === "document_drafting" ||
+              /\b(?:draft|drafting|approval\s*note|deliverable|\.?docx|word\s*(?:doc|document|file)?|compliance\s*report|formal\s*report|write\s+(?:in\s+)?(?:a\s+)?(?:docx|doc|word|pdf|file)|create\s+(?:a\s+)?(?:docx|doc|word|report|deliverable)|generate\s+(?:a\s+)?(?:docx|doc|word|report|deliverable))\b/i.test(
+                userPrompt,
+              ) ||
+              (/\b(?:docx|doc|word|file|report|note)\b/i.test(userPrompt) &&
+                messages.some((m) => typeof m.content === "string" && /\b(?:draft|approval\s*note|inspection\s*report)\b/i.test(m.content))));
+
           if (isCommandIntent && dispatcher.getTool("run_command")) {
+            if (streamedChunks.length > 0) {
+              emitEvent({
+                type: "assistant_message_reset",
+                runId,
+                messageId: assistantMessageId,
+              });
+              assistantMessageId = randomUUID();
+              streamedChunks = [];
+            }
             messages.push({
               role: "assistant",
               content,
@@ -353,6 +522,15 @@ export class AgentLoop {
             });
             continue;
           } else if (isCodeIntent && (dispatcher.getTool("execute_python") || dispatcher.getTool("write_file"))) {
+            if (streamedChunks.length > 0) {
+              emitEvent({
+                type: "assistant_message_reset",
+                runId,
+                messageId: assistantMessageId,
+              });
+              assistantMessageId = randomUUID();
+              streamedChunks = [];
+            }
             messages.push({
               role: "assistant",
               content,
@@ -375,6 +553,33 @@ export class AgentLoop {
               turn,
             });
             continue;
+          } else if (isDraftIntent && dispatcher.getTool("generate_deliverable")) {
+            const hasFullDocInContent =
+              (content?.length ?? 0) > 250 &&
+              (/#+\s+/m.test(content ?? "") || /\|[^\n]+\|[^\n]+\|/m.test(content ?? ""));
+
+            if (!hasFullDocInContent) {
+              if (streamedChunks.length > 0) {
+                emitEvent({
+                  type: "assistant_message_reset",
+                  runId,
+                  messageId: assistantMessageId,
+                });
+                assistantMessageId = randomUUID();
+                streamedChunks = [];
+              }
+              messages.push({
+                role: "assistant",
+                content,
+                turn,
+              });
+              messages.push({
+                role: "user",
+                content: `[SYSTEM FEEDBACK]: The user requested drafting an approval note or deliverable document ("${userPrompt.trim()}"), but no tools were invoked and no complete document was produced (you stated: "${(content ?? "").trim()}"). You MUST either invoke the native \`generate_deliverable\` tool (with {"type": "docx", "filename": "approval-note.docx", "title": "...", "content": "..."}) containing the complete technical approval note with findings, tables, and recommendations, or output the complete document content now. Please do this now.`,
+                turn,
+              });
+              continue;
+            }
           }
         }
       }
@@ -398,11 +603,67 @@ export class AgentLoop {
             }
           }
 
+          // If user requested drafting an approval note / report / deliverable, and model outputted document text without invoking generate_deliverable:
+          if (dispatcher.getTool("generate_deliverable") && content && content.length > 150) {
+            const isDraftingRequest =
+              semanticIntent?.intentType === "document_drafting" ||
+              /\b(?:draft|drafting|approval\s*note|deliverable|\.?docx|word\s*(?:doc|document|file)?|compliance\s*report|formal\s*report|write\s+(?:in\s+)?(?:a\s+)?(?:docx|doc|word|pdf|file)|create\s+(?:a\s+)?(?:docx|doc|word|report|deliverable)|generate\s+(?:a\s+)?(?:docx|doc|word|report|deliverable))\b/i.test(
+                userPrompt,
+              ) ||
+              (/\b(?:docx|doc|word|file|report|note)\b/i.test(userPrompt) &&
+                messages.some((m) => typeof m.content === "string" && /\b(?:draft|approval\s*note|inspection\s*report)\b/i.test(m.content)));
+
+            const hasDocStructure =
+              /#+\s+/m.test(content) ||
+              /\|[^\n]+\|[^\n]+\|/m.test(content) ||
+              /\b(?:APPROVAL\s*NOTE|TECHNICAL\s*INSPECTION|CLEARANCE\s*VERDICT|RECOMMENDATIONS?|ACTION\s*ITEMS?|FITNESS\s*FOR\s*SERVICE)\b/i.test(
+                content,
+              );
+
+            if (isDraftingRequest && hasDocStructure) {
+              const titleMatch =
+                content.match(/^#+\s+([^\n]+)/m) ||
+                content.match(/\*\*Subject:\*\*\s*([^\n]+)/i) ||
+                content.match(/^(?:SUBJECT|TITLE):\s*([^\n]+)/im);
+              const extractedTitle = titleMatch
+                ? titleMatch[1].replace(/^[#*\s]+|[#*\s]+$/g, "").trim()
+                : "Technical Inspection Approval Note";
+
+              const fileMatch = userPrompt.match(/([\w.-]+\.(?:docx|pdf|xlsx|html))/i);
+              const filename = fileMatch ? fileMatch[1] : "approval-note.docx";
+
+              try {
+                const execs = await dispatcher.dispatchConcurrent(
+                  [
+                    {
+                      id: `call_${randomUUID().slice(0, 8)}`,
+                      name: "generate_deliverable",
+                      arguments: {
+                        type: filename.endsWith(".xlsx") ? "excel" : "docx",
+                        title: extractedTitle,
+                        content,
+                        filename,
+                      },
+                    },
+                  ],
+                  context,
+                );
+                if (execs.length > 0 && !execs[0].result.output?.startsWith("Error")) {
+                  hasExecutedDiskMutations = true;
+                  hasExecutedTools = true;
+                  modifiedFiles.add(filename);
+                }
+              } catch (err) {
+                console.error("[agent-loop] Failed to auto-generate deliverable from content:", err);
+              }
+            }
+          }
+
           const claimsDiskAction =
-            /\b(implemented|created|updated|modified|added|written|patched|converted|migrated|refactored|configured|installed)\b/i.test(
+            /\b(implemented|created|updated|modified|added|written|patched|converted|migrated|refactored|configured|installed|generating|drafting|generated|drafted|preparing|prepared|compiling|compiled)\b/i.test(
               content ?? "",
             ) &&
-            /\b(file|files|middleware|route|routes|component|server|script|code|package\.json|\.js|\.ts|\.py|\.json|typescript|codebase)\b/i.test(
+            /\b(file|files|middleware|route|routes|component|server|script|code|package\.json|\.js|\.ts|\.py|\.json|typescript|codebase|deliverable|document|approval\s*note|\.?docx|report)\b/i.test(
               content ?? "",
             );
 
@@ -410,7 +671,7 @@ export class AgentLoop {
           const isMerelyEmptyClaim =
             claimsDiskAction &&
             !content?.includes("```") &&
-            (content?.length ?? 0) < 150 &&
+            (content?.length ?? 0) < 250 &&
             !hasExecutedDiskMutations;
 
           if (isMerelyEmptyClaim) {
@@ -427,6 +688,25 @@ export class AgentLoop {
         }
 
         finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedDiskMutations);
+
+        if (
+          hasExecutedDiskMutations &&
+          modifiedFiles.size > 0 &&
+          !/official deliverable document/i.test(finalText) &&
+          !/approval-note\.docx/i.test(finalText) &&
+          Array.from(modifiedFiles).some((f) => f.endsWith(".docx") || f.endsWith(".xlsx"))
+        ) {
+          const docFile = Array.from(modifiedFiles).find((f) => f.endsWith(".docx") || f.endsWith(".xlsx"));
+          finalText += `\n\n📄 **The official deliverable document has been compiled and saved as [${docFile}].**`;
+        }
+
+        if (
+          accumulatedInChatFindings &&
+          !finalText.includes("### Key Findings") &&
+          !finalText.includes(accumulatedInChatFindings.slice(0, 40))
+        ) {
+          finalText = `${accumulatedInChatFindings}\n\n${finalText}`.trim();
+        }
 
         // If chunks were already streamed live to the UI, check if cleanFinalSummary changed the text.
         // If cleanFinalSummary modified the text (e.g. stripped duplicate code blocks), update the UI cleanly.
@@ -465,11 +745,18 @@ export class AgentLoop {
         };
       }
 
-      // Loop detection: check if identical tool calls with identical arguments are being repeated consecutively
+      // Loop detection: check if identical tool calls with identical arguments are being repeated consecutively or in alternating cycles
       const currentCallSignature = JSON.stringify(
         effectiveToolCalls.map((c: any) => ({ name: c.name, args: c.arguments })),
       );
-      if (previousCallSignature && previousCallSignature === currentCallSignature) {
+
+      const isConsecutiveRepeat = previousCallSignature !== null && previousCallSignature === currentCallSignature;
+      const isAlternatingCycle =
+        callHistory.length >= 3 &&
+        currentCallSignature === callHistory[callHistory.length - 2] &&
+        callHistory[callHistory.length - 1] === callHistory[callHistory.length - 3];
+
+      if (isConsecutiveRepeat || isAlternatingCycle) {
         if (lastExecutionHadError) {
           const modifiedList = modifiedFiles.size > 0
             ? `Files modified so far: ${Array.from(modifiedFiles).join(", ")}.`
@@ -491,6 +778,23 @@ export class AgentLoop {
         }
 
         finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedDiskMutations);
+        if (
+          hasExecutedDiskMutations &&
+          modifiedFiles.size > 0 &&
+          !/official deliverable document/i.test(finalText) &&
+          !/approval-note\.docx/i.test(finalText) &&
+          Array.from(modifiedFiles).some((f) => f.endsWith(".docx") || f.endsWith(".xlsx"))
+        ) {
+          const docFile = Array.from(modifiedFiles).find((f) => f.endsWith(".docx") || f.endsWith(".xlsx"));
+          finalText += `\n\n📄 **The official deliverable document has been compiled and saved as [${docFile}].**`;
+        }
+        if (
+          accumulatedInChatFindings &&
+          !finalText.includes("### Key Findings") &&
+          !finalText.includes(accumulatedInChatFindings.slice(0, 40))
+        ) {
+          finalText = `${accumulatedInChatFindings}\n\n${finalText}`.trim();
+        }
         return {
           finalText,
           turns: turn,
@@ -500,6 +804,10 @@ export class AgentLoop {
         };
       }
       previousCallSignature = currentCallSignature;
+      callHistory.push(currentCallSignature);
+      if (callHistory.length > 8) {
+        callHistory.shift();
+      }
 
       // 6. Plan confirmation check: ONLY pause for confirmation if there are mutating tool calls
       const READ_ONLY_TOOLS = new Set([
@@ -520,9 +828,12 @@ export class AgentLoop {
           .map((c: any) => formatToolActionSummary(c.name, c.arguments))
           .join("\n");
         const cleanedContent = cleanPlanPreview(content ?? "");
-        const planDescription = cleanedContent
-          ? `### Plan Overview\n${cleanedContent}\n\n### Proposed Operations\n${actionsList}`
-          : deriveFormalPlan(userPrompt, mutatingCalls);
+        const isSubstantive = isSubstantiveReportOrFindings(cleanedContent);
+        const hasCompletedInChatSummary = isSubstantive || Boolean(accumulatedInChatFindings);
+        const planDescription =
+          !isSubstantive && cleanedContent && cleanedContent.length <= 250
+            ? `### Plan Overview\n${cleanedContent}\n\n### Proposed Operations\n${actionsList}`
+            : deriveFormalPlan(userPrompt, mutatingCalls, hasCompletedInChatSummary);
         const approved = await onPlanConfirmationRequired(planDescription, mutatingCalls);
         if (!approved) {
           emitEvent({
@@ -594,7 +905,11 @@ export class AgentLoop {
               const cmd = (effectiveToolCalls.find((c: any) => c.id === exec.id)?.arguments as any)?.command;
               if (cmd) executedCommands.push(cmd);
               hasExecutedDiskMutations = true;
-            } else if (exec.name === "generate_deliverable" || exec.name === "execute_python") {
+            } else if (exec.name === "generate_deliverable") {
+              const docName = (effectiveToolCalls.find((c: any) => c.id === exec.id)?.arguments as any)?.filename || "deliverable.docx";
+              modifiedFiles.add(docName);
+              hasExecutedDiskMutations = true;
+            } else if (exec.name === "execute_python") {
               hasExecutedDiskMutations = true;
             }
           }
@@ -615,10 +930,17 @@ export class AgentLoop {
     }
 
     // Hit maxTurns without returning text
-    const overflowText = cleanFinalSummary(
+    let overflowText = cleanFinalSummary(
       lastContent || `Completed ${turn} operations.`,
       hasExecutedDiskMutations,
     );
+    if (
+      accumulatedInChatFindings &&
+      !overflowText.includes("### Key Findings") &&
+      !overflowText.includes(accumulatedInChatFindings.slice(0, 40))
+    ) {
+      overflowText = `${accumulatedInChatFindings}\n\n${overflowText}`.trim();
+    }
     return {
       finalText: overflowText,
       turns: turn,

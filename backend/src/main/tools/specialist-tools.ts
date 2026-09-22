@@ -539,7 +539,7 @@ export const generateDeliverableTool: AgentTool = {
     }
 
     return {
-      output: `Generated deliverable "${filename}" (${artifacts[0]?.sizeBytes ?? 0} bytes)`,
+      output: `Generated deliverable "${filename}" (${artifacts[0]?.sizeBytes ?? 0} bytes) successfully. The file is compiled, verified, and saved to disk in the run output folder. Deliverable creation is complete. Do not re-read this file.`,
       summary: `Created deliverable: ${filename}`,
       artifacts,
       sideEffects: [`artifact:${filename}`],

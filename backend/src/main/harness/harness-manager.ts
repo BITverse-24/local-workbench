@@ -68,7 +68,7 @@ export class HarnessManager {
   }
 
   currentWorkspace(): WorkspaceInfo | null {
-    return this.workspace.current() ?? this.restoreWorkspace();
+    return this.workspace.current();
   }
 
   restoreWorkspace(): WorkspaceInfo | null {

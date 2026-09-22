@@ -169,6 +169,196 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   );
 }
 
+type MarkdownBlock =
+  | { type: 'heading'; level: number; content: string }
+  | { type: 'hr' }
+  | { type: 'table'; headers: string[]; alignments: Array<'left' | 'center' | 'right'>; rows: string[][] }
+  | { type: 'list'; ordered: boolean; items: Array<{ text: string; indent: number }> }
+  | { type: 'blockquote'; content: string }
+  | { type: 'paragraph'; lines: string[] };
+
+function renderCellContent(text: string, keyPrefix: string): React.ReactNode {
+  const trimmed = text.trim();
+  const upper = trimmed.toUpperCase();
+  if (['APPROVED', 'PASS', 'PASSED', 'CLEARANCE', 'COMPLIANT'].includes(upper)) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold bg-[var(--status-success)]/15 text-[var(--status-success)] border border-[var(--status-success)]/30">
+        {trimmed}
+      </span>
+    );
+  }
+  if (['NOT APPROVED', 'REJECTED', 'NON-COMPLIANT', 'FAIL', 'FAILED', 'REJECTION PENDING REPAIRS'].includes(upper)) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold bg-[var(--status-error)]/15 text-[var(--status-error)] border border-[var(--status-error)]/30">
+        {trimmed}
+      </span>
+    );
+  }
+  if (
+    ['UNKNOWN', 'FLAGGED', 'WARNING', 'RECHECK', 'PENDING REPAIR', 'CONDITIONAL CLEARANCE', 'BELOW'].some((k) =>
+      upper.includes(k),
+    )
+  ) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold bg-[var(--status-warning)]/15 text-[var(--status-warning)] border border-[var(--status-warning)]/30">
+        {trimmed}
+      </span>
+    );
+  }
+  return renderInline(trimmed, keyPrefix);
+}
+
+function parseMarkdownBlocks(rawText: string): MarkdownBlock[] {
+  const lines = rawText.split(/\r?\n/);
+  const blocks: MarkdownBlock[] = [];
+  let i = 0;
+
+  const isTableSep = (l: string) => /^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/.test(l);
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      i++;
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^(\*{3,}|-{3,}|_{3,})$/.test(trimmed)) {
+      blocks.push({ type: 'hr' });
+      i++;
+      continue;
+    }
+
+    // Heading: # to ######
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      const match = trimmed.match(/^(#{1,6})\s+(.*)$/);
+      if (match) {
+        blocks.push({
+          type: 'heading',
+          level: match[1].length,
+          content: match[2].trim(),
+        });
+        i++;
+        continue;
+      }
+    }
+
+    // Markdown Table
+    if (trimmed.startsWith('|') && trimmed.endsWith('|') && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+      const parseCells = (row: string) =>
+        row
+          .replace(/^\|/, '')
+          .replace(/\|$/, '')
+          .split('|')
+          .map((c) => c.trim());
+
+      const headers = parseCells(trimmed);
+      const sepCells = parseCells(lines[i + 1].trim());
+      const alignments: Array<'left' | 'center' | 'right'> = sepCells.map((sc) => {
+        const starts = sc.startsWith(':');
+        const ends = sc.endsWith(':');
+        if (starts && ends) return 'center';
+        if (ends) return 'right';
+        return 'left';
+      });
+
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+        rows.push(parseCells(lines[i].trim()));
+        i++;
+      }
+
+      blocks.push({
+        type: 'table',
+        headers,
+        alignments,
+        rows,
+      });
+      continue;
+    }
+
+    // Blockquote
+    if (/^>\s?/.test(trimmed)) {
+      const qLines: string[] = [];
+      while (i < lines.length && /^>\s?/.test(lines[i].trim())) {
+        qLines.push(lines[i].trim().replace(/^>\s?/, ''));
+        i++;
+      }
+      blocks.push({
+        type: 'blockquote',
+        content: qLines.join('\n'),
+      });
+      continue;
+    }
+
+    // Lists (unordered -/* or ordered 1.)
+    const unorderedMatch = line.match(/^(\s*)([-*+])\s+(.*)$/);
+    const orderedMatch = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+    if (unorderedMatch || orderedMatch) {
+      const isOrdered = Boolean(orderedMatch);
+      const items: Array<{ text: string; indent: number }> = [];
+
+      while (i < lines.length) {
+        const curLine = lines[i];
+        if (!curLine.trim()) break;
+
+        const curU = curLine.match(/^(\s*)([-*+])\s+(.*)$/);
+        const curO = curLine.match(/^(\s*)(\d+)\.\s+(.*)$/);
+
+        if (curU) {
+          const indent = Math.floor(curU[1].length / 2);
+          items.push({ text: curU[3], indent });
+          i++;
+        } else if (curO) {
+          const indent = Math.floor(curO[1].length / 2);
+          items.push({ text: curO[3], indent });
+          i++;
+        } else if (/^\s{2,}/.test(curLine) && items.length > 0) {
+          items[items.length - 1].text += ' ' + curLine.trim();
+          i++;
+        } else {
+          break;
+        }
+      }
+
+      blocks.push({
+        type: 'list',
+        ordered: isOrdered,
+        items,
+      });
+      continue;
+    }
+
+    // Paragraph
+    const pLines: string[] = [];
+    while (i < lines.length) {
+      const cur = lines[i];
+      const curTrim = cur.trim();
+      if (!curTrim) break;
+      if (/^#{1,6}\s+/.test(curTrim)) break;
+      if (/^(\*{3,}|-{3,}|_{3,})$/.test(curTrim)) break;
+      if (curTrim.startsWith('|') && curTrim.endsWith('|') && i + 1 < lines.length && isTableSep(lines[i + 1])) break;
+      if (/^(\s*)([-*+]|\d+\.)\s+/.test(cur)) break;
+      if (/^>\s?/.test(curTrim)) break;
+
+      pLines.push(curTrim);
+      i++;
+    }
+
+    if (pLines.length > 0) {
+      blocks.push({
+        type: 'paragraph',
+        lines: pLines,
+      });
+    }
+  }
+
+  return blocks;
+}
+
 export const BasicMarkdown = React.memo(function BasicMarkdown({ text }: { text: string }) {
   if (!text) return null;
   const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
@@ -189,14 +379,9 @@ export const BasicMarkdown = React.memo(function BasicMarkdown({ text }: { text:
         if (seg.type === 'code') {
           return <CodeBlock key={`code-${si}`} code={seg.content.replace(/^\n/, '').replace(/\n$/, '')} lang={seg.lang} />;
         }
-        const blocks = seg.content.split(/\n{2,}/);
+        const blocks = parseMarkdownBlocks(seg.content);
         return blocks.map((block, bi) => {
-          const trimmed = block.trim();
-          if (!trimmed) return null;
-          // heading: single line starting with #
-          if (/^#{1,6}\s/.test(trimmed) && !trimmed.includes('\n') ) {
-            const level = trimmed.match(/^#+/)![0].length;
-            const content = trimmed.replace(/^#+\s+/, '');
+          if (block.type === 'heading') {
             const sizeMap: Record<number, string> = {
               1: 'text-xl font-bold',
               2: 'text-lg font-bold',
@@ -205,48 +390,115 @@ export const BasicMarkdown = React.memo(function BasicMarkdown({ text }: { text:
               5: 'text-sm font-semibold text-[var(--text-secondary)]',
               6: 'text-sm font-semibold text-[var(--text-tertiary)]',
             };
-            const Tag = `h${Math.min(level, 6)}` as keyof React.JSX.IntrinsicElements;
-            return React.createElement(Tag, { key: `h-${si}-${bi}`, className: `${sizeMap[level] || 'text-base font-bold'} leading-tight mt-1 mb-0.5 select-text` }, ...renderInline(content, `h-${si}-${bi}`));
-          }
-          // unordered list
-          if (/^(\s*[-*]\s+.+(\n\s*[-*]\s+.+)*)$/.test(trimmed)) {
-            const items = trimmed.split('\n').map((l) => l.replace(/^\s*[-*]\s+/, '').trim()).filter(Boolean);
-            return (
-              <ul key={`ul-${si}-${bi}`} className="list-disc pl-5 space-y-1.5 marker:text-[var(--text-tertiary)] select-text">
-                {items.map((it, i) => (
-                  <li key={i} className="leading-relaxed break-words text-[15px] sm:text-base select-text">{renderInline(it, `li-${si}-${bi}-${i}`)}</li>
-                ))}
-              </ul>
+            const Tag = `h${Math.min(block.level, 6)}` as keyof React.JSX.IntrinsicElements;
+            return React.createElement(
+              Tag,
+              {
+                key: `h-${si}-${bi}`,
+                className: `${sizeMap[block.level] || 'text-base font-bold'} leading-tight mt-3 mb-1.5 select-text text-[var(--text-primary)]`,
+              },
+              ...renderInline(block.content, `h-${si}-${bi}`)
             );
           }
-          // ordered list
-          if (/^(\s*\d+\.\s+.+(\n\s*\d+\.\s+.+)*)$/.test(trimmed)) {
-            const items = trimmed.split('\n').map((l) => l.replace(/^\s*\d+\.\s+/, '').trim()).filter(Boolean);
+
+          if (block.type === 'hr') {
+            return <hr key={`hr-${si}-${bi}`} className="my-3 border-t border-[var(--border-subtle)]" />;
+          }
+
+          if (block.type === 'table') {
             return (
-              <ol key={`ol-${si}-${bi}`} className="list-decimal pl-5 space-y-1.5 marker:text-[var(--text-tertiary)] select-text">
-                {items.map((it, i) => (
-                  <li key={i} className="leading-relaxed break-words text-[15px] sm:text-base select-text">{renderInline(it, `oli-${si}-${bi}-${i}`)}</li>
-                ))}
-              </ol>
+              <div
+                key={`tbl-${si}-${bi}`}
+                className="my-3 overflow-x-auto rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-canvas)]"
+              >
+                <table className="w-full text-left text-xs sm:text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-[var(--bg-surface-raised)] border-b border-[var(--border-subtle)]">
+                      {block.headers.map((h, hi) => {
+                        const align = block.alignments[hi] || 'left';
+                        const alignClass =
+                          align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : 'text-left';
+                        return (
+                          <th
+                            key={hi}
+                            className={`px-3 py-2 sm:px-3.5 sm:py-2.5 font-semibold text-[var(--text-primary)] ${alignClass}`}
+                          >
+                            {renderInline(h, `th-${si}-${bi}-${hi}`)}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border-subtle)]">
+                    {block.rows.map((row, ri) => (
+                      <tr key={ri} className="hover:bg-[var(--bg-surface-raised)]/30 transition-colors">
+                        {row.map((cell, ci) => {
+                          const align = block.alignments[ci] || 'left';
+                          const alignClass =
+                            align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : 'text-left';
+                          return (
+                            <td
+                              key={ci}
+                              className={`px-3 py-2 sm:px-3.5 sm:py-2 text-[var(--text-secondary)] align-top ${alignClass}`}
+                            >
+                              {renderCellContent(cell, `td-${si}-${bi}-${ri}-${ci}`)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             );
           }
-          // blockquote
-          if (/^>\s?/.test(trimmed)) {
-            const quote = trimmed.replace(/^>\s?/gm, '');
+
+          if (block.type === 'list') {
+            const isOrdered = block.ordered;
+            const Tag = isOrdered ? 'ol' : 'ul';
             return (
-              <blockquote key={`q-${si}-${bi}`} className="border-l-2 border-[var(--border-strong)] pl-3.5 italic text-[var(--text-secondary)] leading-relaxed text-[15px] sm:text-base select-text">
-                {renderInline(quote, `q-${si}-${bi}`)}
+              <Tag
+                key={`list-${si}-${bi}`}
+                className={`space-y-1.5 my-1.5 marker:text-[var(--text-tertiary)] select-text ${
+                  isOrdered ? 'list-decimal pl-5' : 'list-disc pl-5'
+                }`}
+              >
+                {block.items.map((item, ii) => {
+                  const indentClass =
+                    item.indent === 1 ? 'ml-4 list-[circle]' : item.indent >= 2 ? 'ml-8 list-[square]' : '';
+                  return (
+                    <li
+                      key={ii}
+                      className={`leading-relaxed break-words text-[15px] sm:text-base select-text ${indentClass}`}
+                    >
+                      {renderInline(item.text, `li-${si}-${bi}-${ii}`)}
+                    </li>
+                  );
+                })}
+              </Tag>
+            );
+          }
+
+          if (block.type === 'blockquote') {
+            return (
+              <blockquote
+                key={`q-${si}-${bi}`}
+                className="border-l-2 border-[var(--border-strong)] pl-3.5 italic text-[var(--text-secondary)] leading-relaxed text-[15px] sm:text-base select-text"
+              >
+                {renderInline(block.content, `q-${si}-${bi}`)}
               </blockquote>
             );
           }
-          // paragraph with line breaks
-          const lines = trimmed.split('\n');
+
           return (
-            <p key={`p-${si}-${bi}`} className="leading-relaxed whitespace-pre-wrap break-words text-[15px] sm:text-base select-text">
-              {lines.map((line, li) => (
+            <p
+              key={`p-${si}-${bi}`}
+              className="leading-relaxed whitespace-pre-wrap break-words text-[15px] sm:text-base select-text"
+            >
+              {block.lines.map((line, li) => (
                 <span key={li}>
                   {renderInline(line, `p-${si}-${bi}-${li}`)}
-                  {li < lines.length - 1 ? <br /> : null}
+                  {li < block.lines.length - 1 ? <br /> : null}
                 </span>
               ))}
             </p>

@@ -89,4 +89,22 @@ describe("Agent Tools Suite", () => {
 
     rmSync(path.join(process.cwd(), "data", "runs", runId), { recursive: true, force: true });
   });
+
+  it("reads generated files from run output directory via read_file", async () => {
+    const runId = "22222222-3333-4444-5555-666666666666";
+    const runOutputDir = path.join(process.cwd(), "data", "runs", runId, "output");
+    mkdirSync(runOutputDir, { recursive: true });
+    writeFileSync(path.join(runOutputDir, "deliverable.txt"), "Official inspection deliverable content on disk.", "utf8");
+
+    const mockContext: ToolExecutionContext = {
+      runId,
+      workspaceRoot: undefined,
+      gateway: {} as any,
+    };
+
+    const res = await readFileTool.execute({ path: "deliverable.txt" }, mockContext);
+    expect(res.output).toContain("Official inspection deliverable content on disk.");
+
+    rmSync(path.join(process.cwd(), "data", "runs", runId), { recursive: true, force: true });
+  });
 });

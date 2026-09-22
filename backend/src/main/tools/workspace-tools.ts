@@ -154,6 +154,44 @@ export const listDirTool: AgentTool = {
   },
 };
 
+/**
+ * Resolves a file across run storage directories ('output', 'intermediate', 'input').
+ */
+export function findFileInRunDirectories(runId: string, relPath: string): string | null {
+  const areas: Array<"output" | "intermediate" | "input"> = ["output", "intermediate", "input"];
+  const base = path.basename(relPath);
+
+  // 1. If relPath explicitly starts with an area prefix (e.g. "output/deliverable.docx")
+  for (const area of areas) {
+    if (relPath.startsWith(`${area}/`) || relPath.startsWith(`${area}\\`)) {
+      try {
+        const candidate = resolveRunPath(runId, relPath, area);
+        if (existsSync(candidate)) return candidate;
+      } catch {}
+    }
+  }
+
+  // 2. Search each area directory directly for the filename or UUID-prefixed filename
+  for (const area of areas) {
+    try {
+      const areaDir = resolveRunPath(runId, area, area);
+      const directCandidate = path.join(areaDir, base);
+      if (existsSync(directCandidate)) return directCandidate;
+
+      if (existsSync(areaDir)) {
+        const files = readdirSync(areaDir);
+        const matched = files.find((f) => f === base || f.endsWith(`-${base}`));
+        if (matched) {
+          const matchedPath = path.join(areaDir, matched);
+          if (existsSync(matchedPath)) return matchedPath;
+        }
+      }
+    } catch {}
+  }
+
+  return null;
+}
+
 export const readFileTool: AgentTool = {
   name: "read_file",
   definition: {
@@ -188,19 +226,7 @@ export const readFileTool: AgentTool = {
         } catch {}
       }
       if (!docPath && context.runId) {
-        const inputDir = resolveRunPath(context.runId, "input", "input");
-        const base = path.basename(relPath);
-        let inputFilePath = path.join(inputDir, base);
-        if (!existsSync(inputFilePath)) {
-          const files = existsSync(inputDir) ? readdirSync(inputDir) : [];
-          const matched = files.find((f) => f === base || f.endsWith(`-${base}`));
-          if (matched) {
-            inputFilePath = path.join(inputDir, matched);
-          }
-        }
-        if (existsSync(inputFilePath)) {
-          docPath = inputFilePath;
-        }
+        docPath = findFileInRunDirectories(context.runId, relPath);
       }
 
       if (docPath) {
@@ -229,18 +255,9 @@ export const readFileTool: AgentTool = {
       content = readFile(context.workspaceRoot, relPath);
     } catch (err) {
       if (context.runId) {
-        const inputDir = resolveRunPath(context.runId, "input", "input");
-        const base = path.basename(relPath);
-        let inputFilePath = path.join(inputDir, base);
-        if (!existsSync(inputFilePath)) {
-          const files = existsSync(inputDir) ? readdirSync(inputDir) : [];
-          const matched = files.find((f) => f === base || f.endsWith(`-${base}`));
-          if (matched) {
-            inputFilePath = path.join(inputDir, matched);
-          }
-        }
-        if (existsSync(inputFilePath)) {
-          content = readFileSync(inputFilePath, "utf8");
+        const runFile = findFileInRunDirectories(context.runId, relPath);
+        if (runFile) {
+          content = readFileSync(runFile, "utf8");
         } else {
           throw err;
         }

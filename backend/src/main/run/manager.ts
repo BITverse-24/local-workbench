@@ -1026,7 +1026,13 @@ CRITICAL OPERATIONAL RULES:
    - The repaired script will automatically be tested and saved as a verified artifact deliverable.
    - To write, update, or save files to the workspace, invoke \`write_file\`.
    - To create official output deliverables or export artifacts, invoke \`generate_deliverable\` or \`execute_python\`.
-   - NEVER call \`generate_deliverable\` in the same turn as \`read_file\` or \`extract_document\`. You MUST FIRST read and inspect the attachments in one turn, and THEN in a subsequent turn call \`generate_deliverable\` with complete, publication-ready markdown containing the real findings. Passing placeholders like \`"[TOOL_RESULT]"\` or \`"pending"\` is strictly forbidden and will fail.
+   - IN-CHAT ENGINEERING SUMMARY VS. OFFICIAL DELIVERABLE DOCUMENT:
+      • When the user requests inspecting documents/reports and drafting an approval note, compliance review, or report deliverable:
+        1. In-Chat Engineering Summary: Provide a thorough, structured technical summary with equipment inspected, measured values vs allowable limits, deviations, field annotations, risks, and recommendations. DO NOT output formal approval headers (e.g. "OFFICIAL / TECHNICAL APPROVAL"), document classification tags, or signature blocks (e.g. "Authority Sign-off Block: [Signature]") in your chat response.
+        2. Official Deliverable File: When an official deliverable document is requested, invoke \`generate_deliverable\` (with appropriate \`type\` such as "docx" or "excel", a descriptive \`filename\`, \`title\`, and complete markdown in \`content\` containing formal headers, tables, and authority sign-off blocks).
+        3. Once \`generate_deliverable\` is invoked, the file is automatically compiled and saved to disk. You DO NOT need to invoke \`read_file\` to verify or re-read the generated deliverable.
+        4. If attachments are provided directly in the prompt, inspect them directly. If additional referenced files are needed, inspect them using \`read_file\`.
+        5. NEVER output a bare promise or empty placeholder without either executing \`generate_deliverable\` or outputting the complete document content with all findings, measurements, and tables.
 5. CREATING & EDITING FILES:
    - When the user asks you to create, setup, scaffold, write, build, modify, update, edit, patch, convert, migrate, or refactor files or code:
      • You MUST invoke \`write_file\` with {"path": "relative/path/to/file", "content": "..."} for every file needed.
@@ -1060,8 +1066,26 @@ OPERATIONAL & PLAN GUIDELINES:
 4. Do not waste tokens outputting code blocks or full script implementations in chat while a task is still ongoing. All code must be passed strictly inside tool arguments (e.g. \`code\` of \`execute_python\` or \`content\` of \`write_file\`), unless the user explicitly asks for the code itself in chat.
 5. If an error occurs during tool execution, diagnose the error and adjust your arguments or tool selection. Only use \`execute_python\` for script verification and calculations, not for installing system packages.
 6. When finished and verified, provide a clear, concise summary of the actions taken and results without dumping redundant code blocks. Do not invoke further tools once done.
-7. TOOL SEQUENCING & DELIVERABLES: Never call generate_deliverable in the same turn as read_file, extract_document, or other inspection tools. In turn 1, call read_file or extract_document to inspect attachments and extract real findings. In turn 2, review the extracted findings and invoke generate_deliverable with complete, comprehensive, publication-ready markdown containing those real findings. Never pass placeholder strings like "[TOOL_RESULT]" or "pending" as content for generate_deliverable.
-8. DELIVERABLE FORMATTING: When generating DOCX deliverables, provide well-structured markdown containing headings (##, ###), clean markdown tables (| Header 1 | Header 2 |), bullet points, and actionable recommendations. The system automatically converts markdown headings and tables into professional, publication-grade Word documents.`;
+7. IN-CHAT ENGINEERING SUMMARY VS. OFFICIAL DELIVERABLE DOCUMENT:
+   - When the user requests inspecting documents/reports and drafting an approval note, compliance review, or report deliverable:
+     a) IN-CHAT ENGINEERING SUMMARY:
+        • Provide a direct, thorough engineering evaluation of the inspection reports in chat.
+        • Summarize the equipment/assets inspected, measured values vs allowable limits, specific deviations, field inspector annotations, engineering risk assessment, and recommended actions.
+        • DO NOT output formal approval headers (e.g. "OFFICIAL / TECHNICAL APPROVAL"), document classification tags, or signature blocks (e.g. "Authority Sign-off Block: [Signature]") in your chat message. The chat message is a technical engineering summary for the engineer reading the screen.
+     b) OFFICIAL DELIVERABLE FILE (\`generate_deliverable\`):
+        • The formal approval note itself belongs inside the deliverable file (e.g. \`approval-note.docx\`).
+        • You MUST invoke \`generate_deliverable\` (with \`type: "docx"\`, \`filename: "approval-note.docx"\`, \`title: "..."\`, and \`content: "..."\`) where \`content\` contains the full publication-grade document following Section 8 below.
+        • Once \`generate_deliverable\` is invoked, the file is automatically compiled and saved to disk. You DO NOT need to invoke \`read_file\` to verify or re-read the generated deliverable.
+     c) If attachments are provided directly in the prompt, inspect them directly. If additional referenced files are needed, inspect them using \`read_file\`.
+     d) NEVER output a bare promise or empty placeholder without either executing \`generate_deliverable\` or outputting the complete document content with all findings, measurements, and tables.
+8. DELIVERABLE DOCUMENT STRUCTURE (FOR \`generate_deliverable\` CONTENT ONLY):
+   The markdown passed inside the \`content\` parameter of \`generate_deliverable\` MUST follow this formal industrial structure:
+   - **Header & Ref**: Subject line, Equipment / Asset IDs, Date, Classification (e.g. OFFICIAL / TECHNICAL APPROVAL).
+   - **Clearance Verdict**: Direct fitness-for-service verdict (e.g. "REJECTION PENDING REPAIRS", "CONDITIONAL CLEARANCE"). Explicitly flag non-compliances (e.g. wall thinning below allowable limit).
+   - **Findings & Measurements Table**: Markdown table with columns \`| Equipment | Component / Location | Measured Value | Allowable Limit | Deviation | Status |\`.
+   - **Technical Evaluation & Risk Analysis**: Engineering consequence of findings (e.g. risk of rupture under operating pressure/temperature, degradation rate).
+   - **Action Items & Assigned Roles**: Numbered, specific corrective actions (e.g. weld joint rechecking, gasket replacement, NDT verification).
+   - **Authority Sign-off Block**: Formal sign-off table / placeholders for Inspection Engineer, Maintenance Lead, and Plant Manager / Chief Technical Authority.`;
       }
 
       this.state(runId, "acting");

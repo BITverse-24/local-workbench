@@ -69,6 +69,7 @@ export default function App() {
   activeRunRef.current = activeRunId;
   const runEventsRef = useRef<RunEvent[]>([]);
   runEventsRef.current = runEvents;
+  const runArtifactsRef = useRef<ArtifactRef[]>([]);
   const activeRouteRef = useRef<{ taskType: string; modelId: string; reason: string } | null>(null);
   activeRouteRef.current = activeRoute;
   const runStartTimeRef = useRef<number | null>(null);
@@ -125,6 +126,7 @@ export default function App() {
         setActiveRoute(null);
         setRunEvents([]);
         setRunArtifacts([]);
+        runArtifactsRef.current = [];
         setRunError(null);
         setGroundingStatus(null);
         // Health probe on startup
@@ -227,6 +229,15 @@ export default function App() {
             setPendingConfirmation(event.action);
             break;
           case "artifact_ready":
+            if (
+              !runArtifactsRef.current.some(
+                (a) =>
+                  a.artifactId === event.artifact.artifactId ||
+                  (a.runId === event.artifact.runId && a.filename === event.artifact.filename),
+              )
+            ) {
+              runArtifactsRef.current.push(event.artifact);
+            }
             setRunArtifacts((prev) => {
               if (
                 prev.some(
@@ -284,7 +295,10 @@ export default function App() {
             });
             break;
           case "assistant_message_reset":
-            setMessages((prev) => prev.filter((m) => m.id !== event.messageId));
+            // Reset text but preserve any attached artifacts in React state
+            setMessages((prev) =>
+              prev.map((m) => (m.id === event.messageId ? { ...m, text: "" } : m)),
+            );
             break;
           case "assistant_message":
             setMessages((prev) => {
@@ -297,6 +311,24 @@ export default function App() {
                 durationMs: runStartTimeRef.current ? Date.now() - runStartTimeRef.current : undefined,
               } : undefined;
 
+              // Consolidate all artifacts from persistent ref plus any messages matching this run
+              const matchedArtifacts: any[] = [...runArtifactsRef.current];
+              for (const m of prev) {
+                if (
+                  m.id === event.messageId ||
+                  (Boolean(rid) && m.runId === rid && m.role === "assistant") ||
+                  m.id.startsWith("artifact-msg-")
+                ) {
+                  if (m.artifacts) {
+                    for (const a of m.artifacts) {
+                      if (!matchedArtifacts.some((existing) => existing.artifactId === a.artifactId || existing.filename === a.filename)) {
+                        matchedArtifacts.push(a);
+                      }
+                    }
+                  }
+                }
+              }
+
               // Find any existing assistant message for this run (by messageId, runId, or empty artifact-msg)
               const existingIdx = prev.findIndex(
                 (m) =>
@@ -306,24 +338,6 @@ export default function App() {
               );
 
               if (existingIdx !== -1) {
-                // Merge all artifacts from any assistant messages matching this run
-                const matchedArtifacts: any[] = [];
-                for (const m of prev) {
-                  if (
-                    m.id === event.messageId ||
-                    (Boolean(rid) && m.runId === rid && m.role === "assistant") ||
-                    m.id.startsWith("artifact-msg-")
-                  ) {
-                    if (m.artifacts) {
-                      for (const a of m.artifacts) {
-                        if (!matchedArtifacts.some((existing) => existing.artifactId === a.artifactId || existing.filename === a.filename)) {
-                          matchedArtifacts.push(a);
-                        }
-                      }
-                    }
-                  }
-                }
-
                 // Filter out duplicate assistant messages for this run, keeping just the consolidated one
                 const filtered = prev.filter(
                   (m, idx) =>
@@ -347,7 +361,17 @@ export default function App() {
                 }
               }
 
-              return [...prev, { id: event.messageId, role: "assistant", text: event.text, runId: rid, execution: executionData }];
+              return [
+                ...prev,
+                {
+                  id: event.messageId,
+                  role: "assistant",
+                  text: event.text,
+                  runId: rid,
+                  execution: executionData,
+                  artifacts: matchedArtifacts.length > 0 ? matchedArtifacts : undefined,
+                },
+              ];
             });
             break;
           case "grounding_context":
@@ -469,6 +493,7 @@ export default function App() {
       setPendingConfirmation(null);
       setRunEvents([]);
       setRunArtifacts([]);
+      runArtifactsRef.current = [];
       setRunError(null);
       setGroundingStatus(null);
       if (!persistent) return;
@@ -489,6 +514,7 @@ export default function App() {
     setPendingConfirmation(null);
     setRunEvents([]);
     setRunArtifacts([]);
+    runArtifactsRef.current = [];
     setRunError(null);
     setGroundingStatus(null);
     if (persistent) {
@@ -682,6 +708,7 @@ export default function App() {
           runEventsRef.current = [];
           setRunEvents([]);
           setRunArtifacts([]);
+          runArtifactsRef.current = [];
           setRunError(null);
           setActiveRoute(null);
           setPendingConfirmation(null);
