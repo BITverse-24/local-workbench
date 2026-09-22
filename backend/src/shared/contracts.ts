@@ -89,6 +89,7 @@ export type RunEvent =
   | { type: "confirmation_required"; runId: string; action: PendingAction }
   | { type: "artifact_ready"; runId: string; artifact: ArtifactRef }
   | { type: "assistant_message_chunk"; runId: string; messageId: string; delta: string; modelId: ModelId }
+  | { type: "assistant_message_reset"; runId: string; messageId: string }
   | { type: "assistant_message"; runId: string; messageId: string; text: string; modelId: ModelId }
   | { type: "error"; runId: string; code: string; message: string; retryable?: boolean }
   | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] };

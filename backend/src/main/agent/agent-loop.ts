@@ -177,21 +177,26 @@ export class AgentLoop {
       const activeMessages = compactConversationHistory(messages, turn, 2);
 
       // 2. Dispatch turn to model gateway with native tools
-      // Only cap maxTokens to 350 when disk-modifying actions have already succeeded and the model is formulating its final summary.
+      // Allocate generous 2048 token budget when disk-modifying actions have already succeeded so comprehensive technical inspection and deliverable summaries are never cut off.
       // If an execution error occurred or only read tools ran, do NOT cap tokens, because the model still needs full token budget to output complete code files or multi-tool calls!
-      const turnMaxTokens = (hasExecutedDiskMutations && !lastExecutionHadError) ? 350 : undefined;
+      const turnMaxTokens = (hasExecutedDiskMutations && !lastExecutionHadError) ? 2048 : undefined;
 
       // Stream free-text responses whenever structured output is not necessary:
       // 1) Non-actionable pure chat / informational turns or when no tools exist
+      // 2) Post-disk-mutation summary turns where tools have completed and the final result is being formulated
       const isPureChatTurn =
         toolDefinitions.length === 0 ||
         semanticIntent?.isActionable === false ||
         semanticIntent?.intentType === "pure_chat" ||
         semanticIntent?.intentType === "general_qa";
 
-      let bufferedChunks: string[] = [];
-      const onChunk = isPureChatTurn
+      const isSummaryTurn = hasExecutedDiskMutations && !lastExecutionHadError;
+      const shouldStreamLive = isPureChatTurn || isSummaryTurn;
+
+      let streamedChunks: string[] = [];
+      const onChunk = shouldStreamLive
         ? (delta: string) => {
+            streamedChunks.push(delta);
             emitEvent({
               type: "assistant_message_chunk",
               runId,
@@ -199,10 +204,6 @@ export class AgentLoop {
               delta,
               modelId: driverModelId,
             });
-          }
-        : (hasExecutedDiskMutations && !lastExecutionHadError)
-        ? (delta: string) => {
-            bufferedChunks.push(delta);
           }
         : undefined;
 
@@ -256,6 +257,18 @@ export class AgentLoop {
             arguments: typeof args === "object" && args !== null ? args : {},
           };
         });
+      }
+
+      // If tool calls were returned on this turn, any streamed chunks were intermediate scratchpad.
+      // Reset the assistant message in UI so the final summary remains clean.
+      if (effectiveToolCalls && effectiveToolCalls.length > 0 && streamedChunks.length > 0) {
+        emitEvent({
+          type: "assistant_message_reset",
+          runId,
+          messageId: assistantMessageId,
+        });
+        assistantMessageId = randomUUID();
+        streamedChunks = [];
       }
 
       // 4. Guardrail: If model lazily output conversational text/code without invoking tools
@@ -415,19 +428,15 @@ export class AgentLoop {
 
         finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedDiskMutations);
 
-        // If chunks were buffered during this summary turn, emit them now (or emit the cleaned summary)
-        if (bufferedChunks.length > 0) {
-          if (finalText === content) {
-            for (const chunk of bufferedChunks) {
-              emitEvent({
-                type: "assistant_message_chunk",
-                runId,
-                messageId: assistantMessageId,
-                delta: chunk,
-                modelId: driverModelId,
-              });
-            }
-          } else {
+        // If chunks were already streamed live to the UI, check if cleanFinalSummary changed the text.
+        // If cleanFinalSummary modified the text (e.g. stripped duplicate code blocks), update the UI cleanly.
+        if (streamedChunks.length > 0) {
+          if (finalText !== content && finalText.length > 0) {
+            emitEvent({
+              type: "assistant_message_reset",
+              runId,
+              messageId: assistantMessageId,
+            });
             emitEvent({
               type: "assistant_message_chunk",
               runId,
@@ -436,6 +445,15 @@ export class AgentLoop {
               modelId: driverModelId,
             });
           }
+        } else if (finalText) {
+          // If chunks were not streamed live (e.g. non-streaming transport), emit the final text
+          emitEvent({
+            type: "assistant_message_chunk",
+            runId,
+            messageId: assistantMessageId,
+            delta: finalText,
+            modelId: driverModelId,
+          });
         }
 
         return {

@@ -10,6 +10,7 @@ import { deleteFile } from "../harness/tools/delete-file.js";
 import { runCommand } from "../harness/tools/run-command.js";
 import { resolveRunPath } from "../run/filesystem.js";
 import type { ArtifactKind, ArtifactRef } from "../../shared/contracts.js";
+import { isTextExtractableDocument, readDocumentContent } from "./document-reader.js";
 
 function inferArtifactKind(filename: string): ArtifactKind {
   const ext = path.extname(filename).toLowerCase();
@@ -159,7 +160,7 @@ export const readFileTool: AgentTool = {
     type: "function",
     function: {
       name: "read_file",
-      description: "Read file content. Large files (>200KB) should be searched via search tool instead.",
+      description: "Read file content. Automatically extracts and formats readable text and tables from documents (.pdf, .docx, .txt, .md, code, etc.). Large files (>200KB) should be searched via search tool instead.",
       parameters: {
         type: "object",
         properties: {
@@ -174,6 +175,55 @@ export const readFileTool: AgentTool = {
     if (!relPath) {
       throw new Error(`path parameter is required. Received arguments: ${JSON.stringify(args).slice(0, 150)}. Expected format: {"path": "relative/path/to/file"}`);
     }
+
+    // Native text parsing for PDF and Word (.docx) documents
+    if (isTextExtractableDocument(relPath)) {
+      let docPath: string | null = null;
+      if (context.workspaceRoot) {
+        try {
+          const resolved = path.resolve(context.workspaceRoot, relPath);
+          if (existsSync(resolved)) {
+            docPath = resolved;
+          }
+        } catch {}
+      }
+      if (!docPath && context.runId) {
+        const inputDir = resolveRunPath(context.runId, "input", "input");
+        const base = path.basename(relPath);
+        let inputFilePath = path.join(inputDir, base);
+        if (!existsSync(inputFilePath)) {
+          const files = existsSync(inputDir) ? readdirSync(inputDir) : [];
+          const matched = files.find((f) => f === base || f.endsWith(`-${base}`));
+          if (matched) {
+            inputFilePath = path.join(inputDir, matched);
+          }
+        }
+        if (existsSync(inputFilePath)) {
+          docPath = inputFilePath;
+        }
+      }
+
+      if (docPath) {
+        const docResult = await readDocumentContent(docPath);
+        let formattedContent = docResult.text;
+        const lines = formattedContent.split("\n");
+        if (lines.length > 400) {
+          formattedContent = [
+            ...lines.slice(0, 200),
+            `\n... [TRUNCATED ${lines.length - 300} LINES — document exceeds single-turn budget] ...\n`,
+            ...lines.slice(-100),
+          ].join("\n");
+        }
+        if (formattedContent.length > 28000) {
+          formattedContent = `${formattedContent.slice(0, 18000)}\n\n... [TRUNCATED ${formattedContent.length - 22000} CHARS — document exceeds single-turn budget] ...\n\n${formattedContent.slice(-4000)}`;
+        }
+        return {
+          output: formattedContent,
+          summary: docResult.summary,
+        };
+      }
+    }
+
     let content: string;
     try {
       content = readFile(context.workspaceRoot, relPath);

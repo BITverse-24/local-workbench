@@ -283,6 +283,9 @@ export default function App() {
               return [...prev, { id: event.messageId, role: "assistant", text: event.delta }];
             });
             break;
+          case "assistant_message_reset":
+            setMessages((prev) => prev.filter((m) => m.id !== event.messageId));
+            break;
           case "assistant_message":
             setMessages((prev) => {
               const currentEvents = [...runEventsRef.current];

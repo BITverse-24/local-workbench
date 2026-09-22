@@ -559,8 +559,8 @@ module.exports = app;
     expect(maxTokensPerTurn[0]).toBeUndefined();
     // Turn 2: should NOT be capped to 350 because search is read-only!
     expect(maxTokensPerTurn[1]).toBeUndefined();
-    // Turn 3: capped to 350 because write_file mutated disk on turn 2
-    expect(maxTokensPerTurn[2]).toBe(350);
+    // Turn 3: capped to 2048 because write_file mutated disk on turn 2
+    expect(maxTokensPerTurn[2]).toBe(2048);
     // Code block was intercepted as write_file tool call and written to disk
     expect(writtenFiles.length).toBe(1);
     expect(writtenFiles[0].path).toBe("app.ts");

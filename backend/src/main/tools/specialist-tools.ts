@@ -14,6 +14,7 @@ import type {
   PythonExecutionResult,
   VisionModelRequest,
 } from "../../shared/contracts.js";
+import { extractDocxText, extractPdfText } from "./document-reader.js";
 
 function inferArtifactKind(filename: string): ArtifactKind {
   const ext = path.extname(filename).toLowerCase();
@@ -58,6 +59,70 @@ export const extractDocumentTool: AgentTool = {
     }
 
     const ext = path.extname(filename).toLowerCase();
+
+    // 1. Native Word document extraction (DOCX)
+    if (ext === ".docx" || ext === ".doc") {
+      const docxRes = await extractDocxText(filePath);
+      const pageReferences = [{ id: "doc-1", page: 1, text: docxRes.text.slice(0, 1000) }];
+      const findings = [
+        {
+          findingId: "f-1",
+          title: `Document Content: ${filename}`,
+          value: docxRes.text.slice(0, 500),
+          pageReferenceIds: ["doc-1"],
+          confidence: "high",
+          evidence: docxRes.text.slice(0, 300),
+        },
+      ];
+      const docResult = {
+        sourceText: docxRes.text,
+        extractionMethod: "digital_document",
+        pageReferences,
+        findings,
+      };
+      return {
+        output: JSON.stringify(docResult, null, 2),
+        summary: `Extracted text from Word document "${filename}" (${docxRes.totalChars} chars)`,
+      };
+    }
+
+    // 2. Native PDF text extraction (digital PDF with text layer)
+    if (ext === ".pdf") {
+      try {
+        const pdfRes = await extractPdfText(filePath);
+        if (pdfRes.hasText) {
+          const pageReferences = pdfRes.pages.map((p) => ({
+            id: `page-${p.pageNumber}`,
+            page: p.pageNumber,
+            text: p.text.slice(0, 1000),
+          }));
+          const findings = pdfRes.pages.map((p) => ({
+            findingId: `finding-p${p.pageNumber}`,
+            title: `Page ${p.pageNumber} Content: ${filename}`,
+            value: p.text.slice(0, 500),
+            pageReferenceIds: [`page-${p.pageNumber}`],
+            confidence: "high",
+            evidence: p.text.slice(0, 300),
+          }));
+          const digitalResult = {
+            sourceText: pdfRes.text,
+            extractionMethod: "digital_text",
+            numPages: pdfRes.numPages,
+            pageReferences,
+            findings,
+          };
+          return {
+            output: JSON.stringify(digitalResult, null, 2),
+            summary: `Extracted digital text across ${pdfRes.numPages} pages from "${filename}" (${pdfRes.totalChars} chars)`,
+          };
+        }
+      } catch (err) {
+        // If digital extraction failed, fall through to multimodal vision request below
+        console.warn(`[extract_document] digital extraction failed for "${filename}", falling back to vision:`, err);
+      }
+    }
+
+    // 3. Multimodal vision fallback (for scanned PDFs, photos, and engineering drawings)
     const mediaType = ext === ".pdf"
       ? "application/pdf"
       : ext === ".svg"
@@ -408,10 +473,38 @@ export const generateDeliverableTool: AgentTool = {
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
     const type = String(args.type ?? "md").toLowerCase();
-    const title = String(args.title ?? "Deliverable");
-    const content = String(args.content ?? "");
+    let title = String(args.title ?? "Deliverable");
+    let content = String(args.content ?? "");
     let filename = String(args.filename ?? `deliverable.${type}`);
     if (!filename.endsWith(`.${type}`)) filename += `.${type}`;
+
+    // Clean placeholder markers if present
+    content = content
+      .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT|TOOL_CALL|END_TOOL_CALL)\]/gi, "")
+      .trim();
+
+    // Guardrail against placeholder or empty content
+    const isPlaceholderOnly =
+      !content ||
+      content.length < 15 ||
+      /^(?:pending|n\/a|none|placeholder|todo)$/i.test(content) ||
+      /\[tool_result\]/i.test(content);
+
+    if (isPlaceholderOnly) {
+      throw new Error(
+        `Cannot generate deliverable "${filename}" with placeholder or empty content. ` +
+        `You must first inspect input files (using read_file or extract_document), synthesize the findings, ` +
+        `and call generate_deliverable with complete, comprehensive, publication-ready markdown or text content.`
+      );
+    }
+
+    // If title is default "Deliverable", extract title from the first heading if present
+    if (title === "Deliverable") {
+      const headingMatch = content.match(/^#+\s+([^\n]+)/m);
+      if (headingMatch) {
+        title = headingMatch[1].trim();
+      }
+    }
 
     const artifacts: ArtifactRef[] = [];
 

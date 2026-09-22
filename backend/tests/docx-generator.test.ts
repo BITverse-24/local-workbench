@@ -107,4 +107,92 @@ Conditional clearance pending retubing. [SOP-114 §3.2]`;
       rmSync(runRoot(runId), { recursive: true, force: true });
     } catch {}
   });
+
+  it("parses inline formatting (bold, italic, code) into TextRun objects", async () => {
+    const { parseInlineFormatting } = await import("../src/main/tools/artifacts.js");
+    const runs = parseInlineFormatting("This has **bold text**, *italic notes*, and `const x = 1` code.", 20);
+    expect(runs.length).toBeGreaterThan(1);
+    const json = JSON.stringify(runs);
+    expect(json).toContain("bold text");
+    expect(json).toContain("w:b");
+    expect(json).toContain("italic notes");
+    expect(json).toContain("w:i");
+  });
+
+  it("parses markdown tables into native Tables with DXA column widths summing to 9360", async () => {
+    const { parseMarkdownTable } = await import("../src/main/tools/artifacts.js");
+    const tableLines = [
+      "| Component | Limit | Observed | Status |",
+      "| :--- | :--- | :--- | :--- |",
+      "| Tube Wall | 4.6 mm | 3.8 mm | Non-Compliant |",
+      "| Shell Inlet | 1.0 mm | 1.8 mm | Non-Compliant |",
+    ];
+
+    const table = parseMarkdownTable(tableLines);
+    expect(table).not.toBeNull();
+    const colWidths = (table as any).root?.[1]?.columnWidths ?? (table as any).columnWidths;
+    if (colWidths) {
+      const sum = colWidths.reduce((a: number, b: number) => a + b, 0);
+      expect(sum).toBe(9360);
+      expect(colWidths.length).toBe(4);
+    }
+  });
+
+  it("renders complex markdown containing tables, lists, and headings into a valid docx", async () => {
+    const markdownContent = `# TECHNICAL INSPECTION & CLEARANCE REPORT
+
+## Executive Summary
+All primary inspection findings from attached files have been reviewed against governing engineering standards.
+
+| Equipment | Inspection Type | Key Finding | Compliance |
+| --- | --- | --- | --- |
+| E-201 Heat Exchanger | Ultrasonic Thickness | Tube wall thinning down to 3.8mm | ACTION REQUIRED |
+| E-202 Pressure Vessel | Visual & NDT | Pitting corrosion depth 1.8mm | CONDITIONAL PASS |
+
+## Required Action Items
+1. Recheck weld joint 4B on E-201 prior to hydrostatic pressure testing.
+2. Replace channel-head gasket on E-202 before recommissioning.
+
+> Note: All corrective actions must be validated by the Chief Technical Authority.
+`;
+
+    const buffer = await createDocxBuffer(markdownContent);
+    expect(Buffer.isBuffer(buffer)).toBe(true);
+    expect(buffer.length).toBeGreaterThan(2000);
+    // PK zip magic header check
+    expect(buffer[0]).toBe(0x50);
+    expect(buffer[1]).toBe(0x4b);
+  });
+
+  it("generate_deliverable rejects placeholder content like [TOOL_RESULT]", async () => {
+    const { generateDeliverableTool } = await import("../src/main/tools/specialist-tools.js");
+    const mockContext: any = {
+      runId: "test-deliverable-placeholder",
+      devWorkload: false,
+    };
+
+    await expect(
+      generateDeliverableTool.execute(
+        {
+          type: "docx",
+          title: "Test Note",
+          content: "[TOOL_RESULT]",
+          filename: "test.docx",
+        },
+        mockContext,
+      ),
+    ).rejects.toThrow(/placeholder or empty content/i);
+
+    await expect(
+      generateDeliverableTool.execute(
+        {
+          type: "docx",
+          title: "Test Note",
+          content: "pending",
+          filename: "test.docx",
+        },
+        mockContext,
+      ),
+    ).rejects.toThrow(/placeholder or empty content/i);
+  });
 });

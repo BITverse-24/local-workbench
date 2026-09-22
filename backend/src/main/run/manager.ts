@@ -49,6 +49,7 @@ import {
 } from "../grounding/spec-compliance.js";
 import { CODE_SYSTEM_PROMPT, VISION_SYSTEM_PROMPT } from "./prompts.js";
 import { analyzePdf, extractSvgText, rankPagesByVisualDensity } from "./images.js";
+import { isTextExtractableDocument, readDocumentContent } from "../tools/document-reader.js";
 import { createRun, getState, listRuns, recordError, recordRouting, transition } from "./store.js";
 import {
   absoluteDataPath,
@@ -956,6 +957,17 @@ export class RunManager {
               if (isText && stat.size < 200000) {
                 const content = readFileSync(filePath, "utf8");
                 parts.push(`--- ATTACHED FILE: ${att.filename} (${att.mediaType}, ${stat.size} bytes) ---\n${content}\n--- END ATTACHED FILE: ${att.filename} ---`);
+              } else if (isTextExtractableDocument(att.filename)) {
+                try {
+                  const docRes = await readDocumentContent(filePath);
+                  if (docRes.hasText && docRes.text.length < 50000) {
+                    parts.push(`--- ATTACHED FILE: ${att.filename} (${att.mediaType}, ${docRes.summary}) ---\n${docRes.text}\n--- END ATTACHED FILE: ${att.filename} ---`);
+                  } else {
+                    parts.push(`--- ATTACHED FILE: ${att.filename} (${att.mediaType}, ${docRes.summary} located at input/${att.filename} — inspect via read_file) ---`);
+                  }
+                } catch {
+                  parts.push(`--- ATTACHED FILE: ${att.filename} (${att.mediaType}, ${stat.size} bytes located at input/${att.filename}) ---`);
+                }
               } else {
                 parts.push(`--- ATTACHED FILE: ${att.filename} (${att.mediaType}, ${stat.size} bytes located at input/${att.filename}) ---`);
               }
@@ -1014,6 +1026,7 @@ CRITICAL OPERATIONAL RULES:
    - The repaired script will automatically be tested and saved as a verified artifact deliverable.
    - To write, update, or save files to the workspace, invoke \`write_file\`.
    - To create official output deliverables or export artifacts, invoke \`generate_deliverable\` or \`execute_python\`.
+   - NEVER call \`generate_deliverable\` in the same turn as \`read_file\` or \`extract_document\`. You MUST FIRST read and inspect the attachments in one turn, and THEN in a subsequent turn call \`generate_deliverable\` with complete, publication-ready markdown containing the real findings. Passing placeholders like \`"[TOOL_RESULT]"\` or \`"pending"\` is strictly forbidden and will fail.
 5. CREATING & EDITING FILES:
    - When the user asks you to create, setup, scaffold, write, build, modify, update, edit, patch, convert, migrate, or refactor files or code:
      • You MUST invoke \`write_file\` with {"path": "relative/path/to/file", "content": "..."} for every file needed.
@@ -1042,10 +1055,13 @@ Solve the user's task step-by-step.
 ${attachedFilesSection}
 OPERATIONAL & PLAN GUIDELINES:
 1. When asked to write code, create files, fix bugs, or test scripts, invoke the appropriate tools (e.g. \`execute_python\`, \`write_file\`, \`generate_deliverable\`).
-2. When performing calculations, fixing bugs, or verifying scripts with attachments, verify code execution in the sandbox using \`execute_python\`.
-3. Do not waste tokens outputting code blocks or full script implementations in chat while a task is still ongoing. All code must be passed strictly inside tool arguments (e.g. \`code\` of \`execute_python\` or \`content\` of \`write_file\`), unless the user explicitly asks for the code itself in chat.
-4. If an error occurs during tool execution, diagnose the error and retry with a corrected action using \`execute_python\`.
-5. When finished and verified, provide a clear, concise summary of the actions taken and results without dumping redundant code blocks. Do not invoke further tools once done.`;
+2. \`read_file\` automatically extracts and returns readable text from PDFs (.pdf) and Word documents (.docx). Do NOT attempt to install packages or write Python scripts to parse or extract text from PDFs or Word documents.
+3. When performing calculations, fixing bugs, or verifying scripts with attachments, verify code execution in the sandbox using \`execute_python\`.
+4. Do not waste tokens outputting code blocks or full script implementations in chat while a task is still ongoing. All code must be passed strictly inside tool arguments (e.g. \`code\` of \`execute_python\` or \`content\` of \`write_file\`), unless the user explicitly asks for the code itself in chat.
+5. If an error occurs during tool execution, diagnose the error and adjust your arguments or tool selection. Only use \`execute_python\` for script verification and calculations, not for installing system packages.
+6. When finished and verified, provide a clear, concise summary of the actions taken and results without dumping redundant code blocks. Do not invoke further tools once done.
+7. TOOL SEQUENCING & DELIVERABLES: Never call generate_deliverable in the same turn as read_file, extract_document, or other inspection tools. In turn 1, call read_file or extract_document to inspect attachments and extract real findings. In turn 2, review the extracted findings and invoke generate_deliverable with complete, comprehensive, publication-ready markdown containing those real findings. Never pass placeholder strings like "[TOOL_RESULT]" or "pending" as content for generate_deliverable.
+8. DELIVERABLE FORMATTING: When generating DOCX deliverables, provide well-structured markdown containing headings (##, ###), clean markdown tables (| Header 1 | Header 2 |), bullet points, and actionable recommendations. The system automatically converts markdown headings and tables into professional, publication-grade Word documents.`;
       }
 
       this.state(runId, "acting");
