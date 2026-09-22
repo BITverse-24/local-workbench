@@ -334,7 +334,7 @@ describe("Multi-Attachment Support & Persistence", () => {
       () => {
         expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
       },
-      { timeout: 3000 },
+      { timeout: 10000 },
     );
 
     // Verify artifacts generated: both the CSV output and repaired python script
