@@ -1136,6 +1136,127 @@ module.exports = app;
     expect(result.finalText).toContain("The approval note for the E-201 inspection has been generated as \"approval-note.docx\"");
   });
 
+  it("preserves turn-1 summary and strips [TOOL_RESULT] tags when model wraps response in simulator tags (run:b05a2acd)", async () => {
+    const loop = new AgentLoop();
+    let turnCount = 0;
+    const emittedEvents: any[] = [];
+
+    const mockGateway = {
+      async chatWithTools(_modelId: string, _messages: any[], _tools: any[], options?: any) {
+        turnCount++;
+        if (turnCount === 1) {
+          const rawTurn1 = `[TOOL_RESULT]
+# Inspection Report E-201 Heat Exchanger
+**Report ID:** IR-E201-2026-08-20
+**Equipment:** E-201 Heat Exchanger
+**Inspection Findings:**
+- **Tube Wall Thickness:** Rows 12-15 measured 3.8-4.2 mm.
+- **Minimum Allowable Tube Wall Thickness:** 4.6 mm.
+- **Localised Pitting Corrosion at the Shell Inlet Nozzle; Maximum Depth:** 1.8 mm.
+
+**Action Items:**
+1. Recheck Weld Joint 4B.
+
+# Inspection Report E-202 Pressure Vessel
+**Report ID:** IR-E202-2026-08-21
+**Equipment:** E-202 Pressure Vessel
+**Inspection Findings:**
+- **Tube Wall Thickness:** Rows 12-15 measured 3.8-4.2 mm.
+
+**Action Items:**
+1. Verify After Repair.
+[END_TOOL_RESULT]`;
+
+          // Stream in chunks including simulator tag boundaries
+          options?.onChunk?.("[TOOL_");
+          options?.onChunk?.("RESULT]\n# Inspection Report E-201 Heat Exchanger\n");
+          options?.onChunk?.("**Report ID:** IR-E201-2026-08-20\n");
+          options?.onChunk?.("- **Tube Wall Thickness:** Rows 12-15 measured 3.8-4.2 mm.\n");
+          options?.onChunk?.("[END_TOOL_RESULT]");
+
+          return {
+            ok: true,
+            value: {
+              content: rawTurn1,
+              tool_calls: [
+                {
+                  id: "call_deliv_999",
+                  name: "generate_deliverable",
+                  arguments: {
+                    type: "docx",
+                    filename: "approval-note.docx",
+                    title: "Equipment Inspection Approval Note",
+                    content: "Full docx content",
+                  },
+                },
+              ],
+            },
+          };
+        }
+
+        // Turn 2: tool completed, model provides concise confirmation
+        return {
+          ok: true,
+          value: {
+            content: "The inspection reports have been read, and key findings have been extracted. An approval note has been drafted and saved as \"approval-note.docx\" in the run output folder.",
+            tool_calls: null,
+          },
+        };
+      },
+    };
+
+    const mockTool: AgentTool = {
+      name: "generate_deliverable",
+      definition: {
+        type: "function",
+        function: {
+          name: "generate_deliverable",
+          description: "Generate deliverable document",
+          parameters: { type: "object", properties: { filename: { type: "string" } } },
+        },
+      },
+      async execute(args: any) {
+        return {
+          output: `Generated deliverable "${args.filename || "approval-note.docx"}" successfully.`,
+          summary: "Created deliverable",
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-b05a2acd",
+      driverModelId: "draft-qwen3",
+      userPrompt: "Review both inspection reports. Pull out all key findings, deviations, and annotations. Summarize them here first, then draft an official approval note for the plant manager.",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockTool],
+      context: { runId: "test-b05a2acd", workspaceRoot: ".", gateway: mockGateway as any },
+      onPlanConfirmationRequired: async () => true,
+      emitEvent: (ev) => emittedEvents.push(ev),
+    });
+
+    expect(result.completed).toBe(true);
+
+    // 1. Live streamed chunks MUST NEVER contain [TOOL_RESULT] or [END_TOOL_RESULT]
+    const chunkEvents = emittedEvents.filter((e) => e.type === "assistant_message_chunk");
+    for (const chunk of chunkEvents) {
+      expect(chunk.delta).not.toContain("[TOOL_RESULT]");
+      expect(chunk.delta).not.toContain("[END_TOOL_RESULT]");
+    }
+
+    // 2. Final text MUST NOT contain [TOOL_RESULT]
+    expect(result.finalText).not.toContain("[TOOL_RESULT]");
+    expect(result.finalText).not.toContain("[END_TOOL_RESULT]");
+
+    // 3. Final text MUST preserve the full Turn 1 summary!
+    expect(result.finalText).toContain("# Inspection Report E-201 Heat Exchanger");
+    expect(result.finalText).toContain("Tube Wall Thickness");
+    expect(result.finalText).toContain("Recheck Weld Joint 4B");
+    expect(result.finalText).toContain("# Inspection Report E-202 Pressure Vessel");
+
+    // 4. Final text MUST include the Turn 2 deliverable note
+    expect(result.finalText).toContain("approval-note.docx");
+  });
+
   it("presents a generic 2-step plan in confirmation modal instead of dumping report findings", async () => {
     const loop = new AgentLoop();
     let presentedPlan = "";

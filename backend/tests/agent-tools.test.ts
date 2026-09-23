@@ -98,7 +98,7 @@ describe("Agent Tools Suite", () => {
 
     const mockContext: ToolExecutionContext = {
       runId,
-      workspaceRoot: undefined,
+      workspaceRoot: "",
       gateway: {} as any,
     };
 

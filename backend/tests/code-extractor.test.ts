@@ -224,6 +224,24 @@ Run the server using \`node app.js\` to start the Express application with the r
     const raw = `<tool_response>{"ok": true}</tool_response>I will set up the routes and configure authentication.`;
     expect(cleanPlanPreview(raw)).toBe("I will set up the routes and configure authentication.");
   });
+
+  it("preserves human report findings and markdown when wrapped in [TOOL_RESULT] tags", () => {
+    const rawWrapped = `
+[TOOL_RESULT]
+# Inspection Report E-201 Heat Exchanger
+**Report ID:** IR-E201-2026-08-20
+**Equipment:** E-201 Heat Exchanger
+**Inspection Findings:**
+- **Tube Wall Thickness:** Rows 12-15 measured 3.8-4.2 mm.
+- **Minimum Allowable Tube Wall Thickness:** 4.6 mm.
+[END_TOOL_RESULT]
+`;
+    const cleaned = cleanPlanPreview(rawWrapped);
+    expect(cleaned).not.toContain("[TOOL_RESULT]");
+    expect(cleaned).not.toContain("[END_TOOL_RESULT]");
+    expect(cleaned).toContain("# Inspection Report E-201 Heat Exchanger");
+    expect(cleaned).toContain("Tube Wall Thickness");
+  });
 });
 
 describe("extractShellCommands", () => {

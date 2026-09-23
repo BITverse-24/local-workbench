@@ -149,6 +149,7 @@ export function cleanFinalSummary(text: string, hasExecutedTools: boolean): stri
   // Strip any tool simulator output tags like [TOOL_RESULT]...[END_TOOL_RESULT], [ENDTOOLRESULT], [TOOL_CALL], etc.
   let cleanedToolTags = text
     .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT|ENDTOOLRESULT|TOOL_CALL|END_TOOL_CALL|ENDTOOLCALL)\]/gi, "")
+    .replace(/<\/?(?:tool_call|tool_response|tool_result)[^>]*>/gi, "")
     .trim();
 
   // If the summary contains or is an echoed tool result message (e.g. Generated deliverable "approval-note.docx" (...)):
@@ -242,11 +243,16 @@ export function cleanFinalSummary(text: string, hasExecutedTools: boolean): stri
 export function cleanPlanPreview(text: string): string {
   if (!text) return "";
 
-  // 1. Strip fake tool results like [TOOL_RESULT]...[END_TOOL_RESULT] or <tool_response>...</tool_response>
+  // 1. Strip simulated JSON tool results (e.g. [TOOL_RESULT]\n{\n "files": ...\n}\n[END_TOOL_RESULT])
   let cleaned = text
-    .replace(/\[TOOL_RESULT\][\s\S]*?\[END_TOOL_RESULT\]/gi, "")
-    .replace(/<tool_response>[\s\S]*?<\/tool_response>/gi, "")
+    .replace(/\[TOOL_RESULT\]\s*(?:\{[\s\S]*?\}|\[\s*\{[\s\S]*?\}\s*\])\s*\[END_TOOL_RESULT\]/gi, "")
+    .replace(/<tool_response>\s*(?:\{[\s\S]*?\}|\[\s*\{[\s\S]*?\}\s*\])\s*<\/tool_response>/gi, "")
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
+
+  // 2. Strip any tool simulator tags without destroying human markdown text
+  cleaned = cleaned
+    .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT|ENDTOOLRESULT|TOOL_CALL|END_TOOL_CALL|ENDTOOLCALL)\]/gi, "")
+    .replace(/<\/?(?:tool_call|tool_response|tool_result)[^>]*>/gi, "");
 
   // 2. Strip all fenced code blocks (fenced by 3 or more backticks)
   cleaned = cleaned.replace(/```[\s\S]*?```/g, "");
