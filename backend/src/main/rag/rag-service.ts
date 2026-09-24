@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import {
   RAGDatabase,
@@ -47,6 +48,7 @@ export class RAGService {
   private ingestion!: IngestionPipeline;
   private embeddingService!: EmbeddingService;
   private initialized = false;
+  private initPromise: Promise<void> | null = null;
 
   // PERF OPTIMIZATION: Cache prepared SQLite statements to eliminate SQL string parsing
   // and compilation overhead on repeated Knowledge Base telemetry polls and document listings.
@@ -59,19 +61,36 @@ export class RAGService {
     private embeddingConfig: EmbeddingConfig = loadSavedEmbeddingConfig(),
   ) {}
 
+  clearCachedStatements(): void {
+    this.listDocsStmt = null;
+    this.countDocsStmt = null;
+    this.countChunksStmt = null;
+  }
+
   async init(): Promise<void> {
     if (this.initialized) return;
-    const ragDataDir = path.join(this.dataDir, "rag");
-    await RAGDatabase.init(ragDataDir);
+    if (this.initPromise) return this.initPromise;
 
-    this.embeddingService = new EmbeddingService(this.embeddingConfig);
-    this.retrieval = new RetrievalPipeline(this.embeddingService);
-    this.ingestion = new IngestionPipeline(this.embeddingService);
-    this.initialized = true;
+    this.initPromise = (async () => {
+      const ragDataDir = path.join(this.dataDir, "rag");
+      await RAGDatabase.init(ragDataDir);
+      this.clearCachedStatements();
+
+      this.embeddingService = new EmbeddingService(this.embeddingConfig);
+      this.retrieval = new RetrievalPipeline(this.embeddingService);
+      this.ingestion = new IngestionPipeline(this.embeddingService);
+      this.initialized = true;
+    })();
+
+    try {
+      await this.initPromise;
+    } finally {
+      this.initPromise = null;
+    }
   }
 
   isInitialized(): boolean {
-    return this.initialized;
+    return this.initialized && RAGDatabase.isInitialized();
   }
 
   getEmbeddingConfig(): EmbeddingConfig {
@@ -86,24 +105,24 @@ export class RAGService {
   }
 
   async query(text: string, topK: number = 5): Promise<RetrievalResult[]> {
-    if (!this.initialized) await this.init();
+    if (!this.initialized || !RAGDatabase.isInitialized()) await this.init();
     return this.retrieval.query(text, topK);
   }
 
   async ingestDocument(doc: DocumentRecord, filePath: string): Promise<number> {
-    if (!this.initialized) await this.init();
+    if (!this.initialized || !RAGDatabase.isInitialized()) await this.init();
     return this.ingestion.ingestDocument(doc, filePath);
   }
 
   async deleteDocument(docId: string): Promise<void> {
-    if (!this.initialized) await this.init();
+    if (!this.initialized || !RAGDatabase.isInitialized()) await this.init();
     return this.ingestion.deleteDocument(docId);
   }
 
   listDocuments(): DocumentRecord[] {
-    if (!this.initialized) return [];
-    const sqlite = RAGDatabase.getSqlite();
+    if (!this.initialized || !RAGDatabase.isInitialized()) return [];
     try {
+      const sqlite = RAGDatabase.getSqlite();
       if (!this.listDocsStmt) {
         this.listDocsStmt = sqlite.prepare("SELECT * FROM documents ORDER BY indexed_at DESC");
       }
@@ -121,16 +140,17 @@ export class RAGService {
         chunk_count: r.chunk_count ?? 0,
       }));
     } catch {
+      this.clearCachedStatements();
       return [];
     }
   }
 
   getStats(): RAGStats {
-    if (!this.initialized) {
+    if (!this.initialized || !RAGDatabase.isInitialized()) {
       return { docCount: 0, chunkCount: 0, initialized: false };
     }
-    const sqlite = RAGDatabase.getSqlite();
     try {
+      const sqlite = RAGDatabase.getSqlite();
       if (!this.countDocsStmt) {
         this.countDocsStmt = sqlite.prepare("SELECT COUNT(*) as count FROM documents");
       }
@@ -145,19 +165,28 @@ export class RAGService {
         initialized: true,
       };
     } catch {
+      this.clearCachedStatements();
       return { docCount: 0, chunkCount: 0, initialized: true };
     }
   }
 
   async reindex(docId?: string): Promise<{ chunksIndexed: number }> {
-    if (!this.initialized) await this.init();
+    if (!this.initialized || !RAGDatabase.isInitialized()) await this.init();
     const docs = this.listDocuments();
     const targetDocs = docId ? docs.filter((d) => d.doc_id === docId) : docs;
 
     let totalChunks = 0;
     for (const d of targetDocs) {
-      const count = await this.ingestDocument(d, d.source_path);
-      totalChunks += count;
+      try {
+        if (!fs.existsSync(d.source_path)) {
+          console.warn(`[rag:reindex] Skipping reindex: source file missing at "${d.source_path}"`);
+          continue;
+        }
+        const count = await this.ingestDocument(d, d.source_path);
+        totalChunks += count;
+      } catch (err) {
+        console.warn(`[rag:reindex] Failed to reindex document "${d.doc_id}":`, err);
+      }
     }
     return { chunksIndexed: totalChunks };
   }

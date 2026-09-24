@@ -4,87 +4,195 @@ import { RetrievalResult } from "./types.js";
 
 interface ScoredItem {
   id: string;
-  score: number; // For internal ranking
-  data: any;
+  score: number;
+  data: {
+    chunk_id: string;
+    text: string;
+    doc_id: string;
+    section_label: string;
+    page: number;
+  };
+}
+
+const STOPWORDS = new Set([
+  "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are",
+  "as", "at", "be", "because", "been", "before", "being", "below", "between", "both", "but", "by",
+  "could", "did", "do", "does", "doing", "down", "during", "each", "few", "for", "from",
+  "further", "had", "has", "have", "having", "he", "her", "here", "hers", "herself", "him",
+  "himself", "his", "how", "i", "if", "in", "into", "is", "it", "its", "itself", "me", "more",
+  "most", "my", "myself", "no", "nor", "not", "of", "off", "on", "once", "only", "or", "other",
+  "ought", "our", "ours", "ourselves", "out", "over", "own", "same", "she", "should", "so",
+  "some", "such", "than", "that", "the", "their", "theirs", "them", "themselves", "then",
+  "there", "these", "they", "this", "those", "through", "to", "too", "under", "until", "up",
+  "very", "was", "we", "were", "what", "when", "where", "which", "while", "who", "whom", "why",
+  "with", "would", "you", "your", "yours", "yourself", "yourselves"
+]);
+
+export function sanitizeFtsQuery(query: string): {
+  tokens: string[];
+  meaningfulTokens: string[];
+  phraseQuery: string;
+  andQuery: string;
+  orQuery: string;
+} {
+  const tokens = query
+    .replace(/[^\w\s.-]/g, " ")
+    .split(/\s+/)
+    .map((w) => w.trim().replace(/^[.-]+|[.-]+$/g, ""))
+    .filter((w) => w.length > 0);
+
+  if (tokens.length === 0) {
+    return { tokens: [], meaningfulTokens: [], phraseQuery: "", andQuery: "", orQuery: "" };
+  }
+
+  // Filter stopwords for high-precision query; fallback to all tokens if all were stopwords
+  const meaningfulTokens = tokens.filter((t) => !STOPWORDS.has(t.toLowerCase()));
+  const activeTokens = meaningfulTokens.length > 0 ? meaningfulTokens : tokens;
+
+  const phraseQuery = tokens.length > 1 ? `"${tokens.join(" ").replace(/"/g, "")}"` : "";
+  const andQuery = activeTokens.map((t) => `"${t.replace(/"/g, "")}"`).join(" AND ");
+  const orQuery = activeTokens.map((t) => `"${t.replace(/"/g, "")}"`).join(" OR ");
+
+  return { tokens, meaningfulTokens: activeTokens, phraseQuery, andQuery, orQuery };
 }
 
 export class RetrievalPipeline {
-  // PERF OPTIMIZATION: Cache prepared SQLite FTS statement to eliminate SQL parsing
-  // and compilation overhead on repeated RAG grounding and Knowledge Base searches (>90% statement prep speedup).
-  private keywordStmt: any = null;
-
   constructor(private embeddingService: EmbeddingService) {}
 
   async query(text: string, topK: number = 5): Promise<RetrievalResult[]> {
+    const cleanQuery = (text || "").replace(/\0/g, "").trim();
+    if (!cleanQuery) {
+      return [];
+    }
+
+    const limit = Math.max(1, Math.min(topK || 5, 50));
+    const candidateLimit = Math.max(limit * 3, 20);
+
     const sqlite = RAGDatabase.getSqlite();
     const vectra = RAGDatabase.getVectra();
 
-    // 1. Keyword search (SQLite FTS5)
-    if (!this.keywordStmt) {
-      this.keywordStmt = sqlite.prepare(`
-        SELECT chunk_id, text, doc_id, section_label, page, rank
-        FROM chunks_fts
-        WHERE chunks_fts MATCH ?
-        ORDER BY rank
-        LIMIT 10
-      `);
-    }
+    // 1. Keyword search (SQLite FTS5) with precision tiers
+    const { phraseQuery, andQuery, orQuery } = sanitizeFtsQuery(cleanQuery);
+    const keywordMatches = new Map<string, { rank: number; row: any; isExactPhrase?: boolean; isAndMatch?: boolean }>();
 
-    // Basic query transformation: convert to FTS syntax (e.g. enclose in quotes if needed or just replace spaces)
-    // For MVP, just replacing spaces with OR to get some matches, or doing a simple phrase match
-    const ftsQuery = `"${text.replace(/"/g, "")}"`;
-
-    let keywordResults: any[] = [];
-    try {
-      keywordResults = this.keywordStmt.all(ftsQuery);
-    } catch (e) {
-      // Fallback to OR search if phrase match fails syntax
+    // 1a. Tier 1: Exact verbatim phrase match (highest precision)
+    if (phraseQuery) {
       try {
-        const fallbackQuery = text.split(/\s+/).map(w => w.replace(/[^a-zA-Z0-9]/g, "")).filter(w => w).join(" OR ");
-        if (fallbackQuery) {
-          keywordResults = this.keywordStmt.all(fallbackQuery);
+        const phraseStmt = sqlite.prepare(`
+          SELECT chunk_id, text, doc_id, section_label, page, rank
+          FROM chunks_fts
+          WHERE chunks_fts MATCH ?
+          ORDER BY rank
+          LIMIT ?
+        `);
+        const rows = phraseStmt.all(phraseQuery, candidateLimit) as any[];
+        for (let i = 0; i < rows.length; i++) {
+          keywordMatches.set(rows[i].chunk_id, { rank: i, row: rows[i], isExactPhrase: true });
         }
-      } catch (e2) {
-        console.warn("FTS query failed:", e2);
+      } catch {
+        // Fall through to AND search
       }
     }
 
-    const keywordScored: ScoredItem[] = keywordResults.map((r, i) => ({
-      id: r.chunk_id,
-      score: 1 / (60 + i + 1), // RRF score
-      data: {
-        chunk_id: r.chunk_id,
-        text: r.text,
-        doc_id: r.doc_id,
-        section_label: r.section_label,
-        page: r.page
+    // 1b. Tier 2: All meaningful keywords present (AND search)
+    if (andQuery && keywordMatches.size < candidateLimit) {
+      try {
+        const andStmt = sqlite.prepare(`
+          SELECT chunk_id, text, doc_id, section_label, page, rank
+          FROM chunks_fts
+          WHERE chunks_fts MATCH ?
+          ORDER BY rank
+          LIMIT ?
+        `);
+        const rows = andStmt.all(andQuery, candidateLimit) as any[];
+        for (let i = 0; i < rows.length; i++) {
+          if (!keywordMatches.has(rows[i].chunk_id)) {
+            keywordMatches.set(rows[i].chunk_id, {
+              rank: keywordMatches.size,
+              row: rows[i],
+              isAndMatch: true,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("[rag:retrieval] FTS AND query failed:", err);
       }
-    }));
+    }
+
+    // 1c. Tier 3: Partial keywords present (OR search fallback)
+    // ONLY executed when Tier 1 and Tier 2 yielded ZERO matches, to prevent spurious OR matches
+    // from polluting precision rankings when exact/AND matches exist.
+    if (orQuery && keywordMatches.size === 0) {
+      try {
+        const orStmt = sqlite.prepare(`
+          SELECT chunk_id, text, doc_id, section_label, page, rank
+          FROM chunks_fts
+          WHERE chunks_fts MATCH ?
+          ORDER BY rank
+          LIMIT ?
+        `);
+        const rows = orStmt.all(orQuery, candidateLimit) as any[];
+        for (let i = 0; i < rows.length; i++) {
+          if (!keywordMatches.has(rows[i].chunk_id)) {
+            keywordMatches.set(rows[i].chunk_id, {
+              rank: i,
+              row: rows[i],
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("[rag:retrieval] FTS OR query failed:", err);
+      }
+    }
+
+    const keywordScored: ScoredItem[] = Array.from(keywordMatches.values()).map(
+      ({ rank, row, isExactPhrase, isAndMatch }) => {
+        const baseRrf = 1 / (60 + rank + 1);
+        let multiplier = 1.0;
+        if (isExactPhrase) {
+          multiplier = 2.0;
+        } else if (isAndMatch) {
+          multiplier = 1.3;
+        }
+        return {
+          id: row.chunk_id,
+          score: baseRrf * multiplier,
+          data: {
+            chunk_id: row.chunk_id,
+            text: row.text,
+            doc_id: row.doc_id,
+            section_label: row.section_label || "unknown",
+            page: typeof row.page === "number" ? row.page : Number(row.page) || 1,
+          },
+        };
+      },
+    );
 
     // 2. Vector search (Vectra)
     let vectorScored: ScoredItem[] = [];
     try {
-      const queryEmbedding = await this.embeddingService.embed(text);
-      const vectraResults = await vectra.queryItems(queryEmbedding, text, 10);
+      const queryEmbedding = await this.embeddingService.embed(cleanQuery);
+      if (Array.isArray(queryEmbedding) && queryEmbedding.length > 0) {
+        const vectraResults = await vectra.queryItems(queryEmbedding, cleanQuery, candidateLimit);
 
-      vectorScored = vectraResults.map((r, i) => {
-        const meta = r.item.metadata as any;
-        return {
-          id: r.item.id,
-          score: 1 / (60 + i + 1), // RRF score
-          data: {
-            chunk_id: r.item.id,
-            text: meta.text,
-            doc_id: meta.doc_id,
-            section_label: meta.section_label,
-            page: meta.page
-          }
-        };
-      });
+        vectorScored = (vectraResults || []).map((r, i) => {
+          const meta = (r.item?.metadata as any) || {};
+          return {
+            id: r.item.id,
+            score: 1 / (60 + i + 1), // RRF score
+            data: {
+              chunk_id: r.item.id,
+              text: meta.text || "",
+              doc_id: meta.doc_id || "",
+              section_label: meta.section_label || "unknown",
+              page: typeof meta.page === "number" ? meta.page : Number(meta.page) || 1,
+            },
+          };
+        });
+      }
     } catch (e) {
-      console.warn("Vectra query failed (is embedding model available?):", e);
+      console.warn("[rag:retrieval] Vectra semantic query failed (is embedding model available?):", e);
     }
-
 
     // 3. Reciprocal Rank Fusion (RRF)
     const fusedScores = new Map<string, ScoredItem>();
@@ -93,18 +201,21 @@ export class RetrievalPipeline {
       if (fusedScores.has(item.id)) {
         const existing = fusedScores.get(item.id)!;
         existing.score += item.score;
+        if (!existing.data.text && item.data.text) {
+          existing.data.text = item.data.text;
+        }
       } else {
-        fusedScores.set(item.id, { ...item }); // Clone
+        fusedScores.set(item.id, { ...item, data: { ...item.data } });
       }
     }
 
     // 4. Sort by fused score and return topK
     const finalResults = Array.from(fusedScores.values())
       .sort((a, b) => b.score - a.score)
-      .slice(0, topK)
-      .map(item => ({
+      .slice(0, limit)
+      .map((item) => ({
         ...item.data,
-        score: item.score
+        score: item.score,
       } as RetrievalResult));
 
     return finalResults;

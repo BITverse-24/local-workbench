@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, memo } from "react";
 
 export interface ExecutionStep {
   id: string;
@@ -217,7 +217,10 @@ function ToolBadge({
   );
 }
 
-export default function AgentExecutionTimeline({
+// PERF OPTIMIZATION: Memoize AgentExecutionTimeline component with React.memo.
+// Prevents unnecessary component re-renders and virtual DOM tree diffs during streaming event updates
+// when timeline props (events, isRunning, runState, activeRoute) have not changed.
+const AgentExecutionTimeline = memo(function AgentExecutionTimeline({
   events = [],
   isRunning = false,
   runState = null,
@@ -562,4 +565,6 @@ export default function AgentExecutionTimeline({
       )}
     </div>
   );
-}
+});
+
+export default AgentExecutionTimeline;

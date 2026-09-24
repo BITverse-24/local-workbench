@@ -6,6 +6,9 @@ export class RAGGroundingProvider implements GroundingProvider {
   constructor(private ragService: RAGService) {}
 
   async prepare(input: GroundingRequest): Promise<GroundingResult> {
+    if (!this.ragService.isInitialized()) {
+      await this.ragService.init();
+    }
     const stats = this.ragService.getStats();
     if (!stats.docCount || stats.chunkCount === 0) {
       return { runId: input.runId, notes: [], chunks: [] };
@@ -27,18 +30,18 @@ export class RAGGroundingProvider implements GroundingProvider {
       }));
 
       const contextBlock = chunks
-        .map(
-          (c, i) =>
-            `[EXCERPT ${i + 1} | CITATION: ${c.chunkId}] (Document: ${c.docId}, Clause/Section: §${c.sectionLabel}, Page: ${c.page}):\n${c.text}`,
-        )
+        .map((c, i) => {
+          const sec = c.sectionLabel && c.sectionLabel !== "unknown" ? `Clause/Section: §${c.sectionLabel}, ` : "";
+          return `[EXCERPT ${i + 1} | CITATION: ${c.chunkId}] (Document: ${c.docId}, ${sec}Page: ${c.page}):\n${c.text}`;
+        })
         .join("\n\n---\n\n");
 
       const docLabel = (chunks[0].docId || "SOP").toUpperCase();
-      const secLabel = chunks[0].sectionLabel ? `§${chunks[0].sectionLabel}` : "";
+      const secLabel = chunks[0].sectionLabel && chunks[0].sectionLabel !== "unknown" ? ` §${chunks[0].sectionLabel}` : "";
       const note =
         `MANDATORY GROUNDING CONTEXT — The following verified standard operating procedures / technical criteria apply to this task.\n` +
         `You MUST ground all technical assessments and findings in this evidence.\n` +
-        `Cite each standard inline using its exact citation identifier like [${chunks[0].chunkId}] or [${docLabel}${secLabel ? ` ${secLabel}` : ""}]\n` +
+        `Cite each standard inline using its exact citation identifier like [${chunks[0].chunkId}] or [${docLabel}${secLabel}]\n` +
         `If the provided SOP criteria do not cover an observed item, explicitly flag it as unverified.\n\n` +
         contextBlock;
 

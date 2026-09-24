@@ -9,6 +9,7 @@ import {
   cleanPlanPreview,
   extractShellCommands,
 } from "./code-extractor.js";
+import { StreamingTagFilter } from "./streaming-filter.js";
 import type { SemanticIntent } from "../router/contextual-router.js";
 
 export interface AgentLoopOptions {
@@ -326,18 +327,20 @@ export class AgentLoop {
       const shouldStreamLive = isPureChatTurn || isPostToolTurn || isTurn1;
 
       let streamedChunks: string[] = [];
-      const onChunk = shouldStreamLive
-        ? (delta: string) => {
-            streamedChunks.push(delta);
+      const tagFilter = shouldStreamLive
+        ? new StreamingTagFilter((cleanDelta: string) => {
+            streamedChunks.push(cleanDelta);
             emitEvent({
               type: "assistant_message_chunk",
               runId,
               messageId: assistantMessageId,
-              delta,
+              delta: cleanDelta,
               modelId: driverModelId,
             });
-          }
+          })
         : undefined;
+
+      const onChunk = tagFilter ? (delta: string) => tagFilter.process(delta) : undefined;
 
       const turnResponse = await context.gateway.chatWithTools(
         driverModelId,
@@ -351,6 +354,10 @@ export class AgentLoop {
           onChunk,
         },
       );
+
+      if (tagFilter) {
+        tagFilter.flush();
+      }
 
       if (!turnResponse.ok) {
         throw new Error(turnResponse.error.message);
@@ -371,6 +378,12 @@ export class AgentLoop {
               delta: findings,
               modelId: driverModelId,
             });
+          }
+        } else if (turn === 1 && isSubstantiveReportOrFindings(content) && !content.includes("```")) {
+          // Fallback: If turn 1 produced substantive report content, preserve it as in-chat summary
+          const cleanedTurn1 = cleanPlanPreview(content);
+          if (cleanedTurn1.length > 100) {
+            accumulatedInChatFindings = cleanedTurn1;
           }
         }
       }

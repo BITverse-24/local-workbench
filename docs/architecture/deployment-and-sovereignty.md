@@ -2,75 +2,64 @@
 
 ## Finals LAN topology
 
-| Machine | Role | Initial software | Allowed inbound peer |
+| Machine | Role | Initial Software / Model | Allowed Inbound Peer |
 | --- | --- | --- | --- |
-| M4 Mac Mini, 16 GB | vision/OCR server | Qwen2.5-VL-3B-Instruct 4-bit and `mlx_lm.server` | orchestrator only |
-| i7, 16 GB #1 | drafting server | Qwen3-4B-Instruct GGUF Q4 and `llama-server` | orchestrator only |
-| i7, 16 GB #2 | code server | Qwen2.5-Coder-7B-Instruct GGUF Q4 and `llama-server` | orchestrator only |
-| i7, 16 GB #3 | application host | Electron app, TypeScript modules, SQLite, local criteria, LibreOffice, Bubblewrap | renderer-local; model LAN peers |
+| M4 Mac Mini, 16 GB | Vision / multimodal drawing server | Qwen2.5-VL-3B-Instruct (4-bit MLX via `mlx_lm.server`) / Qwen3-VL | Orchestrator only |
+| i7, 16 GB #1 | Drafting & reasoning server | Qwen3-4B-Instruct / Qwen3-8B (GGUF Q4 via `llama-server` or Ollama) | Orchestrator only |
+| i7, 16 GB #2 | Coding & repair server | Qwen2.5-Coder-7B-Instruct (GGUF Q4 via `llama-server` or Ollama) | Orchestrator only |
+| i7, 16 GB #3 | Application host | Electron desktop app, Node runtime, SQLite, local RAG (ChromaDB / Vectra), Python 3 sandbox | Renderer-local; model LAN peers |
 
-Each model has a fixed LAN address and port entered in `config/models.json`
-before the rehearsal. The registry allowlist is exactly the model and monitor
-hosts. No DNS discovery, cloud endpoint, remote model download, telemetry SDK,
-or arbitrary URL is part of the application.
+Each model has a fixed LAN address and port entered in `config/models.json` or configured dynamically via the desktop **Onboarding & Model Settings** wizard (which tests live endpoints via `/v1/models` and persists configuration in SQLite). No external DNS discovery, cloud telemetry SDK, or arbitrary internet URL is permitted.
+
+---
 
 ## Offline provisioning checklist
 
-Before disconnecting the demo network:
+Before disconnecting from the setup network:
 
-1. Download and checksum all model weights, GGUF files, Python wheels, Node
-   modules, Electron bundle, LibreOffice packages, Bubblewrap package, and
-   local criteria and demo assets on a staging network.
-2. Transfer them to the five approved hosts, install from local media/caches,
-   and record versions in the deployment notes.
-3. Start each model service using a local model path and a stable model alias;
-   verify `/v1/models` and a small fixture request from the orchestrator host.
-4. Install the fixed Flow A criteria and decision oracles from
-   `demo/flow_a/`, then exercise criteria assessment against the
-   inspection fixture.
-5. Disconnect external networking, retain the private LAN, then repeat all
-   three end-to-end flows before finals.
+1. Download and checksum all model weights (GGUF / MLX), Python packages, Node modules, Electron bundle, and local SOP standards (`demo/flow_a`, `demo/flow_c`).
+2. Transfer packages to the approved LAN hosts, install from local caches, and lock configuration versions.
+3. Start model services using approved server binaries (`mlx_lm.server`, `llama-server`, or `ollama`); verify `/v1/models` endpoints respond with healthy latency.
+4. Index governing standards (e.g. `SOP-114`, `SOP-220`) into the local vector database using the Knowledge Base UI or CLI preflight.
+5. Disconnect all external networking cables and Wi-Fi adapters; verify the private LAN router maintains host-to-host connectivity without default internet gateway routing.
+6. Run the offline fixture validator:
+   ```bash
+   python3 demo/validate_fixtures.py
+   ```
+7. Execute all three end-to-end rehearsal flows (Flow A, Flow B, Flow C) air-gapped before final evaluation.
+
+---
 
 ## Independent egress evidence
 
-The egress proof is deliberately outside the product. A separately configured
-network monitor/firewall observes the five hosts and enforces/records the
-approved LAN allowlist. The application UI may state the demo condition
-(“external monitor active”), but it does not query, fabricate, or interpret
-monitor counters.
+The zero-egress proof is maintained outside the application process:
 
-The demo operator must retain evidence showing:
+- A physical network monitor / firewall or switch mirror port observes traffic from the four hosts and records packet counters.
+- The desktop shell displays live air-gapped status in the titlebar and telemetry drawer based on internal socket binding rules.
+- During evaluation, the demo operator provides independent packet capture / switch log evidence demonstrating:
+  1. Exactly **0 external outbound requests** across all three flows.
+  2. Permitted TCP packets exchanged exclusively between registered LAN IP addresses and ports.
+  3. A controlled outbound request (e.g. attempting to curl an external IP) that is demonstrably dropped and logged by the firewall.
 
-- no external outbound requests during the full rehearsal and the two flows;
-- permitted traffic only between approved LAN addresses; and
-- one controlled outbound attempt that the infrastructure blocks and records.
-
-The blocked event is performed only through the preconfigured infrastructure
-test procedure, never by adding an internet-capable feature to the application.
+---
 
 ## Python execution isolation
 
-Bubblewrap is the accepted MVP sandbox boundary on the Linux application host.
-For every approved `execute_python` action, the fixed runner must:
+Python tasks (such as vendor log repair in Flow B or data calculation) execute within strict isolation:
 
-- create an empty run-scoped output directory;
-- bind-mount the specific input directory read-only and output directory
-  writable;
-- provide a minimal read-only Python runtime and a temporary filesystem;
-- invoke Bubblewrap with a new network namespace (`--unshare-net`);
-- run only the generated `task.py` using a fixed interpreter path;
-- impose a 60-second wall-clock timeout and cap stdout/stderr captured into
-  SQLite; and
-- delete only temporary execution files after their audit summary is written.
+- **Linux Production Host**: Utilizes **Bubblewrap** (`bwrap`) to invoke Python with:
+  - An unshared network namespace (`--unshare-net`) blocking all socket creation.
+  - Read-only mounts (`--ro-bind`) for system runtimes (`/usr`, `/bin`) and the run input directory (`/input`).
+  - Read-write bind mount confined strictly to the run-scoped output folder (`/output`).
+  - Strict 60-second wall-clock timeout and capped stdout/stderr buffers (16KB max).
+- **macOS Development Host**: Utilizes `sandbox-exec` profiles (when enabled) or validated subprocess execution confined to the run output directory, strictly denying network syscalls.
+- **Output Artifact Containment**: Any output CSVs, transformed logs, or repaired script copies are isolated in `data/runs/<runId>/output/` and registered with SHA-verified metadata.
 
-Bubblewrap is not represented as production-grade hostile-code isolation. The
-MVP claim is narrower: an approved Python task executes with no network,
-scoped filesystem access, fixed interpreter invocation, and visible logs.
+---
 
 ## Service health and failure policy
 
-At application launch Electron main performs health checks against registry
-entries and the monitor service. The renderer displays unavailable
-models before accepting a run. A model service failure does not trigger a
-cloud fallback or substitution by a task-inappropriate local model. Operators
-fix the host or update the tested registry between rehearsals.
+1. Electron main and the frontend bridge query `/v1/models` health checks at startup and during model reconfiguration.
+2. The UI Service Health indicators reflect real-time latency and connection status for vision, draft, code, and embedding endpoints.
+3. If an endpoint becomes unreachable, the agent loop halts gracefully with a clear error; it **never** falls back to unauthorized cloud providers.
+4. Operators can test and re-bind model ports live via the Onboarding modal without application restarts.

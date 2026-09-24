@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
+import { extractSvgText } from "../run/images.js";
 
 export interface PdfPageText {
   pageNumber: number;
@@ -22,7 +23,7 @@ export interface DocxTextResult {
 
 export interface DocumentContentResult {
   text: string;
-  format: "pdf" | "docx" | "unknown";
+  format: "pdf" | "docx" | "svg" | "unknown";
   hasText: boolean;
   pageCount?: number;
   summary: string;
@@ -58,8 +59,12 @@ export function isDocxFile(filePath: string): boolean {
   return ext === ".docx" || ext === ".doc";
 }
 
+export function isSvgFile(filePath: string): boolean {
+  return path.extname(filePath).toLowerCase() === ".svg";
+}
+
 export function isTextExtractableDocument(filePath: string): boolean {
-  return isPdfFile(filePath) || isDocxFile(filePath);
+  return isPdfFile(filePath) || isDocxFile(filePath) || isSvgFile(filePath);
 }
 
 function unescapeXml(str: string): string {
@@ -294,6 +299,22 @@ export async function readDocumentContent(filePath: string): Promise<DocumentCon
       hasText: true,
       summary: `Read "${base}" (Word document, ${docxRes.totalChars} chars)`,
     };
+  }
+
+  if (isSvgFile(filePath)) {
+    try {
+      const raw = readFileSync(filePath);
+      const svgText = extractSvgText(raw);
+      if (svgText && svgText.trim().length > 0) {
+        const formatted = `[Document: ${base} (SVG Vector Drawing, ${svgText.length} characters)]\n\n${svgText}`;
+        return {
+          text: formatted,
+          format: "svg",
+          hasText: true,
+          summary: `Read "${base}" (SVG Vector Drawing, ${svgText.length} chars)`,
+        };
+      }
+    } catch {}
   }
 
   return {

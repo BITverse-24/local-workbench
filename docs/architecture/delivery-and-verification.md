@@ -1,80 +1,73 @@
 # Delivery and Verification
 
-## Twelve-day build plan
+## Build phases & architectural evolution
 
-| Days | Ayush — frontend | Supreet — backend | Sid — AI/ML | Exit criteria |
+| Phase | Frontend | Backend | AI/ML | Verification Milestone |
 | --- | --- | --- | --- | --- |
-| 1–2 | Electron shell, preload bridge, transcript and artifact-pane scaffolding | Electron-main root, IPC types, SQLite run repository, run workspace | connect OpenRouter stand-ins for the three routes; prepare local criteria and begin background downloads of the local model weights | all hosts reachable only on LAN; registry health checks pass |
-| 3–5 | file drop, routing badge, confirmation modal, PDF pane | Flow A orchestrator and tool contracts; DOCX/PDF artifact worker | tune vision extraction and drafting prompts against fixed scans; verify citations | scanned report produces a cited DOCX and PDF after confirmation |
-| 6–7 | Flow B result/log views and error states | code route, source validation, Bubblewrap runner, output artifacts | validate coder prompts against fixed CSV fixture and expected output | approved Python job runs with network unavailable and results displayed |
-| 8–9 | polish transcript and failure UI | retries, cancellation, model health errors, audit/event completeness | model/service stability test; registry switch to the local models and re-validation of frozen prompts; external-monitor preflight with operator | both flows visibly show routes and graceful known failures |
-| 10–12 | final UX pass and rehearsal script | fixture E2E tests, packaging, final defect fixes | full offline rehearsal, model fallback validation, operator evidence pack | two flawless offline runs plus a blocked-egress infrastructure demonstration |
+| 1–2: Foundation | Electron shell, preload bridge, transcript, chat list | Electron-main root, typed IPC handlers, SQLite WAL persistence, run directory layout | LAN model configuration, prompt definitions, fixture bundles | Models reachable on LAN /dev endpoints; SQLite migration & seed pass |
+| 3–4: Core Specialist Flows | File drop, routing badge, confirmation modal, PDF viewer, artifact cards | Flow A (vision extract + DOCX/PDF generator) and Flow B (Python runner + log repair) | Vision extraction fine-tuning, citation grounding, script repair prompts | Flow A produces cited Word report; Flow B self-repairs failed script in sandbox |
+| 5: Unified Agent Loop (v2) | Agent thinking display, live tool execution transcript, plan review gate | `AgentLoop`, `ToolDispatcher`, environment-aware `composeTools`, context compaction | Tool schemas, multi-turn reasoning prompts, cross-model delegation | Autonomous multi-turn tool calling without prompt-based routing hacks |
+| 6: Workspace Harness & RAG | Workspace picker, file tree, Knowledge Base panel, Onboarding wizard | `HarnessManager`, `PathGuard`, local RAG service (`ChromaDB` / `Vectra`), custom model config | Local embeddings, clause chunker, vector retrieval against SOPs | Flow C drawing cross-check against retrieved `SOP-220`; path-contained workspace operations |
 
-## Test fixtures
+---
 
-Keep fixtures under the application-controlled demo data bundle, not in the
-knowledge corpus upload path:
+## Test fixtures and verification suites
 
-- one clean, typed scanned inspection-report PDF with known findings;
-- one governing SOP, fixed approval-note template, and approval-readiness
-  decision oracle carrying stable section IDs;
-- one CSV with known out-of-range readings and expected flags/summary;
-- expected assessment statuses/actions, approval-note citation list, DOCX text
-  assertions, and PDF preview existence check;
-- expected Python stdout, exit code, and generated data output assertions.
+Fixtures are stored under `demo/flow_a/`, `demo/flow_b/`, and `demo/flow_c/`:
 
-Use the real file-drop control for every test and rehearsal. Fixtures are fixed
-to minimise model variance; no improvised finals input is in the acceptance
-scope.
+- **Flow A Bundle**: Scanned pressure vessel inspection report PDF, handwritten NDT annotation, and governing `SOP-114`.
+- **Flow B Bundle**: Failing vendor log parser `process_vendor_logs.py` and reactor CSV dataset.
+- **Flow C Bundle**: Piping skid SVG schematic `pump-skid-P204.svg` and governing specification `SOP-220`.
+
+### Preflight commands
+
+1. **Verify Demo Fixture Integrity**:
+   ```bash
+   python3 demo/validate_fixtures.py
+   ```
+   *Asserts manifest hashes, SVG attributes, CSV schemas, and deterministic test oracles.*
+
+2. **Run TypeScript Type Check**:
+   ```bash
+   npm run typecheck
+   ```
+   *Verifies backend, electron, and frontend subproject typings against shared contracts.*
+
+3. **Run Unit and Integration Test Suites**:
+   ```bash
+   npm test
+   ```
+   *Executes backend, agent loop, RAG service, path guard, and tool dispatcher tests.*
+
+---
 
 ## Acceptance checklist
 
 ### Architecture and security boundaries
 
-- [ ] Electron main is the only process exposing model, tool, filesystem, and
-  persistence capabilities; renderer access is limited to the documented IPC.
-- [ ] The registry contains exactly the approved LAN model endpoints, and all
-  health checks run before a user can start a run.
-- [ ] Each tool input/output passes schema validation and every run stops at
-  eight iterations or fewer.
-- [ ] The two confirmation gates prevent DOCX/XLSX write and Python execution
-  until an explicit approve event is recorded.
-- [ ] Bubblewrap fixture proves no network is available and output remains
-  confined to the run's output directory.
+- [ ] Electron main is the sole process exposing model, tool, filesystem, and persistence capabilities; renderer access is strictly limited to typed `workbenchBridge` IPC.
+- [ ] PathGuard enforces `resolveSafe`: workspace harness tools (`list_dir`, `read_file`, `write_file`, `delete_file`, `search`, `run_command`) cannot escape the designated workspace directory.
+- [ ] Model registry contains approved local/LAN endpoints; real-time health checks verify `/v1/models` availability.
+- [ ] Air-gapped Python runner executes with network namespaces disabled (`--unshare-net`) and restricted input/output mount points.
+- [ ] Consequential actions (destructive commands, script execution, official deliverable creation) trigger human-in-the-loop plan confirmation gates.
+- [ ] No hardcoded demo data: all findings, citations, code repairs, and deliverables are dynamically produced from input files.
 
 ### Product proof points
 
-- [ ] Flow A displays `vision` then `draft` routing events, extracts fixture
-  findings, assesses them against the governing SOP, and creates a cited
-  decision-packet DOCX plus local PDF preview.
-- [ ] Flow B displays `code` routing, executes the fixture script after
-  confirmation, and shows exit code, bounded logs, and the expected result.
-- [ ] Invalid model output, unavailable model host, rejected confirmation, and
-  failed Python execution each produce a visible, auditable failure.
-- [ ] The independent monitor shows no external requests during both flows and
-  records the preconfigured blocked-egress test.
+- [ ] **Flow A (Inspection Report)**: Emits `vision` routing, extracts findings (including field notes), queries `SOP-114`, and generates a formal `.docx` decision packet with explicit withholding when secondary verification is flagged.
+- [ ] **Flow B (Script Self-Repair)**: Emits `code` routing, observes initial runtime crash in sandbox, diagnoses traceback, self-corrects the code, re-runs verification, and outputs repaired script + verified CSV.
+- [ ] **Flow C (Drawing Compliance Audit)**: Emits `vision` routing, extracts valve and pipe parameters, queries local ChromaDB RAG for `SOP-220`, identifies discrepancies, and generates a structured `corrective-action-note.md` deliverable with `NOT APPROVED` status.
+- [ ] **Sovereignty**: Telemetry panel and external firewall monitor confirm **0 external HTTP requests** across all operations.
+
+---
 
 ## Rehearsal protocol
 
-1. Boot all five hosts on the private LAN and start each service from local
-   paths.
-2. Confirm registry/model health checks and open the independent
-   monitor view.
-3. Run Flow A, narrate vision then drafting routing, approve document creation,
-   and display the cited PDF preview.
-4. Run Flow B, narrate code routing, approve repair execution, and show the
-   failed-then-verified output trace.
-5. Run Flow C, narrate drawing interpretation and criteria comparison, and
-   display the cited corrective-action note.
-6. Run the infrastructure team's preconfigured outbound-block test and retain
-   monitor evidence.
-6. If any expected step fails, stop the demo, state the observed component,
-   and use the tested fallback fixture only after returning to a clean
-   application session.
-
-## Deferred after MVP
-
-Production authentication/roles, hardened sandboxing, large-scale knowledge
-handwriting OCR, PowerPoint generation, user-editable artifacts, arbitrary
-model plugins, and enterprise observability are deliberately deferred. They
-must not consume the 12-day MVP schedule.
+1. Boot all hosts on the private LAN; start model servers (`mlx_lm.server`, `llama-server`, or `ollama`).
+2. Launch Sovereign Workbench (`npm run dev` or packaged app).
+3. Confirm green health status in the Service Health settings panel.
+4. Verify SOP documents (`SOP-114`, `SOP-220`) are present in the Knowledge Base panel (or ingest them via `＋ Add`).
+5. Execute Flow A: attach inspection bundle, prompt approval review, approve `.docx` generation, and inspect the preview.
+6. Execute Flow B: attach broken script + CSV, prompt repair, approve execution, and inspect verified output.
+7. Execute Flow C: attach SVG schematic, prompt compliance review, and inspect the corrective action note.
+8. Verify independent monitor log records zero external packets.

@@ -473,4 +473,223 @@ describe("model gateway health checks", () => {
     // Verifies greedy decoding (0.0) on local extraction tasks
     expect(capturedBody.temperature).toBe(0.0);
   });
+
+  it("retries with json_schema when provider rejects json_object with 'must be json_schema or text'", async () => {
+    let callCount = 0;
+    let retryBody: any;
+    const model: ModelRegistryEntry = {
+      id: "vision-qwen25vl",
+      taskTypes: ["vision"],
+      runtime: "ollama",
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "qwen2.5-coder-7b-instruct-mlx",
+      capabilities: ["text", "image-input"],
+      requestTimeoutMs: 1000,
+      healthPath: "/models",
+      enabled: true,
+    };
+    const gateway = new ModelGateway(
+      {
+        async request(_url, init) {
+          callCount++;
+          const body = JSON.parse(init.body!);
+          if (callCount === 1) {
+            expect(body.response_format).toEqual({ type: "json_object" });
+            return {
+              status: 400,
+              async text() {
+                return JSON.stringify({ error: "'response_format.type' must be 'json_schema' or 'text'" });
+              },
+            };
+          }
+          retryBody = body;
+          return {
+            status: 200,
+            async text() {
+              return okEnvelope();
+            },
+          };
+        },
+      },
+      new Map([[model.id, model]]),
+    );
+
+    const dataRoot = process.env.WORKBENCH_DATA_ROOT!;
+    mkdirSync(dataRoot, { recursive: true });
+    writeFileSync(path.join(dataRoot, "scan.png"), Buffer.from([0, 1, 2, 3]));
+
+    const result = await gateway.execute({
+      requestId: "req-lmstudio-retry",
+      runId: RUN_ID,
+      taskType: "vision",
+      modelId: "vision-qwen25vl",
+      responseFormat: "vision-result",
+      attachment: {
+        attachmentId: "att-opt",
+        filename: "scan.png",
+        mediaType: "image/png",
+        relativePath: "scan.png",
+        sizeBytes: 100,
+      },
+      inputMode: "typed-scan",
+      systemPrompt: "Extract findings.",
+      userPrompt: "Find data.",
+      timeoutMs: 1000,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(callCount).toBe(2);
+    // Verifies retry successfully upgraded to json_schema as requested by LM Studio
+    expect(retryBody.response_format.type).toBe("json_schema");
+    expect(retryBody.response_format.json_schema.name).toBe("vision_result");
+  });
+
+  it("falls back to text-only messages when provider rejects image/multimodal content", async () => {
+    let callCount = 0;
+    let fallbackBody: any;
+    const model: ModelRegistryEntry = {
+      id: "vision-qwen25vl",
+      taskTypes: ["vision"],
+      runtime: "ollama",
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "qwen2.5-coder-7b-instruct-mlx",
+      capabilities: ["text"],
+      requestTimeoutMs: 1000,
+      healthPath: "/models",
+      enabled: true,
+    };
+    const gateway = new ModelGateway(
+      {
+        async request(_url, init) {
+          callCount++;
+          const body = JSON.parse(init.body!);
+          if (callCount === 1) {
+            // First call sends multipart vision with image_url
+            return {
+              status: 400,
+              async text() {
+                return JSON.stringify({ error: "Model 'qwen2.5-coder-7b-instruct-mlx' does not support image input" });
+              },
+            };
+          }
+          fallbackBody = body;
+          return {
+            status: 200,
+            async text() {
+              return okEnvelope();
+            },
+          };
+        },
+      },
+      new Map([[model.id, model]]),
+    );
+
+    const dataRoot = process.env.WORKBENCH_DATA_ROOT!;
+    mkdirSync(dataRoot, { recursive: true });
+    writeFileSync(path.join(dataRoot, "scan.png"), Buffer.from([0, 1, 2, 3]));
+
+    const result = await gateway.execute({
+      requestId: "req-image-fallback",
+      runId: RUN_ID,
+      taskType: "vision",
+      modelId: "vision-qwen25vl",
+      responseFormat: "vision-result",
+      attachment: {
+        attachmentId: "att-opt",
+        filename: "scan.png",
+        mediaType: "image/png",
+        relativePath: "scan.png",
+        sizeBytes: 100,
+      },
+      inputMode: "typed-scan",
+      systemPrompt: "Extract findings.",
+      userPrompt: "Find data in diagram.",
+      timeoutMs: 1000,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(callCount).toBe(2);
+    // Verifies messages[1].content is converted to pure text string without image_url
+    expect(typeof fallbackBody.messages[1].content).toBe("string");
+    expect(fallbackBody.messages[1].content).toContain("Find data in diagram.");
+  });
+
+  it("recovers gracefully when provider rejects both json_object and image_url sequentially", async () => {
+    let callCount = 0;
+    let finalBody: any;
+    const model: ModelRegistryEntry = {
+      id: "vision-qwen25vl",
+      taskTypes: ["vision"],
+      runtime: "ollama",
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "qwen2.5-coder-7b-instruct-mlx",
+      capabilities: ["text"],
+      requestTimeoutMs: 1000,
+      healthPath: "/models",
+      enabled: true,
+    };
+    const gateway = new ModelGateway(
+      {
+        async request(_url, init) {
+          callCount++;
+          const body = JSON.parse(init.body!);
+          if (callCount === 1) {
+            // First call fails with response_format rejection
+            return {
+              status: 400,
+              async text() {
+                return JSON.stringify({ error: "'response_format.type' must be 'json_schema' or 'text'" });
+              },
+            };
+          }
+          if (callCount === 2) {
+            // Second call (with json_schema) fails because model is text-only
+            return {
+              status: 400,
+              async text() {
+                return JSON.stringify({ error: "Model 'qwen2.5-coder-7b-instruct-mlx' does not support image input" });
+              },
+            };
+          }
+          finalBody = body;
+          return {
+            status: 200,
+            async text() {
+              return okEnvelope();
+            },
+          };
+        },
+      },
+      new Map([[model.id, model]]),
+    );
+
+    const dataRoot = process.env.WORKBENCH_DATA_ROOT!;
+    mkdirSync(dataRoot, { recursive: true });
+    writeFileSync(path.join(dataRoot, "scan.png"), Buffer.from([0, 1, 2, 3]));
+
+    const result = await gateway.execute({
+      requestId: "req-both-retry",
+      runId: RUN_ID,
+      taskType: "vision",
+      modelId: "vision-qwen25vl",
+      responseFormat: "vision-result",
+      attachment: {
+        attachmentId: "att-opt",
+        filename: "scan.png",
+        mediaType: "image/png",
+        relativePath: "scan.png",
+        sizeBytes: 100,
+      },
+      inputMode: "typed-scan",
+      systemPrompt: "Extract findings.",
+      userPrompt: "Find data.",
+      timeoutMs: 1000,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(callCount).toBe(3);
+    // Verifies final call had both valid json_schema and text-only content
+    expect(finalBody.response_format.type).toBe("json_schema");
+    expect(typeof finalBody.messages[1].content).toBe("string");
+  });
 });

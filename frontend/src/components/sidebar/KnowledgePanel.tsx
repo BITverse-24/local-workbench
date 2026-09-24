@@ -55,12 +55,13 @@ export default function KnowledgePanel({
 
     try {
       const filePath = (file as any).path || file.name;
-      const baseName = file.name.replace(/\.[^/.]+$/, '');
-      const docId = baseName.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+      const baseName = file.name.replace(/\.[^/.]+$/, '') || 'document';
+      const docId = (baseName.toLowerCase().replace(/[^a-z0-9_-]/g, '-') || `doc-${Date.now()}`).slice(0, 80);
+      const title = (baseName.trim() || 'Untitled Document').slice(0, 200);
 
       const res = await wb.kbIngestDoc({
         doc_id: docId,
-        title: baseName.toUpperCase(),
+        title,
         source_path: filePath,
         doc_type: 'sop',
         department: 'Engineering Standards',
@@ -196,7 +197,7 @@ export default function KnowledgePanel({
             onClick={() => fileInputRef.current?.click()}
             disabled={ingesting}
             className="h-7.5 px-3 rounded-[var(--radius-sm)] neu-button text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center gap-1.5 transition-colors disabled:opacity-40"
-            title="Add Document (.pdf, .txt, .md)"
+            title="Add Document (.pdf, .docx, .txt, .md, .csv)"
           >
             <span>＋</span>
             <span>Add</span>
@@ -205,7 +206,7 @@ export default function KnowledgePanel({
             ref={fileInputRef}
             type="file"
             className="hidden"
-            accept=".pdf,.txt,.md"
+            accept=".pdf,.docx,.doc,.txt,.md,.markdown,.csv,.json"
             onChange={handleFileSelect}
           />
         </div>

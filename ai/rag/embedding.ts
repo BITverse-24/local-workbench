@@ -20,19 +20,36 @@ export class EmbeddingService {
 
   constructor(private modelConfig: EmbeddingConfig | any) {}
 
+  clearCache(): void {
+    this.cache.clear();
+  }
+
   async embed(text: string): Promise<number[]> {
-    const results = await this.embedBatch([text]);
-    return results[0];
+    const cleanText = (text || "").replace(/\0/g, "").trim();
+    if (!cleanText) {
+      return [];
+    }
+    const results = await this.embedBatch([cleanText]);
+    return results[0] || [];
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
-    const results: Array<number[] | null> = new Array(texts.length).fill(null);
+    if (!texts || texts.length === 0) {
+      return [];
+    }
+
+    const sanitizedTexts = texts.map((t) => (t || "").replace(/\0/g, "").trim());
+    const results: Array<number[] | null> = new Array(sanitizedTexts.length).fill(null);
     const missingIndices: number[] = [];
     const missingTexts: string[] = [];
 
     // 1. Check cache for each text
-    for (let i = 0; i < texts.length; i++) {
-      const text = texts[i];
+    for (let i = 0; i < sanitizedTexts.length; i++) {
+      const text = sanitizedTexts[i];
+      if (!text) {
+        results[i] = [];
+        continue;
+      }
       const cacheKey = `${this.modelConfig.model ?? "default"}::${text}`;
       const cached = this.cache.get(cacheKey);
       if (cached) {
@@ -52,7 +69,7 @@ export class EmbeddingService {
     const baseUrl = (this.modelConfig.baseUrl || "http://localhost:1234/v1").replace(/\/+$/, "");
     const url = `${baseUrl}/embeddings`;
     const headers: Record<string, string> = {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     };
     if (apiKey) {
       headers["Authorization"] = `Bearer ${apiKey}`;
@@ -65,38 +82,70 @@ export class EmbeddingService {
       const chunk = missingTexts.slice(i, i + EmbeddingService.BATCH_CHUNK_SIZE);
       const payload: EmbeddingRequest = {
         model: this.modelConfig.model,
-        input: chunk
+        input: chunk,
       };
 
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload)
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Embedding request failed: ${res.status} ${err}`);
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(`Embedding request failed: ${res.status} ${err}`);
+        }
+
+        const data = (await res.json()) as EmbeddingResponse;
+        if (!data || !Array.isArray(data.data)) {
+          throw new Error(`Invalid embedding response: missing "data" array in ${JSON.stringify(data).slice(0, 200)}`);
+        }
+
+        const ordered: number[][] = new Array(chunk.length).fill(null);
+        let hasValidIndices = true;
+        for (const item of data.data) {
+          if (typeof item?.index === "number" && item.index >= 0 && item.index < chunk.length && Array.isArray(item.embedding)) {
+            ordered[item.index] = item.embedding;
+          } else {
+            hasValidIndices = false;
+            break;
+          }
+        }
+
+        if (hasValidIndices && !ordered.some((x) => x === null)) {
+          fetchedEmbeddings.push(...ordered);
+        } else {
+          const sorted = data.data
+            .slice()
+            .sort((a, b) => (typeof a.index === "number" && typeof b.index === "number" ? a.index - b.index : 0))
+            .map((d) => d.embedding || []);
+          fetchedEmbeddings.push(...sorted);
+        }
+      } finally {
+        clearTimeout(timeoutId);
       }
-
-      const data = (await res.json()) as EmbeddingResponse;
-      const chunkEmbeddings = data.data.sort((a, b) => a.index - b.index).map(d => d.embedding);
-      fetchedEmbeddings.push(...chunkEmbeddings);
     }
 
     // 2. Populate missing results and update cache
     for (let j = 0; j < missingIndices.length; j++) {
       const idx = missingIndices[j];
       const text = missingTexts[j];
-      const emb = fetchedEmbeddings[j];
+      const emb = fetchedEmbeddings[j] || [];
       results[idx] = emb;
 
-      const cacheKey = `${this.modelConfig.model ?? "default"}::${text}`;
-      if (this.cache.size >= EmbeddingService.CACHE_MAX_SIZE) {
-        const firstKey = this.cache.keys().next().value;
-        if (firstKey !== undefined) this.cache.delete(firstKey);
+      if (emb.length > 0) {
+        const cacheKey = `${this.modelConfig.model ?? "default"}::${text}`;
+        if (this.cache.size >= EmbeddingService.CACHE_MAX_SIZE) {
+          const firstKey = this.cache.keys().next().value;
+          if (firstKey !== undefined) this.cache.delete(firstKey);
+        }
+        this.cache.set(cacheKey, emb);
       }
-      this.cache.set(cacheKey, emb);
     }
 
     return results as number[][];

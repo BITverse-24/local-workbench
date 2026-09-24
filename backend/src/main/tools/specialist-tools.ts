@@ -15,6 +15,7 @@ import type {
   VisionModelRequest,
 } from "../../shared/contracts.js";
 import { extractDocxText, extractPdfText } from "./document-reader.js";
+import { extractSvgText } from "../run/images.js";
 
 function inferArtifactKind(filename: string): ArtifactKind {
   const ext = path.extname(filename).toLowerCase();
@@ -122,7 +123,40 @@ export const extractDocumentTool: AgentTool = {
       }
     }
 
-    // 3. Multimodal vision fallback (for scanned PDFs, photos, and engineering drawings)
+    // 3. Native SVG vector drawing text extraction
+    if (ext === ".svg") {
+      try {
+        const raw = readFileSync(filePath);
+        const svgText = extractSvgText(raw);
+        if (svgText && svgText.trim().length > 0) {
+          const pageReferences = [{ id: "svg-1", page: 1, text: svgText.slice(0, 1000) }];
+          const findings = [
+            {
+              findingId: "svg-f1",
+              title: `Vector Drawing Content: ${filename}`,
+              value: svgText.slice(0, 500),
+              pageReferenceIds: ["svg-1"],
+              confidence: "high",
+              evidence: svgText.slice(0, 300),
+            },
+          ];
+          const svgResult = {
+            sourceText: svgText,
+            extractionMethod: "digital_svg",
+            pageReferences,
+            findings,
+          };
+          return {
+            output: JSON.stringify(svgResult, null, 2),
+            summary: `Extracted vector diagram text and annotations from SVG "${filename}" (${svgText.length} chars)`,
+          };
+        }
+      } catch (err) {
+        console.warn(`[extract_document] digital SVG extraction failed for "${filename}", falling back to vision:`, err);
+      }
+    }
+
+    // 4. Multimodal vision fallback (for scanned PDFs, photos, and engineering drawings)
     const mediaType = ext === ".pdf"
       ? "application/pdf"
       : ext === ".svg"
