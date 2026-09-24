@@ -21,6 +21,7 @@ async function main() {
     cwd: ROOT,
     stdio: "inherit",
     env,
+    shell: process.platform === "win32",
   });
   electron.on("exit", (code) => process.exit(code ?? 0));
   process.on("SIGINT", () => electron.kill("SIGINT"));

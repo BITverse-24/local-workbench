@@ -111,7 +111,10 @@ async function execDirect(
   started: number,
 ): Promise<CommandResult> {
   try {
-    const result = await exec("/bin/sh", ["-c", command], {
+    const isWin = process.platform === "win32";
+    const shellCmd = isWin ? (process.env.ComSpec || "cmd.exe") : "/bin/sh";
+    const shellArgs = isWin ? ["/d", "/s", "/c", command] : ["-c", command];
+    const result = await exec(shellCmd, shellArgs, {
       cwd: workspaceRoot,
       timeout: timeoutMs,
       maxBuffer: 1024 * 1024,

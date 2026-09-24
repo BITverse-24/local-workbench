@@ -20,6 +20,7 @@ const child = spawn(electron, args, {
     ...process.env,
     ELECTRON_RUN_AS_NODE: "1",
   },
+  shell: process.platform === "win32",
 });
 
 child.on("exit", (code) => process.exit(code ?? 0));

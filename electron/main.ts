@@ -81,6 +81,7 @@ function startVite(): void {
     cwd: REPO_ROOT,
     stdio: "inherit",
     env: process.env,
+    shell: process.platform === "win32",
   });
   viteChild.on("exit", (code, signal) => {
     viteChild = null;

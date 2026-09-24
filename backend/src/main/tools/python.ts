@@ -113,6 +113,10 @@ export async function executePython(runId: string, source: string, inputFiles: s
       command = PYTHON;
       args = [script, ...staged.stagedInputs];
     }
+  } else if (process.platform === "win32") {
+    console.warn("[python-runner] Windows development runner; using python directly in run directory");
+    command = process.env.PYTHON ?? "python";
+    args = [script, ...staged.stagedInputs];
   } else {
     throw new Error(`No supported Python sandbox is available on ${process.platform}`);
   }
