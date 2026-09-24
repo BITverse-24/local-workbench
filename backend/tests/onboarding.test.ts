@@ -14,9 +14,8 @@ import {
   handleResetOnboarding,
   handleSaveModelConfig,
   handleTestModelEndpoint,
-  handleGetDevMode,
-  handleSetDevMode,
 } from "../src/main/ipc/onboarding-handlers.js";
+
 import { RunManager } from "../src/main/run/manager.js";
 import { RAGService } from "../src/main/rag/rag-service.js";
 import type { MinimalIpcMain } from "../src/main/ipc/handlers.js";
@@ -254,7 +253,7 @@ describe("Onboarding Architecture & IPC Handlers", () => {
       expect(result.error).toBeDefined();
     });
 
-    it("serves requests strictly from in-memory DB endpoints without calling OpenRouter in production", async () => {
+    it("serves requests strictly from in-memory DB endpoints without external egress", async () => {
       const rows: ModelConfigRow[] = [
         {
           role: "draft",
@@ -302,74 +301,9 @@ describe("Onboarding Architecture & IPC Handlers", () => {
       });
 
       expect(res.ok).toBe(true);
-      // Strictly sent to DB endpoint, NEVER openrouter!
       expect(requestedUrl).toBe("http://127.0.0.1:11434/v1/chat/completions");
       expect(authHeader).toBeUndefined();
     });
-
-    it("routes to OpenRouter when dev workload is active", async () => {
-      const originalKey = process.env.OPENROUTER_API_KEY;
-      process.env.OPENROUTER_API_KEY = "test-openrouter-key-xyz";
-
-      let requestedUrl = "";
-      let authHeader: string | undefined = undefined;
-
-      const mockTransport = {
-        async request(url: string, init: any) {
-          requestedUrl = url;
-          authHeader = init.headers?.authorization;
-          return {
-            status: 200,
-            text: async () =>
-              JSON.stringify({
-                choices: [{ message: { content: "{\"text\": \"Response from OpenRouter dev\"}" } }],
-              }),
-          };
-        },
-      };
-
-      try {
-        const manager = new RunManager();
-        const gateway = manager.getGateway();
-        (gateway as any).transport = mockTransport;
-
-        // Execute with devWorkload flag explicitly
-        const res = await gateway.execute({
-          requestId: "test-dev-req-1",
-          runId: "00000000-0000-4000-8000-000000000002",
-          taskType: "draft",
-          modelId: "draft-qwen3",
-          responseFormat: "chat-result",
-          systemPrompt: "You are a helpful assistant.",
-          userPrompt: "Hello dev model",
-          timeoutMs: 5000,
-          devWorkload: true,
-        });
-
-        expect(res.ok).toBe(true);
-        expect(requestedUrl).toContain("openrouter.ai");
-        expect(authHeader).toBe("Bearer test-openrouter-key-xyz");
-      } finally {
-        process.env.OPENROUTER_API_KEY = originalKey;
-      }
-    });
-
-    it("manages dev mode state via getDevMode and setDevMode handlers", () => {
-      const manager = new RunManager();
-      const status1 = handleGetDevMode(manager);
-      expect(typeof status1.devOpenRouter).toBe("boolean");
-
-      // Toggle dev mode on
-      const setRes = handleSetDevMode({ enabled: true }, manager);
-      expect(setRes.ok).toBe(true);
-      expect(setRes.devOpenRouter).toBe(true);
-
-      const status2 = handleGetDevMode(manager);
-      expect(status2.devOpenRouter).toBe(true);
-
-      // Toggle dev mode off
-      handleSetDevMode({ enabled: false }, manager);
-      expect(handleGetDevMode(manager).devOpenRouter).toBe(false);
-    });
   });
 });
+

@@ -16,13 +16,12 @@ import type {
 import type { ModelClient } from "../models/ports.js";
 import {
   defaultLocalRegistry,
-  isDevOpenRouterActive,
-  loadDevOpenRouterRegistry,
   loadProductionRegistryFromDb,
   loadProductionRegistryEntriesFromDb,
   loadRegistry,
   resolveModel,
 } from "./registry.js";
+
 import { normalizeResponse, parseProviderContent, providerError } from "./normalizer.js";
 import { absoluteDataPath, createRunDirectories, runRoot } from "../run/filesystem.js";
 import { assertUploadableSize, createPlaceholderImagesFromText, extractPdfText, extractSvgText, prepareImage, renderPdfToImages } from "../run/images.js";
@@ -209,7 +208,7 @@ const nativeTransport: GatewayTransport = {
   },
 };
 /**
- * Normalizes conversation history into strictly compliant OpenAI / OpenRouter messages format.
+ * Normalizes conversation history into strictly compliant OpenAI-compatible messages format.
  *
  * Requirements for native tools:
  * 1. role: "system" | "user" | "assistant" | "tool"
@@ -626,24 +625,16 @@ export function getJsonSchema(responseFormat: string): Record<string, any> | und
 export interface VisionUploadInfo { originalBytes: number; finalBytes: number; resized: boolean; mediaType: string; }
 export class ModelGateway implements ModelClient {
   readonly dbRegistry: Map<string, ModelRegistryEntry>;
-  readonly devRegistry: Map<string, ModelRegistryEntry>;
   private readonly endpointPool = new Map<string, ModelRegistryEntry[]>();
   private roundRobinCounter = 0;
-  private devModeOverride: boolean | null = null;
   externalRequestCount = 0;
   lastVisionUpload?: VisionUploadInfo;
 
   constructor(
     private readonly transport: GatewayTransport = nativeTransport,
     initialRegistry?: Map<string, ModelRegistryEntry> | ModelRegistryEntry[],
-    devRegistry?: Map<string, ModelRegistryEntry>,
   ) {
     this.dbRegistry = new Map();
-    try {
-      this.devRegistry = devRegistry ?? (loadDevOpenRouterRegistry() as Map<string, ModelRegistryEntry>);
-    } catch {
-      this.devRegistry = new Map();
-    }
 
     if (initialRegistry) {
       this.updateRegistry(initialRegistry);
@@ -673,12 +664,7 @@ export class ModelGateway implements ModelClient {
   /**
    * Select next healthy endpoint for the requested model using round-robin load balancing.
    */
-  resolveNextEndpoint(modelId: ModelId | string, isDev = false): ModelRegistryEntry | undefined {
-    const activeRegistry = isDev && this.devRegistry.size > 0 ? this.devRegistry : this.dbRegistry;
-    if (isDev) {
-      return activeRegistry.get(modelId) ?? this.dbRegistry.get(modelId);
-    }
-
+  resolveNextEndpoint(modelId: ModelId | string): ModelRegistryEntry | undefined {
     const instances = this.endpointPool.get(modelId);
     if (instances && instances.length > 0) {
       const enabledInstances = instances.filter((inst) => inst.enabled);
@@ -689,7 +675,7 @@ export class ModelGateway implements ModelClient {
       }
     }
 
-    return activeRegistry.get(modelId);
+    return this.dbRegistry.get(modelId);
   }
 
   private rebuildEndpointPool(): void {
@@ -702,17 +688,7 @@ export class ModelGateway implements ModelClient {
   }
 
   get registry(): Map<string, ModelRegistryEntry> {
-    return this.isDevRoutingActive() ? this.devRegistry : this.dbRegistry;
-  }
-
-  setDevMode(enabled: boolean | null): void {
-    this.devModeOverride = enabled;
-  }
-
-  isDevRoutingActive(request?: ModelRequest): boolean {
-    if (request?.devWorkload !== undefined) return request.devWorkload;
-    if (this.devModeOverride !== null) return this.devModeOverride;
-    return isDevOpenRouterActive();
+    return this.dbRegistry;
   }
 
   /** Dynamically replace production DB registry entries in memory without requiring application restart. */
@@ -747,33 +723,18 @@ export class ModelGateway implements ModelClient {
   }
 
   async execute(request: ModelRequest): Promise<AIResult<ModelResponse>> {
-    const isDev = this.isDevRoutingActive(request);
-    let model: ModelRegistryEntry | undefined = this.resolveNextEndpoint(request.modelId, isDev);
+    let model: ModelRegistryEntry | undefined = this.resolveNextEndpoint(request.modelId);
     if (!model) {
-      const activeRegistry = isDev && this.devRegistry.size > 0 ? this.devRegistry : this.dbRegistry;
       try {
-        model = resolveModel(activeRegistry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType);
+        model = resolveModel(this.dbRegistry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType);
       } catch {
-        if (isDev && this.dbRegistry.has(request.modelId)) {
-          try {
-            model = resolveModel(this.dbRegistry as Map<any, ModelRegistryEntry>, request.modelId, request.taskType);
-          } catch {
-            return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
-          }
-        } else {
-          return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
-        }
+        return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "configured model is unavailable", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
       }
     }
 
-    if (isDev) {
-      gatewayConsole("log", request, `DEV WORKLOAD: Dispatching to OpenRouter (${model.model} at ${model.baseUrl})`);
-    } else {
-      gatewayConsole("log", request, `DB ENDPOINT: Dispatching to ${model.baseUrl} (${model.model}, role: ${request.taskType})`);
-    }
-
+    gatewayConsole("log", request, `DB ENDPOINT: Dispatching to ${model.baseUrl} (${model.model}, role: ${request.taskType})`);
     const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
-    if (model.runtime === "openrouter" && !key) return { ok: false, error: { kind: "ai-error", code: "model_rejected_request", message: `missing environment credential ${model.apiKeyEnv}`, retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
+
     const maybeVision = request as unknown as { taskType: string; attachment?: { mediaType: string; relativePath: string; filename?: string; selectedPages?: number[] } };
     const isVision = maybeVision.taskType === "vision" && !!maybeVision.attachment;
     // PDFs are now parsed into per-page compressed JPEGs (1024px max edge, JPEG 80)
@@ -956,7 +917,6 @@ export class ModelGateway implements ModelClient {
       phase: "request" as const,
       taskType: request.taskType,
       modelId: request.modelId,
-      devWorkload: isDev,
       providerModel: model.model,
       baseUrl: model.baseUrl,
       endpoint: `${model.baseUrl}/chat/completions`,
@@ -968,6 +928,7 @@ export class ModelGateway implements ModelClient {
       userPromptChars: typeof userContent === "string" ? userContent.length : JSON.stringify(userContent).length,
       userPromptPreview: typeof userContent === "string" ? userContent.slice(0, 2000) : "[multipart vision]",
       visionUpload: this.lastVisionUpload ?? null,
+
       visionPartsCount: Array.isArray(visionParts) ? visionParts.length : 0,
       visionPartTypes: Array.isArray(visionParts) ? visionParts.map((p) => (p as { type: string }).type) : [],
     };
@@ -1155,9 +1116,9 @@ export class ModelGateway implements ModelClient {
       if (response.status < 200 || response.status >= 300) {
         const detail = rawText.slice(0, 2000);
         persistGatewayTrace(request.runId, request.requestId, { phase: "provider_error", taskType: request.taskType, status: response.status, detail, rawText });
-        if (response.status === 402) throw new Error(`insufficient OpenRouter credits for model ${model.model} (max_tokens ${maxTokens} requested): ${detail}`);
         throw new Error(`provider rejected request (status ${response.status}, model ${model.model}, endpoint ${model.baseUrl}/chat/completions): ${detail}`);
       }
+
       try {
         envelope = JSON.parse(rawText) as unknown as { choices?: Array<{ message?: { content?: unknown; finish_reason?: string }; finish_reason?: string }>; usage?: unknown; id?: string; model?: string };
       } catch (e) {
@@ -1282,15 +1243,8 @@ export class ModelGateway implements ModelClient {
    * Keeps PORT as index to eliminate duplicate probes, and model name as display.
    */
   async healthDistinct(): Promise<ModelHealth[]> {
-    if (this.isDevRoutingActive()) {
-      const all = await this.health();
-      return all.slice(0, 1).map((h) => ({
-        ...h,
-        modelId: this.registry.get(h.modelId)?.model || h.modelId,
-      }));
-    }
-
     const distinctByEndpoint = new Map<string, { port: number; model: ModelRegistryEntry }>();
+
     const entriesToProbe: ModelRegistryEntry[] = [];
     for (const pool of this.endpointPool.values()) {
       for (const m of pool) {
@@ -1389,11 +1343,9 @@ export class ModelGateway implements ModelClient {
       maxTokens?: number;
       timeoutMs?: number;
       onChunk?: (delta: string) => void;
-      devWorkload?: boolean;
     },
   ): Promise<AIResult<AgentTurnResponse>> {
-    const isDev = this.isDevRoutingActive(options?.devWorkload !== undefined ? ({ devWorkload: options.devWorkload } as any) : undefined);
-    const model = this.resolveNextEndpoint(modelId, isDev);
+    const model = this.resolveNextEndpoint(modelId);
     if (!model) {
       return {
         ok: false,
@@ -1408,18 +1360,7 @@ export class ModelGateway implements ModelClient {
     }
 
     const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
-    if (model.runtime === "openrouter" && !key) {
-      return {
-        ok: false,
-        error: {
-          kind: "ai-error",
-          code: "model_rejected_request",
-          message: `Missing environment credential ${model.apiKeyEnv}`,
-          retryable: false,
-          modelId,
-        },
-      };
-    }
+
 
     const isLocal = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/i.test(model.baseUrl) ||
       model.runtime === "ollama" ||

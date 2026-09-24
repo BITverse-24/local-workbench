@@ -62,11 +62,10 @@ export const IPC_ONBOARDING = {
   SAVE_CONFIG: "workbench:saveModelConfig",
   TEST_ENDPOINT: "workbench:testModelEndpoint",
   RESET: "workbench:resetOnboarding",
-  GET_DEV_MODE: "workbench:getDevMode",
-  SET_DEV_MODE: "workbench:setDevMode",
 } as const;
 
 export type OnboardingChannel = (typeof IPC_ONBOARDING)[keyof typeof IPC_ONBOARDING];
 
 export const ONBOARDING_CHANNELS: readonly string[] = Object.values(IPC_ONBOARDING);
+
 

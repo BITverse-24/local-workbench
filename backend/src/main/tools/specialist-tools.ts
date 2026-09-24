@@ -193,7 +193,6 @@ export const extractDocumentTool: AgentTool = {
         relativePath: `runs/${context.runId}/input/${filename}`,
       },
       inputMode: "typed-scan",
-      devWorkload: context.devWorkload,
     };
 
     const resp = await context.gateway.execute(req);
@@ -257,7 +256,6 @@ export const generateCodeTool: AgentTool = {
       inputFile: { attachmentId: randomUUID(), filename, mediaType: "text/x-python", rowCount: 1 },
       allowedLanguage: "python",
       executionRules: ["sandbox-isolated"],
-      devWorkload: context.devWorkload,
     };
 
     const resp = await context.gateway.execute(req);
@@ -315,7 +313,6 @@ export const generateTextTool: AgentTool = {
       taskType: "draft",
       modelId: "draft-qwen3",
       responseFormat: "chat-result",
-      devWorkload: context.devWorkload,
     } as any);
 
     if (!resp.ok) {

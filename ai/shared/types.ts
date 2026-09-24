@@ -1,6 +1,7 @@
 export type TaskType = "vision" | "draft" | "code";
 
-export type ModelRuntime = "mlx-lm" | "llama-server" | "openrouter" | "ollama";
+export type ModelRuntime = "mlx-lm" | "llama-server" | "ollama";
+
 
 export type ModelId =
   | "vision-qwen25vl"

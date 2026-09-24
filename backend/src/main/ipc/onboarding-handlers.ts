@@ -1,12 +1,13 @@
 import path from "node:path";
 import { z } from "zod";
-import type { DevModeStatus, ModelConfigRow, ModelEndpointTestResult, OnboardingStatus } from "../../shared/contracts.js";
+import type { ModelConfigRow, ModelEndpointTestResult, OnboardingStatus } from "../../shared/contracts.js";
 import { getSetting, setSetting } from "../persistence/settings-store.js";
 import { IPC_ONBOARDING } from "./channels.js";
 import type { IpcRegistrar } from "./handlers.js";
 import { RunManager } from "../run/manager.js";
 import { RAGService } from "../rag/rag-service.js";
 import { buildRegistryFromRows, sanitizeHost, writeRegistryToFile } from "../gateway/registry.js";
+
 
 const modelConfigRowSchema = z.object({
   role: z.enum(["vision", "coding", "draft", "plan", "embedding"]),
@@ -154,10 +155,6 @@ export function restoreSavedModelConfig(
   runManager: RunManager,
   ragService: RAGService,
 ): boolean {
-  // Restore dev mode setting into memory
-  const devMode = !!getSetting<boolean>("dev_use_openrouter");
-  runManager.getGateway().setDevMode(devMode);
-
   const models = getSetting<ModelConfigRow[]>("configured_models");
   if (!models || !Array.isArray(models) || models.length === 0) return false;
 
@@ -181,22 +178,6 @@ export function restoreSavedModelConfig(
   }
 }
 
-export function handleGetDevMode(runManager: RunManager): DevModeStatus {
-  const devOpenRouter = runManager.getGateway().isDevRoutingActive();
-  const hasOpenRouterKey = Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim());
-  return { devOpenRouter, hasOpenRouterKey };
-}
-
-export function handleSetDevMode(
-  input: unknown,
-  runManager: RunManager,
-): { ok: boolean; devOpenRouter: boolean } {
-  const { enabled } = z.object({ enabled: z.boolean() }).parse(input);
-  setSetting("dev_use_openrouter", enabled);
-  runManager.getGateway().setDevMode(enabled);
-  return { ok: true, devOpenRouter: enabled };
-}
-
 export function registerOnboardingHandlers(
   ipcMain: IpcRegistrar,
   runManager: RunManager,
@@ -218,12 +199,5 @@ export function registerOnboardingHandlers(
   ipcMain.handle(IPC_ONBOARDING.RESET, () => {
     return handleResetOnboarding();
   });
-
-  ipcMain.handle(IPC_ONBOARDING.GET_DEV_MODE, () => {
-    return handleGetDevMode(runManager);
-  });
-
-  ipcMain.handle(IPC_ONBOARDING.SET_DEV_MODE, (_event, input) => {
-    return handleSetDevMode(input, runManager);
-  });
 }
+

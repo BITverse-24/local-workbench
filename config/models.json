@@ -1,57 +1,54 @@
 {
-  "$comment": "Dev OpenRouter stand-ins; LAN switch edits this file only.",
+  "$comment": "Sovereign Workbench offline local endpoints (Ollama/llama-server).",
   "models": [
     {
       "id": "vision-qwen25vl",
       "taskTypes": ["vision"],
-      "runtime": "openrouter",
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "model": "qwen/qwen3-vl-32b-instruct",
+      "runtime": "ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "model": "qwen2.5vl:3b",
       "capabilities": ["text", "image-input", "structured-output"],
       "requestTimeoutMs": 60000,
       "healthPath": "/models",
-      "apiKeyEnv": "OPENROUTER_API_KEY",
       "enabled": true,
       "maxOutputTokens": 4096
     },
     {
       "id": "draft-qwen3",
       "taskTypes": ["draft"],
-      "runtime": "openrouter",
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "model": "qwen/qwen3-8b",
+      "runtime": "ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "model": "qwen3:8b",
       "capabilities": ["text", "structured-output"],
       "requestTimeoutMs": 45000,
       "healthPath": "/models",
-      "apiKeyEnv": "OPENROUTER_API_KEY",
       "enabled": true,
       "maxOutputTokens": 8192
     },
     {
       "id": "code-qwen25coder",
       "taskTypes": ["code"],
-      "runtime": "openrouter",
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "model": "qwen/qwen3-coder",
+      "runtime": "ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "model": "qwen2.5-coder:7b",
       "capabilities": ["text", "code-generation"],
       "requestTimeoutMs": 60000,
       "healthPath": "/models",
-      "apiKeyEnv": "OPENROUTER_API_KEY",
       "enabled": true,
       "maxOutputTokens": 8192
     },
     {
       "id": "plan-qwen3-8b",
       "taskTypes": ["plan"],
-      "runtime": "openrouter",
-      "baseUrl": "https://openrouter.ai/api/v1",
-      "model": "qwen/qwen3-8b",
+      "runtime": "ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "model": "qwen3:8b",
       "capabilities": ["text", "structured-output"],
       "requestTimeoutMs": 45000,
       "healthPath": "/models",
-      "apiKeyEnv": "OPENROUTER_API_KEY",
       "enabled": true,
       "maxOutputTokens": 8192
     }
   ]
 }
+

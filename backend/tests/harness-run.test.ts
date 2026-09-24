@@ -787,12 +787,12 @@ describe("Workspace Task Execution Loop (HARNESS.md)", () => {
 
   it("manager.health returns distinct models keyed by port without repeating for multiple roles", async () => {
     const mockGateway = {
-      isDevRoutingActive: () => false,
       healthDistinct: vi.fn().mockResolvedValue([
         { modelId: "qwen2.5-coder-7b-instruct-mlx", port: 1234, available: true, latencyMs: 12, checkedAt: new Date().toISOString() },
       ]),
       health: vi.fn().mockResolvedValue([]),
     };
+
 
     manager = new RunManager(mockGateway as any);
     const health = await manager.health();

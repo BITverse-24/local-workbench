@@ -18,10 +18,11 @@ with live acceptance tests.
 ## Expected identity and health
 
 - Stable identity `code-qwen25coder` (see `../shared/types.ts`).
-- Deployment: the model behind this identity may run through OpenRouter or an
-  OpenAI-compatible local service such as Ollama reporting health at
+- Deployment: the model behind this identity runs through an
+  OpenAI-compatible local service such as Ollama or llama-server reporting health at
   `GET <baseUrl>/models`; routing stays behind the stable ID so provider swaps
   need no contract change.
+
 - Provider startup, weights, GPU startup, and supervision are outside this
   contract. The backend's typed `CodeModel` owns the runtime boundary while
   `ModelClient` owns transport/provider details.

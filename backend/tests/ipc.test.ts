@@ -68,8 +68,10 @@ describe("chat IPC over mock Electron ipcMain", () => {
     expect(RUN_CHANNELS).toHaveLength(10);
     expect(WORKSPACE_CHANNELS).toHaveLength(9);
     expect(KB_CHANNELS).toHaveLength(6);
-    expect(ONBOARDING_CHANNELS).toHaveLength(6);
+    expect(ONBOARDING_CHANNELS).toHaveLength(4);
   });
+
+
 
 
   it("createChat → getChatHistory round-trips a uuid4 chat", async () => {
@@ -163,8 +165,9 @@ describe("chat IPC over mock Electron ipcMain", () => {
       }),
     ).rejects.toThrow();
     await expect(
-      fake.invoke(IPC_CHAT.SET_SETTING, { key: "OPENROUTER_API_KEY", value: "sk-..." }),
+      fake.invoke(IPC_CHAT.SET_SETTING, { key: "API_KEY", value: "sk-..." }),
     ).rejects.toThrow();
+
     await expect(
       fake.invoke(IPC_CHAT.EDIT_MESSAGE, { messageId: "bad", content: "x" }),
     ).rejects.toThrow();

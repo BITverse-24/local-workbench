@@ -22,7 +22,6 @@ export interface AgentLoopOptions {
   context: ToolExecutionContext;
   recentChatHistory?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   maxTurns?: number;
-  devWorkload?: boolean;
   onPlanConfirmationRequired?: (plan: string, firstCalls: any[]) => Promise<boolean>;
   isCancelled?: () => boolean;
   emitEvent: (event: RunEvent) => void;
@@ -258,7 +257,6 @@ export class AgentLoop {
       context,
       recentChatHistory = [],
       maxTurns = 100,
-      devWorkload = false,
       onPlanConfirmationRequired,
       emitEvent,
     } = options;
@@ -350,7 +348,6 @@ export class AgentLoop {
           runId,
           temperature: 0.2,
           maxTokens: turnMaxTokens,
-          devWorkload,
           onChunk,
         },
       );

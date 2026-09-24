@@ -119,7 +119,8 @@ backend/src/main/
 ## Non-negotiable operational rules
 
 1. All model weights, application dependencies, local criteria, and demo files are installed before the air-gapped rehearsal.
-2. The registry shipped in the demo bundle contains only approved LAN IP addresses and ports. A development registry may point at an approved OpenRouter account during dev; it is never used in rehearsals or finals.
+2. The registry contains only approved local and LAN IP addresses and ports (e.g., local Ollama or private LAN servers).
+
 3. Each run has an isolated local workspace under `data/runs/<runId>/`; inputs are preserved read-only and outputs are isolated.
 4. Consequential actions (destructive shell commands, official file creation, script execution) are subject to plan confirmation gates or safety checks. All actions and approvals are recorded in SQLite.
 5. A failed health check, invalid model output, schema failure, or tool timeout produces a visible run failure; it must never silently fall back to an unauthorized external internet service.

@@ -38,15 +38,15 @@ reason.
 
 ```ts
 type TaskType = "vision" | "draft" | "code" | "plan";
-type ModelRuntime = "mlx-lm" | "llama-server" | "openrouter" | "ollama";
+type ModelRuntime = "mlx-lm" | "llama-server" | "ollama";
 type ModelId = "vision-qwen25vl" | "draft-qwen3" | "code-qwen25coder" | "plan-qwen3-8b";
 
 interface ModelRegistryEntry {
   id: ModelId;
   taskTypes: TaskType[];
   runtime: ModelRuntime;
-  baseUrl: string;                 // approved local/LAN /v1 endpoint, or OpenRouter URL in dev
-  model: string;                   // local server alias, Ollama tag, or OpenRouter model slug
+  baseUrl: string;                 // approved local/LAN /v1 endpoint
+  model: string;                   // local server alias or Ollama tag
   capabilities: ModelCapability[];
   requestTimeoutMs: number;
   healthPath: "/models";
@@ -56,7 +56,8 @@ interface ModelRegistryEntry {
 }
 ```
 
-During development, the working registry may contain OpenRouter entries marked with `runtime: 'openrouter'`. The committed offline deployment points only to local or private LAN endpoints (such as `mlx-lm`, `llama-server`, or Ollama).
+The offline deployment points strictly to local or private LAN endpoints (such as `mlx-lm`, `llama-server`, or Ollama).
+
 
 | Route / Role | Target Model | Runtime / Protocol | Purpose |
 | --- | --- | --- | --- |
@@ -152,15 +153,14 @@ interface WorkbenchBridge {
   saveModelConfig(models: ModelConfigRow[]): Promise<{ ok: boolean }>;
   testModelEndpoint(input: { host: string; port: number; modelName?: string; role?: string }): Promise<ModelEndpointTestResult>;
   resetOnboarding(): Promise<{ ok: boolean }>;
-  getDevMode(): Promise<DevModeStatus>;
-  setDevMode(enabled: boolean): Promise<{ ok: boolean; devOpenRouter: boolean }>;
 }
+
 ```
 
 ```ts
 type RunEvent =
   | { type: "run_state"; runId: string; state: RunState }
-  | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number; devWorkload?: boolean; providerEndpoint?: string }
+  | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number; providerEndpoint?: string }
   | { type: "plan_step"; runId: string; index: number; text: string }
   | { type: "agent_thinking"; runId: string; text: string; turn?: number }
   | { type: "tool_call"; runId: string; tool: ToolName; summary: string; callId?: string; args?: Record<string, unknown> }

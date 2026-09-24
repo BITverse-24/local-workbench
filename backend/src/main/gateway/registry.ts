@@ -4,8 +4,9 @@ import { z } from "zod";
 import type { ModelConfigRow, ModelId, ModelRegistryEntry } from "../../shared/contracts.js";
 import { getSetting } from "../persistence/settings-store.js";
 
-const entry = z.object({ id: z.enum(["vision-qwen25vl", "draft-qwen3", "code-qwen25coder", "plan-qwen3-8b"]), taskTypes: z.array(z.enum(["vision", "draft", "code", "plan"])), runtime: z.enum(["mlx-lm", "llama-server", "openrouter", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), apiKeyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(), enabled: z.boolean(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
+const entry = z.object({ id: z.enum(["vision-qwen25vl", "draft-qwen3", "code-qwen25coder", "plan-qwen3-8b"]), taskTypes: z.array(z.enum(["vision", "draft", "code", "plan"])), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
 const config = z.object({ $comment: z.string().optional(), models: z.array(entry).min(1) }).strict();
+
 
 let configuredModelsPath: string | null = null;
 
@@ -141,18 +142,6 @@ export function defaultLocalRegistry(): Map<ModelId, ModelRegistryEntry> {
   return new Map(entries.map((e) => [e.id, e]));
 }
 
-export function loadDevOpenRouterRegistry(filePath?: string): Map<ModelId, ModelRegistryEntry> {
-  const resolved = filePath ?? defaultModelsPath();
-  let text: string;
-  try {
-    text = readFileSync(resolved, "utf8");
-  } catch {
-    throw new Error(`models.json not found (tried: ${resolved})`);
-  }
-  const parsed = config.parse(JSON.parse(text));
-  return new Map(parsed.models.map((model) => [model.id, model as ModelRegistryEntry]));
-}
-
 export function loadProductionRegistryEntriesFromDb(dbModels?: ModelConfigRow[]): ModelRegistryEntry[] {
   let rows = dbModels;
   if (!rows) {
@@ -175,23 +164,6 @@ export function loadProductionRegistryFromDb(dbModels?: ModelConfigRow[]): Map<M
   return new Map(entries.map((e) => [e.id, e]));
 }
 
-let inMemoryDevOpenRouter: boolean | null = null;
-
-export function setInMemoryDevOpenRouter(enabled: boolean | null): void {
-  inMemoryDevOpenRouter = enabled;
-}
-
-export function isDevOpenRouterActive(): boolean {
-  if (inMemoryDevOpenRouter !== null) return inMemoryDevOpenRouter;
-  if (process.env.WORKBENCH_DEV_OPENROUTER === "true" || process.env.WORKBENCH_DEV_WORKLOAD === "true") {
-    return true;
-  }
-  try {
-    return !!getSetting<boolean>("dev_use_openrouter");
-  } catch {
-    return false;
-  }
-}
 
 export function loadRegistry(filePath?: string): Map<ModelId, ModelRegistryEntry> {
   const resolved = filePath ?? defaultModelsPath();

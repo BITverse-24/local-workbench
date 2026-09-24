@@ -296,10 +296,3 @@ export async function resetOnboarding(): Promise<{ ok: boolean }> {
   return bridge().resetOnboarding();
 }
 
-export async function getDevMode(): Promise<DevModeStatus> {
-  return bridge().getDevMode();
-}
-
-export async function setDevMode(enabled: boolean): Promise<{ ok: boolean; devOpenRouter: boolean }> {
-  return bridge().setDevMode(enabled);
-}

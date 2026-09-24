@@ -26,7 +26,6 @@ export interface SemanticRouterInput {
   hasWorkspace?: boolean;
   workspaceFiles?: string[];
   history?: Array<{ role: string; content: string }>;
-  devWorkload?: boolean;
   temperature?: number;
 }
 

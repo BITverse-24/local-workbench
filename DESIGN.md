@@ -97,10 +97,9 @@ SERVER`). Exception: the single eyebrow label per panel may be uppercase at `--t
 `--text-secondary` text, sentence case: `Air-gapped · zero egress`. Dot only present when it
 reflects real state, colored with `--status-success`/`--status-error`, no pulse/glow.
 
-**Dev-mode badges** ("Dev: OpenRouter [OFF]", orange; "Dev: Reset Onboarding", orange)
-→ Move both into a single "Developer" overflow menu (small icon button, not two loud inline
-pills). If they must stay inline for hackathon convenience, restyle as outline-only chips using
-`--border-default` and `--text-secondary`, zero fill color.
+**Dev-mode badge** ("Dev: Reset Onboarding")
+→ Style as outline-only chip using `--border-default` and `--text-secondary`, zero fill color.
+
 
 **Role/task badges** (VISION teal / CODE purple / DRAFT green / PLAN yellow / EMBED teal)
 → One shared badge style for all five: `--bg-surface-raised` bg, `--border-subtle` border,

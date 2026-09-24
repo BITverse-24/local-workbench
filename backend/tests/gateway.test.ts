@@ -54,7 +54,8 @@ afterEach(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("vision attachment payloads (OpenRouter)", () => {
+describe("vision attachment payloads", () => {
+
   it("sends PDFs as file parts, not image_url", async () => {
     const relativePath = `runs/${RUN_ID}/input/report.pdf`;
     const abs = path.join(process.env.WORKBENCH_DATA_ROOT!, relativePath);

@@ -10,7 +10,6 @@ export interface ToolExecutionContext {
   harness?: HarnessManager;
   grounding?: RAGGroundingProvider;
   emitRunEvent?: (event: any) => void;
-  devWorkload?: boolean;
 }
 
 export interface ToolExecutionResult {

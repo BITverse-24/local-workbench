@@ -32,9 +32,9 @@
 │         │                  ▼                      ▼                    │
 │         │            HarnessManager          ModelGateway              │
 │         │                  │                      │                    │
-│         │           ┌──────┴──────┐         ┌─────┴────────┐           │
-│         │           ▼             ▼         ▼              ▼           │
-│         │       PathGuard    HarnessTools  OpenRouter    LAN Models    │
+│         │           ┌──────┴──────┐         ┌────────┴────────┐        │
+│         │           ▼             ▼         ▼                 ▼        │
+│         │       PathGuard    HarnessTools  Local Ollama   LAN Models   │
 │         │                                                              │
 │         ▼                                                              │
 │   SQLite Persistence (workbench.db) & Scoped Run Files (data/runs/)    │
@@ -46,10 +46,11 @@
 - **Frontend Renderer**: React 18, Vite 5, Tailwind CSS v4, Lucide icons
 - **Backend Orchestrator**: Node.js, TypeScript
 - **Persistence**: SQLite via `better-sqlite3` with WAL mode
-- **Model Gateway**: OpenAI-compatible REST endpoints (OpenRouter for dev, LAN `mlx-lm` / `llama-server` / `ollama` for air-gapped production)
+- **Model Gateway**: OpenAI-compatible REST endpoints (Local & LAN `mlx-lm` / `llama-server` / `ollama` for air-gapped deployment)
 - **Local RAG & Vector**: ChromaDB (`chromadb`), local chunking & embeddings
 - **Document & Data Processing**: `pdfjs-dist`, `canvas`, `exceljs`
 - **Testing**: Vitest 3
+
 
 ---
 

@@ -230,14 +230,8 @@ interface WorkbenchBridge {
   saveModelConfig: (models: ModelConfigRow[]) => Promise<{ ok: boolean }>;
   testModelEndpoint: (input: { host: string; port: number; modelName?: string; role?: string }) => Promise<ModelEndpointTestResult>;
   resetOnboarding: () => Promise<{ ok: boolean }>;
-  getDevMode: () => Promise<DevModeStatus>;
-  setDevMode: (enabled: boolean) => Promise<{ ok: boolean; devOpenRouter: boolean }>;
 }
 
-interface DevModeStatus {
-  devOpenRouter: boolean;
-  hasOpenRouterKey: boolean;
-}
 
 type ModelRoleType = "vision" | "coding" | "draft" | "plan" | "embedding";
 

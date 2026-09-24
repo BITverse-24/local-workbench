@@ -113,10 +113,6 @@ contextBridge.exposeInMainWorld("workbench", {
     ipcRenderer.invoke("workbench:testModelEndpoint", input),
   resetOnboarding: () =>
     ipcRenderer.invoke("workbench:resetOnboarding"),
-  getDevMode: () =>
-    ipcRenderer.invoke("workbench:getDevMode"),
-  setDevMode: (enabled: boolean) =>
-    ipcRenderer.invoke("workbench:setDevMode", { enabled }),
 
 
   // push events — returns unsubscribe

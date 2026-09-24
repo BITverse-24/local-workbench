@@ -39,8 +39,9 @@ RULES:
 /**
  * OpenAI function-calling tool definitions for the harness tools.
  * These are passed in the `tools` parameter of the chat completions API.
- * Compatible with OpenRouter, Ollama, and all OpenAI-compatible providers.
+ * Compatible with Ollama, llama-server, and all OpenAI-compatible local providers.
  */
+
 export const HARNESS_TOOL_DEFINITIONS = [
   {
     type: "function" as const,

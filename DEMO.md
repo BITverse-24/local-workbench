@@ -86,7 +86,7 @@ Familiarize yourself with the key regions of the desktop UI:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
-│ TITLEBAR: [Sovereign Workbench] [Air-gapped · zero egress] [Dev: OpenRouter OFF] │
+│ TITLEBAR: [Sovereign Workbench] [Air-gapped · zero egress]                       │
 ├───────────────┬──────────────────────────────────────────────────┬───────────────┤
 │ EXPLORER      │ CHAT & DELIVERABLE STREAM                        │ SETTINGS      │
 │ (Left Sidebar)│                                                  │ (Right Panel) │
@@ -102,7 +102,7 @@ Familiarize yourself with the key regions of the desktop UI:
 
 - **TitleBar**:
   - **Status Pill**: Shows `Air-gapped · zero egress` with a green indicator dot.
-  - **Dev Toggle**: Shows `Dev: OpenRouter [OFF]` (for production/local DB routing) or `[ON]` (when testing with cloud keys). For official air-gapped demo runs, keep this `[OFF]` or as configured by the testing environment.
+
 - **Left Sidebar (Explorer)**:
   - **Chats Panel**: Lists conversation history. Has the **`+ New`** button to clear the state and create an isolated run between flows.
   - **Files Panel**: Shows registered workspace files and directory tree when a local harness folder is mounted.

@@ -1,5 +1,5 @@
 export type TaskType = "vision" | "draft" | "code" | "plan";
-export type ModelRuntime = "mlx-lm" | "llama-server" | "openrouter" | "ollama";
+export type ModelRuntime = "mlx-lm" | "llama-server" | "ollama";
 export type ModelId = "vision-qwen25vl" | "draft-qwen3" | "code-qwen25coder" | "plan-qwen3-8b";
 export type ModelCapability = "text" | "image-input" | "structured-output" | "code-generation";
 export interface ModelRegistryEntry { id: ModelId; taskTypes: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; maxOutputTokens?: number; }
@@ -33,7 +33,6 @@ export interface ModelRequestBase {
   maxTokens?: number;
   temperature?: number;
   history?: ModelConversationMessage[];
-  devWorkload?: boolean;
   onChunk?: (delta: string) => void;
 }
 export interface VisionModelRequest extends ModelRequestBase { taskType: "vision"; modelId: "vision-qwen25vl"; responseFormat: "vision-result"; attachment: AttachmentReference; inputMode: "typed-scan"; }
@@ -81,7 +80,7 @@ export interface GroundingChunk {
 }
 export type RunEvent =
   | { type: "run_state"; runId: string; state: RunState }
-  | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number; devWorkload?: boolean; providerEndpoint?: string }
+  | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number; providerEndpoint?: string }
   | { type: "plan_step"; runId: string; index: number; text: string }
   | { type: "agent_thinking"; runId: string; text: string; turn?: number }
   | { type: "tool_call"; runId: string; tool: ToolName; summary: string; callId?: string; args?: Record<string, unknown> }
@@ -195,10 +194,6 @@ export interface OnboardingStatus {
   configuredModels?: ModelConfigRow[];
 }
 
-export interface DevModeStatus {
-  devOpenRouter: boolean;
-  hasOpenRouterKey: boolean;
-}
 
 // ── Sovereign Workbench v2 Unified Agent Tool Contracts ────────────────────
 

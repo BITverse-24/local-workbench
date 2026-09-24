@@ -168,7 +168,6 @@ All primary inspection findings from attached files have been reviewed against g
     const { generateDeliverableTool } = await import("../src/main/tools/specialist-tools.js");
     const mockContext: any = {
       runId: "test-deliverable-placeholder",
-      devWorkload: false,
     };
 
     await expect(

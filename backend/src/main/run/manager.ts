@@ -253,7 +253,6 @@ export interface StartRunInput {
   chatId?: string;
   temperature?: number;
   groundingEnabled?: boolean;
-  devWorkload?: boolean;
 }
 export interface ConfirmInput {
   runId: string;
@@ -280,7 +279,6 @@ export class RunManager {
   private readonly confirming = new Map<string, Promise<void>>();
   private readonly runTemperatures = new Map<string, number>();
   private readonly runGroundingEnabled = new Map<string, boolean>();
-  private readonly runDevWorkload = new Map<string, boolean>();
   private readonly codeModel: CodeModel;
   private readonly chatModel: ChatModel;
   public harness?: HarnessManager;
@@ -426,9 +424,6 @@ export class RunManager {
     }
     if (typeof input.groundingEnabled === "boolean") {
       this.runGroundingEnabled.set(runId, input.groundingEnabled);
-    }
-    if (typeof input.devWorkload === "boolean") {
-      this.runDevWorkload.set(runId, input.devWorkload);
     }
     if (attachments.length > 0 && requestedAttachments.length === 0) {
       // A follow-up gets a fresh run workspace. Copy the prior attachments into
@@ -867,7 +862,6 @@ export class RunManager {
           hasWorkspace: isWorkspaceActive,
           workspaceFiles,
           history,
-          devWorkload: this.runDevWorkload.get(runId) ?? false,
         },
         this.gateway,
       );
@@ -906,7 +900,6 @@ export class RunManager {
           }
           this.emit(event);
         },
-        devWorkload: this.runDevWorkload.get(runId) ?? false,
       };
 
       let attachedFilesSection = "";
@@ -1102,7 +1095,6 @@ OPERATIONAL & PLAN GUIDELINES:
           context: toolContext,
           recentChatHistory: history,
           maxTurns: 100,
-          devWorkload: this.runDevWorkload.get(runId) ?? false,
           isCancelled: () => getState(runId) === "cancelled",
           onPlanConfirmationRequired: async (planText, mutatingCalls) => {
             return new Promise<boolean>((resolve) => {
