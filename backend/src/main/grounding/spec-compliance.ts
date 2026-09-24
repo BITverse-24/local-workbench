@@ -242,7 +242,12 @@ export async function ensureGoverningSpecIndexed(
     const filePath = path.resolve(options.attachedSpecFile.relativePath);
     if (existsSync(filePath)) {
       const content = readFileSync(filePath, "utf8");
-      const docId = path.basename(options.attachedSpecFile.filename, path.extname(options.attachedSpecFile.filename));
+      const idMatch =
+        content.match(/\b(SOP[-\s]?\d+|SPEC[-\s]?\d+)\b/i) ||
+        options.attachedSpecFile.filename.match(/\b(SOP[-\s]?\d+|SPEC[-\s]?\d+)\b/i);
+      const docId = idMatch
+        ? idMatch[1].replace(/\s+/g, "-").toUpperCase()
+        : path.basename(options.attachedSpecFile.filename, path.extname(options.attachedSpecFile.filename));
       await ragService.ingestDocument(
         {
           doc_id: docId,
@@ -323,10 +328,11 @@ export async function retrieveGoverningSpecChunks(
       const results = await ragService.query(queryTerms, 6);
       for (const r of results) {
         const sec = r.section_label && r.section_label !== "unknown" ? r.section_label : "";
-        const citation = `[${(r.doc_id || docId).toUpperCase()}${sec ? ` §${sec}` : ""}]`;
+        const effectiveDocId = docId || r.doc_id;
+        const citation = `[${effectiveDocId.toUpperCase()}${sec ? ` §${sec}` : ""}]`;
         chunks.push({
           chunkId: r.chunk_id,
-          docId: r.doc_id || docId,
+          docId: effectiveDocId,
           sectionLabel: sec,
           sectionTitle: (r as any).section_title || r.section_label,
           text: r.text,

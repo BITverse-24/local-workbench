@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { workspaceTools, listDirTool, readFileTool, searchTool, writeFileTool } from "../src/main/tools/workspace-tools.js";
-import { specialistTools, generateDeliverableTool } from "../src/main/tools/specialist-tools.js";
+import { specialistTools, generateDeliverableTool, extractDocumentTool } from "../src/main/tools/specialist-tools.js";
 import type { ToolExecutionContext } from "../src/main/tools/types.js";
 import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import path from "node:path";
@@ -104,6 +104,34 @@ describe("Agent Tools Suite", () => {
 
     const res = await readFileTool.execute({ path: "deliverable.txt" }, mockContext);
     expect(res.output).toContain("Official inspection deliverable content on disk.");
+
+    rmSync(path.join(process.cwd(), "data", "runs", runId), { recursive: true, force: true });
+  });
+
+  it("extracts digital text from an attached SVG file via extract_document tool", async () => {
+    const runId = "33333333-4444-5555-6666-777777777777";
+    const runInputDir = path.join(process.cwd(), "data", "runs", runId, "input");
+    mkdirSync(runInputDir, { recursive: true });
+    const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="500" height="200">
+      <text x="20" y="30">PUMP SKID P-101</text>
+      <text x="20" y="60">Rating: Class 300</text>
+      <text x="20" y="90">Note: Inspector observed slight cavitation</text>
+    </svg>`;
+    writeFileSync(path.join(runInputDir, "drawing.svg"), svgContent, "utf8");
+
+    const mockContext: ToolExecutionContext = {
+      runId,
+      workspaceRoot: "",
+      gateway: {} as any,
+    };
+
+    const res = await extractDocumentTool.execute({ filename: "drawing.svg" }, mockContext);
+    expect(res.summary).toContain('Extracted vector diagram text and annotations from SVG "drawing.svg"');
+    const parsed = JSON.parse(res.output);
+    expect(parsed.extractionMethod).toBe("digital_svg");
+    expect(parsed.sourceText).toContain("PUMP SKID P-101");
+    expect(parsed.sourceText).toContain("Rating: Class 300");
+    expect(parsed.sourceText).toContain("Inspector observed slight cavitation");
 
     rmSync(path.join(process.cwd(), "data", "runs", runId), { recursive: true, force: true });
   });

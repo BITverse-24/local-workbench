@@ -473,6 +473,156 @@ export function extractEmbeddedToolCalls(rawContent: string): { toolCalls: Agent
   return { toolCalls: [], cleanedContent: rawContent };
 }
 
+export function getJsonSchema(responseFormat: string): Record<string, any> | undefined {
+  if (responseFormat === "code-result") {
+    return {
+      type: "json_schema",
+      json_schema: {
+        name: "code_result",
+        strict: false,
+        schema: {
+          type: "object",
+          properties: {
+            filename: { type: "string" },
+            source: { type: "string" },
+            expectedResult: { type: "string" },
+            inputFiles: { type: "array", items: { type: "string" } },
+            outputFiles: { type: "array", items: { type: "string" } },
+            allowedImports: { type: "array", items: { type: "string", enum: ["csv", "datetime", "math"] } },
+            outputMode: { type: "string", enum: ["chat", "artifact", "chat_and_artifact"] },
+            artifactKind: { type: "string", enum: ["docx", "pdf", "xlsx", "csv", "txt", "json", "md", ""] },
+            artifactFilename: { type: "string" },
+            artifactRationale: { type: "string" }
+          },
+          required: ["filename", "source", "expectedResult", "inputFiles", "outputFiles", "allowedImports"]
+        }
+      }
+    };
+  }
+  if (responseFormat === "vision-result") {
+    return {
+      type: "json_schema",
+      json_schema: {
+        name: "vision_result",
+        strict: false,
+        schema: {
+          type: "object",
+          properties: {
+            sourceText: { type: "string" },
+            findings: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  findingId: { type: "string" },
+                  title: { type: "string" },
+                  value: { type: "string" },
+                  pageReferenceIds: { type: "array", items: { type: "string" } },
+                  confidence: { type: "string", enum: ["high", "medium", "low"] },
+                  evidence: { type: "string" }
+                },
+                required: ["findingId", "title", "value", "pageReferenceIds", "confidence", "evidence"]
+              }
+            },
+            pageReferences: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  page: { type: "integer" },
+                  text: { type: "string" },
+                  location: { type: "string" }
+                },
+                required: ["id", "page", "text"]
+              }
+            }
+          },
+          required: ["findings", "pageReferences"]
+        }
+      }
+    };
+  }
+  if (responseFormat === "draft-result") {
+    return {
+      type: "json_schema",
+      json_schema: {
+        name: "draft_result",
+        strict: false,
+        schema: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            body: { type: "string" },
+            sections: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string", enum: ["equipment-header", "findings-summary", "recommendation"] },
+                  heading: { type: "string" },
+                  body: { type: "string" }
+                },
+                required: ["id", "heading", "body"]
+              }
+            },
+            missingInformation: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  field: { type: "string" },
+                  note: { type: "string" }
+                },
+                required: ["field", "note"]
+              }
+            }
+          },
+          required: ["title", "body", "sections", "missingInformation"]
+        }
+      }
+    };
+  }
+  if (responseFormat === "harness-step") {
+    return {
+      type: "json_schema",
+      json_schema: {
+        name: "harness_step",
+        strict: false,
+        schema: {
+          type: "object",
+          properties: {
+            thought: { type: "string" },
+            action: { type: "string", enum: ["tool_call", "final_answer"] },
+            tool: { type: "string", enum: ["list_dir", "read_file", "search", "write_file", "run_command"] },
+            args: { type: "object" },
+            text: { type: "string" }
+          },
+          required: ["thought", "action"]
+        }
+      }
+    };
+  }
+  if (responseFormat === "file-result") {
+    return {
+      type: "json_schema",
+      json_schema: {
+        name: "file_result",
+        strict: false,
+        schema: {
+          type: "object",
+          properties: {
+            filename: { type: "string" },
+            content: { type: "string" }
+          },
+          required: ["filename", "content"]
+        }
+      }
+    };
+  }
+  return undefined;
+}
+
 export interface VisionUploadInfo { originalBytes: number; finalBytes: number; resized: boolean; mediaType: string; }
 export class ModelGateway implements ModelClient {
   readonly dbRegistry: Map<string, ModelRegistryEntry>;
@@ -647,6 +797,10 @@ export class ModelGateway implements ModelClient {
               resized: true,
               mediaType: prepared.mediaType,
             };
+            if (svgText && svgText.trim().length > 0) {
+              const enrichedPrompt = `${(request as { userPrompt: string }).userPrompt}\n\n[SVG Vector Drawing Text Content]\n${svgText.slice(0, 4000)}`;
+              (request as { userPrompt: string }).userPrompt = enrichedPrompt;
+            }
             return [
               {
                 type: "image_url",
@@ -753,157 +907,20 @@ export class ModelGateway implements ModelClient {
     const isLocal = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/i.test(model.baseUrl) || model.runtime === "ollama" || model.runtime === "mlx-lm" || model.runtime === "llama-server";
 
     // Map the internal ResponseFormat to a strict JSON schema if applicable.
+    // Map the internal ResponseFormat to a strict JSON schema if applicable.
     // For local model servers (LM Studio, mlx-lm, llama-server, Ollama), compiling complex
     // multi-property JSON schemas into GBNF grammars on the CPU blocks execution for 2-4 seconds
     // before GPU prefill begins. Using { type: "json_object" } eliminates this CPU grammar stall
     // completely while local instruct models adhere to the requested JSON shape in the prompt.
+    const jsonSchemaPayload = getJsonSchema(request.responseFormat);
     let responseFormatPayload: any = undefined;
     if (isFreeText) {
       // Free text chat / drafting / execution summary: disable structured output completely.
       responseFormatPayload = undefined;
     } else if (isLocal && (request.responseFormat === "code-result" || request.responseFormat === "harness-step" || request.responseFormat === "vision-result" || request.responseFormat === "draft-result")) {
       responseFormatPayload = { type: "json_object" };
-    } else if (request.responseFormat === "code-result") {
-      responseFormatPayload = {
-        type: "json_schema",
-        json_schema: {
-          name: "code_result",
-          strict: false,
-          schema: {
-            type: "object",
-            properties: {
-              filename: { type: "string" },
-              source: { type: "string" },
-              expectedResult: { type: "string" },
-              inputFiles: { type: "array", items: { type: "string" } },
-              outputFiles: { type: "array", items: { type: "string" } },
-              allowedImports: { type: "array", items: { type: "string", enum: ["csv", "datetime", "math"] } },
-              outputMode: { type: "string", enum: ["chat", "artifact", "chat_and_artifact"] },
-              artifactKind: { type: "string", enum: ["docx", "pdf", "xlsx", "csv", "txt", "json", "md", ""] },
-              artifactFilename: { type: "string" },
-              artifactRationale: { type: "string" }
-            },
-            required: ["filename", "source", "expectedResult", "inputFiles", "outputFiles", "allowedImports"]
-          }
-        }
-      };
-    } else if (request.responseFormat === "vision-result") {
-      responseFormatPayload = {
-        type: "json_schema",
-        json_schema: {
-          name: "vision_result",
-          strict: false,
-          schema: {
-            type: "object",
-            properties: {
-              sourceText: { type: "string" },
-              findings: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    findingId: { type: "string" },
-                    title: { type: "string" },
-                    value: { type: "string" },
-                    pageReferenceIds: { type: "array", items: { type: "string" } },
-                    confidence: { type: "string", enum: ["high", "medium", "low"] },
-                    evidence: { type: "string" }
-                  },
-                  required: ["findingId", "title", "value", "pageReferenceIds", "confidence", "evidence"]
-                }
-              },
-              pageReferences: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    id: { type: "string" },
-                    page: { type: "integer" },
-                    text: { type: "string" },
-                    location: { type: "string" }
-                  },
-                  required: ["id", "page", "text"]
-                }
-              }
-            },
-            required: ["findings", "pageReferences"]
-          }
-        }
-      };
-    } else if (request.responseFormat === "draft-result") {
-      responseFormatPayload = {
-        type: "json_schema",
-        json_schema: {
-          name: "draft_result",
-          strict: false,
-          schema: {
-            type: "object",
-            properties: {
-              title: { type: "string" },
-              body: { type: "string" },
-              sections: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    id: { type: "string", enum: ["equipment-header", "findings-summary", "recommendation"] },
-                    heading: { type: "string" },
-                    body: { type: "string" }
-                  },
-                  required: ["id", "heading", "body"]
-                }
-              },
-              missingInformation: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    field: { type: "string" },
-                    note: { type: "string" }
-                  },
-                  required: ["field", "note"]
-                }
-              }
-            },
-            required: ["title", "body", "sections", "missingInformation"]
-          }
-        }
-      };
-    } else if (request.responseFormat === "harness-step") {
-      responseFormatPayload = {
-        type: "json_schema",
-        json_schema: {
-          name: "harness_step",
-          strict: false,
-          schema: {
-            type: "object",
-            properties: {
-              thought: { type: "string" },
-              action: { type: "string", enum: ["tool_call", "final_answer"] },
-              tool: { type: "string", enum: ["list_dir", "read_file", "search", "write_file", "run_command"] },
-              args: { type: "object" },
-              text: { type: "string" }
-            },
-            required: ["thought", "action"]
-          }
-        }
-      };
-    } else if (request.responseFormat === "file-result") {
-      responseFormatPayload = {
-        type: "json_schema",
-        json_schema: {
-          name: "file_result",
-          strict: false,
-          schema: {
-            type: "object",
-            properties: {
-              filename: { type: "string" },
-              content: { type: "string" }
-            },
-            required: ["filename", "content"]
-          }
-        }
-      };
+    } else if (jsonSchemaPayload) {
+      responseFormatPayload = jsonSchemaPayload;
     }
 
     const messagesPayload: Array<{ role: string; content: any }> = [
@@ -991,30 +1008,135 @@ export class ModelGateway implements ModelClient {
       let latencyMs = Date.now() - t0;
       try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
 
-      // If provider rejects response_format (e.g. LM Studio, Ollama, or local model server requiring 'text' or rejecting json_schema)
+      // 1. If provider rejects response_format (e.g. LM Studio, Ollama, or local model server requiring 'json_schema' or 'text')
       if (response.status === 400 && /response_format|json_schema|json_object|type.*must be/i.test(rawText)) {
-        logGatewayError(request, "provider rejected response_format, retrying with text type", rawText.slice(0, 200));
-        const retryBody = JSON.stringify({
-          model: model.model,
-          messages: messagesPayload,
-          response_format: { type: "text" },
-          temperature: request.temperature ?? 0.2,
-          max_tokens: maxTokens,
-        });
-        const retryResponse = await this.transport.request(`${model.baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: retryBody }, effectiveTimeout);
-        if (retryResponse.status >= 200 && retryResponse.status < 300) {
-          response = retryResponse;
-          try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
+        let retryFormat: any = undefined;
+        // If provider explicitly requires json_schema or text (e.g. LM Studio rejecting json_object):
+        if (/must be 'json_schema'|json_schema.*text|text.*json_schema/i.test(rawText) && jsonSchemaPayload && responseFormatPayload?.type !== "json_schema") {
+          retryFormat = jsonSchemaPayload;
         } else {
-          // Try omitting response_format altogether
-          const plainBody = JSON.stringify({
-            model: model.model,
-            messages: messagesPayload,
-            temperature: request.temperature ?? 0.2,
-            max_tokens: maxTokens,
-          });
-          const plainResponse = await this.transport.request(`${model.baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: plainBody }, effectiveTimeout);
-          if (plainResponse.status >= 200 && plainResponse.status < 300) {
+          retryFormat = { type: "text" };
+        }
+
+        responseFormatPayload = retryFormat;
+        logGatewayError(request, `provider rejected response_format, retrying with ${retryFormat?.type ?? "plain"}`, rawText.slice(0, 200));
+        const retryBody = JSON.stringify({
+          ...requestPayload,
+          response_format: retryFormat,
+        });
+        const retryResponse = await this.transport.request(
+          `${model.baseUrl}/chat/completions`,
+          { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: retryBody },
+          effectiveTimeout
+        );
+        response = retryResponse;
+        try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
+
+        // If retry with json_schema or text also failed because of response_format, try text or omitting:
+        if (response.status === 400 && /response_format|json_schema|json_object|type.*must be/i.test(rawText)) {
+          if (retryFormat?.type !== "text") {
+            responseFormatPayload = { type: "text" };
+            logGatewayError(request, "retrying with text response_format", rawText.slice(0, 200));
+            const textBody = JSON.stringify({
+              ...requestPayload,
+              response_format: { type: "text" },
+            });
+            const textResponse = await this.transport.request(
+              `${model.baseUrl}/chat/completions`,
+              { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: textBody },
+              effectiveTimeout
+            );
+            response = textResponse;
+            try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
+          }
+
+          if (response.status === 400 && /response_format|json_schema|json_object|type.*must be/i.test(rawText)) {
+            responseFormatPayload = undefined;
+            logGatewayError(request, "retrying without response_format", rawText.slice(0, 200));
+            const plainPayload = { ...requestPayload };
+            delete plainPayload.response_format;
+            const plainResponse = await this.transport.request(
+              `${model.baseUrl}/chat/completions`,
+              { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify(plainPayload) },
+              effectiveTimeout
+            );
+            response = plainResponse;
+            try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
+          }
+        }
+      }
+
+      // 2. If provider rejects multimodal/image input (e.g. text-only model in LM Studio/Ollama assigned to vision task, or missing vision projector)
+      if (response.status === 400 && isVision && /image|vision|multimodal|expected a string|content.*type|unsupported.*media|mmproj/i.test(rawText)) {
+        logGatewayError(request, "provider rejected image/multimodal input, retrying with text-only prompt", rawText.slice(0, 200));
+        const textOnlyMessages = messagesPayload.map((m) => {
+          if (Array.isArray(m.content)) {
+            const textParts = m.content
+              .filter((p: any) => p.type === "text" && typeof p.text === "string")
+              .map((p: any) => p.text);
+            return {
+              role: m.role,
+              content: textParts.join("\n\n") || `[Attachment: ${maybeVision.attachment?.filename ?? "document"}] Please inspect the document content and answer the user query.`,
+            };
+          }
+          return m;
+        });
+
+        const activeFormat = (response.status === 400 && /response_format|json/i.test(rawText)) ? undefined : responseFormatPayload;
+        const textOnlyPayload: Record<string, any> = {
+          model: model.model,
+          messages: textOnlyMessages,
+          temperature: effectiveTemperature,
+          max_tokens: maxTokens,
+        };
+        if (activeFormat !== undefined) {
+          textOnlyPayload.response_format = activeFormat;
+        }
+
+        const textOnlyResponse = await this.transport.request(
+          `${model.baseUrl}/chat/completions`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
+            body: JSON.stringify(textOnlyPayload),
+          },
+          effectiveTimeout
+        );
+        response = textOnlyResponse;
+        try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
+
+        // If the text-only attempt also encounters a response_format rejection:
+        if (response.status === 400 && /response_format|json_schema|json_object|type.*must be/i.test(rawText)) {
+          if (/must be 'json_schema'|json_schema.*text|text.*json_schema/i.test(rawText) && jsonSchemaPayload && activeFormat?.type !== "json_schema") {
+            textOnlyPayload.response_format = jsonSchemaPayload;
+          } else {
+            textOnlyPayload.response_format = { type: "text" };
+          }
+          logGatewayError(request, `text-only retry rejected response_format, retrying with ${textOnlyPayload.response_format?.type ?? "plain"}`, rawText.slice(0, 200));
+          const textFormatResponse = await this.transport.request(
+            `${model.baseUrl}/chat/completions`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
+              body: JSON.stringify(textOnlyPayload),
+            },
+            effectiveTimeout
+          );
+          response = textFormatResponse;
+          try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
+
+          if (response.status === 400 && /response_format|json_schema|json_object|type.*must be/i.test(rawText)) {
+            delete textOnlyPayload.response_format;
+            logGatewayError(request, "text-only retry without response_format", rawText.slice(0, 200));
+            const plainResponse = await this.transport.request(
+              `${model.baseUrl}/chat/completions`,
+              {
+                method: "POST",
+                headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
+                body: JSON.stringify(textOnlyPayload),
+              },
+              effectiveTimeout
+            );
             response = plainResponse;
             try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
           }
@@ -1499,7 +1621,7 @@ export class ModelGateway implements ModelClient {
       }
 
       const t0 = Date.now();
-      const response = await this.transport.request(
+      let response = await this.transport.request(
         `${model.baseUrl}/chat/completions`,
         {
           method: "POST",
@@ -1509,8 +1631,28 @@ export class ModelGateway implements ModelClient {
         effectiveTimeout,
       );
 
-      const rawText = await response.text();
-      const durationMs = Date.now() - t0;
+      let rawText = await response.text();
+      let durationMs = Date.now() - t0;
+
+      if (response.status === 400 && /response_format|json_schema|json_object|type.*must be/i.test(rawText)) {
+        const plainBody = JSON.stringify({
+          model: model.model,
+          messages: fallbackMessages,
+          temperature: effectiveTemperature,
+          max_tokens: effectiveMaxTokens,
+        });
+        const retryRes = await this.transport.request(
+          `${model.baseUrl}/chat/completions`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
+            body: plainBody,
+          },
+          effectiveTimeout,
+        );
+        response = retryRes;
+        try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
+      }
 
       if (response.status >= 200 && response.status < 300) {
         const envelope = JSON.parse(rawText);

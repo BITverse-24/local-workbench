@@ -54,6 +54,9 @@ export function registerKnowledgeBaseHandlers(
   });
 
   ipc.handle(IPC_KB.STATS, async () => {
+    if (!ragService.isInitialized()) {
+      await ragService.init();
+    }
     return ragService.getStats();
   });
 }
