@@ -1,3 +1,10 @@
+// Polyfill Promise.try for Node.js < 22 environments (Electron 30 is Node 20.16)
+if (typeof (Promise as any).try !== "function") {
+  (Promise as any).try = function <T>(fn: (...args: any[]) => T, ...args: any[]): Promise<T> {
+    return new Promise((resolve) => resolve(fn(...args)));
+  };
+}
+
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";

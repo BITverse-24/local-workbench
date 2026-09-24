@@ -1,25 +1,92 @@
-import { DocumentRecord } from "./types.js";
+// Polyfill Promise.try for Node.js < 22 environments (Electron 30 is Node 20.16)
+if (typeof (Promise as any).try !== "function") {
+  (Promise as any).try = function <T>(fn: (...args: any[]) => T, ...args: any[]): Promise<T> {
+    return new Promise((resolve) => resolve(fn(...args)));
+  };
+}
+
+import { DocumentRecord, ChunkRecord } from "./types.js";
 import { chunkDocument } from "./chunker.js";
 import { RAGDatabase } from "./db.js";
 import { EmbeddingService } from "./embedding.js";
 import fs from "node:fs/promises";
-// Helper function to extract text from a local PDF file
-async function extractTextFromPDF(filePath: string): Promise<string> {
-  const data = await fs.readFile(filePath);
-  try {
-    const pdfjs: any = await import("pdfjs-dist");
-    const pdf = await pdfjs.getDocument({ data: new Uint8Array(data) }).promise;
+import path from "node:path";
 
-    let fullText = "";
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      const text = content.items.map((item: any) => item.str).join(" ");
-      fullText += text + "\n\n";
+async function loadPdfJs(): Promise<any> {
+  try {
+    const legacy: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    if (legacy && (typeof legacy.getDocument === "function" || typeof legacy.default?.getDocument === "function")) {
+      return typeof legacy.default?.getDocument === "function" ? legacy.default : legacy;
     }
-    return fullText;
-  } catch {
-    return data.toString("utf8");
+  } catch {}
+
+  try {
+    const standard: any = await import("pdfjs-dist");
+    return typeof standard.default?.getDocument === "function" ? standard.default : standard;
+  } catch {}
+
+  return null;
+}
+
+export interface ExtractedPdfPage {
+  pageNumber: number;
+  text: string;
+}
+
+export interface PdfExtractionResult {
+  numPages: number;
+  pages: ExtractedPdfPage[];
+}
+
+// Helper function to extract page-by-page text from a local PDF file
+async function extractPagesFromPDF(filePath: string): Promise<PdfExtractionResult> {
+  const data = await fs.readFile(filePath);
+  const pdfjs = await loadPdfJs();
+  if (!pdfjs) {
+    throw new Error(`PDF processing engine (pdfjs-dist) could not be loaded for "${path.basename(filePath)}"`);
+  }
+
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(data),
+    useSystemFonts: true,
+  });
+
+  try {
+    const pdf = await loadingTask.promise;
+    const numPages = pdf.numPages;
+    const pages: ExtractedPdfPage[] = [];
+
+    for (let i = 1; i <= numPages; i++) {
+      const page = await pdf.getPage(i);
+      try {
+        const content = await page.getTextContent();
+        const textPieces: string[] = [];
+        for (const item of (content.items || []) as any[]) {
+          if (typeof item?.str === "string") {
+            textPieces.push(item.str);
+            if (item.hasEOL) {
+              textPieces.push("\n");
+            }
+          }
+        }
+        const pageText = textPieces
+          .join(" ")
+          .replace(/ \n /g, "\n")
+          .replace(/ \n/g, "\n")
+          .replace(/\n /g, "\n")
+          .trim();
+
+        if (pageText.length > 0) {
+          pages.push({ pageNumber: i, text: pageText });
+        }
+      } finally {
+        page.cleanup?.();
+      }
+    }
+    pdf.cleanup?.();
+    return { numPages, pages };
+  } finally {
+    await loadingTask.destroy?.();
   }
 }
 
@@ -28,19 +95,24 @@ export class IngestionPipeline {
   constructor(private embeddingService: EmbeddingService) {}
 
   async ingestDocument(doc: DocumentRecord, filePath: string): Promise<number> {
-    // Basic text extraction based on file extension
-    let text = "";
-    if (filePath.endsWith(".pdf")) {
-      text = await extractTextFromPDF(filePath);
-    } else {
-      text = await fs.readFile(filePath, "utf-8");
-    }
+    const rawChunks: Omit<ChunkRecord, "embedding">[] = [];
 
-    // Since chunkDocument takes text and pageNumber for basic chunks,
-    // we use a single string here to chunk by structure.
-    // In a real PDF, we'd map text back to pages, but for MVP we approximate
-    // or just pass 1 for text files.
-    const rawChunks = chunkDocument(doc, text, 1);
+    if (filePath.toLowerCase().endsWith(".pdf")) {
+      const { numPages, pages } = await extractPagesFromPDF(filePath);
+      doc.page_count = numPages;
+      let chunkSeq = 1;
+      for (const page of pages) {
+        const pageChunks = chunkDocument(doc, page.text, page.pageNumber);
+        for (const c of pageChunks) {
+          c.chunk_id = `${doc.doc_id}-p${page.pageNumber}-${chunkSeq++}`;
+          rawChunks.push(c);
+        }
+      }
+    } else {
+      const text = await fs.readFile(filePath, "utf-8");
+      doc.page_count = doc.page_count || 1;
+      rawChunks.push(...chunkDocument(doc, text, 1));
+    }
 
     if (rawChunks.length === 0) {
       return 0;

@@ -200,6 +200,64 @@ A formal rejection notice and quarantine tag must be issued within 2 hours.
       expect(afterDeleteStats.chunkCount).toBe(0);
       expect(ragService.listDocuments().length).toBe(0);
     });
+
+    it("ingests multi-page PDF document, preserving page numbers and chunk citations", async () => {
+      const ragService = new RAGService(tempDir, {
+        baseUrl: "http://localhost:1234/v1",
+        model: "nomic-embed-text:v1.5",
+      });
+
+      await ragService.init();
+
+      const pdfPath = path.resolve(__dirname, "../../demo/flow_a/inspection-report-E201-annotated.pdf");
+      const docRecord = {
+        doc_id: "ir-e201",
+        title: "Inspection Report E201",
+        source_path: pdfPath,
+        doc_type: "inspection_report",
+        department: "Operations",
+        effective_date: "2026-08-20",
+        indexed_at: new Date().toISOString(),
+        page_count: 0,
+        ocr_used: false,
+      };
+
+      const chunkCount = await ragService.ingestDocument(docRecord, pdfPath);
+      expect(chunkCount).toBeGreaterThan(0);
+
+      // Verify document record updated with actual page count
+      const docs = ragService.listDocuments();
+      expect(docs.length).toBe(1);
+      expect(docs[0].doc_id).toBe("ir-e201");
+      expect(docs[0].page_count).toBe(2);
+
+      // Verify chunks in SQLite retain their proper page numbers
+      const sqlite = RAGDatabase.getSqlite();
+      const chunks = sqlite
+        .prepare("SELECT chunk_id, page, text FROM chunks_fts WHERE doc_id = ?")
+        .all("ir-e201") as { chunk_id: string; page: number; text: string }[];
+
+      expect(chunks.length).toBe(chunkCount);
+      const pages = new Set(chunks.map((c) => c.page));
+      expect(pages.has(1)).toBe(true);
+      expect(pages.has(2)).toBe(true);
+
+      // Query page 1 content
+      const queryResultsP1 = await ragService.query("tube wall thickness", 2);
+      expect(queryResultsP1.length).toBeGreaterThan(0);
+      expect(queryResultsP1[0].doc_id).toBe("ir-e201");
+      expect(queryResultsP1[0].page).toBe(1);
+
+      // Query page 2 content
+      const queryResultsP2 = await ragService.query("Channel-head gasket degradation", 2);
+      expect(queryResultsP2.length).toBeGreaterThan(0);
+      expect(queryResultsP2[0].doc_id).toBe("ir-e201");
+      expect(queryResultsP2[0].page).toBe(2);
+
+      // Clean up
+      await ragService.deleteDocument("ir-e201");
+      expect(ragService.getStats().docCount).toBe(0);
+    });
   });
 
   describe("RAGGroundingProvider", () => {

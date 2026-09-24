@@ -10,6 +10,13 @@
 // structural `IpcRegistrar` surface is used, so this file is unit-testable and
 // bundler-friendly.
 
+// Polyfill Promise.try for Node.js < 22 environments (Electron 30 is Node 20.16)
+if (typeof (Promise as any).try !== "function") {
+  (Promise as any).try = function <T>(fn: (...args: any[]) => T, ...args: any[]): Promise<T> {
+    return new Promise((resolve) => resolve(fn(...args)));
+  };
+}
+
 import { setDataDir } from "./run/filesystem.js";
 import { configurePersistence, initDb } from "./persistence/db.js";
 import { configureModels } from "./gateway/registry.js";
