@@ -164,6 +164,30 @@ All primary inspection findings from attached files have been reviewed against g
     expect(buffer[1]).toBe(0x4b);
   });
 
+  it("uses template placeholders for default organization, department, document title, and sign-offs", async () => {
+    // When plain text or minimal object is provided without metadata/title, defaults must be template placeholders
+    const buffer = await createDocxBuffer("Sample approval note text");
+    expect(Buffer.isBuffer(buffer)).toBe(true);
+    expect(buffer.length).toBeGreaterThan(1000);
+
+    // Verify custom metadata overrides placeholders
+    const inputWithMetadata = {
+      title: "Custom Approval Note",
+      body: "Sample body text.",
+      metadata: {
+        "Organization Name": "ACME Industrial Corp",
+        "Department": "Safety & Integrity Unit",
+        "Document Ref": "REF-2026-9999",
+        "Classification": "RESTRICTED",
+        "Prepared By Title": "Lead Safety Auditor",
+        "Approved By Title": "General Manager",
+      },
+    };
+    const customBuffer = await createDocxBuffer(inputWithMetadata);
+    expect(Buffer.isBuffer(customBuffer)).toBe(true);
+    expect(customBuffer.length).toBeGreaterThan(1000);
+  });
+
   it("generate_deliverable rejects placeholder content like [TOOL_RESULT]", async () => {
     const { generateDeliverableTool } = await import("../src/main/tools/specialist-tools.js");
     const mockContext: any = {

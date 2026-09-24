@@ -460,13 +460,16 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
   const children: any[] = [];
 
   // Header / Enterprise Letterhead
+  const orgName = data.metadata?.["Organization Name"] || data.metadata?.["Organization"] || "[ORGANIZATION NAME]";
+  const deptName = data.metadata?.["Department"] || data.metadata?.["Division"] || "[DEPARTMENT / DIVISION NAME]";
+
   children.push(
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 120 },
       children: [
         new TextRun({
-          text: "SOVEREIGN ENGINEERING & DEFENCE SERVICES",
+          text: orgName,
           bold: true,
           size: 28,
         }),
@@ -480,7 +483,7 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
       spacing: { after: 360 },
       children: [
         new TextRun({
-          text: "TECHNICAL INSPECTION & COMPLIANCE DIVISION",
+          text: deptName,
           bold: true,
           size: 20,
         }),
@@ -489,7 +492,7 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
   );
 
   // Document Title
-  const docTitle = data.title || "Technical Inspection Approval Note";
+  const docTitle = data.title || "[DOCUMENT TITLE]";
   children.push(
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
@@ -508,9 +511,9 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
   const metaRows: TableRow[] = [];
   const currentDate = new Date().toISOString().split("T")[0];
   const metadataMap: Record<string, string> = {
-    "Document Ref": data.metadata?.["Document Ref"] || `AN-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+    "Document Ref": data.metadata?.["Document Ref"] || "[REF_NUMBER]",
     "Date": data.metadata?.["Date"] || currentDate,
-    "Classification": data.metadata?.["Classification"] || "OFFICIAL / SENSITIVE",
+    "Classification": data.metadata?.["Classification"] || "[CLASSIFICATION]",
     ...(data.metadata || {}),
   };
 
@@ -765,6 +768,9 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
   }
 
   // Signature Block with explicit DXA column widths (2 columns: 4680, 4680 dxa)
+  const preparedByTitle = data.metadata?.["Prepared By Title"] || "[PREPARED_BY_TITLE]";
+  const approvedByTitle = data.metadata?.["Approved By Title"] || "[APPROVED_BY_TITLE]";
+
   children.push(new Paragraph({ spacing: { before: 360, after: 120 } }));
   children.push(
     new Table({
@@ -785,7 +791,7 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
               children: [
                 new Paragraph({ children: [new TextRun({ text: "Prepared By:", bold: true, size: 18 })] }),
                 new Paragraph({ children: [new TextRun({ text: "___________________________", size: 18 })] }),
-                new Paragraph({ children: [new TextRun({ text: "Inspection Engineer / Assessor", size: 18 })] }),
+                new Paragraph({ children: [new TextRun({ text: preparedByTitle, size: 18 })] }),
                 new Paragraph({ children: [new TextRun({ text: `Date: ${currentDate}`, size: 18 })] }),
               ],
             }),
@@ -801,7 +807,7 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
               children: [
                 new Paragraph({ children: [new TextRun({ text: "Approved By:", bold: true, size: 18 })] }),
                 new Paragraph({ children: [new TextRun({ text: "___________________________", size: 18 })] }),
-                new Paragraph({ children: [new TextRun({ text: "Chief Technical Authority", size: 18 })] }),
+                new Paragraph({ children: [new TextRun({ text: approvedByTitle, size: 18 })] }),
                 new Paragraph({ children: [new TextRun({ text: `Date: ${currentDate}`, size: 18 })] }),
               ],
             }),
@@ -855,7 +861,7 @@ export function parseDocxText(text: string): DocxDraftInput {
     sections.push({ heading: currentHeading, body: currentBodyLines.join("\n").trim() });
   }
 
-  let title = "Approval Note";
+  let title = "[DOCUMENT TITLE]";
   if (sections.length > 0 && sections[0].heading.toLowerCase().includes("approval")) {
     title = sections[0].heading;
   }
