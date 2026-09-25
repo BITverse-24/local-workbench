@@ -1073,12 +1073,13 @@ OPERATIONAL & PLAN GUIDELINES:
      d) NEVER output a bare promise or empty placeholder without either executing \`generate_deliverable\` or outputting the complete document content with all findings, measurements, and tables.
 8. DELIVERABLE DOCUMENT STRUCTURE (FOR \`generate_deliverable\` CONTENT ONLY):
    The markdown passed inside the \`content\` parameter of \`generate_deliverable\` MUST follow this formal industrial structure:
-   - **Header & Ref**: Subject line, Equipment / Asset IDs, Date, Classification (e.g. OFFICIAL / TECHNICAL APPROVAL).
+   - **Template & Organization Policy**: The content must contain all specific findings, measurements, and requirements provided by the user. Any unprovided organization details, headers, addresses, reference numbers, classifications, or sign-off titles MUST use standard template placeholders in brackets (e.g., [ORG_NAME], [DEPARTMENT / DIVISION NAME], [SENDER ADDRESS], [REF_NUMBER], [CLASSIFICATION], [PREPARED_BY_TITLE], [APPROVED_BY_TITLE]).
+   - **Header & Ref**: Subject line, Equipment / Asset IDs, Date, Classification (e.g. [CLASSIFICATION] or OFFICIAL / SENSITIVE).
    - **Clearance Verdict**: Direct fitness-for-service verdict (e.g. "REJECTION PENDING REPAIRS", "CONDITIONAL CLEARANCE"). Explicitly flag non-compliances (e.g. wall thinning below allowable limit).
    - **Findings & Measurements Table**: Markdown table with columns \`| Equipment | Component / Location | Measured Value | Allowable Limit | Deviation | Status |\`.
    - **Technical Evaluation & Risk Analysis**: Engineering consequence of findings (e.g. risk of rupture under operating pressure/temperature, degradation rate).
    - **Action Items & Assigned Roles**: Numbered, specific corrective actions (e.g. weld joint rechecking, gasket replacement, NDT verification).
-   - **Authority Sign-off Block**: Formal sign-off table / placeholders for Inspection Engineer, Maintenance Lead, and Plant Manager / Chief Technical Authority.`;
+   - **Authority Sign-off Block**: Formal sign-off table with template placeholders for titles/sign-offs (e.g., [PREPARED_BY_TITLE], [APPROVED_BY_TITLE]).`;
       }
 
       this.state(runId, "acting");
