@@ -54,6 +54,33 @@ export const SOP114_CITATION = "[SOP-114 §3.2]";
 export const SOP114_CRITERIA_SUMMARY =
   "Conditional clearance is supported only when affected tubes are scheduled for retubing and recommended gasket replacement is recorded before return to service.";
 
+// PERF OPTIMIZATION: Module-level static regular expression constants.
+// Hoisting regex patterns out of function call loops avoids repeated regex AST compilation on every evaluation call.
+const RANGE_WITH_UNIT_RX = /([\d.]+)\s*(?:–|-|to)\s*([\d.]+)\s*(mm|cm|in|m)\b/i;
+const SINGLE_WITH_UNIT_RX = /([\d.]+)\s*(mm|cm|in|m)\b/i;
+const RANGE_MATCH_RX = /([\d.]+)\s*(?:–|-|to)\s*([\d.]+)/;
+const SINGLE_MATCH_RX = /([\d.]+)/;
+
+const REPORT_ID_RX = /Report\s*ID:\s*([A-Za-z0-9_\-]+)/i;
+const TUBE_FINDING_SEARCH_RX = /tube|wall\s*thickness|thickness/i;
+const TUBE_RAW_TEXT_SEARCH_RX = /(?:tube|wall\s*thickness)[^\n.]{0,100}(?:measured|measuring|\d+\.?\d*)/i;
+const TUBE_MEASURED_VAL_RX = /(?:measured|measuring)[^\n.]+/i;
+const ALLOWABLE_VAL_RX = /allowable\s*(?:is|:)?\s*([\d.]+)/i;
+const ROWS_MATCH_RX = /rows?\s*[\d–-]+/i;
+
+const PITTING_SEARCH_RX = /pitting|corrosion/i;
+const PITTING_RAW_TEXT_SEARCH_RX = /pitting[^\n.]{0,80}(?:depth|measur|\d+\.?\d*)/i;
+const PITTING_VAL_RX = /pitting[^\n.]+/i;
+
+const GASKET_SEARCH_RX = /gasket/i;
+const GASKET_RAW_TEXT_SEARCH_RX = /gasket[^\n.]{0,50}(?:degrad|replace|leak|defect)/i;
+
+const WELD_ANNOTATION_RX = /(?:RECHECK|CHECK|VERIFY)\s+WELD[^\n.]*/i;
+const WELD_TEST_RX = /weld/i;
+
+const EXPLICIT_APPROVAL_AUTHORITY_RX = /approved\s*by|plant\s*manager\s*signature|authorized\s*signatory/i;
+const NO_APPROVAL_STATUS_RX = /no\s*approval\s*status\s*is\s*stated/i;
+
 /**
  * Extracts numeric measurements from text (e.g. "3.8–4.2 mm", "1.8 mm", "< 3.2 mm").
  */
@@ -61,7 +88,7 @@ export function extractMeasurements(text: string): { values: number[]; min?: num
   const values: number[] = [];
 
   // 1. Look for range with explicit unit first
-  const rangeWithUnit = text.match(/([\d.]+)\s*(?:–|-|to)\s*([\d.]+)\s*(mm|cm|in|m)\b/i);
+  const rangeWithUnit = text.match(RANGE_WITH_UNIT_RX);
   if (rangeWithUnit) {
     const min = parseFloat(rangeWithUnit[1]);
     const max = parseFloat(rangeWithUnit[2]);
@@ -71,7 +98,7 @@ export function extractMeasurements(text: string): { values: number[]; min?: num
   }
 
   // 2. Look for single measurement with explicit unit
-  const singleWithUnit = text.match(/([\d.]+)\s*(mm|cm|in|m)\b/i);
+  const singleWithUnit = text.match(SINGLE_WITH_UNIT_RX);
   if (singleWithUnit) {
     const val = parseFloat(singleWithUnit[1]);
     if (!isNaN(val)) values.push(val);
@@ -79,7 +106,7 @@ export function extractMeasurements(text: string): { values: number[]; min?: num
   }
 
   // 3. Fallback generic range
-  const rangeMatch = text.match(/([\d.]+)\s*(?:–|-|to)\s*([\d.]+)/);
+  const rangeMatch = text.match(RANGE_MATCH_RX);
   if (rangeMatch) {
     const min = parseFloat(rangeMatch[1]);
     const max = parseFloat(rangeMatch[2]);
@@ -88,7 +115,7 @@ export function extractMeasurements(text: string): { values: number[]; min?: num
     return { values, min, max, unit: "mm" };
   }
 
-  const singleMatch = text.match(/([\d.]+)/);
+  const singleMatch = text.match(SINGLE_MATCH_RX);
   if (singleMatch) {
     const val = parseFloat(singleMatch[1]);
     if (!isNaN(val)) values.push(val);
@@ -113,16 +140,16 @@ export function evaluateSop114Rules(
   const missingInformation: Array<{ field: string; note: string }> = [];
 
   // Extract source report ID dynamically from text if present
-  const reportIdMatch = combinedRaw.match(/Report\s*ID:\s*([A-Za-z0-9_\-]+)/i);
+  const reportIdMatch = combinedRaw.match(REPORT_ID_RX);
   const sourceReport = reportIdMatch ? reportIdMatch[1] : (findings[0]?.sourceFile ?? "inspection-report");
 
   // 1. Rule 1: Tube-wall measurements below minimum allowable value (< 3.2mm threshold or < allowable) => FAIL
   const tubeFinding = findings.find((f) =>
-    /tube|wall\s*thickness|thickness/i.test(`${f.title} ${f.value} ${f.evidence}`)
-  ) || (combinedRaw.match(/(?:tube|wall\s*thickness)[^\n.]{0,100}(?:measured|measuring|\d+\.?\d*)/i) ? {
+    TUBE_FINDING_SEARCH_RX.test(`${f.title} ${f.value} ${f.evidence}`)
+  ) || (combinedRaw.match(TUBE_RAW_TEXT_SEARCH_RX) ? {
     findingId: "tube-finding",
     title: "Tube wall thickness measurement",
-    value: combinedRaw.match(/(?:measured|measuring)[^\n.]+/i)?.[0] || "",
+    value: combinedRaw.match(TUBE_MEASURED_VAL_RX)?.[0] || "",
     sourceFile: sourceReport,
     page: 1,
     confidence: "high" as const,
@@ -134,12 +161,12 @@ export function evaluateSop114Rules(
     const measurements = extractMeasurements(tubeFinding.value);
     const minVal = measurements.min;
     // Extract allowable value from text if present (e.g. "minimum allowable is 4.6 mm")
-    const allowableMatch = `${tubeFinding.value} ${tubeFinding.evidence} ${combinedRaw}`.match(/allowable\s*(?:is|:)?\s*([\d.]+)/i);
+    const allowableMatch = `${tubeFinding.value} ${tubeFinding.evidence} ${combinedRaw}`.match(ALLOWABLE_VAL_RX);
     const allowableVal = allowableMatch ? parseFloat(allowableMatch[1]) : 3.2;
     const isBelowMin = minVal !== undefined ? minVal < allowableVal : true;
     const status: "fail" | "pass" = isBelowMin ? "fail" : "pass";
 
-    const rowsMatch = `${tubeFinding.value} ${tubeFinding.title} ${tubeFinding.evidence}`.match(/rows?\s*[\d–-]+/i);
+    const rowsMatch = `${tubeFinding.value} ${tubeFinding.title} ${tubeFinding.evidence}`.match(ROWS_MATCH_RX);
     const requiredAction = isBelowMin
       ? (rowsMatch ? `Retube the affected tubes in ${rowsMatch[0]}.` : "Retube the affected tubes prior to return to service.")
       : "Monitor tube wall thickness in next inspection cycle.";
@@ -159,11 +186,11 @@ export function evaluateSop114Rules(
 
   // 2. Rule 2: Pitting depth (> 1.0mm threshold => FAIL / must be recorded in approval record)
   const pittingFinding = findings.find((f) =>
-    /pitting|corrosion/i.test(`${f.title} ${f.value} ${f.evidence}`)
-  ) || (combinedRaw.match(/pitting[^\n.]{0,80}(?:depth|measur|\d+\.?\d*)/i) ? {
+    PITTING_SEARCH_RX.test(`${f.title} ${f.value} ${f.evidence}`)
+  ) || (combinedRaw.match(PITTING_RAW_TEXT_SEARCH_RX) ? {
     findingId: "pitting-finding",
     title: "Pitting corrosion measurement",
-    value: combinedRaw.match(/pitting[^\n.]+/i)?.[0] || "",
+    value: combinedRaw.match(PITTING_VAL_RX)?.[0] || "",
     sourceFile: sourceReport,
     page: 1,
     confidence: "high" as const,
@@ -196,8 +223,8 @@ export function evaluateSop114Rules(
 
   // 3. Rule 3: Gasket degradation => FAIL / Replacement recommended before return to service
   const gasketFinding = findings.find((f) =>
-    /gasket/i.test(`${f.title} ${f.value} ${f.evidence}`)
-  ) || (/gasket[^\n.]{0,50}(?:degrad|replace|leak|defect)/i.test(combinedRaw) ? {
+    GASKET_SEARCH_RX.test(`${f.title} ${f.value} ${f.evidence}`)
+  ) || (GASKET_RAW_TEXT_SEARCH_RX.test(combinedRaw) ? {
     findingId: "gasket-finding",
     title: "Gasket condition",
     value: "Degradation / replacement required",
@@ -221,7 +248,7 @@ export function evaluateSop114Rules(
 
   // 4. Rule 4: Handwritten annotations & unverified weld joints => UNKNOWN / RECHECK REQUIRED
   const annotationsToEvaluate = [...handwrittenNotes];
-  const weldAnnotationMatch = combinedRaw.match(/(?:RECHECK|CHECK|VERIFY)\s+WELD[^\n.]*/i);
+  const weldAnnotationMatch = combinedRaw.match(WELD_ANNOTATION_RX);
   if (weldAnnotationMatch && !annotationsToEvaluate.some((a) => a.text.includes(weldAnnotationMatch[0]))) {
     annotationsToEvaluate.push({
       text: weldAnnotationMatch[0],
@@ -234,7 +261,7 @@ export function evaluateSop114Rules(
 
   for (let i = 0; i < annotationsToEvaluate.length; i++) {
     const ann = annotationsToEvaluate[i];
-    const isWeldJoint = /weld/i.test(ann.text);
+    const isWeldJoint = WELD_TEST_RX.test(ann.text);
     const findingId = isWeldJoint ? "handwritten-weld-4b" : `handwritten-${i + 1}`;
     const requiredAction = isWeldJoint
       ? "Recheck weld joint 4B as flagged by field inspector; do not clear without verification."
@@ -252,8 +279,8 @@ export function evaluateSop114Rules(
 
   // 5. Rule 5: Signatory Authority / Approval Status => WARNING / UNKNOWN
   const hasExplicitApprovalAuthority =
-    /approved\s*by|plant\s*manager\s*signature|authorized\s*signatory/i.test(combinedRaw) &&
-    !/no\s*approval\s*status\s*is\s*stated/i.test(combinedRaw);
+    EXPLICIT_APPROVAL_AUTHORITY_RX.test(combinedRaw) &&
+    !NO_APPROVAL_STATUS_RX.test(combinedRaw);
 
   if (!hasExplicitApprovalAuthority && (findings.length > 0 || combinedRaw.length > 0)) {
     missingInformation.push({
