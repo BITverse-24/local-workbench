@@ -3,7 +3,7 @@
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { getDb } from "./db.js";
+import { getDb, prepareCached } from "./db.js";
 import { chatIdSchema } from "./chats.js";
 import type { ArtifactRef, AttachmentReference } from "../../shared/contracts.js";
 
@@ -44,11 +44,13 @@ export function addMessage(input: AddMessageInput): { id: string; seq: number } 
   const id = parsed.id ?? randomUUID();
   const now = new Date().toISOString();
   const txn = db.transaction(() => {
-    const prev = db
-      .prepare("SELECT COALESCE(MAX(seq), -1) AS maxSeq FROM messages WHERE chat_id = ?")
-      .get(parsed.chat_id) as { maxSeq: number };
+    const prev = prepareCached(
+      db,
+      "SELECT COALESCE(MAX(seq), -1) AS maxSeq FROM messages WHERE chat_id = ?",
+    ).get(parsed.chat_id) as { maxSeq: number };
     const seq = prev.maxSeq + 1;
-    db.prepare(
+    prepareCached(
+      db,
       "INSERT INTO messages(id, chat_id, run_id, role, content, model_id, created_at, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     ).run(
       id,
@@ -61,14 +63,15 @@ export function addMessage(input: AddMessageInput): { id: string; seq: number } 
       seq,
     );
     if (parsed.attachment_ids && parsed.attachment_ids.length > 0) {
-      const attachStmt = db.prepare(
+      const attachStmt = prepareCached(
+        db,
         "INSERT OR IGNORE INTO message_attachments(message_id, attachment_id) VALUES (?, ?)",
       );
       for (const attId of parsed.attachment_ids) {
         attachStmt.run(id, attId);
       }
     }
-    db.prepare("UPDATE chats SET updated_at = ? WHERE id = ?").run(now, parsed.chat_id);
+    prepareCached(db, "UPDATE chats SET updated_at = ? WHERE id = ?").run(now, parsed.chat_id);
     return seq;
   });
   const seq = txn();
@@ -78,9 +81,10 @@ export function addMessage(input: AddMessageInput): { id: string; seq: number } 
 export function listMessages(chat_id: string): Message[] {
   chatIdSchema.parse(chat_id);
   const db = getDb();
-  const rows = db
-    .prepare("SELECT * FROM messages WHERE chat_id = ? ORDER BY seq ASC")
-    .all(chat_id) as Message[];
+  const rows = prepareCached(
+    db,
+    "SELECT * FROM messages WHERE chat_id = ? ORDER BY seq ASC",
+  ).all(chat_id) as Message[];
 
   if (rows.length === 0) return [];
 
@@ -114,11 +118,10 @@ export function listMessages(chat_id: string): Message[] {
       }
     }
 
-    const allAttachments = db
-      .prepare(
-        `SELECT ma.message_id as messageId, a.attachment_id as attachmentId, a.filename, a.media_type as mediaType, a.size_bytes as sizeBytes, a.relative_path as relativePath FROM attachments a JOIN message_attachments ma ON a.attachment_id = ma.attachment_id JOIN messages m ON ma.message_id = m.id WHERE m.chat_id = ?`
-      )
-      .all(chat_id) as (AttachmentReference & { messageId: string })[];
+    const allAttachments = prepareCached(
+      db,
+      `SELECT ma.message_id as messageId, a.attachment_id as attachmentId, a.filename, a.media_type as mediaType, a.size_bytes as sizeBytes, a.relative_path as relativePath FROM attachments a JOIN message_attachments ma ON a.attachment_id = ma.attachment_id JOIN messages m ON ma.message_id = m.id WHERE m.chat_id = ?`,
+    ).all(chat_id) as (AttachmentReference & { messageId: string })[];
 
     for (const att of allAttachments) {
       const { messageId, ...ref } = att;
@@ -148,7 +151,10 @@ export function listMessages(chat_id: string): Message[] {
 export function editMessage(id: string, content: string): void {
   z.string().uuid().parse(id);
   z.string().min(1).max(MAX_CONTENT_CHARS).parse(content);
-  getDb()
-    .prepare("UPDATE messages SET content = ?, edited_at = ? WHERE id = ?")
-    .run(content, new Date().toISOString(), id);
+  const db = getDb();
+  prepareCached(db, "UPDATE messages SET content = ?, edited_at = ? WHERE id = ?").run(
+    content,
+    new Date().toISOString(),
+    id,
+  );
 }

@@ -16,6 +16,24 @@ interface TreeNode {
   type: 'file' | 'directory';
   size: number;
   children: Map<string, TreeNode>;
+  childList?: TreeNode[];
+}
+
+// PERF OPTIMIZATION: Compute pre-sorted child node lists during tree construction.
+// Attaching pre-sorted `childList` arrays directly to each directory `TreeNode`
+// eliminates redundant array allocations (`Array.from(...)`) and expensive string `localeCompare`
+// sorting on every React component re-render when expanding/collapsing folders.
+function sortChildren(node: TreeNode): void {
+  const childrenArray = Array.from(node.children.values()).sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  node.childList = childrenArray;
+  for (const child of childrenArray) {
+    if (child.type === 'directory') {
+      sortChildren(child);
+    }
+  }
 }
 
 function buildTree(entries: HarnessDirEntry[]): TreeNode {
@@ -48,6 +66,8 @@ function buildTree(entries: HarnessDirEntry[]): TreeNode {
       current = current.children.get(part)!;
     }
   }
+
+  sortChildren(rootNode);
 
   return rootNode;
 }
@@ -106,14 +126,7 @@ const TreeItem = memo(function TreeItem({
   const isDir = node.type === 'directory';
   const isExpanded = isFilterActive || expanded.has(node.relativePath);
 
-  // PERF OPTIMIZATION: Memoize child list sorting to avoid repeated array allocations
-  // and string localeComparisons on every component re-render when children haven't changed.
-  const childList = useMemo(() => {
-    return Array.from(node.children.values()).sort((a, b) => {
-      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-  }, [node.children]);
+  const childList = node.childList ?? [];
 
   return (
     <div>
@@ -204,10 +217,7 @@ export default function FileTree({
   }, [entries, filter]);
 
   const treeRoot = useMemo(() => buildTree(filteredEntries), [filteredEntries]);
-  const topLevelChildren = Array.from(treeRoot.children.values()).sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
+  const topLevelChildren = treeRoot.childList ?? [];
 
   const activeFilter = Boolean(externalFilterActive || filter.trim());
 
