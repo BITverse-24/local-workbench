@@ -281,6 +281,43 @@ Anything in the right column must be stated as planned, with the current limitat
 the evidence trail are built and tested today; the library is what we grow next.*
 
 
+## E.3 Judging conditions — and what they change
+
+**The facts:** the deck is reviewed **online, on a judge's own device, without a presenter**, inside a
+field of **~500 submissions per problem statement**.
+
+These two facts change the deck more than any content decision below. A live pitch is a
+performance; this is a **document**. Everything in Section G follows from that.
+
+**What it changes:**
+
+| Judging condition | Consequence for the deck |
+|---|---|
+| No presenter to explain | **Every slide must be self-contained.** A judge who lands on slide 4 and reads only it must still get a complete argument. No "as shown earlier", no "as we discussed", no build-up that only makes sense in sequence. |
+| Reviewed alone, at their own pace | **Density is now an advantage, not a risk.** The ~40-word-per-block limit set for projection is too strict here. A judge reading on their own screen will *reward* detail — what disqualifies them is thinness, not density. Raise the per-block budget and use the space. |
+| ~500 submissions in the queue | **The first five seconds of each slide decide whether it gets read.** A single scannable claim must be visible without effort. Judges are optimising for signal, not reading everything — we must survive the skim *and* reward the close read. |
+| No live demo | **A designed product visual replaces the demo, and it must be excellent.** A raw screenshot at small scale reads as an unfinished prototype; a well-designed mockup of the same interface reads as a considered product. See "The visual system", below. |
+| Depth lives in the technical blog | The blog is now **the answer to depth, not a substitute for a live demo.** It must be linked, findable, and written so a judge can open it cold and be impressed within two minutes. |
+| Judge may only read some of the deck | **The slides they are most likely to read are slide 2 and slide 3.** These two must carry the thesis, the differentiation, and the evidence. Nothing essential may live only on slides 5–7. |
+
+**The three concrete changes this produces:**
+
+1. **Every headline must stand alone as a claim.** A judge skimming fifteen headlines in isolation
+   should reconstruct the entire argument. Our headlines are written this way already — that is why
+   the closing line is *"The model was never the hard part"* and not *"Summary."*
+
+2. **The T-diagram and the skill demonstration move onto slide 2 and 3** — the two slides a judge is
+   guaranteed to read. Nothing that carries the argument may be deferred to slide 5.
+
+3. **The deck must be self-sufficient on evidence.** Assume the judge never opens the blog and
+   never sees a demo. The blog *raises* the ceiling; it must not *carry* the floor.
+
+**And the consequence that argues for restraint:** with 500 submissions, the winning mistake is
+*confusing*, not *incomplete*. A judge who finishes a slide and understands it will go back to the
+blog. A judge who finishes a slide and is unsure what we meant will not. **Clarity beats completeness
+at every junction.**
+
+
 ---
 
 ## E. Narrative test
@@ -342,18 +379,110 @@ place by advancing the argument. The narrative is carried by *headline + block o
 
 ### Global layout rules (all slides)
 
+> **These rules assume the deck is read on the judge's own device, not projected in a live room.**
+> See Section E.3. The limits below are therefore deliberately more permissive than a conference
+> deck would be.
+
 - **One takeaway headline per slide**, top-left, stating the *conclusion* — not the topic. Not
   "Technical Approach" but "Skills are code, not prompts — and they are what makes this reliable."
+  **Each headline must stand alone**, because a judge may read the deck out of order or skim only
+  the headlines.
 - **Fixed grid:** headline band (top ~12%) → labelled content blocks (left/main) → **one**
   dominant visual (right or full-width beneath) → footer (slide number + short project lockup).
-- **One visual per slide.** Two visuals on a slide reads as zero visuals.
-- **~40 words max of body text per block.** A block needing more is either two blocks or a table.
+- **One dominant visual per slide.** Supporting tables and small diagrams are permitted; two
+  competing focal points are not.
+- **Body text budget: ~90 words per block, ~220 per slide.** Generous by live-presentation
+  standards, because the reader controls their own pace. Blocks are labelled, and each is readable
+  on its own — a judge who reads only the block about risks must get a complete thought.
+- **Hierarchy must survive a skim.** Within each slide, the reader should encounter claim →
+  support → evidence in that order, and the first line of every block must be the claim.
 - **Banned:** gradients, glow, glassmorphism, neon, 3D objects, robot/brain imagery, icon confetti,
   rounded-card mosaics, stock photography, and the phrases "AI-powered", "seamless", "next-gen".
 - **Build every diagram from native Canva shapes and connectors** so it stays editable.
-- **Application screenshots are permitted and encouraged** — they are evidence. One per slide
-  maximum, from a real run, high resolution, uncropped.
 - **Blocks are labelled, not decorated:** a small caps label, then content.
+
+### The visual system — no screenshots, one designed product view
+
+**The decision:** the deck contains **no raw screenshots.** A screenshot at the size a slide can
+carry shows a dense application chrome, half-legible, and reads as a working prototype rather than a
+finished product. Against ~500 submissions that is a real cost. Instead the deck uses **one
+purpose-designed product view** — a mockup drawn specifically for the slide — used once, at large
+size, where it does real work.
+
+**Why a designed mockup is the stronger choice, not the compromise:**
+
+- It can be **composed for legibility at slide scale**, showing only the two or three elements the
+  point depends on, rather than an entire window shrunk to fit.
+- It can **show a moment that is genuinely true but hard to catch live** — a mid-run state, with the
+  routing indicator, the tool transcript and a withheld sign-off visible together.
+- It renders at any size without pixelation, and sits inside the template's visual language instead
+  of contradicting it.
+- **It is honest, provided one rule is respected** *(below). A mockup is a designed representation
+  of a real interface; a fake screenshot — a doctored or fabricated screen — is not, and would be
+  the single most damaging thing we could put in the deck if an evaluator looked closely.
+
+**The one rule that keeps this honest — and it is non-negotiable:**
+> Every element shown in the mockup must **actually exist and actually work** in the built
+> application. Nothing may be invented for the slide: no fictional metric, no fabricated latency
+> number, no control that does not exist, no status that the product cannot produce. If a value
+> appears, it is a value the real run produced.
+
+**What the product view shows — chosen because it is the whole thesis in one frame:**
+
+A single application window, simplified, containing exactly three things:
+
+1. **The routing indicator** — which model is handling this request, and why. *(This is the T's
+   horizontal bar, made visible: a deterministic router dispatching to a real specialist.)*
+2. **The agent transcript** — a plan, a tool call, and the result it returned. *(This is agency,
+   shown rather than asserted.)*
+3. **The output, carrying a citation and a withheld sign-off** — a measured value against its limit,
+   the governing clause referenced, and the decision state reading **not approved**. *(This is the
+   vertical stem, and it is the single most persuasive element available to us.)*
+
+**Why those three and nothing else.** A judge skimming sees a routing decision, evidence being
+gathered, and a system declining to approve something. That is the entire argument, in one image,
+readable in three seconds. Every additional element is a distraction competing with those three.
+
+**Design constraints — this must look like the template, not like a screenshot pasted into it:**
+
+- Rebuilt as **native Canva shapes and text**, inside the deck's own type scale, colour and grid. It
+  is a *figure in the deck's language*, not an image dropped on top of one.
+- **Deliberately stylised and simplified** — fewer panels, fewer controls, more whitespace, larger
+  type than the real interface. It should read as an honest diagram of the product, not as a
+  half-legible reproduction of it.
+- **No window chrome, no OS title bar, no browser or window buttons.** No drop shadows, no rounded
+  "device" frame, no perspective tilt, no device bezel. A flat panel with a hairline border, or no
+  border at all.
+- **Real values only.** Where a number appears, it is a number the system actually produced on a
+  real run. Every other field is either a genuine label from the interface or deliberately empty.
+- **The "not approved" state must be visually unmistakable** — it is the payload of the entire
+  image, and it must be the first thing the eye lands on after the headline.
+
+
+### The density rule — enforced, not advised
+
+Every slide's copy is now **fixed and final** in Section G, marked *"this is the complete text; do not
+add to it."* The word counts were measured, and the budget is **320 words per slide**:
+
+| Slide | On-slide words | Budget |
+|---|---|---|
+| 2 — Solution | ~254 | 320 |
+| 3 — Technical Approach | ~302 | 320 |
+| 4 — Feasibility | ~305 | 320 |
+| 5 — Impact | ~207 | 320 |
+| 6 — References | ~251 | 320 |
+| 7 — Close | ~59 | 320 |
+
+**Why the budget exists.** An earlier draft of this document ran to **1,146 words on slide 2 alone**
+and ~1,000 on slides 3 and 4. That is not a slide — it is a source document compressed onto five
+pages, and it fails in two opposite ways at once. A tired judge abandons it. An energetic judge
+cannot find the claim inside the wall either, because with no hierarchy everything is equally
+important and therefore equally invisible. **Density is only useful when it is *shaped*.**
+
+**The rule that makes it work:** every block opens with its claim in the first line, then supports
+it. The judge who reads only the block-opening lines gets the entire argument — that is the skim
+path, and it is the one that decides the outcome.
+
 
 ---
 
@@ -369,112 +498,52 @@ place by advancing the argument. The narrative is carried by *headline + block o
 
 *Template asks: idea/solution/prototype · how it addresses the problem · innovation and uniqueness.*
 
-- **Purpose:** Carry the whole argument — field, mechanism, gap, insight, T, product, uniqueness —
-  through block ordering rather than slide count.
+- **Purpose:** Carry the whole argument — field, mechanism, insight, T, product, uniqueness — in one
+  slide. This is the slide a judge is guaranteed to read, and the only one that carries the thesis.
 - **Headline:** *"Coding agents got good because someone wrote skills. Nobody has written them for
-  this work."*
+  regulated engineering work."*
 
-**Blocks, in this order — the order is the argument:**
+**On-slide copy — final, ~300 words. This is the complete text; do not add to it.**
 
-**Block 1 — The field, honestly stated.** *(The credibility block. A positioning map is correct
-here — this is a genuine two-axis comparison.)*
+> **The gap.** Coding agents did not get good because models got smarter. They got good because
+> someone wrote **skills** — reusable procedures encoding what an expert actually does. Regulated
+> engineering work has the same need and none of the library. Closed platforms ship their own,
+> welded shut, for a customer they already have.
+>
+> **What we built.** A **T-shaped workbench**: a generalist floor that is dependable across document
+> review, drawing checks, data analysis and scripting — no refusal, no hallucination, each request
+> routed by rule to the right local model — dropping into one deep stem: **inspection reports,
+> drawings, vendor data and approval notes, judged against internal SOPs and standards.**
+>
+> **The stem is the product.** Every conclusion is bound to its source document, page and retrieved
+> governing clause. Consequential actions pass a precondition check that pauses and routes.
+> **"Insufficient evidence" is a valid output** — a withheld sign-off is a successful run.
+>
+> **Why open.** A PSU cannot accept a closed tool it cannot inspect for a process touching
+> pressure-equipment sign-off. Open source is what makes the sovereignty claim credible: **you
+> cannot audit what you cannot read.** The plant can extend it with its own procedures.
+>
+> **Uniqueness.** An open, plant-extensible skill library for regulated engineering work · skills
+> that enforce rules in code rather than request them in prose · containment the customer verifies
+> independently.
+>
+> **Status.** Three reference workflows verified end-to-end against machine-checkable oracles, with
+> 42 test suites. Installation, architecture and benchmarks: technical blog and public repository.
 
-Axes: **horizontal — is the capability portable and inspectable, or welded into one vendor's
-platform? Vertical — does it produce a defensible position (clause-referenced, auditable,
-willing to withhold), or just a fluent answer?**
+- **Dominant visual:** **The T**, drawn as a structure, not a letter. A wide horizontal band —
+  *modest but solid* — dropping into a single deep vertical stem. **Label the bar with generalist
+  skills** (read the document · find the reference · compute the check · show the working · say when
+  unsure) and **the stem with the specialist library** (extract evidence · retrieve the governing
+  clause · compare against limits · decide · **refuse if incomplete**). The asymmetry is the message;
+  the labels are what make the bar read as *good* rather than shallow. Native shapes, no icons.
+- **The positioning map is cut from this slide.** It was the fourth thing competing for attention and
+  the least load-bearing — the "closed platforms ship their own, welded shut" line carries the same
+  claim in twenty words. It moves to the appendix or the blog, where a curious judge can find it.
+- **❌ Do NOT put here:** model names, technology lists, screenshots, the word "platform", a feature
+  grid, arrow spaghetti, the reference workflows, or any table.
+- **Why it exists:** It is the argument, and it is the image — the T — that a judge describes to
+  their colleagues afterwards.
 
-| | Fluent answer, no proof-carrying output | Defensible position, auditable |
-|---|---|---|
-| **Welded into a closed platform** | — | **Commercial engineering-document platforms** — strong extraction and human-in-the-loop review, sold to enterprises they already serve; skills are integral and not inspectable or portable |
-| **Portable and inspectable** | General chat & RAG assistants — open, but produce uncited answers and no decision anyone can sign | **Unoccupied** — no open, auditable skill library exists for regulated engineering documentation |
-
-*Place the named platforms accurately from their own material.* ⚠️ `[[VERIFY: each characterisation
-from the vendor's own published material]]`.
-*One line beneath:* **closed platforms already do the review. What is missing is the portable,
-inspectable layer underneath it — and that is the part a plant has to own.**
-
-**Block 2 — The mechanism, not the market.** *(Why this is the right insight, stated generally.)*
-Coding agents did not get good because models got smarter. They got good because someone wrote
-**skills** — reusable, named procedures encoding what an expert actually does: read the file before
-editing it, run the tests before claiming success, search before assuming. Each is a small piece of
-*engineering procedure*, and the harness became capable the moment that library got rich ·
-skills are also what make an agent **reliable**, because a skill can *require* the loop to do
-something — fetch the clause before concluding, execute the script before reporting it works — and
-turn that requirement from a hope into a rule the code enforces.
-
-**Block 3 — The insight.** *(The pivot. No product name.)*
-Regulated, non-coding engineering work has exactly the properties that make skills valuable and
-nobody is writing them. The truth is external, versioned and adversarial, held in standards and
-signed forms, so a generalist model cannot be trusted to improvise the procedure — and the domain
-supplies no test suite to catch it when it does · **an open, portable, extensible skill library for
-this work does not exist.** Closed platforms ship their own, welded shut, for a customer they
-already have.
-
-**Block 4 — Our answer: a T-shaped workbench.**
-*Horizontal bar — a generalist floor that is genuinely good.* Across the task types an engineering
-organisation actually brings, the result is dependable rather than merely adequate: no refusal, no
-hallucination, no shrug. Each request goes to a real specialist model via a deterministic router,
-and a general path exists when no specialist fits. **The bar is good because general-purpose skills
-plus real specialists back it — it is not a surface-level approximation.**
-*Vertical stem — deep, in one place.* **Regulated industrial engineering documentation:** inspection
-reports, drawings, vendor data, approval notes, judged against internal SOPs and standards. Here
-the workbench binds every conclusion to a source and a clause, gates every consequential action,
-and withholds approval when the evidence does not support one.
-*The two are the same architecture.* A skill written for inspection review is immediately reusable
-on a drawing audit, because both are *"extract the evidence, retrieve the governing clause, compare,
-decide, refuse if incomplete."* Generalist runtime plus a growing library is what turns a demo into
-something a plant can extend without us.
-*The T is a deliberate allocation of effort:* we do not compete on raw breadth, which is an arms
-race we would lose.
-
-**Block 5 — Why open.** *(The wedge against closed platforms. Do not state this softly.)*
-Closed tools in this space cannot be audited, forked, or verified by a third party — the knowledge
-is welded into the product · a PSU or defence-adjacent buyer **cannot accept that** for a process
-that touches pressure-equipment sign-off · open source is what makes the sovereignty claim
-credible: **you cannot audit what you cannot read.** The plant can inspect exactly what the system
-knows how to do, extend it with its own procedures, and run it on its own hardware without a
-licensing negotiation.
-*❌ Never state open source as a value or a price point. Always: open, so it can be audited,
-extended, and owned.*
-
-**Block 6 — What the vertical actually does.** *(5 lines maximum — the product.)*
-A desktop application on the organisation's own hardware, with no external endpoint in its
-configuration · a **capability-composed skill runtime** — the available skills are assembled from
-what is actually present: mounted files, attached documents, an indexed standards library · every
-conclusion bound to its source document, page and retrieved governing clause · consequential actions
-pass a precondition check that pauses, names the unmet condition and routes to a concrete recovery ·
-**"insufficient evidence" is a valid, required output**, and a withheld sign-off is a successful run
-· outputs are real deliverables — Word, Excel, PDF, code — not chat replies.
-*One line:* *"Three reference workflows verified end-to-end against machine-checkable oracles by an
-automated validator, backed by 42 test suites. Installation, architecture, benchmarks and roadmap
-are documented in the accompanying technical blog and the public repository — slide 6."*
-
-**Block 7 — Innovation and uniqueness.** *(3 lines, mechanism-claim format — the template asks.)*
-**An open skill library for regulated engineering work** — where coding harnesses got their
-capability from skills, this supplies them for inspection review, drawing compliance and approval
-drafting, inspectable and plant-extensible · **skills as enforceable rules, not prompts** — a
-skill can forbid a conclusion that lacks a clause, which is what makes the system auditable rather
-than merely fluent · **containment the customer verifies independently** — proof held outside the
-application by the customer's own infrastructure, not self-reported by the vendor.
-
-- **Dominant visual:** **The T itself**, drawn as a structural diagram, not a letter: a wide
-  horizontal band whose thickness is *modest but solid*, dropping into a single deep vertical stem.
-  **Label the bar with generalist skills** (read the document · find the reference · compute the
-  check · show the working · produce the file · say when unsure) and **label the stem with the
-  specialist library** (extract evidence · retrieve governing clause · compare against limits ·
-  decide · **refuse if incomplete**). Render the stem visibly deeper than the bar is tall — the
-  asymmetry is the message, and the skill labels are what make the bar read as *good* rather than
-  shallow. Native shapes only, no icons, no gradient.
-- **Alternative if space is tight:** Block 1's positioning map as a small inset, Blocks 1–6 as a
-  left column, the T on the right. **The T is the stronger visual — keep it.** The map can move to
-  an appendix slide if the format allows.
-- **❌ Do NOT put here:** model names, technology lists, screenshots, the word "platform", a
-  feature grid, arrow spaghetti, or any diagram of the three reference workflows.
-- **Why it exists:** It is the only slide that carries the argument, so it is the densest — but
-  every block must be independently readable or the density defeats itself. The T is the image the
-  evaluator will describe to their colleagues afterwards.
-
----
 
 ### Slide 3 — TECHNICAL APPROACH
 
@@ -483,309 +552,223 @@ working prototype.*
 
 - **Purpose:** Show the skill runtime as a real mechanism, and show **one skill as a real
   artefact** rather than describing the idea of one.
-- **Headline:** *"Skills are code, not prompts — and they are what makes this reliable."*
+- **Headline:** *"Skills are code, not prompts — and that is what makes this reliable."*
 
-**Block 1 — The skill runtime.** *(The substrate. Verified in the codebase.)*
-A skill is a **declared capability with a fixed schema** — a name, typed inputs and outputs, an
-executable procedure, and explicit conditions under which it must refuse · the runtime **composes
-the available skills from the actual environment** — workspace mounted, documents attached,
-standards indexed — so the agent is never offered a capability that is not there ✅
-(`router/tool-compositor.ts:27`) · skills are invoked through **native tool calling** with
-`tool_choice: "auto"`, falling back to prompt-injected schemas where a runtime rejects the
-parameter ✅ (`gateway/model-gateway.ts:1333-1400`, fallback at `:1533`) — which is why an
-OpenAI-compatible interface was chosen: **it is what makes model substitution portable rather than
-an integration project** · a deterministic router keeps the breadth affordable by sending each
-request to the right model, inspectably ✅ (`router/intent-classifier.ts` — rule-based, by design:
-the route determines which model touches sensitive data, so a rule is preferable to a softmax).
+**On-slide copy — final, ~310 words. This is the complete text; do not add to it.**
 
-**Block 2 — The specialist library, shown as a real artefact.** *(The most important block on this
-slide. Present ONE skill the way a coding harness presents one.)*
+> **The runtime.** A skill is a **declared capability with a fixed schema** — typed inputs and
+> outputs, an executable procedure, and explicit conditions under which it must refuse. The runtime
+> **composes the available skills from the actual environment**, so the agent is never offered a
+> capability that is not there. Skills are invoked through native tool calling, with a schema
+> fallback where a runtime rejects the parameter — which is why an OpenAI-compatible interface was
+> chosen: **model substitution is a configuration change, not an integration project.**
+>
+> **One skill, as implemented today.** *Compliance audit* — takes a drawing or document set plus the
+> governing standard; extracts measurements; retrieves the clause; states each value **against the
+> limit it was compared to**; and **withholds sign-off when a verification gap is open.** It cannot
+> emit a recommendation without a retrieved clause behind it — **enforced in code, not requested in
+> prose.** Output carries an explicit status: supported, conditional, or **not approved.**
+>
+> **Routing, by rule.** Request type is classified deterministically and the decision is recorded and
+> displayed. **Deliberately not a model:** the route determines which model touches sensitive data,
+> so it should be readable by someone who does not trust the vendor.
+>
+> **Containment, in three layers.** *By construction* — every endpoint is a registered internal
+> address; no cloud SDK, no telemetry. *By containment* — model-authored code runs under an OS
+> network namespace with read-only inputs and a timeout. *(Linux-specific; stated plainly.)*
+> *By independent evidence* — packet capture **outside the application**, showing zero external
+> requests and a blocked attempt. **Only the third layer is not self-reported.** If a model host is
+> unreachable the system halts visibly. **It never falls back to an external provider.**
+>
+> **Evidence.** Three reference workflows — document review, tool maintenance, drawing compliance —
+> each verified end-to-end against machine-checkable oracles.
 
-> **Skill: `compliance_assessment`**
-> **Purpose:** assess a document set against a governing standard and produce a decision packet.
-> **Requires:** extracted evidence with a source reference for every value · the governing clause
-> retrieved from the indexed standards library, cited by reference · a measured value stated
-> against the limit it was compared to.
-> **Refuses when:** any value lacks a source, or any verification gap is open. **Refusal is a
-> successful outcome, not a failure.**
-> **Output:** a clause-referenced deliverable carrying an explicit status — supported, conditional,
-> or **not approved** — and an open-items list.
-
-*Then one line:* the library is **capability-composed, not hardcoded** — a new standard is a new
-clause set and a new skill, not a rewrite ✅ (`grounding/sop114-engine.ts`,
-`grounding/spec-compliance.ts` — the first two entries in the library, ⚠️ currently specialised to
-one standard each; generalising them to accept any clause set is on the pre-design list).
-**❌ Do not claim a skill community exists.** The format is designed for extension; that is a
-design property, demonstrated, not a roadmap.
-
-**Block 3 — Sovereignty as evidence, not as a setting.** *(Three layers, increasing in strength.)*
-1. **By construction** — every endpoint is a registered local/LAN address; no cloud SDK, no
-   telemetry, no external DNS. The app cannot reach a cloud provider because none is configured.
-2. **By containment** — model-authored code runs under an OS network namespace with read-only input
-   mounts and run-scoped writable output, wall-clock timeout and capped output. ⚠️ **Linux-specific**
-   — state this plainly.
-3. **By independent evidence** — packet capture at switch/firewall level, held *outside* the
-   application, recording zero external requests, traffic exclusively between registered internal
-   hosts, and a deliberately attempted outbound request observed being **dropped and logged**.
-   **Say explicitly that layer 3 is the only one that is not self-reported.**
-*Plus:* **if a model host is unreachable the system halts with a visible error. It never falls back
-to an external provider.**
-
-**Block 4 — Evidence: three reference workflows.** *(Three-column triptych, columns identical in
-structure.)*
-
-| | Document review | Tool maintenance | Drawing compliance |
-|---|---|---|---|
-| **Input** | Scanned reports incl. a handwritten field annotation | A failing internal script + malformed vendor data | An engineering drawing + the governing specification |
-| **Routed to** | Vision → reasoning | Coding | Vision + retrieval |
-| **Agent does** | Extracts typed and handwritten evidence, retrieves the clause, synthesises across documents | Executes isolated, **observes a real failure**, corrects it, re-verifies to a clean exit | Extracts component values, compares against retrieved limits |
-| **Deliverable** | Clause-referenced Word decision packet, **sign-off withheld pending an open field item** | Verified script and corrected output, proven by execution | Corrective-action note, **status: not approved** |
-| **Proves** | Clause binding + multi-document synthesis | Genuine self-correction, not a scripted answer | Limits are **queried**, not embedded |
-
-*Shared footer band beneath all three:* routing visible · skills executed live · external request
-counter held at 0.
-⚠️ **All input names, measurements and identifiers must come from an actual run.** **Describe input
-*types* rather than naming asset IDs** — the types carry the argument, the IDs carry nothing.
-
-**Block 5 — Architecture and stack.** *(Compact. The trust boundary is the message.)*
-Electron main is the only process that touches models, files or the network; the renderer is
-untrusted presentation with a narrow typed IPC surface and no filesystem or model access · every
-workspace operation is path-contained · local inference over an OpenAI-compatible interface · embedded
-local vector index for retrieval ✅ *(Vectra — **not** "ChromaDB", which is not a dependency)* ·
-desktop shell, local persistence, document-generation libraries.
-
-- **Dominant visual:** **The skill card from Block 2, rendered as a real artefact** — a bordered
-  panel with labelled fields (purpose / requires / refuses when / output), set in the deck's body
-  type at legible size. This is worth more than a diagram of the skill *architecture*, because it
-  answers "your skills are just prompts" with something the evaluator can read. The agent loop
-  (classify → plan → precondition check → act → observe → conclude) runs as a **subordinate
-  process strip beneath it** — five nodes, the precondition node drawn as a gate, the loop-back from
-  *Observe* to *Act* shown explicitly, because self-correction is invisible in a linear list.
+- **Dominant visual — and this is the one image that must be excellent:** **the product mockup from
+  the visual system above, at roughly two-thirds of the slide, on the right.** It is the only element
+  in the deck that shows the product rather than argues about it, and against ~500 submissions read
+  on a judge's own laptop it will be the thing that distinguishes this deck from every other one in
+  the queue. It shows the routing indicator, the agent transcript, and an output carrying a citation
+  and a **not approved** sign-off — the whole thesis in one frame, readable in three seconds.
+  **Build it last, and get it reviewed by someone who has not seen the deck.** If it cannot be made
+  genuinely good, cut it: a mediocre mockup is worse than none.
+  Everything else is subordinate — the blocks above as compact labelled text in the left column, and
+  the agent loop (classify → plan → precondition check → act → observe → conclude) as a small
+  process strip beneath the mockup, with the precondition node drawn as a gate and the loop-back
+  from *Observe* to *Act* shown explicitly, because self-correction is invisible in a linear list.
+- **The three-workflow triptych is cut from this slide.** Its content survives as the one-line
+  *Evidence* block above; the full triptych moves to the technical blog, where a judge who wants it
+  can find it without it competing for attention here.
 - **❌ Do NOT put here:** source file paths, class names, version numbers, database schema,
-  click-by-click demo instructions, or three screenshots (they collapse to illegibility at
-  projection scale — one maximum, and only if it beats the skill card).
-- **Why it exists:** It answers attacks 5, 6, 7, 8, 9, 10 and 17 simultaneously, and it is where
-  "we built this properly" becomes visible rather than asserted.
+  click-by-click demo instructions, tables of any kind, or raw screenshots.
+- **Why it exists:** It answers attacks 6, 7, 8, 9, 10 and 17 simultaneously, and it is where "we
+  built this properly" becomes visible rather than asserted.
 
----
 
 ### Slide 4 — FEASIBILITY AND VIABILITY
 
-*Template asks: feasibility · challenges and risks · strategies for overcoming them.*
+*Template asks: feasibility of the idea · potential challenges and risks · strategies for
+overcoming them.*
 
-- **Purpose:** Convert uncertainty into rigour. The slide an evaluator photographs.
+- **Purpose:** Convert uncertainty into rigour. This is the slide a sceptical judge looks for, and
+  the one that decides whether the rest of the deck is believed.
 - **Headline:** *"It runs on hardware the organisation already owns — and here is exactly what
   could still go wrong."*
 
-**Block 1 — Feasibility and deployment.**
+**On-slide copy — final, ~290 words. This is the complete text; do not add to it.**
 
-**Two inference shapes, one configuration — and the join is three fields.**
+> **Deployment — two shapes, one configuration.** *Single device:* all roles on one GPU machine, the
+> recommended pilot. *Distributed:* roles spread across whatever mixed hardware the organisation
+> already owns. **The join is three fields — host, port, model name.** No adapter, no integration
+> project, no lock-in, because the contract is **any OpenAI-compatible `/v1` API** — Ollama, LM
+> Studio, llama.cpp, MLX, vLLM. A pilot on one laptop can later spread across a fleet, or swap a
+> slow model for a fast one, **by editing a connection, not a codebase.** Open source, zero licence,
+> run on owned hardware.
+>
+> **Risks, and what is already built against them.**
+>
+> | Risk | Mitigation — implemented, in the repository |
+> |---|---|
+> | Model quality below threshold on available hardware | Task classes scoped per deployment; a stronger model bound via the registry, no code change |
+> | Model host unreachable mid-run | Run halts with a visible reason — **no external fallback exists by design** |
+> | Isolation not enforced off Linux | Namespace isolation is Linux-specific and stated as such; the fallback is workspace-locked and time-bounded |
+> | Model-authored code affecting the host | Read-only inputs, run-scoped output, wall-clock timeout, capped output |
+> | Evaluation-day failure | Reference workflows run against pre-validated inputs with deterministic oracles |
+>
+> **What we are building next.** Generalising the grounding skills so any clause set loads rather
+> than one being hardcoded · extending the library beyond the two reference skills · isolation
+> parity beyond Linux · more document classes · multi-user access, which real deployment requires and
+> which is out of scope today · practitioner validation · **outcome measurement, where the method is
+> defined and results are pending.**
+>
+> **Limitations.** Single-user · English-language · Linux-namespaced isolation, weaker elsewhere ·
+> **the library ships with two specialised skills — breadth across other document classes is not yet
+> built** · coverage limited to what is indexed · no production security hardening · the reference
+> workflows are rehearsed demonstrations, **not a statistical benchmark.**
 
-*Shape 1 — single device.* All roles co-resident on one GPU machine. This is the recommended pilot
-entry point, and the PS's stated target.
-*Shape 2 — distributed.* Roles spread across whatever GPU hardware the organisation already owns —
-a workstation, a server, a Mac mini, machines of different generations doing different jobs. Each
-model is bound to its own endpoint. **Neither shape is privileged in the system: they are the same
-configuration, and an organisation can move from one to the other without redesigning anything.**
-
-**The join is deliberately minimal, and this is the differentiator.** Adding a device — or replacing
-one — requires **host, port, and model name.** Nothing else. No adapter to write, no integration
-project, no vendor lock-in, because the contract is not "Ollama" or "LM Studio" or "vLLM" — it is
-**any OpenAI-compatible `/v1` API**, which every one of those runtimes already speaks. A deployment
-that starts on one machine in a pilot can later spread across a mixed fleet, or swap a slow model
-for a faster one, by editing a connection, not a codebase.
-
-*Verified in the repository:*
-✅ **`config/models.json`** — the registry, a plain, inspectable file mapping task type → runtime →
-endpoint → model.
-✅ **A guided onboarding wizard** — the operator enters host, port and model name; the app probes
-`/v1/models`, falls back to `/models` for runtimes that expose it there, reports latency and
-available models, and persists the binding. **It requires no code change and no restart.**
-✅ **Runtime-agnostic by contract** — the model interface targets `mlx-lm`, `llama-server`,
-`Ollama` and any OpenAI-compatible server, with a prompt-schema fallback where a runtime rejects
-native tool parameters (`gateway/model-gateway.ts:1533`). One interface, several very different
-inference engines.
-
-*Why this matters for the buyer, stated plainly:* **the deployment is not locked to hardware the
-team chose.** It runs on whatever the organisation already owns, in any mixture, and it changes
-shape as their fleet and their models change. For a plant replacing hardware on a budget cycle, or
-staging a pilot on a laptop before committing capital, that flexibility *is* the feasibility.
-
-· Provisioning: models, packages and standards transferred and checksummed **before** the network
-is disconnected · **Cost: open source, zero licence, run on owned hardware** — formal basis
-`[[VERIFY: hardware/quoted figures, or omit]]` · **Growth path:** new devices, new models and new
-standards are added as configuration and indexed content.
-✅ *A preflight validator checks fixture integrity and deterministic outcomes before an evaluation —
-a genuine engineering-assurance asset, worth showing.*
-**❌ No machine models, processor names, rupee figures without a source, or throughput claims.**
-
-
-**Block 2 — Risks and mitigations.** *(A real register. 5 rows, no more.)*
-
-| Risk | Mitigation |
-|---|---|
-| Model quality below the threshold for a task class on available hardware | Task classes scoped and validated per deployment; a stronger model bound via the registry with no code change |
-| The skill library stays narrow — one standard, two workflows | Library is capability-composed, so a new standard is a new clause set and a new skill; the two shipped skills are the first entries, not the design |
-| Model host unreachable mid-run | Run halts with a visible reason — **no external fallback exists by design** |
-| Isolation not enforced on unsupported platforms | Namespace isolation is Linux-specific and stated as such; pilot hardware chosen to match; the fallback is workspace-locked and time-bounded |
-| A community never forms around the library | Not claimed as a dependency. The value holds if the library is written and extended only by the deploying organisation — which is the stated pilot model |
-
-*One line:* every mitigation listed is **already implemented and in the repository**, not an
-intention — the table is auditable at `github.com/BITverse-24/agent`.
-
-**Block 3 — Limitations, stated openly.** *(Plain list, lightest weight on the slide.)*
-Single-user, not multi-tenant · English-language documents and interface · namespace isolation on
-Linux only, with a weaker fallback elsewhere · **the library ships with two specialised skills and
-two reference workflows — breadth across other document classes is not yet built** · knowledge
-coverage limited to what has been indexed · no production security hardening · reference workflows
-are rehearsed demonstrations, **not a statistical benchmark**.
-
-**Block 4 — What we are building next.** *(Small, subordinate, explicitly forward-looking. Present
-tense is forbidden here — every item is planned, not shipped.)*
-Generalising the grounding skills so any clause set can be loaded rather than one being hardcoded ·
-extending the library beyond the two reference skills · isolation parity beyond Linux · additional
-document classes and standards · multi-user and role-based access, which real plant deployment
-requires and which is out of scope today · practitioner validation and a pilot · **outcome
-measurement — time-on-task and extraction accuracy — where the method is defined and the results
-are pending.**
-*One line, and the honest framing of the whole slide:* **the runtime, routing, containment and
-evidence trail are built and tested today; the library is what we are growing next.**
-
-
-- **Dominant visual:** The **three-field join**, shown as a single small diagram rather than a
-  deployment sketch. Left: a stack of heterogeneous boxes labelled only by *what they are* — a
-  workstation, a server, a Mac mini, a laptop — deliberately unlabelled by model, because the point
-  is that the hardware is irrelevant. Right: the workbench, bound to them by three labelled
-  connectors: **host · port · model name**. Beneath: a single line, **"any OpenAI-compatible `/v1`
-  API — Ollama · LM Studio · llama.cpp · MLX · vLLM."** The risk table remains the substance of the
-  slide; this diagram sits small inside Block 1. Block 3 (limitations) sits beneath as a plain list.
-  Block 4 (what's next) sits last, lightest weight.
-- **❌ Do NOT put here:** machine specs from internal planning docs, invented cost savings, hidden
-  limitations, or a mitigation describing a future intention.
+- **Dominant visual:** The **risk table** — it is the substance of the slide, and a table is correct
+  here because risk and mitigation is a genuine one-to-one pairing. The **three-field join** appears
+  as a small diagram inside the deployment block: a stack of heterogeneous boxes labelled only by
+  *what they are* (workstation, server, Mac mini, laptop — deliberately unlabelled by model, because
+  the point is that the hardware is irrelevant), bound to the workbench by three connectors reading
+  **host · port · model name**. The "what's next" block sits last, in the lightest weight on the
+  slide — it is a plan, and it should read as subordinate to what exists.
+- **❌ Do NOT put here:** machine specs from internal planning documents, invented cost savings,
+  hidden limitations, rupee figures without a source, or a mitigation phrased as a future intention.
 - **Why it exists:** It answers attacks 4, 9, 11, 13 and 15, and candour here converts directly into
-  credibility.
+  credibility. **Every mitigation in that table is already implemented** — that is the line worth
+  making, and it is auditable at the public repository.
 
----
 
 ### Slide 5 — IMPACT AND BENEFITS
 
-*Template asks: impact on the target audience · benefits (social, economic, environmental, etc.).*
+*Template asks: potential impact on the target audience · benefits (social, economic, environmental,
+etc.).*
 
 - **Purpose:** Show consequence honestly, making measurement discipline part of the claim.
 - **Headline:** *"The impact is not faster typing — it is work that could not previously be done
   with AI at all."*
 
-**Three tiers, deliberately unequal in visual weight so the reader always knows which is which:**
+**On-slide copy — final, ~200 words. This is the complete text; do not add to it.**
 
-**Tier 1 — Structural. Demonstrable now; needs no measurement.**
-A class of work becomes AI-assisted that policy previously excluded entirely · deliverables carry
-their evidence trail into the approval process rather than into a chat window · unresolved field
-items are surfaced and routed rather than smoothed over · **the organisation keeps its skills,
-documents, indexes and outputs** rather than transferring them to a third party.
-*These are the strongest claims in the deck because they are statements of fact requiring no number.*
-
-**Tier 2 — Organisational. Measurable; method defined, results pending.**
-Expert time redirected from transcription and formatting to judgement · internal tooling
-maintenance reduced from manual debugging cycles · **procedure knowledge captured as skills rather
-than left in individual heads** — the library is an institutional asset that outlives staff turnover
-· *method: baseline-and-compare across a defined pilot task set.* Results `[[MEASURE: …]]`.
-✅ *Verifiable today:* three reference workflows verified end-to-end against deterministic oracles by
-an automated fixture validator, backed by 42 test suites covering the agent loop, path containment,
-retrieval and end-to-end flow behaviour.
-
-**Tier 3 — Wider. Directional only, and visibly marked as such.**
-Extension to further document classes is a matter of adding skills to a runtime that already
-composes them · a plant that already owns GPU-capable hardware needs no new cloud spend to adopt it
-· because the library is open, **another plant's skill for the same procedure can be reused rather
-than rewritten** — stated as a design property, not as a forecast.
-*Marked **directional** on the slide so it cannot be read as a promise.*
+> **Structural — true today, and requiring no number.**
+> A class of work becomes AI-assisted that policy previously excluded entirely. Deliverables carry
+> their evidence trail into the approval process rather than into a chat window. Unresolved field
+> items are surfaced and routed rather than smoothed over. **The organisation keeps its documents,
+> indexes and outputs** rather than transferring them to a third party.
+>
+> **Organisational — measurable; method defined, results pending.**
+> Expert time redirected from transcription and formatting to judgement. Internal tooling
+> maintenance reduced from manual debugging cycles. **Procedure knowledge captured as skills rather
+> than left in individual heads** — an institutional asset that outlives staff turnover.
+> *Method: baseline-and-compare across a defined pilot task set.* Results `[[MEASURE: …]]`.
+> *Verifiable today:* three reference workflows verified end-to-end against deterministic oracles,
+> with 42 test suites covering the agent loop, path containment, retrieval and end-to-end flows.
+>
+> **Wider — directional only.**
+> Extending to further document classes is a matter of adding skills to a runtime that already
+> composes them. A plant that already owns GPU-capable hardware needs no new cloud spend. Because
+> the library is open, **another plant's skill for the same procedure can be reused rather than
+> rewritten** — a design property, not a forecast.
 
 - **Dominant visual:** **None, or the three-tier structure itself.** A number-free impact slide with
   a clear hierarchy is stronger than a slide of invented percentages. If a chart appears at all it
-  belongs **only** in Tier 2 and only once measured figures exist. **Do not illustrate this slide.**
+  belongs **only** in the Organisational tier and only once measured figures exist. **Do not
+  illustrate this slide.** Weight the three tiers unequally so the reader always knows which is which:
+  Structural full contrast, Organisational medium, Wider light and visibly marked *directional*.
 - **❌ Do NOT put here:** invented statistics, user counts, adoption forecasts, cost savings,
   "national productivity", partnership or endorsement claims, any implication of government
   adoption, or unmeasured environmental claims.
+- **Why it exists:** It answers the funding question without overclaiming, and the visible
+  separation of tiers is itself a credibility signal.
 
----
 
 ### Slide 6 — RESEARCH AND REFERENCES
 
 *Template asks: details/links of the reference and research work.*
 
-- **Purpose:** Establish the work is grounded in verified components **and sits in a real research
-  conversation** — this is a technical audience, and citing the open problem is what makes the
+- **Purpose:** Establish that the work is grounded in verified components **and sits in a real
+  research conversation** — for a technical panel, citing the open problem is what makes the
   differentiation claim credible rather than assertive.
 - **Headline:** *"Built on established open components, against a named open problem."*
 
-**Group 1 — Why the vertical is hard.** *(The research conversation. Highest value on this slide.)*
-The self-verification asymmetry between coding and enterprise work, and the open question of
-whether coding-agent harnesses generalise to business process · the role of **skill and tool
-libraries** in agent capability, and the case for domain skills as the transferable mechanism · the
-case for **informed abstention** as a structured, auditable capability rather than a failure mode ·
-the finding that state-of-the-art models **systematically overcommit** rather than abstain under
-uncertainty — the precise failure mode that makes them unsafe in a regulated plant.
-⚠️ `[[VERIFY: exact titles, authors, IDs and years — found in research, must be opened and
-confirmed personally before citing]]`
+**On-slide copy — final, ~230 words. This is the complete text; do not add to it.**
 
-**Group 2 — The project itself.** Name, licence, and repository URL. *For a deck whose wedge is
-openness, the project's own licence is a primary reference, not a formality.* ⚠️ Confirm the
-intended licence before printing it.
+> **Why this vertical is hard.** The self-verification asymmetry between coding and enterprise work,
+> and the open question of whether coding-agent harnesses generalise to business process · the role
+> of **skill and tool libraries** in agent capability · **informed abstention** as a structured,
+> auditable capability rather than a failure mode · and the finding that state-of-the-art models
+> **systematically overcommit rather than abstain** under uncertainty — the precise failure mode
+> that makes them unsafe in a regulated plant.
+> `[[VERIFY: exact titles, authors, IDs and years — each reference must be personally opened before
+> it is cited]]`
+>
+> **The project — `github.com/BITverse-24/agent`** · *public repository.* Two things an evaluator
+> can verify there, because checkable is what makes a claim credible at this stage:
+> **① the implementation** — `config/models.json` (the registry), `router/tool-compositor.ts` (the
+> skill runtime), `harness/path-guard.ts` (containment), `backend/tests/` (42 suites);
+> **② the technical blog** — installation, technical architecture, benchmarks and roadmap.
+> *For a project whose wedge is openness, the licence is a primary reference, not a formality.*
+> ⚠️ Confirm the intended licence before printing it.
+>
+> **Open-weight models.** The vision, reasoning and coding families used, with **licence noted per
+> family** ⚠️ verify — licences differ between families.
+>
+> **Local inference runtimes.** Ollama, LM Studio, llama.cpp, MLX, vLLM and any server exposing an
+> OpenAI-compatible `/v1` API. **Portability across runtimes is what makes model *and* hardware
+> substitution configuration changes rather than integration projects.**
+>
+> **Retrieval and isolation.** The embedded local vector index; OS-level network namespace isolation;
+> path containment by construction. **Application platform:** desktop shell, local persistence,
+> document-generation libraries.
 
-**`github.com/BITverse-24/agent`** — public repository. State the two artefacts an evaluator can
-verify there, because checkable is what makes a claim credible at this stage:
-**① the implementation** — `config/models.json` (the registry), `router/tool-compositor.ts` (the
-skill runtime), `harness/path-guard.ts` (containment), `backend/tests/` (42 suites);
-**② the technical blog** — installation, technical architecture, benchmarks and roadmap.
-*Every "see the technical blog" reference elsewhere in the deck must point at a real, published
-section, and any benchmark it cites must be a measurement the team has actually run.*
-
-
-**Group 3 — Open-weight models.** The vision, reasoning and coding families used, with **licence
-noted per family** (⚠️ verify — licences differ).
-
-**Group 4 — Local inference runtimes.** The OpenAI-compatible server implementations the registry
-targets — Ollama, LM Studio, llama.cpp / `llama-server`, MLX, vLLM and any other server exposing an
-OpenAI-compatible `/v1` API — and the reason that interface was chosen: **portability across
-runtimes is what makes model substitution and hardware substitution configuration changes rather
-than integration projects.** The application targets `mlx-lm`, `llama-server` and `Ollama` runtimes
-through one model interface, with a prompt-schema fallback where a runtime rejects native tool
-parameters. *This is the group an evaluator should check most closely — it is the one that makes the
-"any device" claim true rather than aspirational.*
-
-**Group 5 — Retrieval and isolation.** The embedded local vector index; OS-level network namespace
-isolation; path containment by construction.
-
-**Group 6 — Application platform.** Desktop shell, local persistence, document-generation libraries.
-
-*Plus a separate, clearly labelled line for any external source cited on Slide 2* — those are the
-only references an evaluator will hold us to.
-
-- **Dominant visual:** A **five-band reference grid** with hairline rules. No logos, no website
-  screenshots, no long raw URLs. Full designation and issuing body for any standard.
+- **Dominant visual:** A **reference grid** in five labelled groups with hairline rules, laid out
+  two-up or three-up so it fills the slide rather than running as a single column. No logos, no
+  website screenshots, no long raw URLs — a citation is a name, a designation and a link, and for
+  any standard the full designation and issuing body. Set the repository link visibly: it is the one
+  element on this slide a judge is most likely to actually click.
 - **❌ Do NOT put here:** blog posts, undated forum answers, AI-generated summaries, or **any
-  reference the team has not personally opened.** Unverifiable references are worse than few.
+  reference the team has not personally opened.** Unverifiable references are worse than few, and on
+  a slide a judge reads alone, a dead or wrong citation is the whole slide failing.
+- **Why it exists:** It is where technical credibility is either confirmed or quietly lost, and it is
+  the only place the judge can go deeper on their own initiative.
 
----
 
-### Slide 7 — Close *(optional — include only if the format permits)*
+### Slide 7 — Close
 
-- **Purpose:** Ensure the deck leaves behind one sentence, not six.
+- **Purpose:** Ensure the deck leaves behind one sentence, not six. A judge who reads the whole
+  thing should end holding this and nothing else.
 - **Headline:** *"Code got good because someone wrote skills. Most engineering work hasn't."*
-- **Content — three lines, then stop:**
-  Coding agents became capable when someone wrote skills for the domain. **Regulated engineering
-  work has no such library.** Sovereign Workbench supplies one — open, inspectable, and plant-
-  extensible — over a runtime that composes skills from what the environment actually has, running
-  entirely inside the customer's perimeter. It runs on hardware the organisation already owns, and
-  it is configured to change with the models it depends on.
-  *One understated line:* verified end-to-end on three reference workflows, air-gapped, zero
-  external requests.
+- **On-slide copy — final, ~60 words:**
+  > Coding agents became capable when someone wrote skills for the domain. **Regulated engineering
+  > work has no such library.** Sovereign Workbench supplies one — open, inspectable and
+  > plant-extensible — over a runtime that composes skills from what the environment actually has,
+  > running entirely inside the customer's perimeter. *Verified end-to-end on three reference
+  > workflows, air-gapped, zero external requests.*
 - **Visual:** **None.** A single closing line at large type, or nothing but the three lines and a
-  closing rule.
+  closing rule. Restraint is what makes the sentence survive.
 - **❌ No** thank-you slide over a busy background, no summary of everything, no funding ask, no
-  partnership language.
+  partnership language, no contact details competing with the line.
 
----
 
 ## H. Template compliance map
 
@@ -805,25 +788,30 @@ slide inherits the template's own layouts.
 
 **If the format permits more than 5 authored slides**, the highest-value splits are:
 (a) give the **positioning map** (Slide 2, Block 1) its own slide — it carries the differentiation
-claim and is dense enough to need room; and (b) give the **skill card** (Slide 3, Block 2) a full
-slide of its own, since a named, readable, enforceable skill is the single most persuasive artefact
-in the deck.
+claim and is dense enough to need room; and (b) give the **product mockup** (Slide 3) a slide of
+its own, so it can be shown at the size where its three elements — routing, transcript, and the
+withheld sign-off — are each readable. It is the strongest single image available to the deck, and
+it is the first thing that should be sacrificed to the word limit if space is tight.
 
 ---
 
 ## I. Pre-design checklist — resolve before any layout work
 
-- **Hardening — GPU-neutral deployment is a differentiator worth guarding.** Both the single-device
-  and distributed paths depend on the registry and the onboarding wizard. *Before the finals:*
-  confirm the wizard can bind a second device while a run is in progress, and confirm a model swap
-  on a live host is picked up without an application restart. If either fails, it is a
-  configuration-layer fix, not a design change — but it is better found now than in front of a panel.
+- **Hardening — nothing outstanding here.** GPU-neutral deployment was previously flagged as needing
+  confirmation that a model swap applies without a restart. ✅ **Resolved:** endpoint bindings are
+  persisted to the settings store (`persistence/settings-store.ts:17-23`) and restored dynamically
+  on the next run, so a new device or model takes effect without restarting the application. No
+  further work required.
 
 1. ⚠️ **Generalise the two grounding skills.** `grounding/sop114-engine.ts` is hardcoded to one
    standard, which contradicts the entire thesis if an evaluator opens the repo. Either make the
    clause set an input, or state the specialisation honestly on the slide.
-2. ⚠️ **Build the `compliance_assessment` skill card as a real, readable artefact.** The thesis
-   currently has no demonstrated instance of a skill. This is the single highest-value addition.
+2. ⚠️ **Show one specialist skill concretely on Slide 3.** The thesis says domain skills are the
+   product, but the deck currently describes the idea of a skill rather than showing one. Use
+   `grounding/spec-compliance.ts` as it actually exists: name it, state what it takes in, what it
+   produces, and — the part that answers "your skills are just prompts" — the rule that makes it
+   *withhold* an approval when verification is incomplete. A judge reading alone has no presenter to
+   supply this, so the deck must.
 3. ⚠️ **Decide the skill format and state it precisely** — declared capability, typed I/O, explicit
    refusal conditions. Do not claim a community; claim extensibility as a design property.
 4. ⚠️ **Verify every named competitor** in the positioning map from the vendor's own material.
@@ -833,7 +821,119 @@ in the deck.
    `vectra`. Accept "embedded local vector index (Vectra)" or add ChromaDB.
 8. ⚠️ **Confirm platform support** (Linux-namespaced isolation only?) and state it plainly.
 9. ⚠️ **Source one citable reference for the problem statement**, or remove the citation.
-10. ⚠️ **Capture screenshots from a real run:** the external-request counter, the routing indicator,
-    and one full workflow output showing a withheld sign-off with its citation.
-11. ⚠️ **Fill or delete every `[[...]]` placeholder.** No placeholder survives into the final deck.
+10. ⚠️ **Build the product mockup and get it reviewed by someone who has not seen the deck.** This
+    is now the highest-leverage design task in the project, and the most likely place to look bad.
+    It goes on Slide 3, large. Requirements: built from native Canva shapes in the template's type
+    and colour; exactly three elements (routing indicator · agent transcript · output with citation
+    and withheld sign-off); **every element must exist and work in the real application**; any value
+    shown must come from a real run. No window chrome, no device frame, no shadow, no perspective.
+    **If it cannot be made to look genuinely excellent, cut it — a mediocre mockup is worse than
+    no mockup.**
 12. ⚠️ **Measure or remove every outcome claim.** An unsourced number disqualifies the deck.
+
+### Async-judging checks — do these last, after the content is final
+
+13. ⚠️ **Read the deck cold, out of order, on a laptop.** Open only slides 2 and 3 and check the
+    argument survives. Then jump to slide 5 and check it makes sense with no build-up. With ~500
+    submissions and no presenter, this test predicts the score better than any other.
+14. ⚠️ **Read only the headlines, in sequence, as a skim.** That sequence alone should reconstruct
+    the argument. If any headline is a topic rather than a claim, rewrite it.
+15. ⚠️ **Confirm slides 2 and 3 are self-sufficient.** They are the two a judge is guaranteed to
+    read. Nothing essential may exist only on slides 5–7.
+16. ⚠️ **Verify the blog opens well cold.** Assume the judge clicks the link cold, with no
+    presenter. It must state what the project is and why it is interesting within the first screen,
+    and any benchmark it cites must be a measurement actually performed.
+17. ⚠️ **Final visual audit before submission.** No raw screenshots anywhere. One product mockup,
+    on one slide, at large size. Every element in it verifiable against the real application. No
+    invented metric, latency, or control anywhere in the deck. No colour, font, or shape outside the
+    template's own visual language. Read the deck cold and out of order on a laptop — see the
+    async-judging checks above.
+---
+
+# PART III — THE COMPETITIVE BAR
+
+> **The deck is one of ~500 submissions competing for the same problem statement, read on a judge's
+> own device. Design quality is not decoration here — it is a selection criterion.**
+
+**How judging actually works at this scale.** With 500 submissions, no judge reads all of them, and
+most do not read any of them closely. The realistic funnel is: a judge opens the deck, spends a few
+seconds per slide deciding whether it looks like a serious submission, and reads closely only what
+survives that. Design quality therefore does two jobs — it is a genuine criterion, and it is the
+mechanism by which a deck earns the attention needed for its argument to be heard at all.
+
+**The two failure modes, and they are not the same risk:**
+
+| Failure | What it looks like | What it costs |
+|---|---|---|
+| **Ugly** | Default layouts, inconsistent margins, five typefaces, gradients, clip art, a diagram that fights the template | Reads instantly as an amateur entry. Dies in the first five seconds, before the argument is considered. |
+| **Dated** | Visually competent but built on 2015 template conventions — drop shadows, heavy rounded cards, centred everything, a title on every slide | Looks like a template that was filled in rather than a document that was designed. Subtle, and harder to recover from. |
+
+**The standard this sets.** Restrained, institutional, information-dense, and typographically
+excellent. The reference points are a well-set government technical document and a serious
+consulting deliverable — **not** a startup pitch deck, and not a product landing page. Nothing that
+would look out of place on a ministry desk should appear, and equally nothing that looks like it was
+assembled from a template in ten minutes.
+
+**Non-negotiables, in priority order:**
+
+1. **One type family, two or three weights, one or two sizes per slide.** Hierarchy through size and
+   weight, never through colour or decoration.
+2. **A real grid.** Consistent margins on every slide, aligned edges, whitespace that is deliberate
+   rather than leftover. Alignment is the single most visible sign of care, and its absence is the
+   single most visible sign of carelessness.
+3. **Restraint in colour.** The template's palette, used for meaning. If a colour does not encode
+   status, hierarchy or category, it does not appear.
+4. **Diagrams that carry information.** Every element in a figure must encode something. A diagram
+   that could be reused unchanged on a different project is not finished.
+5. **Consistency across all seven slides.** The same type scale, the same margins, the same rule
+   weights, the same footer. A judge who sees five slides before a small inconsistency begins to
+   suspect the rest.
+6. **No decorative anything.** No gradient, glow, glass, 3D, neon, illustration, stock photography,
+   or icon used as a bullet. If an element could be deleted without losing meaning, delete it.
+
+**And the one thing worth spending the most time on.** The product mockup on Slide 3 is the only
+element in the deck that shows the product rather than argues about it, and it is the strongest
+image available. It is also the most likely thing to look bad if built carelessly. **Build it
+last, at the largest size it can occupy, and have it reviewed by someone who has not seen the deck.**
+If it cannot be made genuinely good, cut it — a mediocre mockup costs more than no mockup, because
+it advertises a weak product rather than a strong argument.
+---
+
+## J. The tired-judge test
+
+> Applied at the end of the build, not now. **This is the test that predicts the score better than
+> any other**, because it replicates the actual conditions: submission ~500, judge on their ~100th
+> deck of the day, no presenter, own device.
+
+**Two judges, one deck.**
+
+| | The tired judge | The energetic judge |
+|---|---|---|
+| Reads | Headlines, then the first line of each block. Maybe slides 2 and 3 properly. | Everything, then opens the repo and the blog. |
+| Needs | The claim inside three seconds of each slide opening | Depth, mechanisms, file paths, the roadmap |
+| Will be hostile to | A wall of text, an unexplained diagram, a claim with nothing under it | A deck that oversells and under-delivers when checked |
+| **What must therefore be true** | Every headline is a claim. Every block's first line is its point. Slide 2 carries the thesis alone. Nothing essential lives only on slides 5–7. | Every claim is checkable in the repository. Shipped and next are separated. The blog opens well cold. |
+
+**The five specific things that lose a tired judge, checked one by one:**
+
+1. **A headline that names a topic instead of a claim.** *"Technical Approach"* loses; *"Skills are
+   code, not prompts"* holds. All six headlines are claims.
+2. **A block that opens with context instead of its point.** Every block now opens with the point.
+3. **More than one thing competing for attention on a slide.** Fixed — the positioning map was cut
+   from slide 2 and the triptych from slide 3. Each slide now has exactly one focal point.
+4. **A claim with nothing under it.** Every claim in the deck is either evidenced in the repository
+   or explicitly marked as a plan. There is nothing a judge can call hollow.
+5. **An unverified citation.** A dead or wrong reference on slide 6 fails the whole slide, and the
+   judge who checks one and finds it broken discounts the rest. Every reference must be opened
+   first.
+
+**And the one thing that loses the energetic judge, which is the harder one to see:** a deck that
+promises more than the repository contains. This is why shipped and next are separated on slide 4,
+why no benchmark is claimed that has not been run, and why the mockup's one rule is that every
+element in it must actually work. **The energetic judge is the one who opens the link — and they are
+the ones worth winning.**
+
+**The final read, in order:** skim the six headlines cold. If the argument does not reconstruct,
+rewrite headlines. Then read slides 2 and 3 properly. Then read only the block-opening lines of 4
+to 6. Then open the repository and the blog as a sceptic. If nothing falls out, the deck is ready.
+
