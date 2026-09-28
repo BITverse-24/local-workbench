@@ -79,6 +79,14 @@ import {
   logScriptRepair,
 } from "../logger.js";
 
+// PERF OPTIMIZATION: Pre-compiled module-level RegExp constant for artifact request detection.
+const FILE_ACTION_VERBS = "export|download|save|create|generate|write|make|send|give|provide|produce|return|deliver|output";
+const FILE_NOUNS = "file|files|artifact|artifacts|result file|output file|deliverable|deliverables|xlsx|excel|spreadsheet|csv|txt|json|md|markdown";
+const REQUESTS_ARTIFACT_PATTERN = new RegExp(
+  `\\b(${FILE_ACTION_VERBS})\\b[\\s\\S]*\\b(${FILE_NOUNS})\\b|\\b(${FILE_NOUNS})\\b[\\s\\S]*\\b(${FILE_ACTION_VERBS})\\b`,
+  "i",
+);
+
 function inferArtifactKind(filename: string, declaredKind?: string): ArtifactKind {
   if (declaredKind && ["docx", "pdf", "xlsx", "csv", "txt", "json", "md"].includes(declaredKind)) {
     return declaredKind as ArtifactKind;
@@ -156,8 +164,15 @@ export function findReferencedWorkspaceFiles(
 
   // 3. Extract all file paths from tree
   const allWorkspaceFiles = tree.filter((e) => e.type === "file").map((e) => e.name);
+  const lowerUserText = combinedUserText.toLowerCase();
   for (const relPath of allWorkspaceFiles) {
     const baseName = path.basename(relPath);
+    const baseLower = baseName.toLowerCase();
+    const relLower = relPath.toLowerCase();
+    // PERF OPTIMIZATION: Substring pre-filter eliminates RegExp construction for ~99.9% of non-matching files.
+    if (!lowerUserText.includes(baseLower) && !lowerUserText.includes(relLower)) {
+      continue;
+    }
     const escapedBase = baseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const escapedRel = relPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const wordPattern = new RegExp(`(?:@|\\b)(?:${escapedRel}|${escapedBase})\\b`, "i");
@@ -167,7 +182,6 @@ export function findReferencedWorkspaceFiles(
   }
 
   // 4. Proactive domain-concept matching: if user requests routes, middleware, or server files
-  const lowerUserText = combinedUserText.toLowerCase();
   if (referencedPaths.size === 0) {
     if (/\b(?:typescript|ts|convert|migrate|codebase|project)\b/i.test(lowerUserText)) {
       const codeFiles = allWorkspaceFiles.filter(
@@ -3250,15 +3264,7 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
     }
   }
   private requestsArtifact(text: string): boolean {
-    const fileActionVerbs =
-      "export|download|save|create|generate|write|make|send|give|provide|produce|return|deliver|output";
-    const fileNouns =
-      "file|files|artifact|artifacts|result file|output file|deliverable|deliverables|xlsx|excel|spreadsheet|csv|txt|json|md|markdown";
-    const pattern = new RegExp(
-      `\\b(${fileActionVerbs})\\b[\\s\\S]*\\b(${fileNouns})\\b|\\b(${fileNouns})\\b[\\s\\S]*\\b(${fileActionVerbs})\\b`,
-      "i",
-    );
-    return pattern.test(text) || /\b(result file|output file|as an artifact)\b/i.test(text);
+    return REQUESTS_ARTIFACT_PATTERN.test(text) || /\b(result file|output file|as an artifact)\b/i.test(text);
   }
   private async awaitConfirmation(
     runId: string,
