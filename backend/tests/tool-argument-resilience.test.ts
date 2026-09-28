@@ -13,6 +13,7 @@ import {
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createDocxBuffer } from "../src/main/tools/artifacts.js";
 
 describe("Tool Argument Parsing Resilience", () => {
   describe("parseToolCallArguments", () => {
@@ -45,6 +46,17 @@ describe("Tool Argument Parsing Resilience", () => {
       const res = parseToolCallArguments(brokenJson);
       expect(res.path).toBe("src/app.ts");
       expect(res.content).toContain("import express");
+    });
+
+    it("unescapes double-escaped newlines and tabs from JSON string arguments", () => {
+      // LLMs frequently emit \\n inside string arguments when generating function calls
+      const doubleEscapedJson = '{"path": "fixed-parser.py", "content": "import sys\\\\nimport csv\\\\n\\\\ndef summarize():\\\\n    return 42"}';
+      const res = parseToolCallArguments(doubleEscapedJson);
+      expect(res.path).toBe("fixed-parser.py");
+      expect(typeof res.content).toBe("string");
+      expect(res.content).toContain("\n");
+      expect(res.content).not.toContain("\\n");
+      expect((res.content as string).split("\n").length).toBe(5);
     });
   });
 
@@ -132,6 +144,23 @@ describe("Tool Argument Parsing Resilience", () => {
 
       const res = await searchTool.execute({ search_query: "sovereign" }, context);
       expect(res.summary).toContain("Found 1 matches");
+    });
+
+    it("createDocxBuffer parses bulleted markdown tables into valid docx without errors", async () => {
+      const markdown = `# Technical Inspection Approval Note
+## Findings & Measurements
+- | Equipment | Location | Measured Value | Allowable Limit | Status |
+- | --- | --- | --- | --- | --- |
+- | E-201 | Tube Wall | 3.8 mm | 4.6 mm | Non-Compliant |
+- | E-202 | Tube Wall | 4.0 mm | 4.6 mm | Non-Compliant |
+
+## Corrective Actions
+1. Recheck weld joint 4B.
+2. Replace gasket.`;
+
+      const buf = await createDocxBuffer(markdown);
+      expect(Buffer.isBuffer(buf)).toBe(true);
+      expect(buf.length).toBeGreaterThan(1000);
     });
   });
 });

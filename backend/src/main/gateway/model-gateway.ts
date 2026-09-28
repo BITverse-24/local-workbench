@@ -334,10 +334,35 @@ export function formatMessagesForFallback(
   });
 }
  
+export function normalizeParsedToolArgs(val: unknown): any {
+  if (typeof val === "string") {
+    // If the string contains literal escaped newlines (\n) but no real newlines (\n),
+    // the LLM doubly escaped linebreaks in its JSON string argument.
+    if (val.includes("\\n") && !val.includes("\n")) {
+      return val
+        .replace(/\\r\\n/g, "\n")
+        .replace(/\\n/g, "\n")
+        .replace(/\\t/g, "\t");
+    }
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map(normalizeParsedToolArgs);
+  }
+  if (val && typeof val === "object") {
+    const res: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(val)) {
+      res[k] = normalizeParsedToolArgs(v);
+    }
+    return res;
+  }
+  return val;
+}
+
 export function parseToolCallArguments(raw: unknown): Record<string, unknown> {
   if (!raw) return {};
   if (typeof raw === "object" && !Array.isArray(raw)) {
-    return raw as Record<string, unknown>;
+    return normalizeParsedToolArgs(raw as Record<string, unknown>);
   }
   if (typeof raw !== "string") return {};
 
@@ -348,12 +373,12 @@ export function parseToolCallArguments(raw: unknown): Record<string, unknown> {
   try {
     const parsed = JSON.parse(str);
     if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-      return parsed;
+      return normalizeParsedToolArgs(parsed as Record<string, unknown>);
     }
     if (typeof parsed === "string" && parsed.trim().startsWith("{")) {
       const doubleParsed = JSON.parse(parsed.trim());
       if (typeof doubleParsed === "object" && doubleParsed !== null && !Array.isArray(doubleParsed)) {
-        return doubleParsed;
+        return normalizeParsedToolArgs(doubleParsed as Record<string, unknown>);
       }
     }
   } catch {}
@@ -365,7 +390,7 @@ export function parseToolCallArguments(raw: unknown): Record<string, unknown> {
     });
     const parsed = JSON.parse(repaired);
     if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-      return parsed;
+      return normalizeParsedToolArgs(parsed as Record<string, unknown>);
     }
   } catch {}
 

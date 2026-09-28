@@ -67,7 +67,14 @@ export function extractContentArg(args: Record<string, unknown>): string {
   ];
   for (const k of candidateKeys) {
     if (typeof args[k] === "string") {
-      return args[k] as string;
+      let content = args[k] as string;
+      if (content.includes("\\n") && !content.includes("\n")) {
+        content = content
+          .replace(/\\r\\n/g, "\n")
+          .replace(/\\n/g, "\n")
+          .replace(/\\t/g, "\t");
+      }
+      return content;
     }
   }
 

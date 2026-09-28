@@ -209,11 +209,13 @@ function renderCellContent(text: string, keyPrefix: string): React.ReactNode {
 }
 
 function parseMarkdownBlocks(rawText: string): MarkdownBlock[] {
-  const lines = rawText.split(/\r?\n/);
+  // Normalize bulleted or indented markdown table rows (e.g. "- | Equipment | ... |" -> "| Equipment | ... |")
+  const normalizedText = rawText.replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, '\n$1');
+  const lines = normalizedText.split(/\r?\n/);
   const blocks: MarkdownBlock[] = [];
   let i = 0;
 
-  const isTableSep = (l: string) => /^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/.test(l);
+  const isTableSep = (l: string) => /^\s*(?:[-*+]\s+)?\|(?:\s*:?-+:?\s*\|)+\s*$/.test(l);
 
   while (i < lines.length) {
     const line = lines[i];

@@ -401,7 +401,13 @@ export const executePythonTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const code = String(args.code ?? "");
+    let code = String(args.code ?? "");
+    if (code.includes("\\n") && !code.includes("\n")) {
+      code = code
+        .replace(/\\r\\n/g, "\n")
+        .replace(/\\n/g, "\n")
+        .replace(/\\t/g, "\t");
+    }
     const filename = String(args.filename ?? "task.py");
     let inputFiles = Array.isArray(args.input_files) ? args.input_files.map(String) : [];
 
@@ -418,6 +424,17 @@ export const executePythonTool: AgentTool = {
         }
       }
     }
+
+    // Prioritize data files (.csv, .tsv, .json, .log, .txt, .dat, .xml, .xlsx) before code files (.py, .js, .ts)
+    // so sys.argv[1] is the primary data file target for the script
+    const isDataFile = (f: string) => /\.(csv|tsv|json|log|txt|dat|xml|xlsx)$/i.test(f);
+    inputFiles.sort((a, b) => {
+      const aData = isDataFile(a);
+      const bData = isDataFile(b);
+      if (aData && !bData) return -1;
+      if (!aData && bData) return 1;
+      return 0;
+    });
 
     const intermediateDir = resolveRunPath(context.runId, "intermediate", "intermediate");
     const scriptPath = path.join(intermediateDir, filename);
@@ -457,7 +474,22 @@ export const executePythonTool: AgentTool = {
     // Also persist the executed/repaired script itself as an artifact
     try {
       const scriptBase = path.basename(filename);
-      const artifactScriptFilename = scriptBase.startsWith("repaired-") ? scriptBase : `repaired-${scriptBase}`;
+      // If the filename was generic (task.py or run_fixed_script.py), check if run attachments have a source python script
+      let targetName = scriptBase;
+      if (scriptBase === "task.py" || scriptBase.startsWith("run_")) {
+        const inDir = resolveRunPath(context.runId, "input", "input");
+        if (existsSync(inDir)) {
+          const pyEntry = readdirSync(inDir).find((f) => f.endsWith(".py") && !f.startsWith("."));
+          if (pyEntry) {
+            const cleanName = pyEntry.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, "");
+            targetName = cleanName.replace(/^(?:broken|buggy)-/i, "fixed-");
+          }
+        }
+      }
+      const artifactScriptFilename =
+        targetName.startsWith("repaired-") || targetName.startsWith("fixed-")
+          ? targetName
+          : `repaired-${targetName}`;
       const scriptOutPath = path.join(outputDir, artifactScriptFilename);
       writeFileSync(scriptOutPath, code, "utf8");
       artifacts.push({

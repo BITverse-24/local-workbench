@@ -16,3 +16,6 @@ release/
 .env
 *.env
 !.env.example
+
+# GitHub Wiki submodule/clone
+wiki/

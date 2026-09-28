@@ -67,17 +67,17 @@ sequenceDiagram
     Main->>Main: Stage parser.py and CSV into input/
     Main-->>UI: routing(code, reason: script repair & execution)
     Main->>Agent: Launch AgentLoop turn 1
-    Agent->>Runner: execute_python(code: original parser.py, input_files: [reactor-logs.csv])
-    Runner-->>Agent: exit code 1, stderr: "KeyError: 'TEMP_K' / timestamp parse error"
-    Agent-->>UI: agent_thinking("Execution failed with KeyError. Inspecting data format...")
-    Agent->>Code: generate_code(spec: "Fix timestamp parsing and Kelvin conversion for reactor-logs.csv")
+    Agent->>Runner: execute_python(code: original parser.py, input_files: [vendor-maintenance-log.csv])
+    Runner-->>Agent: exit code 1, stderr: "ValueError: could not convert string to float: ''"
+    Agent-->>UI: agent_thinking("Execution failed with ValueError on empty sensor cell. Inspecting threshold logic...")
+    Agent->>Code: generate_code(spec: "Guard empty temperature cells and use inclusive >= 350.0 limit")
     Code-->>Agent: Repaired Python source
     Agent-->>UI: confirmation_required(execute_python)
     User->>UI: Approve execution
     UI->>Main: confirmAction(actionId, approved: true)
-    Agent->>Runner: execute_python(code: repaired source, input_files: [reactor-logs.csv])
-    Runner-->>Agent: exit code 0, stdout: "Processed 1440 records. Thermal runaway alert logged."
-    Agent-->>UI: artifact_ready(repaired-parser.py, verified-output.csv)
+    Agent->>Runner: execute_python(code: repaired source, input_files: [vendor-maintenance-log.csv])
+    Runner-->>Agent: exit code 0, stdout: "ROWS 5; MALFORMED 1; ABOVE_LIMIT 1"
+    Agent-->>UI: artifact_ready(repaired script, verified-output.csv)
     Agent->>UI: Assistant message detailing root cause & verified output metrics
     Main-->>UI: run_state: completed
 ```

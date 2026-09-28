@@ -217,29 +217,45 @@ export function extractInChatFindings(text: string): string {
   const cleaned = cleanPlanPreview(text);
   if (!cleaned) return "";
 
+  // Normalize bulleted or indented markdown table rows
+  const unbulleted = cleaned.replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, "\n$1");
+
+  // If the text is talking about code modification, script execution, or tool steps,
+  // it is NOT engineering inspection report findings!
+  if (
+    /\b(?:code|script|python|execute_python|write_file|run_command|steps to execute|tool requests?|corrected code|explanation of changes|syntax error|indentation)\b/i.test(
+      unbulleted,
+    )
+  ) {
+    return "";
+  }
+
   // If the model produced both findings/analysis and a separate deliverable document structure in the text:
-  const documentHeaderMatch = cleaned.search(
+  const documentHeaderMatch = unbulleted.search(
     /\n\s*#{1,3}\s+(?:Draft\s+)?(?:Approval\s*Note|Technical\s*Report|Deliverable|Compliance\s*Review|Official\s*Document|Executive\s*Summary)/i,
   );
   if (documentHeaderMatch > 0) {
-    const beforeDoc = cleaned.slice(0, documentHeaderMatch).trim();
+    const beforeDoc = unbulleted.slice(0, documentHeaderMatch).trim();
     if (beforeDoc.length > 50) {
       return beforeDoc;
     }
   }
 
   // If the model produced a findings section:
-  if (/###?\s+(?:Key\s+)?Findings/i.test(cleaned)) {
-    return cleaned;
+  if (/###?\s+(?:Key\s+)?Findings/i.test(unbulleted)) {
+    return unbulleted;
   }
 
-  // If it's substantive text with markdown structure (not just code or single sentence):
+  // If it's substantive engineering report text with markdown structure and inspection keywords:
   if (
-    cleaned.length > 120 &&
-    (/#+\s+/m.test(cleaned) || /\|[^\n]+\|[^\n]+\|/m.test(cleaned) || /^\s*[-*]\s+/m.test(cleaned)) &&
-    !/^\s*(?:I\s+will|Let's|Now\s+let's)\s+/i.test(cleaned)
+    unbulleted.length > 120 &&
+    (/#+\s+/m.test(unbulleted) || /\|[^\n]+\|[^\n]+\|/m.test(unbulleted) || /^\s*[-*]\s+/m.test(unbulleted)) &&
+    !/^\s*(?:I\s+will|Let's|Now\s+let's|Sure,\s+I\s+can)\s+/i.test(unbulleted) &&
+    /\b(?:inspection|findings|allowable|thickness|measured|corrosion|pitting|clearance|valve|hydrocarbon|non-compliant|compliance|deviation|weld|joint)\b/i.test(
+      unbulleted,
+    )
   ) {
-    return cleaned;
+    return unbulleted;
   }
 
   return "";
@@ -281,6 +297,7 @@ export class AgentLoop {
     let hasExecutedTools = false;
     let hasExecutedDiskMutations = false;
     let lastExecutionHadError = false;
+    let lastExecutionFailedTool: string | null = null;
     let lastErrorMessage = "";
     const modifiedFiles = new Set<string>();
     const executedCommands: string[] = [];
@@ -413,6 +430,73 @@ export class AgentLoop {
             arguments: typeof args === "object" && args !== null ? args : {},
           };
         });
+
+        // Deliverable verification & guardrails
+        const isDeliverableRequested =
+          semanticIntent?.intentType === "document_drafting" ||
+          /\b(?:draft|drafting|approval\s*note|deliverable|\.?docx|\.?xlsx|word\s*(?:doc|document|file)?|(?:formal\s+|inspection\s+)?report|memo|summary\s+note|write\s+(?:in\s+)?(?:a\s+)?(?:docx|doc|word|pdf|file)|create\s+(?:a\s+)?(?:docx|doc|word|report|deliverable|file)|generate\s+(?:a\s+)?(?:docx|doc|word|report|deliverable|file)|export\s+(?:to\s+)?(?:docx|xlsx|pdf|file)|save\s+(?:to\s+)?(?:docx|xlsx|pdf|file))\b/i.test(
+            userPrompt,
+          ) ||
+          (/\b(?:docx|doc|word|file|report|note)\b/i.test(userPrompt) &&
+            messages.some((m) => typeof m.content === "string" && /\b(?:draft|approval\s*note|inspection\s*report)\b/i.test(m.content)));
+
+        // Guardrail A: If the user only asked to check/review/inspect compliance without asking for a document/file, drop generate_deliverable.
+        if (!isDeliverableRequested) {
+          effectiveToolCalls = effectiveToolCalls.filter((c: any) => c.name !== "generate_deliverable");
+          if (effectiveToolCalls.length === 0) {
+            effectiveToolCalls = null;
+          }
+        } else {
+          // Guardrail B: If generate_deliverable was requested but args.content contains prompt guideline placeholders
+          // while substantive text / markdown tables were generated in the turn or previous messages, substitute real content.
+          for (const c of effectiveToolCalls) {
+            if (c.name === "generate_deliverable" && c.arguments) {
+              const rawContent = String(c.arguments.content ?? "");
+              const isPromptGuidelinePlaceholder =
+                /Markdown table with columns/i.test(rawContent) ||
+                /Subject line, Equipment \/ Asset IDs/i.test(rawContent) ||
+                /Direct fitness-for-service verdict/i.test(rawContent) ||
+                (/\b(?:Findings\s*&?\s*Measurements|Table)\b/i.test(rawContent) &&
+                  !/\|[^\n]+\|[^\n]+\|\r?\n\|[-:\s|]+\|\r?\n\|[^\n]+\|[^\n]+\|/.test(rawContent));
+
+              if (isPromptGuidelinePlaceholder) {
+                const sources = [
+                  content,
+                  accumulatedInChatFindings,
+                  ...messages.slice(-3).reverse().map((m) => (typeof m.content === "string" ? m.content : "")),
+                ];
+                let foundTable = "";
+                let substantiveSource = "";
+                for (const src of sources) {
+                  if (!src) continue;
+                  const tableMatch = src.match(/(\|.+?\|\r?\n\|[-:\s|]+\|\r?\n(?:\|.+?\|\r?\n?)+)/);
+                  if (tableMatch && !foundTable) {
+                    foundTable = tableMatch[1].trim();
+                  }
+                  if (src.length > 200 && /\|.+?\|\r?\n\|[-:\s|]+\|/.test(src) && !substantiveSource) {
+                    substantiveSource = src;
+                  }
+                }
+
+                if (substantiveSource && /Subject line, Equipment \/ Asset IDs/i.test(rawContent)) {
+                  // The model copied the Section 8 prompt text into arguments.content, while writing the actual document in turn content!
+                  c.arguments.content = substantiveSource
+                    .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT)\]/gi, "")
+                    .trim();
+                } else if (foundTable) {
+                  if (/Markdown table with columns[^\n]*/i.test(rawContent)) {
+                    c.arguments.content = rawContent.replace(
+                      /(\*{0,2}(?:Findings\s*&?\s*Measurements(?:\s*Table)?)\*{0,2}:?\s*)?Markdown table with columns[^\n]*/i,
+                      `$1\n\n${foundTable}\n\n`,
+                    );
+                  } else {
+                    c.arguments.content = `${rawContent}\n\n### Findings & Measurements\n\n${foundTable}\n\n`;
+                  }
+                }
+              }
+            }
+          }
+        }
       }
 
       // If tool calls were returned on this turn, any streamed chunks were intermediate scratchpad UNLESS they contained substantive findings.
@@ -771,7 +855,8 @@ export class AgentLoop {
           const modifiedList = modifiedFiles.size > 0
             ? `Files modified so far: ${Array.from(modifiedFiles).join(", ")}.`
             : "No files were modified on disk.";
-          const failureSummary = `Execution stopped: The model repeatedly encountered errors invoking \`${effectiveToolCalls[0]?.name}\` (${lastErrorMessage}). ${modifiedList} Please check the workspace or specify the file targets.`;
+          const failedToolName = lastExecutionFailedTool || effectiveToolCalls[0]?.name || "tool";
+          const failureSummary = `Execution stopped: The model repeatedly encountered errors invoking \`${failedToolName}\` (${lastErrorMessage}). ${modifiedList} Please check the workspace or specify the file targets.`;
           emitEvent({
             type: "error",
             runId,
@@ -903,6 +988,7 @@ export class AgentLoop {
 
           if (isError) {
             anyError = true;
+            lastExecutionFailedTool = exec.name;
             if (!lastErrorMessage) {
               lastErrorMessage = exec.result.output;
             }

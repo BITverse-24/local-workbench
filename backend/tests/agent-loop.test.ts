@@ -664,9 +664,68 @@ module.exports = app;
 
     expect(callCount).toBe(2);
     expect(result.completed).toBe(false);
-    expect(result.finalText).toContain("Execution stopped: The model repeatedly encountered errors");
+    expect(result.finalText).toContain("Execution stopped: The model repeatedly encountered errors invoking `write_file`");
     const errorEvent = emittedEvents.find((e) => e.type === "error" && e.code === "tool_loop_detected");
     expect(errorEvent).toBeDefined();
+  });
+
+  it("reports the specific failed tool in tool_loop_detected when multiple tools are invoked concurrently", async () => {
+    const loop = new AgentLoop();
+    let callCount = 0;
+    const emittedEvents: any[] = [];
+
+    const mockWriteSuccess: AgentTool = {
+      name: "write_file",
+      definition: {
+        type: "function",
+        function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } },
+      },
+      async execute() {
+        return { output: JSON.stringify({ written: true }), summary: "Wrote file" };
+      },
+    };
+
+    const mockPythonFail: AgentTool = {
+      name: "execute_python",
+      definition: {
+        type: "function",
+        function: { name: "execute_python", description: "exec", parameters: { type: "object", properties: {} } },
+      },
+      async execute() {
+        return { output: JSON.stringify({ exitCode: 1, stderr: "SyntaxError: unexpected token" }), summary: "Exit 1" };
+      },
+    };
+
+    const mockGateway = {
+      async chatWithTools() {
+        callCount++;
+        return {
+          ok: true,
+          value: {
+            content: "Fixing script.",
+            tool_calls: [
+              { id: `c1_${callCount}`, name: "write_file", arguments: { path: "script.py", content: "x = 1" } },
+              { id: `c2_${callCount}`, name: "execute_python", arguments: { code: "import script" } },
+            ],
+          },
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-multi-tool-loop",
+      driverModelId: "code-qwen25coder",
+      userPrompt: "Fix python script",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockWriteSuccess, mockPythonFail],
+      context: { runId: "test-multi-tool-loop", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: (e) => emittedEvents.push(e),
+    });
+
+    expect(callCount).toBe(2);
+    expect(result.completed).toBe(false);
+    expect(result.finalText).toContain("invoking `execute_python`");
+    expect(result.finalText).toContain("SyntaxError: unexpected token");
   });
 
   it("suppresses assistant_message_chunk during intermediate tool-calling turns and emits only clean summary on final turn", async () => {
@@ -1041,6 +1100,18 @@ module.exports = app;
     expect(extracted).toContain("Rows 12-15 measured 3.8-4.2 mm.");
     expect(extracted).not.toContain("### Draft Approval Note for Plant Manager");
     expect(extracted).not.toContain("Classification: OFFICIAL");
+  });
+
+  it("extractInChatFindings ignores code repair and tool execution chatter", () => {
+    const rawContent = `Sure, I can help you fix the Python script to work with the attached CSV file. Let's go through the issues.
+### Issues Identified:
+1. Bug 1: Missing temperature field crashes run.
+2. Bug 2: Temperature upper limit.
+### Steps to Execute:
+1. Write code via write_file.
+2. Execute script via execute_python.`;
+    const extracted = extractInChatFindings(rawContent);
+    expect(extracted).toBe("");
   });
 
   it("preserves turn-1 in-chat key findings when turn-2 returns deliverable confirmation", async () => {

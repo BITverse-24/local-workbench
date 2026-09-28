@@ -360,11 +360,17 @@ export function renderMarkdownToDocxElements(markdown: string): Array<Paragraph 
     }
 
     // 4. Markdown Tables (| ... |)
-    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+    const lineCleanTable = trimmed.replace(/^[-*+]\s+/, "").trim();
+    if (lineCleanTable.startsWith("|") && lineCleanTable.endsWith("|")) {
       const tableLines: string[] = [];
-      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
-        tableLines.push(lines[i].trim());
-        i++;
+      while (i < lines.length) {
+        const nextClean = lines[i].trim().replace(/^[-*+]\s+/, "").trim();
+        if (nextClean.startsWith("|") && nextClean.endsWith("|")) {
+          tableLines.push(nextClean);
+          i++;
+        } else {
+          break;
+        }
       }
 
       const parsedTable = parseMarkdownTable(tableLines);
@@ -455,6 +461,14 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
   }
   if (data.body) {
     data.body = data.body.replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT|TOOL_CALL|END_TOOL_CALL)\]/gi, "").trim();
+    data.body = data.body.replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, "\n$1");
+  }
+  if (Array.isArray(data.sections)) {
+    for (const sec of data.sections) {
+      if (sec.body) {
+        sec.body = sec.body.replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, "\n$1");
+      }
+    }
   }
 
   const children: any[] = [];
@@ -838,6 +852,8 @@ export function parseDocxText(text: string): DocxDraftInput {
   } catch {}
 
   // Parse markdown / key-value format
+  // Normalize bulleted or indented markdown table rows: e.g. "- | Equipment | ... |" -> "| Equipment | ... |"
+  text = text.replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, "\n$1");
   const sections: Array<{ heading: string; body: string }> = [];
   const lines = text.split(/\r?\n/);
 

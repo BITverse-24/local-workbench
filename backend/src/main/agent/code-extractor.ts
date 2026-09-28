@@ -149,11 +149,19 @@ export function extractCodeBlocksWithFilenames(text: string, fallbackFilenames: 
 export function cleanFinalSummary(text: string, hasExecutedTools: boolean): string {
   if (!text) return "";
 
-  // Strip any tool simulator output tags like [TOOL_RESULT]...[END_TOOL_RESULT], [ENDTOOLRESULT], [TOOL_CALL], etc.
+  // Strip simulated or leaked JSON tool result blocks completely
   let cleanedToolTags = text
+    .replace(/\[TOOL_RESULT\]\s*(?:\{[\s\S]*?\}|\[\s*\{[\s\S]*?\}\s*\])\s*\[END_TOOL_RESULT\]/gi, "")
+    .replace(/<tool_response>\s*(?:\{[\s\S]*?\}|\[\s*\{[\s\S]*?\}\s*\])\s*<\/tool_response>/gi, "")
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
+    .replace(/\{\s*"exitCode"\s*:\s*\d+[\s\S]*?\}/gi, "")
     .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT|ENDTOOLRESULT|TOOL_CALL|END_TOOL_CALL|ENDTOOLCALL)\]/gi, "")
     .replace(/<\/?(?:tool_call|tool_response|tool_result)[^>]*>/gi, "")
     .trim();
+
+  // Un-bullet and un-indent markdown table rows so renderers parse them as valid tables:
+  // e.g. "  - | Equipment | ... |" -> "| Equipment | ... |"
+  cleanedToolTags = cleanedToolTags.replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, "\n$1");
 
   // If the summary contains or is an echoed tool result message (e.g. Generated deliverable "approval-note.docx" (...)):
   cleanedToolTags = cleanedToolTags.replace(
@@ -168,6 +176,15 @@ export function cleanFinalSummary(text: string, hasExecutedTools: boolean): stri
   }
 
   if (!hasExecutedTools) return cleanedToolTags || text;
+
+  // Strip tool instruction / execution boilerplate sections when tools have already run
+  cleanedToolTags = cleanedToolTags
+    .replace(/###?\s+Steps\s+to\s+Execute:?[\s\S]*?(?=\n\s*###?|$)/gi, "")
+    .replace(/###?\s+Tool\s+Requests?:?[\s\S]*?(?=\n\s*###?|$)/gi, "")
+    .replace(/###?\s+Expected\s+Output:?[\s\S]*?(?=\n\s*###?|$)/gi, "")
+    .replace(/###?\s+(?:Corrected|Updated|Fixed)\s+Code:?[\s\S]*?(?=\n\s*###?|$)/gi, "")
+    .replace(/(?:^|\n)\s*(?:Sure(?:,)?\s+)?(?:I\s+can\s+help\s+you|Here\s+is\s+the\s+corrected\s+code)[^\n]*(?:\r?\n|$)/gi, "\n")
+    .replace(/(?:^|\n)\s*Let\s+me\s+know\s+if\s+you\s+need\s+further\s+assistance[^\n]*(?:\r?\n|$)/gi, "\n");
 
   // Replace code blocks:
   // - If explicitly tagged with shell/bash/sh/terminal commands, keep them.
@@ -250,7 +267,11 @@ export function cleanPlanPreview(text: string): string {
   let cleaned = text
     .replace(/\[TOOL_RESULT\]\s*(?:\{[\s\S]*?\}|\[\s*\{[\s\S]*?\}\s*\])\s*\[END_TOOL_RESULT\]/gi, "")
     .replace(/<tool_response>\s*(?:\{[\s\S]*?\}|\[\s*\{[\s\S]*?\}\s*\])\s*<\/tool_response>/gi, "")
-    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
+    .replace(/\{\s*"exitCode"\s*:\s*\d+[\s\S]*?\}/gi, "");
+
+  // 1.5 Un-bullet and un-indent markdown table rows
+  cleaned = cleaned.replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, "\n$1");
 
   // 2. Strip any tool simulator tags without destroying human markdown text
   cleaned = cleaned

@@ -16,7 +16,7 @@
 Fixtures are stored under `demo/flow_a/`, `demo/flow_b/`, and `demo/flow_c/`:
 
 - **Flow A Bundle**: Scanned pressure vessel inspection report PDF, handwritten NDT annotation, and governing `SOP-114`.
-- **Flow B Bundle**: Failing vendor log parser `process_vendor_logs.py` and reactor CSV dataset.
+- **Flow B Bundle**: Deliberately broken `broken-vendor-log-parser.py`, `vendor-maintenance-log.csv` (demo prompt), and `reactor-temperature-log.csv` (240-row dataset, 7 out-of-range per manifest).
 - **Flow C Bundle**: Piping skid SVG schematic `pump-skid-P204.svg` and governing specification `SOP-220`.
 
 ### Preflight commands
