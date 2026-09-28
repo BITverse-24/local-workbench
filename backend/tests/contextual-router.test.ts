@@ -184,5 +184,47 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
     expect(intent.isActionable).toBe(false);
     expect(intent.intentType).toBe("general_qa");
   });
+
+  it("routes drawing compliance review in chat to vision-qwen25vl as file_inspection without forcing document_drafting", async () => {
+    const svgAttachment: AttachmentReference = {
+      attachmentId: "att_svg",
+      filename: "pump-skid-P204.svg",
+      mediaType: "image/svg+xml",
+      sizeBytes: 2048,
+      relativePath: "runs/1/input/pump-skid-P204.svg",
+    };
+
+    const intent = await resolveSemanticIntent({
+      userPrompt: "Check if the skid follows our piping spec and review the design against SOP-220",
+      attachments: [svgAttachment],
+      hasWorkspace: false,
+    });
+
+    expect(intent.driverModel).toBe("vision-qwen25vl");
+    expect(intent.taskType).toBe("vision");
+    expect(intent.intentType).toBe("file_inspection");
+    expect(intent.isActionable).toBe(false);
+  });
+
+  it("routes inspection report review in chat without export request to file_inspection", async () => {
+    const pdfAttachment: AttachmentReference = {
+      attachmentId: "att_pdf",
+      filename: "inspection-report-E201.pdf",
+      mediaType: "application/pdf",
+      sizeBytes: 4096,
+      relativePath: "runs/1/input/inspection-report-E201.pdf",
+    };
+
+    const intent = await resolveSemanticIntent({
+      userPrompt: "Review the inspection report findings and check if it complies with SOP-114",
+      attachments: [pdfAttachment],
+      hasWorkspace: false,
+    });
+
+    expect(intent.driverModel).toBe("vision-qwen25vl");
+    expect(intent.taskType).toBe("vision");
+    expect(intent.intentType).toBe("file_inspection");
+    expect(intent.isActionable).toBe(false);
+  });
 });
 

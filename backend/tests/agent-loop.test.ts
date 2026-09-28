@@ -958,6 +958,67 @@ module.exports = app;
     expect(result.finalText).toContain("approval-note.docx");
   });
 
+  it("does not auto-generate deliverable when user only asked for an in-chat drawing compliance review", async () => {
+    const loop = new AgentLoop();
+    const generatedDeliverables: any[] = [];
+    const emittedEvents: any[] = [];
+
+    const mockDeliverableTool: AgentTool = {
+      name: "generate_deliverable",
+      definition: {
+        type: "function",
+        function: {
+          name: "generate_deliverable",
+          description: "Generate deliverable",
+          parameters: { type: "object", properties: { filename: { type: "string" } } },
+        },
+      },
+      execute: async (args) => {
+        generatedDeliverables.push(args);
+        return { output: "OK", summary: "OK" };
+      },
+    };
+
+    const mockGateway = {
+      chatWithTools: async () => {
+        return {
+          ok: true as const,
+          value: {
+            content: `### Engineering Summary:\n- **Equipment ID**: P-204 Pump Skid\n| Equipment | Component | Measured Value | Allowable Limit | Status |\n| P-204 Pump Skid | Discharge Line | DN80 | DN100 or larger | Non-Compliant |\n\n### Technical Evaluation:\nDischarge line diameter DN80 is non-compliant with SOP-220.`,
+            tool_calls: [],
+          },
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-in-chat-review",
+      driverModelId: "vision-qwen25vl",
+      userPrompt: "Review the pump skid drawing and check if it follows our piping spec SOP-220",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockDeliverableTool],
+      semanticIntent: {
+        driverModel: "vision-qwen25vl",
+        taskType: "vision",
+        primaryGoal: "Inspect and review pump skid drawing against SOP-220",
+        isActionable: false,
+        targetFiles: [],
+        intentType: "file_inspection",
+        reason: "Visual drawing review in chat",
+      },
+      context: { runId: "test-in-chat-review", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: (e) => emittedEvents.push(e),
+    });
+
+    expect(result.completed).toBe(true);
+    // Deliverable MUST NOT be auto-generated when user only requested in-chat review!
+    expect(generatedDeliverables.length).toBe(0);
+    const artEvent = emittedEvents.find((e) => e.type === "artifact_ready");
+    expect(artEvent).toBeUndefined();
+    expect(result.finalText).toContain("P-204 Pump Skid");
+    expect(result.finalText).not.toContain("approval-note.docx");
+  });
+
   it("nudges model on turn 1 when model returns a brief placeholder without invoking generate_deliverable", async () => {
     const loop = new AgentLoop();
     let callTurn = 0;

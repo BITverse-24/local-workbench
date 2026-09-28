@@ -521,14 +521,29 @@ export const generateDeliverableTool: AgentTool = {
     type: "function",
     function: {
       name: "generate_deliverable",
-      description: "Generate an official deliverable document (Word .docx, Excel .xlsx, or Markdown .md) in the run output folder.",
+      description:
+        "Generate an official deliverable document file (Word .docx, Excel .xlsx, or Markdown .md) in the run output folder. Use ONLY when the user explicitly requests an export file, report document, or formal deliverable. Do NOT invoke if the user is only asking for a review, comparison, explanation, or direct engineering answers in chat.",
       parameters: {
         type: "object",
         properties: {
-          type: { type: "string", enum: ["docx", "xlsx", "md"], description: "Format of the deliverable." },
-          title: { type: "string", description: "Document title or subject." },
-          content: { type: "string", description: "Text or markdown content for the deliverable." },
-          filename: { type: "string", description: "Desired deliverable filename (e.g. 'approval-note.docx', 'findings.md')." },
+          type: {
+            type: "string",
+            enum: ["docx", "xlsx", "md"],
+            description: "Format of the deliverable document: 'docx' for Word, 'xlsx' for Excel spreadsheet, 'md' for Markdown report.",
+          },
+          title: {
+            type: "string",
+            description: "Formal title of the deliverable document.",
+          },
+          content: {
+            type: "string",
+            description:
+              "The complete, publication-grade document body in Markdown. Must contain the full synthesized engineering findings, actual measured values, and complete Markdown tables with real data rows. Do NOT pass template outlines or placeholder text.",
+          },
+          filename: {
+            type: "string",
+            description: "Desired deliverable filename (e.g. 'approval-note.docx', 'findings.md', 'summary.xlsx').",
+          },
         },
         required: ["type", "content"],
       },
@@ -558,6 +573,16 @@ export const generateDeliverableTool: AgentTool = {
         `Cannot generate deliverable "${filename}" with placeholder or empty content. ` +
         `You must first inspect input files (using read_file or extract_document), synthesize the findings, ` +
         `and call generate_deliverable with complete, comprehensive, publication-ready markdown or text content.`
+      );
+    }
+
+    if (
+      /Markdown table with columns/i.test(content) &&
+      !/\|[^\n]+\|[^\n]+\|\r?\n\|[-:\s|]+\|\r?\n\|[^\n]+\|[^\n]+\|/.test(content)
+    ) {
+      throw new Error(
+        `Cannot generate deliverable "${filename}" with template placeholder text ("Markdown table with columns"). ` +
+        `You must provide the complete document content with actual measured values and completed Markdown table rows.`
       );
     }
 

@@ -38,9 +38,11 @@ Available lead models:
 - "draft-qwen3": for drafting formal engineering memos, compliance approval notes, deliverables, and general conceptual reasoning.
 - "vision-qwen25vl": for reading scanned inspection reports, engineering drawings, or diagrams.
 
-CRITICAL ACTIONABILITY RULE:
+CRITICAL ACTIONABILITY & INTENT RULES:
 - If the user is asking questions, seeking explanations, requesting an architectural review, or having general conversation (even inside an active workspace), set "isActionable": false and "intentType": "general_qa" or "pure_chat".
 - ONLY set "isActionable": true if the user explicitly asks to create, modify, delete, build, install, or run code/files on disk ("intentType": "code_modification" or "command_execution").
+- If the user asks to inspect, review, verify, or check compliance of an attached drawing or report in chat without asking for an official export document or file, set "isActionable": false and "intentType": "file_inspection". Route to "vision-qwen25vl" for drawings or scanned documents.
+- ONLY set "intentType": "document_drafting" and "isActionable": true if the user explicitly asks to draft or export an official deliverable document or file (e.g. "draft an approval note", "export report to docx").
 
 Output strictly valid JSON matching this schema:
 {
@@ -139,76 +141,7 @@ export async function resolveSemanticIntent(
   const promptTrimmed = userPrompt.trim();
   const lowerPrompt = promptTrimmed.toLowerCase();
 
-  // 1. Fast Deterministic Short-Circuits (Unambiguous Environment States)
-  const isImageOrDoc = attachments.some(
-    (a) =>
-      a.mediaType.startsWith("image/") ||
-      a.mediaType === "application/pdf" ||
-      /\.(?:png|jpe?g|webp|pdf|svg)$/i.test(a.filename ?? ""),
-  );
-  const isCodeAttachment = attachments.some(
-    (a) =>
-      /\.(?:py|js|ts|jsx|tsx|json|sh|bash|css|html)$/i.test(a.filename ?? "") ||
-      a.mediaType === "text/x-python" ||
-      a.mediaType === "application/javascript" ||
-      a.mediaType === "text/javascript" ||
-      a.mediaType === "application/typescript",
-  );
-
-  const isExplicitDrafting =
-    /\b(?:draft|drafting|approval\s*note|memo|executive\s*summary|deliverable|\.?docx|word\s*(?:doc|document|file)?|compliance\s*report|formal\s*report|write\s+(?:in\s+)?(?:a\s+)?(?:docx|doc|word|pdf|file)|create\s+(?:a\s+)?(?:docx|doc|word|report|deliverable)|generate\s+(?:a\s+)?(?:docx|doc|word|report|deliverable))\b/i.test(
-      lowerPrompt,
-    ) ||
-    (/\b(?:docx|doc|word|file|report|note)\b/i.test(lowerPrompt) &&
-      history.some((m) => /\b(?:draft|approval\s*note|inspection\s*report)\b/i.test(m.content)));
-
-  const attachmentFileNames = attachments.map((a) => a.filename).filter(Boolean) as string[];
-
-  // Document drafting / synthesis task: draft model drives (delegates to vision via extract_document tool)
-  if (isExplicitDrafting) {
-    const referencedFiles = extractReferencedFiles(userPrompt, history, workspaceFiles, attachmentFileNames);
-    return {
-      driverModel: "draft-qwen3",
-      taskType: "draft",
-      primaryGoal: "Draft engineering document or compliance note",
-      isActionable: true,
-      targetFiles: referencedFiles,
-      intentType: "document_drafting",
-      reason: "document drafting and analytical synthesis",
-    };
-  }
-
-  // Pure vision task: scanned report/drawing attached with no code context
-  if (!hasWorkspace && isImageOrDoc && !isCodeAttachment) {
-    return {
-      driverModel: "vision-qwen25vl",
-      taskType: "vision",
-      primaryGoal: "Inspect and analyze document/image",
-      isActionable: false,
-      targetFiles: [],
-      intentType: "file_inspection",
-      reason: "visual document or image attached without code context",
-    };
-  }
-
-  // Pure conversational greeting without attachments
-  if (
-    attachments.length === 0 &&
-    history.length === 0 &&
-    /^(?:hi|hello|hey|greetings|good\s*(?:morning|evening|afternoon)|who are you)[\s!.]*$/i.test(lowerPrompt)
-  ) {
-    return {
-      driverModel: "draft-qwen3",
-      taskType: "draft",
-      primaryGoal: "General conversation",
-      isActionable: false,
-      targetFiles: [],
-      intentType: "pure_chat",
-      reason: "pure conversational greeting",
-    };
-  }
-
-  // 2. Semantic LLM Resolution Call
+  // 1. Primary Semantic LLM Resolution Call (when Gateway is available)
   if (gateway && typeof gateway.execute === "function") {
     try {
       const formattedHistory = history
@@ -278,6 +211,7 @@ LATEST USER REQUEST:
             ? "code"
             : "draft";
 
+          const attachmentFileNames = attachments.map((a) => a.filename).filter(Boolean) as string[];
           const targetFiles = Array.isArray(parsed.targetFiles) && parsed.targetFiles.length > 0
             ? parsed.targetFiles
                 .map((f: any) => String(f).replace(/^@\/?/, "").replace(/^\.\//, "").trim())
@@ -300,9 +234,46 @@ LATEST USER REQUEST:
     }
   }
 
-  // 3. Resilient Contextual Fallback (No Brittle Regexes)
-  // Understands role and context based on active workspace, conversation history, and explicit document requests.
+  // 2. Resilient Contextual Fallback (Offline / Test / Gateway Failure Fallback)
+  const isImageOrDoc = attachments.some(
+    (a) =>
+      a.mediaType.startsWith("image/") ||
+      a.mediaType === "application/pdf" ||
+      /\.(?:png|jpe?g|webp|pdf|svg)$/i.test(a.filename ?? ""),
+  );
+  const isCodeAttachment = attachments.some(
+    (a) =>
+      /\.(?:py|js|ts|jsx|tsx|json|sh|bash|css|html)$/i.test(a.filename ?? "") ||
+      a.mediaType === "text/x-python" ||
+      a.mediaType === "application/javascript" ||
+      a.mediaType === "text/javascript" ||
+      a.mediaType === "application/typescript",
+  );
+
+  const isExplicitDrafting =
+    /\b(?:draft\s+(?:an?\s+)?(?:approval\s*note|memo|deliverable|document|report)|export\s+(?:to\s+)?(?:docx|xlsx|pdf)|write\s+(?:an?\s+)?(?:approval\s*note|deliverable))\b/i.test(
+      lowerPrompt,
+    );
+
+  const attachmentFileNames = attachments.map((a) => a.filename).filter(Boolean) as string[];
   const referencedFiles = extractReferencedFiles(userPrompt, history, workspaceFiles, attachmentFileNames);
+
+  // Pure conversational greeting without attachments
+  if (
+    attachments.length === 0 &&
+    history.length === 0 &&
+    /^(?:hi|hello|hey|greetings|good\s*(?:morning|evening|afternoon)|who are you)[\s!.]*$/i.test(lowerPrompt)
+  ) {
+    return {
+      driverModel: "draft-qwen3",
+      taskType: "draft",
+      primaryGoal: "General conversation",
+      isActionable: false,
+      targetFiles: [],
+      intentType: "pure_chat",
+      reason: "pure conversational greeting",
+    };
+  }
 
   if (isCodeAttachment) {
     const codeTargetFiles = attachments.map((a) => a.filename).filter(Boolean) as string[];
@@ -314,6 +285,30 @@ LATEST USER REQUEST:
       targetFiles: codeTargetFiles,
       intentType: "code_modification",
       reason: "code or data attachment provided; prioritizing attached files",
+    };
+  }
+
+  // Visual document or drawing attached without code workspace
+  if (!hasWorkspace && isImageOrDoc) {
+    if (isExplicitDrafting) {
+      return {
+        driverModel: "draft-qwen3",
+        taskType: "draft",
+        primaryGoal: "Draft engineering document or compliance note",
+        isActionable: true,
+        targetFiles: referencedFiles,
+        intentType: "document_drafting",
+        reason: "document drafting requested for attached document",
+      };
+    }
+    return {
+      driverModel: "vision-qwen25vl",
+      taskType: "vision",
+      primaryGoal: "Inspect and analyze document/image",
+      isActionable: false,
+      targetFiles: [],
+      intentType: "file_inspection",
+      reason: "visual document or image attached without code context",
     };
   }
 

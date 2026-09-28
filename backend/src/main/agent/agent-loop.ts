@@ -431,72 +431,7 @@ export class AgentLoop {
           };
         });
 
-        // Deliverable verification & guardrails
-        const isDeliverableRequested =
-          semanticIntent?.intentType === "document_drafting" ||
-          /\b(?:draft|drafting|approval\s*note|deliverable|\.?docx|\.?xlsx|word\s*(?:doc|document|file)?|(?:formal\s+|inspection\s+)?report|memo|summary\s+note|write\s+(?:in\s+)?(?:a\s+)?(?:docx|doc|word|pdf|file)|create\s+(?:a\s+)?(?:docx|doc|word|report|deliverable|file)|generate\s+(?:a\s+)?(?:docx|doc|word|report|deliverable|file)|export\s+(?:to\s+)?(?:docx|xlsx|pdf|file)|save\s+(?:to\s+)?(?:docx|xlsx|pdf|file))\b/i.test(
-            userPrompt,
-          ) ||
-          (/\b(?:docx|doc|word|file|report|note)\b/i.test(userPrompt) &&
-            messages.some((m) => typeof m.content === "string" && /\b(?:draft|approval\s*note|inspection\s*report)\b/i.test(m.content)));
 
-        // Guardrail A: If the user only asked to check/review/inspect compliance without asking for a document/file, drop generate_deliverable.
-        if (!isDeliverableRequested) {
-          effectiveToolCalls = effectiveToolCalls.filter((c: any) => c.name !== "generate_deliverable");
-          if (effectiveToolCalls.length === 0) {
-            effectiveToolCalls = null;
-          }
-        } else {
-          // Guardrail B: If generate_deliverable was requested but args.content contains prompt guideline placeholders
-          // while substantive text / markdown tables were generated in the turn or previous messages, substitute real content.
-          for (const c of effectiveToolCalls) {
-            if (c.name === "generate_deliverable" && c.arguments) {
-              const rawContent = String(c.arguments.content ?? "");
-              const isPromptGuidelinePlaceholder =
-                /Markdown table with columns/i.test(rawContent) ||
-                /Subject line, Equipment \/ Asset IDs/i.test(rawContent) ||
-                /Direct fitness-for-service verdict/i.test(rawContent) ||
-                (/\b(?:Findings\s*&?\s*Measurements|Table)\b/i.test(rawContent) &&
-                  !/\|[^\n]+\|[^\n]+\|\r?\n\|[-:\s|]+\|\r?\n\|[^\n]+\|[^\n]+\|/.test(rawContent));
-
-              if (isPromptGuidelinePlaceholder) {
-                const sources = [
-                  content,
-                  accumulatedInChatFindings,
-                  ...messages.slice(-3).reverse().map((m) => (typeof m.content === "string" ? m.content : "")),
-                ];
-                let foundTable = "";
-                let substantiveSource = "";
-                for (const src of sources) {
-                  if (!src) continue;
-                  const tableMatch = src.match(/(\|.+?\|\r?\n\|[-:\s|]+\|\r?\n(?:\|.+?\|\r?\n?)+)/);
-                  if (tableMatch && !foundTable) {
-                    foundTable = tableMatch[1].trim();
-                  }
-                  if (src.length > 200 && /\|.+?\|\r?\n\|[-:\s|]+\|/.test(src) && !substantiveSource) {
-                    substantiveSource = src;
-                  }
-                }
-
-                if (substantiveSource && /Subject line, Equipment \/ Asset IDs/i.test(rawContent)) {
-                  // The model copied the Section 8 prompt text into arguments.content, while writing the actual document in turn content!
-                  c.arguments.content = substantiveSource
-                    .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT)\]/gi, "")
-                    .trim();
-                } else if (foundTable) {
-                  if (/Markdown table with columns[^\n]*/i.test(rawContent)) {
-                    c.arguments.content = rawContent.replace(
-                      /(\*{0,2}(?:Findings\s*&?\s*Measurements(?:\s*Table)?)\*{0,2}:?\s*)?Markdown table with columns[^\n]*/i,
-                      `$1\n\n${foundTable}\n\n`,
-                    );
-                  } else {
-                    c.arguments.content = `${rawContent}\n\n### Findings & Measurements\n\n${foundTable}\n\n`;
-                  }
-                }
-              }
-            }
-          }
-        }
       }
 
       // If tool calls were returned on this turn, any streamed chunks were intermediate scratchpad UNLESS they contained substantive findings.
@@ -584,15 +519,8 @@ export class AgentLoop {
 
           const isDraftIntent =
             isSemanticActionable !== false &&
-            semanticIntent?.intentType !== "general_qa" &&
-            semanticIntent?.intentType !== "pure_chat" &&
-            Boolean(dispatcher.getTool("generate_deliverable")) &&
-            (semanticIntent?.intentType === "document_drafting" ||
-              /\b(?:draft|drafting|approval\s*note|deliverable|\.?docx|word\s*(?:doc|document|file)?|compliance\s*report|formal\s*report|write\s+(?:in\s+)?(?:a\s+)?(?:docx|doc|word|pdf|file)|create\s+(?:a\s+)?(?:docx|doc|word|report|deliverable)|generate\s+(?:a\s+)?(?:docx|doc|word|report|deliverable))\b/i.test(
-                userPrompt,
-              ) ||
-              (/\b(?:docx|doc|word|file|report|note)\b/i.test(userPrompt) &&
-                messages.some((m) => typeof m.content === "string" && /\b(?:draft|approval\s*note|inspection\s*report)\b/i.test(m.content))));
+            semanticIntent?.intentType === "document_drafting" &&
+            Boolean(dispatcher.getTool("generate_deliverable"));
 
           if (isCommandIntent && dispatcher.getTool("run_command")) {
             if (streamedChunks.length > 0) {
@@ -699,13 +627,7 @@ export class AgentLoop {
 
           // If user requested drafting an approval note / report / deliverable, and model outputted document text without invoking generate_deliverable:
           if (dispatcher.getTool("generate_deliverable") && content && content.length > 150) {
-            const isDraftingRequest =
-              semanticIntent?.intentType === "document_drafting" ||
-              /\b(?:draft|drafting|approval\s*note|deliverable|\.?docx|word\s*(?:doc|document|file)?|compliance\s*report|formal\s*report|write\s+(?:in\s+)?(?:a\s+)?(?:docx|doc|word|pdf|file)|create\s+(?:a\s+)?(?:docx|doc|word|report|deliverable)|generate\s+(?:a\s+)?(?:docx|doc|word|report|deliverable))\b/i.test(
-                userPrompt,
-              ) ||
-              (/\b(?:docx|doc|word|file|report|note)\b/i.test(userPrompt) &&
-                messages.some((m) => typeof m.content === "string" && /\b(?:draft|approval\s*note|inspection\s*report)\b/i.test(m.content)));
+            const isDraftingRequest = semanticIntent?.intentType === "document_drafting";
 
             const hasDocStructure =
               /#+\s+/m.test(content) ||
@@ -754,15 +676,16 @@ export class AgentLoop {
           }
 
           const claimsDiskAction =
-            /\b(implemented|created|updated|modified|added|written|patched|converted|migrated|refactored|configured|installed|generating|drafting|generated|drafted|preparing|prepared|compiling|compiled)\b/i.test(
+            /\b(implemented|created|updated|modified|added|written|patched|converted|migrated|refactored|configured|installed)\b/i.test(
               content ?? "",
             ) &&
-            /\b(file|files|middleware|route|routes|component|server|script|code|package\.json|\.js|\.ts|\.py|\.json|typescript|codebase|deliverable|document|approval\s*note|\.?docx|report)\b/i.test(
+            /\b(file|files|middleware|route|routes|component|server|script|code|package\.json|\.js|\.ts|\.py|\.json|typescript|codebase)\b/i.test(
               content ?? "",
             );
 
           // Only reject if model made a hollow claim without actually producing code or explanation
           const isMerelyEmptyClaim =
+            (semanticIntent?.intentType === "code_modification" || semanticIntent?.intentType === "command_execution") &&
             claimsDiskAction &&
             !content?.includes("```") &&
             (content?.length ?? 0) < 250 &&

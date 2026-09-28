@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createDocxBuffer } from "../src/main/tools/artifacts.js";
+import { generateDeliverableTool } from "../src/main/tools/specialist-tools.js";
 
 describe("Tool Argument Parsing Resilience", () => {
   describe("parseToolCallArguments", () => {
@@ -161,6 +162,21 @@ describe("Tool Argument Parsing Resilience", () => {
       const buf = await createDocxBuffer(markdown);
       expect(Buffer.isBuffer(buf)).toBe(true);
       expect(buf.length).toBeGreaterThan(1000);
+    });
+
+    it("generateDeliverableTool rejects template outline placeholders and requests completed rows", async () => {
+      const context = { workspaceRoot: tmpDir, runId: "test-run", gateway: {} as any };
+
+      await expect(
+        generateDeliverableTool.execute(
+          {
+            type: "docx",
+            filename: "approval-note.docx",
+            content: "### Findings & Measurements\nMarkdown table with columns | Equipment | Measured Value |",
+          },
+          context,
+        ),
+      ).rejects.toThrow(/template placeholder text/);
     });
   });
 });
