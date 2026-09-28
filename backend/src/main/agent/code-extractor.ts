@@ -151,10 +151,22 @@ export function cleanFinalSummary(text: string, hasExecutedTools: boolean): stri
 
   // Strip simulated or leaked JSON tool result blocks completely
   let cleanedToolTags = text
-    .replace(/\[TOOL_RESULT\]\s*(?:\{[\s\S]*?\}|\[\s*\{[\s\S]*?\}\s*\])\s*\[END_TOOL_RESULT\]/gi, "")
-    .replace(/<tool_response>\s*(?:\{[\s\S]*?\}|\[\s*\{[\s\S]*?\}\s*\])\s*<\/tool_response>/gi, "")
+    .replace(/\[TOOL_RESULT\]\s*([\s\S]*?)\s*\[END_TOOL_RESULT\]/gi, (match, inner) => {
+      const trimmed = inner.trim();
+      if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]")) || /exitCode/i.test(trimmed)) {
+        return "";
+      }
+      return inner;
+    })
+    .replace(/<tool_response>\s*([\s\S]*?)\s*<\/tool_response>/gi, (match, inner) => {
+      const trimmed = inner.trim();
+      if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]")) || /exitCode/i.test(trimmed)) {
+        return "";
+      }
+      return inner;
+    })
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
-    .replace(/\{\s*"exitCode"\s*:\s*\d+[\s\S]*?\}/gi, "")
+    .replace(/\{\s*"exitCode"\s*:\s*\d+[\s\S]*?\n\}/gi, "")
     .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT|ENDTOOLRESULT|TOOL_CALL|END_TOOL_CALL|ENDTOOLCALL)\]/gi, "")
     .replace(/<\/?(?:tool_call|tool_response|tool_result)[^>]*>/gi, "")
     .trim();
@@ -242,6 +254,12 @@ export function cleanFinalSummary(text: string, hasExecutedTools: boolean): stri
     .replace(/(?:^|\n)\s*(?:(?:And\s+)?here is the (?:updated\s+)?code\s+(?:for|in)\s+[^\n:]+:?)\s*(?=\n|$)/gi, "")
     .replace(/(?:^|\n)\s*write_file\s+--path\s+[^\n]+/gi, "");
 
+  // Remove redundant introductory output recap when a structured summary of findings immediately follows
+  cleanedText = cleanedText.replace(
+    /(?:The output indicates that|Based on the execution output)[^:\n]*:\s*(?:\r?\n\s*[-*]\s+[^\n]+)+\s*(?=\r?\n\s*(?:#{1,4}\s+|Here is a summary|Summary))/i,
+    ""
+  );
+
   // Normalize duplicate blank lines and trim
   const normalized = cleanedText
     .replace(/\r?\n{3,}/g, "\n\n")
@@ -265,10 +283,22 @@ export function cleanPlanPreview(text: string): string {
 
   // 1. Strip simulated JSON tool results (e.g. [TOOL_RESULT]\n{\n "files": ...\n}\n[END_TOOL_RESULT])
   let cleaned = text
-    .replace(/\[TOOL_RESULT\]\s*(?:\{[\s\S]*?\}|\[\s*\{[\s\S]*?\}\s*\])\s*\[END_TOOL_RESULT\]/gi, "")
-    .replace(/<tool_response>\s*(?:\{[\s\S]*?\}|\[\s*\{[\s\S]*?\}\s*\])\s*<\/tool_response>/gi, "")
+    .replace(/\[TOOL_RESULT\]\s*([\s\S]*?)\s*\[END_TOOL_RESULT\]/gi, (match, inner) => {
+      const trimmed = inner.trim();
+      if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]")) || /exitCode/i.test(trimmed)) {
+        return "";
+      }
+      return inner;
+    })
+    .replace(/<tool_response>\s*([\s\S]*?)\s*<\/tool_response>/gi, (match, inner) => {
+      const trimmed = inner.trim();
+      if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]")) || /exitCode/i.test(trimmed)) {
+        return "";
+      }
+      return inner;
+    })
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
-    .replace(/\{\s*"exitCode"\s*:\s*\d+[\s\S]*?\}/gi, "");
+    .replace(/\{\s*"exitCode"\s*:\s*\d+[\s\S]*?\n\}/gi, "");
 
   // 1.5 Un-bullet and un-indent markdown table rows
   cleaned = cleaned.replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, "\n$1");

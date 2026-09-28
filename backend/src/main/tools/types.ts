@@ -10,6 +10,7 @@ export interface ToolExecutionContext {
   harness?: HarnessManager;
   grounding?: RAGGroundingProvider;
   emitRunEvent?: (event: any) => void;
+  lastAssistantContent?: string;
 }
 
 export interface ToolExecutionResult {

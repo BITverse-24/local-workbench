@@ -13,6 +13,7 @@ import {
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { createDocxBuffer } from "../src/main/tools/artifacts.js";
 import { generateDeliverableTool } from "../src/main/tools/specialist-tools.js";
 
@@ -164,7 +165,7 @@ describe("Tool Argument Parsing Resilience", () => {
       expect(buf.length).toBeGreaterThan(1000);
     });
 
-    it("generateDeliverableTool rejects template outline placeholders and requests completed rows", async () => {
+    it("generateDeliverableTool rejects template outline placeholders when no completed table exists", async () => {
       const context = { workspaceRoot: tmpDir, runId: "test-run", gateway: {} as any };
 
       await expect(
@@ -177,6 +178,56 @@ describe("Tool Argument Parsing Resilience", () => {
           context,
         ),
       ).rejects.toThrow(/template placeholder text/);
+    });
+
+    it("generateDeliverableTool enriches template placeholder when context.lastAssistantContent has real table", async () => {
+      const context = {
+        workspaceRoot: tmpDir,
+        runId: randomUUID(),
+        gateway: {} as any,
+        lastAssistantContent: `### Findings & Measurements\n| Equipment | Measured Value | Allowable Limit | Status |\n| --- | --- | --- | --- |\n| E-201 | 3.8 mm | 4.6 mm | Non-Compliant |\n| E-202 | 4.0 mm | 4.6 mm | Non-Compliant |`,
+      };
+
+      const res = await generateDeliverableTool.execute(
+        {
+          type: "docx",
+          filename: "approval-note.docx",
+          content: "### Findings & Measurements\nMarkdown table with columns | Equipment | Measured Value |",
+        },
+        context,
+      );
+
+      expect(res.artifacts).toBeDefined();
+      expect(res.artifacts?.[0].filename).toBe("approval-note.docx");
+      expect(res.summary).toContain("approval-note.docx");
+    });
+
+    it("generateDeliverableTool creates styled Excel deliverable from markdown table content", async () => {
+      const context = { workspaceRoot: tmpDir, runId: randomUUID(), gateway: {} as any };
+
+      const res = await generateDeliverableTool.execute(
+        {
+          type: "xlsx",
+          filename: "findings.xlsx",
+          title: "Engineering Inspection Findings",
+          content: `| Component | Thickness (mm) | Limit (mm) | Compliance |\n| --- | --- | --- | --- |\n| Tube Row 12 | 3.8 | 4.6 | FAIL |\n| Shell Nozzle | 1.8 | 3.0 | WARNING |`,
+        },
+        context,
+      );
+
+      expect(res.artifacts).toBeDefined();
+      expect(res.artifacts?.[0].kind).toBe("xlsx");
+      expect(res.artifacts?.[0].filename).toBe("findings.xlsx");
+      expect(res.summary).toContain("findings.xlsx");
+    });
+
+    it("readFileTool returns friendly advice when reading binary image files instead of crashing", async () => {
+      const context = { workspaceRoot: tmpDir, runId: "test-run", gateway: {} as any };
+      writeFileSync(path.join(tmpDir, "diagram.png"), "fake binary content");
+
+      const res = await readFileTool.execute({ path: "diagram.png" }, context);
+      expect(res.output).toContain("binary image");
+      expect(res.output).toContain("extract_document");
     });
   });
 });

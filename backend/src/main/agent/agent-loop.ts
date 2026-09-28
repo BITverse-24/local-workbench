@@ -517,11 +517,6 @@ export class AgentLoop {
                 (driverModelId === "code-qwen25coder" || hasActionVerb) &&
                 !isCommandIntent);
 
-          const isDraftIntent =
-            isSemanticActionable !== false &&
-            semanticIntent?.intentType === "document_drafting" &&
-            Boolean(dispatcher.getTool("generate_deliverable"));
-
           if (isCommandIntent && dispatcher.getTool("run_command")) {
             if (streamedChunks.length > 0) {
               emitEvent({
@@ -575,33 +570,32 @@ export class AgentLoop {
               turn,
             });
             continue;
-          } else if (isDraftIntent && dispatcher.getTool("generate_deliverable")) {
-            const hasFullDocInContent =
-              (content?.length ?? 0) > 250 &&
-              (/#+\s+/m.test(content ?? "") || /\|[^\n]+\|[^\n]+\|/m.test(content ?? ""));
-
-            if (!hasFullDocInContent) {
-              if (streamedChunks.length > 0) {
-                emitEvent({
-                  type: "assistant_message_reset",
-                  runId,
-                  messageId: assistantMessageId,
-                });
-                assistantMessageId = randomUUID();
-                streamedChunks = [];
-              }
-              messages.push({
-                role: "assistant",
-                content,
-                turn,
+          } else if (
+            semanticIntent?.intentType === "document_drafting" &&
+            dispatcher.getTool("generate_deliverable") &&
+            (content?.length ?? 0) < 120 &&
+            /^(?:generating|drafting|i will|working on|processing|hold on)\b/i.test((content ?? "").trim())
+          ) {
+            if (streamedChunks.length > 0) {
+              emitEvent({
+                type: "assistant_message_reset",
+                runId,
+                messageId: assistantMessageId,
               });
-              messages.push({
-                role: "user",
-                content: `[SYSTEM FEEDBACK]: The user requested drafting an approval note or deliverable document ("${userPrompt.trim()}"), but no tools were invoked and no complete document was produced (you stated: "${(content ?? "").trim()}"). You MUST either invoke the native \`generate_deliverable\` tool (with {"type": "docx", "filename": "approval-note.docx", "title": "...", "content": "..."}) containing the complete technical approval note with findings, tables, and recommendations, or output the complete document content now. Please do this now.`,
-                turn,
-              });
-              continue;
+              assistantMessageId = randomUUID();
+              streamedChunks = [];
             }
+            messages.push({
+              role: "assistant",
+              content,
+              turn,
+            });
+            messages.push({
+              role: "user",
+              content: `[SYSTEM FEEDBACK]: You responded with a brief placeholder ("${(content ?? "").trim()}"), but no tools were invoked and no content was produced. You MUST invoke the native \`generate_deliverable\` tool or provide the complete document content now. Please do this now.`,
+              turn,
+            });
+            continue;
           }
         }
       }
@@ -624,19 +618,17 @@ export class AgentLoop {
               }
             }
           }
+          const userExplicitlyRequestedFile =
+            /\b(?:docx|doc|excel|xlsx|csv|in a (?:docx|doc|excel|xlsx|file)|deliverable file|report file|export (?:a |the )?(?:file|deliverable|doc|report))\b/i.test(
+              userPrompt,
+            );
 
-          // If user requested drafting an approval note / report / deliverable, and model outputted document text without invoking generate_deliverable:
-          if (dispatcher.getTool("generate_deliverable") && content && content.length > 150) {
-            const isDraftingRequest = semanticIntent?.intentType === "document_drafting";
-
+          if (userExplicitlyRequestedFile && dispatcher.getTool("generate_deliverable") && content && content.length > 150) {
             const hasDocStructure =
               /#+\s+/m.test(content) ||
-              /\|[^\n]+\|[^\n]+\|/m.test(content) ||
-              /\b(?:APPROVAL\s*NOTE|TECHNICAL\s*INSPECTION|CLEARANCE\s*VERDICT|RECOMMENDATIONS?|ACTION\s*ITEMS?|FITNESS\s*FOR\s*SERVICE)\b/i.test(
-                content,
-              );
+              /\|[^\n]+\|[^\n]+\|/m.test(content);
 
-            if (isDraftingRequest && hasDocStructure) {
+            if (hasDocStructure) {
               const titleMatch =
                 content.match(/^#+\s+([^\n]+)/m) ||
                 content.match(/\*\*Subject:\*\*\s*([^\n]+)/i) ||
@@ -646,7 +638,7 @@ export class AgentLoop {
                 : "Technical Inspection Approval Note";
 
               const fileMatch = userPrompt.match(/([\w.-]+\.(?:docx|pdf|xlsx|html))/i);
-              const filename = fileMatch ? fileMatch[1] : "approval-note.docx";
+              const filename = fileMatch ? fileMatch[1] : (userPrompt.toLowerCase().includes("xlsx") ? "deliverable.xlsx" : "approval-note.docx");
 
               try {
                 const execs = await dispatcher.dispatchConcurrent(
@@ -670,10 +662,12 @@ export class AgentLoop {
                   modifiedFiles.add(filename);
                 }
               } catch (err) {
-                console.error("[agent-loop] Failed to auto-generate deliverable from content:", err);
+                console.error("[agent-loop] Failed to auto-generate requested deliverable from content:", err);
               }
             }
           }
+
+
 
           const claimsDiskAction =
             /\b(implemented|created|updated|modified|added|written|patched|converted|migrated|refactored|configured|installed)\b/i.test(
@@ -715,6 +709,17 @@ export class AgentLoop {
         ) {
           const docFile = Array.from(modifiedFiles).find((f) => f.endsWith(".docx") || f.endsWith(".xlsx"));
           finalText += `\n\n📄 **The official deliverable document has been compiled and saved as [${docFile}].**`;
+        }
+
+        if (
+          hasExecutedDiskMutations &&
+          modifiedFiles.size > 0 &&
+          Array.from(modifiedFiles).some((f) => f.endsWith(".py"))
+        ) {
+          const pyFile = Array.from(modifiedFiles).find((f) => f.endsWith(".py"));
+          if (pyFile && !finalText.includes(pyFile)) {
+            finalText += `\n\n🛠️ **The verified script has been saved as [${pyFile}].**`;
+          }
         }
 
         if (
@@ -807,6 +812,16 @@ export class AgentLoop {
           finalText += `\n\n📄 **The official deliverable document has been compiled and saved as [${docFile}].**`;
         }
         if (
+          hasExecutedDiskMutations &&
+          modifiedFiles.size > 0 &&
+          Array.from(modifiedFiles).some((f) => f.endsWith(".py"))
+        ) {
+          const pyFile = Array.from(modifiedFiles).find((f) => f.endsWith(".py"));
+          if (pyFile && !finalText.includes(pyFile)) {
+            finalText += `\n\n🛠️ **The verified script has been saved as [${pyFile}].**`;
+          }
+        }
+        if (
           accumulatedInChatFindings &&
           !finalText.includes("### Key Findings") &&
           !finalText.includes(accumulatedInChatFindings.slice(0, 40))
@@ -890,6 +905,7 @@ export class AgentLoop {
         };
       }
 
+      context.lastAssistantContent = lastContent ?? undefined;
       const executed = await dispatcher.dispatchConcurrent(effectiveToolCalls, context);
       if (executed.length > 0) {
         hasExecutedTools = true;
@@ -930,6 +946,11 @@ export class AgentLoop {
               hasExecutedDiskMutations = true;
             } else if (exec.name === "execute_python") {
               hasExecutedDiskMutations = true;
+              if (Array.isArray(exec.result.artifacts)) {
+                for (const art of exec.result.artifacts) {
+                  if (art.filename) modifiedFiles.add(art.filename);
+                }
+              }
             }
           }
         }
@@ -953,6 +974,26 @@ export class AgentLoop {
       lastContent || `Completed ${turn} operations.`,
       hasExecutedDiskMutations,
     );
+    if (
+      hasExecutedDiskMutations &&
+      modifiedFiles.size > 0 &&
+      !/official deliverable document/i.test(overflowText) &&
+      !/approval-note\.docx/i.test(overflowText) &&
+      Array.from(modifiedFiles).some((f) => f.endsWith(".docx") || f.endsWith(".xlsx"))
+    ) {
+      const docFile = Array.from(modifiedFiles).find((f) => f.endsWith(".docx") || f.endsWith(".xlsx"));
+      overflowText += `\n\n📄 **The official deliverable document has been compiled and saved as [${docFile}].**`;
+    }
+    if (
+      hasExecutedDiskMutations &&
+      modifiedFiles.size > 0 &&
+      Array.from(modifiedFiles).some((f) => f.endsWith(".py"))
+    ) {
+      const pyFile = Array.from(modifiedFiles).find((f) => f.endsWith(".py"));
+      if (pyFile && !overflowText.includes(pyFile)) {
+        overflowText += `\n\n🛠️ **The verified script has been saved as [${pyFile}].**`;
+      }
+    }
     if (
       accumulatedInChatFindings &&
       !overflowText.includes("### Key Findings") &&

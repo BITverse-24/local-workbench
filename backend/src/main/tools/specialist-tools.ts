@@ -4,8 +4,9 @@ import path from "node:path";
 import type { AgentTool, ToolExecutionContext, ToolExecutionResult } from "./types.js";
 import { requestBase } from "../gateway/model-gateway.js";
 import { executePython } from "./python.js";
-import { generateDocx, generateXlsx } from "./artifacts.js";
+import { generateDocx, generateXlsx, generateXlsxFromContent } from "./artifacts.js";
 import { resolveRunPath } from "../run/filesystem.js";
+import { extractContentArg, extractPathArg, findFileInRunDirectories } from "./workspace-tools.js";
 import type {
   ArtifactKind,
   ArtifactRef,
@@ -50,15 +51,31 @@ export const extractDocumentTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const filename = String(args.filename ?? "");
+    const rawPath = extractPathArg(args) || String(args.filename ?? args.path ?? args.document ?? args.file ?? "");
+    if (!rawPath.trim()) {
+      throw new Error(`extract_document requires a filename or path parameter. Received: ${JSON.stringify(args)}`);
+    }
     const query = String(args.query ?? "Extract all findings, measurements, and annotations from this document.");
-    const inputDir = resolveRunPath(context.runId, "input", "input");
-    const filePath = path.join(inputDir, filename);
 
-    if (!existsSync(filePath)) {
-      throw new Error(`Attached file "${filename}" not found in run input directory`);
+    let filePath: string | null = null;
+    if (context.workspaceRoot) {
+      try {
+        const resolved = path.resolve(context.workspaceRoot, rawPath);
+        if (existsSync(resolved)) filePath = resolved;
+      } catch {}
+    }
+    if (!filePath && context.runId) {
+      filePath = findFileInRunDirectories(context.runId, rawPath);
+    }
+    if (!filePath && existsSync(rawPath)) {
+      filePath = rawPath;
     }
 
+    if (!filePath || !existsSync(filePath)) {
+      throw new Error(`Attached file "${rawPath}" not found in run directories or workspace`);
+    }
+
+    const filename = path.basename(filePath);
     const ext = path.extname(filename).toLowerCase();
 
     // 1. Native Word document extraction (DOCX)
@@ -401,15 +418,25 @@ export const executePythonTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    let code = String(args.code ?? "");
+    let code = extractContentArg(args) || String(args.code ?? args.script ?? args.python_code ?? args.source ?? "");
     if (code.includes("\\n") && !code.includes("\n")) {
       code = code
         .replace(/\\r\\n/g, "\n")
         .replace(/\\n/g, "\n")
         .replace(/\\t/g, "\t");
     }
+    if (!code.trim()) {
+      throw new Error("execute_python requires 'code' (or 'script') containing Python source code to execute.");
+    }
     const filename = String(args.filename ?? "task.py");
-    let inputFiles = Array.isArray(args.input_files) ? args.input_files.map(String) : [];
+    let inputFiles: string[] = [];
+    if (Array.isArray(args.input_files)) {
+      inputFiles = args.input_files.map((f) => path.basename(String(f).trim())).filter(Boolean);
+    } else if (typeof args.input_files === "string" && args.input_files.trim()) {
+      inputFiles = args.input_files.split(",").map((f) => path.basename(f.trim())).filter(Boolean);
+    } else if (typeof args.input_file === "string" && args.input_file.trim()) {
+      inputFiles = [path.basename(args.input_file.trim())];
+    }
 
     // Automatically stage run attachments if input_files is omitted or incomplete
     const inputDir = resolveRunPath(context.runId, "input", "input");
@@ -445,8 +472,12 @@ export const executePythonTool: AgentTool = {
     if (filename !== "task.py") {
       writeFileSync(path.join(intermediateDir, "task.py"), code, "utf8");
     }
+    if (filename.includes("-")) {
+      const underscored = filename.replace(/-/g, "_");
+      writeFileSync(path.join(intermediateDir, underscored), code, "utf8");
+    }
 
-    const execResult = await executePython(context.runId, filename, inputFiles, []);
+    const execResult = await executePython(context.runId, filename, inputFiles, [], 60000, context.workspaceRoot);
     const summary = `Executed Python (${filename}): exit ${execResult.exitCode} in ${execResult.durationMs}ms`;
 
     const artifacts: ArtifactRef[] = [];
@@ -492,6 +523,10 @@ export const executePythonTool: AgentTool = {
           : `repaired-${targetName}`;
       const scriptOutPath = path.join(outputDir, artifactScriptFilename);
       writeFileSync(scriptOutPath, code, "utf8");
+      if (artifactScriptFilename.includes("-")) {
+        const underscoredArtifact = artifactScriptFilename.replace(/-/g, "_");
+        writeFileSync(path.join(outputDir, underscoredArtifact), code, "utf8");
+      }
       artifacts.push({
         artifactId: randomUUID(),
         runId: context.runId,
@@ -569,21 +604,45 @@ export const generateDeliverableTool: AgentTool = {
       /\[tool_result\]/i.test(content);
 
     if (isPlaceholderOnly) {
-      throw new Error(
-        `Cannot generate deliverable "${filename}" with placeholder or empty content. ` +
-        `You must first inspect input files (using read_file or extract_document), synthesize the findings, ` +
-        `and call generate_deliverable with complete, comprehensive, publication-ready markdown or text content.`
-      );
+      if (
+        context.lastAssistantContent &&
+        context.lastAssistantContent.length > 150 &&
+        (/#+\s+/m.test(context.lastAssistantContent) || /\|[^\n]+\|[^\n]+\|/m.test(context.lastAssistantContent))
+      ) {
+        content = context.lastAssistantContent;
+      } else {
+        throw new Error(
+          `Cannot generate deliverable "${filename}" with placeholder or empty content. ` +
+          `You must first inspect input files (using read_file or extract_document), synthesize the findings, ` +
+          `and call generate_deliverable with complete, comprehensive, publication-ready markdown or text content.`
+        );
+      }
     }
 
+    // If content contains template placeholder text ("Markdown table with columns"), enrich with the actual completed table
     if (
       /Markdown table with columns/i.test(content) &&
       !/\|[^\n]+\|[^\n]+\|\r?\n\|[-:\s|]+\|\r?\n\|[^\n]+\|[^\n]+\|/.test(content)
     ) {
-      throw new Error(
-        `Cannot generate deliverable "${filename}" with template placeholder text ("Markdown table with columns"). ` +
-        `You must provide the complete document content with actual measured values and completed Markdown table rows.`
+      const realTableMatch = context.lastAssistantContent?.match(
+        /(?:^|\n)\s*(\|?[^\n]+\|\r?\n\s*\|?[-:\s|]+\|\r?\n(?:\s*\|?[^\n]+\|\r?\n?)+)/m
       );
+      if (realTableMatch && realTableMatch[1]) {
+        const extractedTable = realTableMatch[1].trim();
+        content = content.replace(/.*Markdown table with columns.*/i, extractedTable);
+      } else if (
+        context.lastAssistantContent &&
+        context.lastAssistantContent.length > 200 &&
+        /#+\s+/m.test(context.lastAssistantContent) &&
+        /\|[^\n]+\|[^\n]+\|/m.test(context.lastAssistantContent)
+      ) {
+        content = context.lastAssistantContent;
+      } else {
+        throw new Error(
+          `Cannot generate deliverable "${filename}" with template placeholder text ("Markdown table with columns"). ` +
+          `You must provide the complete document content with actual measured values and completed Markdown table rows.`
+        );
+      }
     }
 
     // If title is default "Deliverable", extract title from the first heading if present
@@ -600,15 +659,20 @@ export const generateDeliverableTool: AgentTool = {
       const art = await generateDocx(context.runId, { title, body: content, sections: [] }, filename);
       artifacts.push(art);
     } else if (type === "xlsx") {
-      const mockExec: PythonExecutionResult = {
-        exitCode: 0,
-        stdout: "",
-        stderr: "",
-        timedOut: false,
-        outputFiles: [],
-        durationMs: 0,
-      };
-      const art = await generateXlsx(context.runId, mockExec, filename);
+      let art: ArtifactRef;
+      if (content && content.trim().length > 0) {
+        art = await generateXlsxFromContent(context.runId, content, filename, title);
+      } else {
+        const mockExec: PythonExecutionResult = {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          timedOut: false,
+          outputFiles: [],
+          durationMs: 0,
+        };
+        art = await generateXlsx(context.runId, mockExec, filename);
+      }
       artifacts.push(art);
     } else {
       const outDir = resolveRunPath(context.runId, "output", "output");

@@ -159,26 +159,39 @@ function renderCellContent(text: string, keyPrefix: string): React.ReactNode {
 }
 
 function parseMarkdownTable(raw: string): { headers: string[]; rows: string[][] } | null {
-  const lines = raw.trim().split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const normalized = raw.replace(/(?:^|\n)\s*[-*+]\s+(\|.+?)(?=\r?\n|$)/g, "\n$1");
+  const lines = normalized.trim().split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) return null;
-  const isTableRow = (l: string) => l.startsWith("|") && l.endsWith("|") && l.includes("|");
-  if (!lines.every(isTableRow)) return null;
 
-  const sepIdx = lines.findIndex((l) => /^\|(\s*:?-+:?\s*\|)+$/.test(l));
+  const isTableSep = (l: string) => {
+    const clean = l.trim().replace(/^[-*+]\s+/, "");
+    return /^\s*\|?\s*[-:]+[-| :]*\|?\s*$/.test(clean) && /[-:]{2,}/.test(clean);
+  };
+  const isTableRow = (l: string) => {
+    const clean = l.trim().replace(/^[-*+]\s+/, "");
+    return clean.includes("|") && !/^(?:#{1,6}\s|>|```|---|\*\*\*)/.test(clean);
+  };
+
+  const sepIdx = lines.findIndex(isTableSep);
   if (sepIdx <= 0) return null;
 
   const parseRow = (row: string) =>
     row
-      .slice(1, -1)
+      .trim()
+      .replace(/^[-*+]\s+/, "")
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
       .split("|")
       .map((c) => c.trim());
 
-  const headers = parseRow(lines[0]);
+  const headers = parseRow(lines[sepIdx - 1]);
   const rows: string[][] = [];
   for (let i = sepIdx + 1; i < lines.length; i++) {
-    rows.push(parseRow(lines[i]));
+    if (isTableRow(lines[i]) && !isTableSep(lines[i])) {
+      rows.push(parseRow(lines[i]));
+    }
   }
-  return { headers, rows };
+  return rows.length > 0 ? { headers, rows } : null;
 }
 
 function InteractiveMarkdown({ text }: { text: string }) {

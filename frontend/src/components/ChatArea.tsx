@@ -210,12 +210,20 @@ function renderCellContent(text: string, keyPrefix: string): React.ReactNode {
 
 function parseMarkdownBlocks(rawText: string): MarkdownBlock[] {
   // Normalize bulleted or indented markdown table rows (e.g. "- | Equipment | ... |" -> "| Equipment | ... |")
-  const normalizedText = rawText.replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, '\n$1');
+  const normalizedText = rawText.replace(/(?:^|\n)\s*[-*+]\s+(\|.+?)(?=\r?\n|$)/g, '\n$1');
   const lines = normalizedText.split(/\r?\n/);
   const blocks: MarkdownBlock[] = [];
   let i = 0;
 
-  const isTableSep = (l: string) => /^\s*(?:[-*+]\s+)?\|(?:\s*:?-+:?\s*\|)+\s*$/.test(l);
+  const isTableSep = (l: string) => {
+    const clean = l.trim().replace(/^[-*+]\s+/, '');
+    return /^\s*\|?\s*[-:]+[-| :]*\|?\s*$/.test(clean) && /[-:]{2,}/.test(clean);
+  };
+
+  const isTableRow = (l: string) => {
+    const clean = l.trim().replace(/^[-*+]\s+/, '');
+    return clean.includes('|') && !/^(?:#{1,6}\s|>|```|---|\*\*\*)/.test(clean);
+  };
 
   while (i < lines.length) {
     const line = lines[i];
@@ -248,16 +256,18 @@ function parseMarkdownBlocks(rawText: string): MarkdownBlock[] {
     }
 
     // Markdown Table
-    if (trimmed.startsWith('|') && trimmed.endsWith('|') && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+    if (isTableRow(trimmed) && i + 1 < lines.length && isTableSep(lines[i + 1])) {
       const parseCells = (row: string) =>
         row
+          .trim()
+          .replace(/^[-*+]\s+/, '')
           .replace(/^\|/, '')
           .replace(/\|$/, '')
           .split('|')
           .map((c) => c.trim());
 
       const headers = parseCells(trimmed);
-      const sepCells = parseCells(lines[i + 1].trim());
+      const sepCells = parseCells(lines[i + 1]);
       const alignments: Array<'left' | 'center' | 'right'> = sepCells.map((sc) => {
         const starts = sc.startsWith(':');
         const ends = sc.endsWith(':');
@@ -268,8 +278,10 @@ function parseMarkdownBlocks(rawText: string): MarkdownBlock[] {
 
       i += 2;
       const rows: string[][] = [];
-      while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
-        rows.push(parseCells(lines[i].trim()));
+      while (i < lines.length && isTableRow(lines[i])) {
+        if (!isTableSep(lines[i])) {
+          rows.push(parseCells(lines[i]));
+        }
         i++;
       }
 

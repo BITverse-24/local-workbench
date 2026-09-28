@@ -257,6 +257,15 @@ export const readFileTool: AgentTool = {
       }
     }
 
+    const ext = path.extname(relPath).toLowerCase();
+    const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".ico"]);
+    if (imageExtensions.has(ext)) {
+      return {
+        output: `File "${relPath}" is a binary image (${ext.slice(1).toUpperCase()}). To inspect its contents, visual details, annotations, or extract text/measurements from it, use the 'extract_document' tool with filename: "${relPath}".`,
+        summary: `Identified binary image "${relPath}" - advised extract_document`,
+      };
+    }
+
     let content: string;
     try {
       content = readFile(context.workspaceRoot, relPath);

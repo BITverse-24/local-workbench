@@ -1129,25 +1129,18 @@ OPERATIONAL & PLAN GUIDELINES:
      d) NEVER output a bare promise or empty placeholder without either executing \`generate_deliverable\` or outputting the complete document content with all findings, measurements, and tables.
 8. DELIVERABLE DOCUMENT STRUCTURE (FOR \`generate_deliverable\` CONTENT ONLY):
    CRITICAL: The \`content\` parameter of \`generate_deliverable\` MUST contain the ACTUAL, COMPLETE PUBLICATION-GRADE TEXT with REAL EXTRACTED VALUES, FINDINGS, AND A COMPLETED MARKDOWN TABLE WITH REAL DATA ROWS.
-   - NEVER copy instruction bullet points, meta-descriptions, or placeholder phrases like "Markdown table with columns" or "Subject line, Equipment / Asset IDs" into \`content\`!
-   - Template & Organization Policy: The content must contain all specific findings, measurements, and requirements provided by the user. Any unprovided organization details, headers, addresses, reference numbers, or sign-off titles can use standard template placeholders in brackets (e.g., [ORG_NAME], [DEPARTMENT / DIVISION NAME], [REF_NUMBER], [PREPARED_BY_TITLE], [APPROVED_BY_TITLE]).
-   - You MUST include a real Markdown table with data rows:
-     | Equipment | Component / Location | Measured Value | Allowable Limit | Deviation | Status |
-     |-----------|----------------------|----------------|-----------------|-----------|--------|
-     | [ID]      | [Location]           | [Value]        | [Limit]         | [Dev]     | Non-Compliant |
-   - Follow this formal document layout:
-     # Technical Inspection Approval Note
-     **Equipment Inspected**: [Asset IDs] | **Date**: [Date] | **Classification**: OFFICIAL / TECHNICAL APPROVAL
-     ## 1. Clearance Verdict
-     [Direct fitness-for-service verdict, e.g. REJECTION PENDING REPAIRS or CONDITIONAL CLEARANCE]
+   - NEVER copy instruction bullet points, meta-descriptions, or placeholder phrases like "Markdown table with columns" into \`content\`!
+   - Provide genuine headings, real measured numbers, and complete table rows derived from the inspected files and user query.
+   - Deliverable Format:
+     # <Descriptive Document Title>
+     ## 1. Executive Summary / Verdict
+     [Direct summary and verdict based on inspected files]
      ## 2. Findings & Measurements
-     [The Markdown table with real rows]
+     [Completed Markdown table with actual measured data rows]
      ## 3. Technical Evaluation & Risk Analysis
-     [Engineering consequence of findings]
-     ## 4. Corrective Action Items
-     [Numbered list of specific actions]
-     ## 5. Authority Sign-off Block
-     [Sign-off placeholders table]`;
+     [Technical assessment and engineering consequences]
+     ## 4. Action Items & Recommendations
+     [Numbered specific actions]`;
       }
 
       this.state(runId, "acting");

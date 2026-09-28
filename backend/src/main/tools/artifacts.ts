@@ -89,6 +89,115 @@ export async function generateXlsx(runId: string, execution: PythonExecutionResu
   return artifactRef(runId, "xlsx", name, rel);
 }
 
+export async function generateXlsxFromContent(
+  runId: string,
+  content: string,
+  requestedFilename?: string,
+  title?: string,
+): Promise<ArtifactRef> {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet(title?.slice(0, 30) || "Data");
+
+  const lines = (content || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+  // 1. Check if there are markdown table rows
+  const tableLines: string[] = [];
+  let inTable = false;
+  for (const line of lines) {
+    if (line.includes("|") && !line.startsWith("```") && !line.startsWith("#")) {
+      tableLines.push(line);
+      inTable = true;
+    } else if (inTable && !line.includes("|")) {
+      break;
+    }
+  }
+
+  const rowsToAdd: string[][] = [];
+
+  if (tableLines.length >= 2) {
+    for (const tl of tableLines) {
+      if (/^\s*\|?\s*[-:]+[-| :]*\|?\s*$/.test(tl)) continue;
+      const inner = tl.replace(/^\|/, "").replace(/\|$/, "");
+      const cells = inner.split("|").map((c) => c.trim());
+      if (cells.length > 0 && cells.some((c) => c.length > 0)) {
+        rowsToAdd.push(cells);
+      }
+    }
+  } else {
+    for (const line of lines) {
+      if (line.includes(",")) {
+        rowsToAdd.push(parseCsvLine(line));
+      } else if (line.includes("\t")) {
+        rowsToAdd.push(line.split("\t").map((c) => c.trim()));
+      } else {
+        rowsToAdd.push([line]);
+      }
+    }
+  }
+
+  if (rowsToAdd.length === 0) {
+    rowsToAdd.push(["Report", title || "Summary"], ["Status", "Completed"]);
+  }
+
+  // Add rows with clean styling
+  for (let rIdx = 0; rIdx < rowsToAdd.length; rIdx++) {
+    const rowData = rowsToAdd[rIdx];
+    const excelRow = sheet.addRow(rowData);
+    if (rIdx === 0 && rowsToAdd.length > 1) {
+      excelRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FF0F172A" }, size: 11 };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF1F5F9" },
+        };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFCBD5E1" } },
+          bottom: { style: "medium", color: { argb: "FF94A3B8" } },
+          left: { style: "thin", color: { argb: "FFCBD5E1" } },
+          right: { style: "thin", color: { argb: "FFCBD5E1" } },
+        };
+        cell.alignment = { vertical: "middle", horizontal: "left" };
+      });
+      excelRow.height = 24;
+    } else {
+      excelRow.eachCell((cell) => {
+        cell.font = { size: 10, color: { argb: "FF334155" } };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFE2E8F0" } },
+          bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+          left: { style: "thin", color: { argb: "FFE2E8F0" } },
+          right: { style: "thin", color: { argb: "FFE2E8F0" } },
+        };
+        cell.alignment = { vertical: "middle", horizontal: "left" };
+      });
+      excelRow.height = 20;
+    }
+  }
+
+  sheet.columns.forEach((column) => {
+    let maxLength = 12;
+    if (column && column.eachCell) {
+      column.eachCell({ includeEmpty: true }, (cell) => {
+        const valStr = cell.value ? String(cell.value) : "";
+        if (valStr.length > maxLength) {
+          maxLength = Math.min(valStr.length + 3, 50);
+        }
+      });
+    }
+    column.width = maxLength;
+  });
+
+  const data = await workbook.xlsx.writeBuffer();
+  let candidate = requestedFilename?.trim() || "deliverable.xlsx";
+  if (!/\.xlsx$/i.test(candidate)) {
+    candidate = candidate.replace(/\.[^.]+$/, "") + ".xlsx";
+  }
+  const name = /^[A-Za-z0-9][A-Za-z0-9._-]*\.xlsx$/i.test(candidate) ? candidate : "deliverable.xlsx";
+  const rel = writeRunFile(runId, "output", name, Buffer.from(data));
+  return artifactRef(runId, "xlsx", name, rel);
+}
+
 export interface DocxDraftInput {
   title?: string;
   body?: string;
@@ -263,9 +372,12 @@ export function parseMarkdownTable(tableLines: string[]): Table | null {
  * Transforms arbitrary markdown into structured OpenXML Word elements (headings, styled tables, bullet lists, blockquotes).
  */
 export function renderMarkdownToDocxElements(markdown: string): Array<Paragraph | Table> {
-  const cleaned = markdown
+  let cleaned = markdown
     .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT|TOOL_CALL|END_TOOL_CALL)\]/gi, "")
     .trim();
+
+  // Normalize bulleted or indented markdown table rows (e.g. "- | Equipment | ... |" -> "| Equipment | ... |")
+  cleaned = cleaned.replace(/(?:^|\n)\s*[-*+]\s+(\|.+?)(?=\r?\n|$)/g, "\n$1");
 
   if (!cleaned) return [];
 
@@ -359,18 +471,22 @@ export function renderMarkdownToDocxElements(markdown: string): Array<Paragraph 
       continue;
     }
 
-    // 4. Markdown Tables (| ... |)
-    const lineCleanTable = trimmed.replace(/^[-*+]\s+/, "").trim();
-    if (lineCleanTable.startsWith("|") && lineCleanTable.endsWith("|")) {
+    // 4. Markdown Tables
+    const isTableSepLine = (l: string) => {
+      const clean = l.trim().replace(/^[-*+]\s+/, "");
+      return /^\s*\|?\s*[-:]+[-| :]*\|?\s*$/.test(clean) && /[-:]{2,}/.test(clean);
+    };
+    const isTableRow = (l: string) => {
+      const clean = l.trim().replace(/^[-*+]\s+/, "");
+      return clean.includes("|") && !/^(?:#{1,6}\s|>|```|---|\*\*\*)/.test(clean);
+    };
+
+    const cleanRow = trimmed.replace(/^[-*+]\s+/, "");
+    if (isTableRow(cleanRow) && (cleanRow.startsWith("|") || (i + 1 < lines.length && isTableSepLine(lines[i + 1])))) {
       const tableLines: string[] = [];
-      while (i < lines.length) {
-        const nextClean = lines[i].trim().replace(/^[-*+]\s+/, "").trim();
-        if (nextClean.startsWith("|") && nextClean.endsWith("|")) {
-          tableLines.push(nextClean);
-          i++;
-        } else {
-          break;
-        }
+      while (i < lines.length && isTableRow(lines[i])) {
+        tableLines.push(lines[i].trim().replace(/^[-*+]\s+/, ""));
+        i++;
       }
 
       const parsedTable = parseMarkdownTable(tableLines);
@@ -472,41 +588,49 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
   }
 
   const children: any[] = [];
+  const currentDate = new Date().toISOString().split("T")[0];
 
-  // Header / Enterprise Letterhead
-  const orgName = data.metadata?.["Organization Name"] || data.metadata?.["Organization"] || "[ORGANIZATION NAME]";
-  const deptName = data.metadata?.["Department"] || data.metadata?.["Division"] || "[DEPARTMENT / DIVISION NAME]";
+  // Header / Enterprise Letterhead (only render if explicitly provided)
+  const orgName = data.metadata?.["Organization Name"] || data.metadata?.["Organization"];
+  const deptName = data.metadata?.["Department"] || data.metadata?.["Division"];
 
-  children.push(
-    new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 120 },
-      children: [
-        new TextRun({
-          text: orgName,
-          bold: true,
-          size: 28,
-        }),
-      ],
-    }),
-  );
+  if (orgName) {
+    children.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 120 },
+        children: [
+          new TextRun({
+            text: orgName,
+            bold: true,
+            size: 28,
+          }),
+        ],
+      }),
+    );
+  }
 
-  children.push(
-    new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 360 },
-      children: [
-        new TextRun({
-          text: deptName,
-          bold: true,
-          size: 20,
-        }),
-      ],
-    }),
-  );
+  if (deptName) {
+    children.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 360 },
+        children: [
+          new TextRun({
+            text: deptName,
+            bold: true,
+            size: 20,
+          }),
+        ],
+      }),
+    );
+  }
 
   // Document Title
-  const docTitle = data.title || "[DOCUMENT TITLE]";
+  const docTitle =
+    data.title && data.title !== "[DOCUMENT TITLE]"
+      ? data.title
+      : data.body?.match(/^#+\s+([^\n]+)/m)?.[1]?.trim() || "Technical Deliverable Report";
   children.push(
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
@@ -522,92 +646,105 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
   );
 
   // Metadata Grid Table with explicit DXA column widths (total: 9360 dxa)
-  const metaRows: TableRow[] = [];
-  const currentDate = new Date().toISOString().split("T")[0];
-  const metadataMap: Record<string, string> = {
-    "Document Ref": data.metadata?.["Document Ref"] || "[REF_NUMBER]",
-    "Date": data.metadata?.["Date"] || currentDate,
-    "Classification": data.metadata?.["Classification"] || "[CLASSIFICATION]",
-    ...(data.metadata || {}),
-  };
+  // Render ONLY if metadata has explicit entries
+  if (data.metadata && Object.keys(data.metadata).length > 0) {
+    const metaRows: TableRow[] = [];
+    const currentDate = new Date().toISOString().split("T")[0];
+    const metadataMap: Record<string, string> = { ...data.metadata };
+    if (!metadataMap["Date"]) {
+      metadataMap["Date"] = currentDate;
+    }
+    const filteredEntries = Object.entries(metadataMap).filter(
+      ([k]) =>
+        ![
+          "Organization Name",
+          "Organization",
+          "Department",
+          "Division",
+          "Prepared By Title",
+          "Approved By Title",
+        ].includes(k),
+    );
 
-  const metaEntries = Object.entries(metadataMap);
-  const metaColWidths = [2000, 2680, 2000, 2680]; // Sum = 9360 dxa
-  for (let i = 0; i < metaEntries.length; i += 2) {
-    const [k1, v1] = metaEntries[i];
-    const pair2 = metaEntries[i + 1];
+    if (filteredEntries.length > 0) {
+      const metaColWidths = [2000, 2680, 2000, 2680]; // Sum = 9360 dxa
+      for (let i = 0; i < filteredEntries.length; i += 2) {
+        const [k1, v1] = filteredEntries[i];
+        const pair2 = filteredEntries[i + 1];
 
-    metaRows.push(
-      new TableRow({
-        children: [
-          new TableCell({
-            width: { size: metaColWidths[0], type: WidthType.DXA },
-            shading: { fill: "F8FAFC" },
-            margins: { top: 100, bottom: 100, left: 150, right: 150 },
-            borders: {
-              top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-            },
-            children: [new Paragraph({ children: [new TextRun({ text: k1, bold: true, size: 18 })] })],
-          }),
-          new TableCell({
-            width: { size: metaColWidths[1], type: WidthType.DXA },
-            margins: { top: 100, bottom: 100, left: 150, right: 150 },
-            borders: {
-              top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-            },
-            children: [new Paragraph({ children: [new TextRun({ text: v1, size: 18 })] })],
-          }),
-          new TableCell({
-            width: { size: metaColWidths[2], type: WidthType.DXA },
-            shading: { fill: "F8FAFC" },
-            margins: { top: 100, bottom: 100, left: 150, right: 150 },
-            borders: {
-              top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-            },
+        metaRows.push(
+          new TableRow({
             children: [
-              new Paragraph({
-                children: [new TextRun({ text: pair2 ? pair2[0] : "", bold: true, size: 18 })],
+              new TableCell({
+                width: { size: metaColWidths[0], type: WidthType.DXA },
+                shading: { fill: "F8FAFC" },
+                margins: { top: 100, bottom: 100, left: 150, right: 150 },
+                borders: {
+                  top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                  bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                  left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                  right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                },
+                children: [new Paragraph({ children: [new TextRun({ text: k1, bold: true, size: 18 })] })],
+              }),
+              new TableCell({
+                width: { size: metaColWidths[1], type: WidthType.DXA },
+                margins: { top: 100, bottom: 100, left: 150, right: 150 },
+                borders: {
+                  top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                  bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                  left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                  right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                },
+                children: [new Paragraph({ children: [new TextRun({ text: v1, size: 18 })] })],
+              }),
+              new TableCell({
+                width: { size: metaColWidths[2], type: WidthType.DXA },
+                shading: { fill: "F8FAFC" },
+                margins: { top: 100, bottom: 100, left: 150, right: 150 },
+                borders: {
+                  top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                  bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                  left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                  right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                },
+                children: [
+                  new Paragraph({
+                    children: [new TextRun({ text: pair2 ? pair2[0] : "", bold: true, size: 18 })],
+                  }),
+                ],
+              }),
+              new TableCell({
+                width: { size: metaColWidths[3], type: WidthType.DXA },
+                margins: { top: 100, bottom: 100, left: 150, right: 150 },
+                borders: {
+                  top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                  bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                  left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                  right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
+                },
+                children: [
+                  new Paragraph({
+                    children: [new TextRun({ text: pair2 ? pair2[1] : "", size: 18 })],
+                  }),
+                ],
               }),
             ],
           }),
-          new TableCell({
-            width: { size: metaColWidths[3], type: WidthType.DXA },
-            margins: { top: 100, bottom: 100, left: 150, right: 150 },
-            borders: {
-              top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-            },
-            children: [
-              new Paragraph({
-                children: [new TextRun({ text: pair2 ? pair2[1] : "", size: 18 })],
-              }),
-            ],
-          }),
-        ],
-      }),
-    );
-  }
+        );
+      }
 
-  if (metaRows.length > 0) {
-    children.push(
-      new Table({
-        width: { size: 9360, type: WidthType.DXA },
-        columnWidths: metaColWidths,
-        rows: metaRows,
-      }),
-    );
-    children.push(new Paragraph({ spacing: { after: 240 } }));
+      if (metaRows.length > 0) {
+        children.push(
+          new Table({
+            width: { size: 9360, type: WidthType.DXA },
+            columnWidths: metaColWidths,
+            rows: metaRows,
+          }),
+        );
+        children.push(new Paragraph({ spacing: { after: 240 } }));
+      }
+    }
   }
 
   // Sections or Body Content with markdown parsing
@@ -782,54 +919,62 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
   }
 
   // Signature Block with explicit DXA column widths (2 columns: 4680, 4680 dxa)
-  const preparedByTitle = data.metadata?.["Prepared By Title"] || "[PREPARED_BY_TITLE]";
-  const approvedByTitle = data.metadata?.["Approved By Title"] || "[APPROVED_BY_TITLE]";
+  const isApprovalDoc =
+    Boolean(data.metadata?.["Prepared By Title"] || data.metadata?.["Approved By Title"]) ||
+    /\b(?:approval|compliance|formal|sign-?off)\b/i.test(docTitle);
+  const bodyAlreadyHasSignoff =
+    Boolean(data.body && /\b(?:sign-?off|prepared by|approved by)\b/i.test(data.body));
 
-  children.push(new Paragraph({ spacing: { before: 360, after: 120 } }));
-  children.push(
-    new Table({
-      width: { size: 9360, type: WidthType.DXA },
-      columnWidths: [4680, 4680],
-      rows: [
-        new TableRow({
-          children: [
-            new TableCell({
-              width: { size: 4680, type: WidthType.DXA },
-              margins: { top: 120, bottom: 120, left: 150, right: 150 },
-              borders: {
-                top: { style: BorderStyle.NONE },
-                bottom: { style: BorderStyle.NONE },
-                left: { style: BorderStyle.NONE },
-                right: { style: BorderStyle.NONE },
-              },
-              children: [
-                new Paragraph({ children: [new TextRun({ text: "Prepared By:", bold: true, size: 18 })] }),
-                new Paragraph({ children: [new TextRun({ text: "___________________________", size: 18 })] }),
-                new Paragraph({ children: [new TextRun({ text: preparedByTitle, size: 18 })] }),
-                new Paragraph({ children: [new TextRun({ text: `Date: ${currentDate}`, size: 18 })] }),
-              ],
-            }),
-            new TableCell({
-              width: { size: 4680, type: WidthType.DXA },
-              margins: { top: 120, bottom: 120, left: 150, right: 150 },
-              borders: {
-                top: { style: BorderStyle.NONE },
-                bottom: { style: BorderStyle.NONE },
-                left: { style: BorderStyle.NONE },
-                right: { style: BorderStyle.NONE },
-              },
-              children: [
-                new Paragraph({ children: [new TextRun({ text: "Approved By:", bold: true, size: 18 })] }),
-                new Paragraph({ children: [new TextRun({ text: "___________________________", size: 18 })] }),
-                new Paragraph({ children: [new TextRun({ text: approvedByTitle, size: 18 })] }),
-                new Paragraph({ children: [new TextRun({ text: `Date: ${currentDate}`, size: 18 })] }),
-              ],
-            }),
-          ],
-        }),
-      ],
-    }),
-  );
+  if (isApprovalDoc && !bodyAlreadyHasSignoff) {
+    const preparedByTitle = data.metadata?.["Prepared By Title"] || "Inspection Engineer / Technical Lead";
+    const approvedByTitle = data.metadata?.["Approved By Title"] || "Competent Authority / Plant Manager";
+
+    children.push(new Paragraph({ spacing: { before: 360, after: 120 } }));
+    children.push(
+      new Table({
+        width: { size: 9360, type: WidthType.DXA },
+        columnWidths: [4680, 4680],
+        rows: [
+          new TableRow({
+            children: [
+              new TableCell({
+                width: { size: 4680, type: WidthType.DXA },
+                margins: { top: 120, bottom: 120, left: 150, right: 150 },
+                borders: {
+                  top: { style: BorderStyle.NONE },
+                  bottom: { style: BorderStyle.NONE },
+                  left: { style: BorderStyle.NONE },
+                  right: { style: BorderStyle.NONE },
+                },
+                children: [
+                  new Paragraph({ children: [new TextRun({ text: "Prepared By:", bold: true, size: 18 })] }),
+                  new Paragraph({ children: [new TextRun({ text: "___________________________", size: 18 })] }),
+                  new Paragraph({ children: [new TextRun({ text: preparedByTitle, size: 18 })] }),
+                  new Paragraph({ children: [new TextRun({ text: `Date: ${currentDate}`, size: 18 })] }),
+                ],
+              }),
+              new TableCell({
+                width: { size: 4680, type: WidthType.DXA },
+                margins: { top: 120, bottom: 120, left: 150, right: 150 },
+                borders: {
+                  top: { style: BorderStyle.NONE },
+                  bottom: { style: BorderStyle.NONE },
+                  left: { style: BorderStyle.NONE },
+                  right: { style: BorderStyle.NONE },
+                },
+                children: [
+                  new Paragraph({ children: [new TextRun({ text: "Approved By:", bold: true, size: 18 })] }),
+                  new Paragraph({ children: [new TextRun({ text: "___________________________", size: 18 })] }),
+                  new Paragraph({ children: [new TextRun({ text: approvedByTitle, size: 18 })] }),
+                  new Paragraph({ children: [new TextRun({ text: `Date: ${currentDate}`, size: 18 })] }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+  }
 
   const doc = new Document({
     sections: [
