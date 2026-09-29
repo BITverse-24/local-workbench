@@ -179,18 +179,19 @@ type MarkdownBlock =
 
 function renderCellContent(text: string, keyPrefix: string): React.ReactNode {
   const trimmed = text.trim();
-  const upper = trimmed.toUpperCase();
+  const stripped = trimmed.replace(/^[*_`\s]+|[*_`\s]+$/g, '').trim();
+  const upper = stripped.toUpperCase();
   if (['APPROVED', 'PASS', 'PASSED', 'CLEARANCE', 'COMPLIANT'].includes(upper)) {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold bg-[var(--status-success)]/15 text-[var(--status-success)] border border-[var(--status-success)]/30">
-        {trimmed}
+        {stripped}
       </span>
     );
   }
-  if (['NOT APPROVED', 'REJECTED', 'NON-COMPLIANT', 'FAIL', 'FAILED', 'REJECTION PENDING REPAIRS'].includes(upper)) {
+  if (['NOT APPROVED', 'REJECTED', 'NON-COMPLIANT', 'FAIL', 'FAILED', 'REJECTION PENDING REPAIRS', 'REVISIONS REQUIRED'].includes(upper)) {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold bg-[var(--status-error)]/15 text-[var(--status-error)] border border-[var(--status-error)]/30">
-        {trimmed}
+        {stripped}
       </span>
     );
   }
@@ -201,7 +202,7 @@ function renderCellContent(text: string, keyPrefix: string): React.ReactNode {
   ) {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold bg-[var(--status-warning)]/15 text-[var(--status-warning)] border border-[var(--status-warning)]/30">
-        {trimmed}
+        {stripped}
       </span>
     );
   }
@@ -210,7 +211,9 @@ function renderCellContent(text: string, keyPrefix: string): React.ReactNode {
 
 function parseMarkdownBlocks(rawText: string): MarkdownBlock[] {
   // Normalize bulleted or indented markdown table rows (e.g. "- | Equipment | ... |" -> "| Equipment | ... |")
-  const normalizedText = rawText.replace(/(?:^|\n)\s*[-*+]\s+(\|.+?)(?=\r?\n|$)/g, '\n$1');
+  const normalizedText = rawText
+    .replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, '\n$1')
+    .replace(/^(#{1,6}\s+[^\n]+)\n(?![\r\n])/gm, '$1\n\n');
   const lines = normalizedText.split(/\r?\n/);
   const blocks: MarkdownBlock[] = [];
   let i = 0;

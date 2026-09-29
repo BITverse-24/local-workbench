@@ -145,21 +145,22 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
 
 function renderCellContent(text: string, keyPrefix: string): React.ReactNode {
   const trimmed = text.trim();
-  const upper = trimmed.toUpperCase();
-  if (["APPROVED", "COMPLIANT", "PASS", "PASSED"].includes(upper)) {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-medium bg-[var(--status-success)]/15 text-[var(--status-success)] border border-[var(--status-success)]/30">{trimmed}</span>;
+  const stripped = trimmed.replace(/^[*_`\s]+|[*_`\s]+$/g, "").trim();
+  const upper = stripped.toUpperCase();
+  if (["APPROVED", "COMPLIANT", "PASS", "PASSED", "CLEARANCE"].includes(upper)) {
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold bg-[var(--status-success)]/15 text-[var(--status-success)] border border-[var(--status-success)]/30">{stripped}</span>;
   }
-  if (["NOT APPROVED", "REJECTED", "NON-COMPLIANT", "FAIL", "FAILED"].includes(upper)) {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-medium bg-[var(--status-error)]/15 text-[var(--status-error)] border border-[var(--status-error)]/30">{trimmed}</span>;
+  if (["NOT APPROVED", "REJECTED", "NON-COMPLIANT", "FAIL", "FAILED", "REJECTION PENDING REPAIRS"].includes(upper)) {
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold bg-[var(--status-error)]/15 text-[var(--status-error)] border border-[var(--status-error)]/30">{stripped}</span>;
   }
-  if (["UNKNOWN", "FLAGGED", "WARNING", "RECHECK", "REVISIONS REQUIRED"].some((k) => upper.includes(k))) {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-medium bg-[var(--status-warning)]/15 text-[var(--status-warning)] border border-[var(--status-warning)]/30">{trimmed}</span>;
+  if (["UNKNOWN", "FLAGGED", "WARNING", "RECHECK", "REVISIONS REQUIRED", "PENDING REPAIR", "CONDITIONAL CLEARANCE", "BELOW"].some((k) => upper.includes(k))) {
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold bg-[var(--status-warning)]/15 text-[var(--status-warning)] border border-[var(--status-warning)]/30">{stripped}</span>;
   }
   return renderInline(trimmed, keyPrefix);
 }
 
 function parseMarkdownTable(raw: string): { headers: string[]; rows: string[][] } | null {
-  const normalized = raw.replace(/(?:^|\n)\s*[-*+]\s+(\|.+?)(?=\r?\n|$)/g, "\n$1");
+  const normalized = raw.replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, "\n$1");
   const lines = normalized.trim().split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) return null;
 
@@ -243,7 +244,11 @@ function InteractiveMarkdown({ text }: { text: string }) {
           );
         }
 
-        const blocks = seg.content.split(/\n{2,}/);
+        const normalizedContent = seg.content
+          .replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, "\n$1")
+          .replace(/^(#{1,6}\s+[^\n]+)\n(?![\r\n])/gm, "$1\n\n")
+          .replace(/(\|[^\n]+\|)\n(?![\r\n|])/g, "$1\n\n");
+        const blocks = normalizedContent.split(/\n{2,}/);
         return blocks.map((block, bi) => {
           const trimmed = block.trim();
           if (!trimmed) return null;

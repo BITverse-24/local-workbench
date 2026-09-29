@@ -166,7 +166,9 @@ export function cleanFinalSummary(text: string, hasExecutedTools: boolean): stri
       return inner;
     })
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
-    .replace(/\{\s*"exitCode"\s*:\s*\d+[\s\S]*?\n\}/gi, "")
+    .replace(/```(?:json)?\s*\{[\s\S]*?"exitCode"\s*:\s*\d+[\s\S]*?\}\s*```/gi, "")
+    .replace(/\{[\s\S]*?"exitCode"\s*:\s*\d+[\s\S]*?\n\s*\}/gi, "")
+    .replace(/(?:Execution\s+output|Tool\s+result|Command\s+output)\s*:\s*(?:\r?\n|$)/gim, "")
     .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT|ENDTOOLRESULT|TOOL_CALL|END_TOOL_CALL|ENDTOOLCALL)\]/gi, "")
     .replace(/<\/?(?:tool_call|tool_response|tool_result)[^>]*>/gi, "")
     .trim();
@@ -256,7 +258,7 @@ export function cleanFinalSummary(text: string, hasExecutedTools: boolean): stri
 
   // Remove redundant introductory output recap when a structured summary of findings immediately follows
   cleanedText = cleanedText.replace(
-    /(?:The output indicates that|Based on the execution output)[^:\n]*:\s*(?:\r?\n\s*[-*]\s+[^\n]+)+\s*(?=\r?\n\s*(?:#{1,4}\s+|Here is a summary|Summary))/i,
+    /(?:The output indicates that|Based on the execution (?:output|results)|Looking at the (?:execution )?output|Here are the results)[^:\n]*:\s*(?:\r?\n\s*[-*]\s+[^\n]+)+\s*(?=\r?\n\s*(?:#{1,4}\s+|Here is a summary|Summary|\*\*Identified Issues))/i,
     ""
   );
 

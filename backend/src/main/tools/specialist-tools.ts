@@ -52,27 +52,28 @@ export const extractDocumentTool: AgentTool = {
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
     const rawPath = extractPathArg(args) || String(args.filename ?? args.path ?? args.document ?? args.file ?? "");
-    if (!rawPath.trim()) {
+    const cleanRawPath = rawPath.trim().replace(/^['"]|['"]$/g, "");
+    if (!cleanRawPath) {
       throw new Error(`extract_document requires a filename or path parameter. Received: ${JSON.stringify(args)}`);
     }
-    const query = String(args.query ?? "Extract all findings, measurements, and annotations from this document.");
+    const query = String(args.query ?? args.prompt ?? args.instruction ?? args.focus ?? args.task ?? "Extract all findings, measurements, and annotations from this document.");
 
     let filePath: string | null = null;
     if (context.workspaceRoot) {
       try {
-        const resolved = path.resolve(context.workspaceRoot, rawPath);
+        const resolved = path.resolve(context.workspaceRoot, cleanRawPath);
         if (existsSync(resolved)) filePath = resolved;
       } catch {}
     }
     if (!filePath && context.runId) {
-      filePath = findFileInRunDirectories(context.runId, rawPath);
+      filePath = findFileInRunDirectories(context.runId, cleanRawPath);
     }
-    if (!filePath && existsSync(rawPath)) {
-      filePath = rawPath;
+    if (!filePath && existsSync(cleanRawPath)) {
+      filePath = cleanRawPath;
     }
 
     if (!filePath || !existsSync(filePath)) {
-      throw new Error(`Attached file "${rawPath}" not found in run directories or workspace`);
+      throw new Error(`Attached file "${cleanRawPath}" not found in run directories or workspace`);
     }
 
     const filename = path.basename(filePath);
@@ -249,8 +250,11 @@ export const generateCodeTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const spec = String(args.spec ?? "");
-    const filename = String(args.filename ?? "task.py");
+    const spec = String(args.spec ?? args.prompt ?? args.task ?? args.instruction ?? args.description ?? args.code_spec ?? "");
+    const filename = String(args.filename ?? args.path ?? args.file ?? "task.py");
+    if (!spec.trim()) {
+      throw new Error("generate_code requires a 'spec' or 'prompt' description of the code to generate.");
+    }
     const base = requestBase(
       context.runId,
       "code",
@@ -310,8 +314,13 @@ export const generateTextTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const prompt = String(args.prompt ?? "");
-    const extraContext = args.context ? `\n\nCONTEXT:\n${String(args.context)}` : "";
+    const prompt = String(args.prompt ?? args.text ?? args.query ?? args.instruction ?? args.spec ?? "");
+    const extraContext = (args.context || args.data || args.findings || args.input)
+      ? `\n\nCONTEXT:\n${String(args.context ?? args.data ?? args.findings ?? args.input)}`
+      : "";
+    if (!prompt.trim()) {
+      throw new Error("generate_text requires a 'prompt' or 'instruction' for the text to draft.");
+    }
     const base = requestBase(
       context.runId,
       "draft",
@@ -364,7 +373,10 @@ export const retrieveKnowledgeTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const query = String(args.query ?? "");
+    const query = String(args.query ?? args.search ?? args.question ?? args.prompt ?? args.text ?? "");
+    if (!query.trim()) {
+      throw new Error("retrieve_knowledge requires a 'query' parameter to search the knowledge base.");
+    }
     if (!context.grounding) {
       return {
         output: "Knowledge base (RAG) is not initialized or configured in this environment.",
@@ -428,7 +440,7 @@ export const executePythonTool: AgentTool = {
     if (!code.trim()) {
       throw new Error("execute_python requires 'code' (or 'script') containing Python source code to execute.");
     }
-    const filename = String(args.filename ?? "task.py");
+    const filename = String(args.filename ?? args.path ?? args.file ?? "task.py");
     let inputFiles: string[] = [];
     if (Array.isArray(args.input_files)) {
       inputFiles = args.input_files.map((f) => path.basename(String(f).trim())).filter(Boolean);
@@ -436,6 +448,8 @@ export const executePythonTool: AgentTool = {
       inputFiles = args.input_files.split(",").map((f) => path.basename(f.trim())).filter(Boolean);
     } else if (typeof args.input_file === "string" && args.input_file.trim()) {
       inputFiles = [path.basename(args.input_file.trim())];
+    } else if (typeof args.data_file === "string" && args.data_file.trim()) {
+      inputFiles = [path.basename(args.data_file.trim())];
     }
 
     // Automatically stage run attachments if input_files is omitted or incomplete
@@ -585,10 +599,10 @@ export const generateDeliverableTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const type = String(args.type ?? "md").toLowerCase();
-    let title = String(args.title ?? "Deliverable");
-    let content = String(args.content ?? "");
-    let filename = String(args.filename ?? `deliverable.${type}`);
+    const type = String(args.type ?? args.kind ?? args.format ?? "md").toLowerCase();
+    let title = String(args.title ?? args.name ?? args.heading ?? "Deliverable");
+    let content = extractContentArg(args) || String(args.content ?? args.body ?? args.text ?? args.markdown ?? "");
+    let filename = String(args.filename ?? args.path ?? args.file ?? `deliverable.${type}`);
     if (!filename.endsWith(`.${type}`)) filename += `.${type}`;
 
     // Clean placeholder markers if present
@@ -619,10 +633,10 @@ export const generateDeliverableTool: AgentTool = {
       }
     }
 
-    // If content contains template placeholder text ("Markdown table with columns"), enrich with the actual completed table
+    // If content contains template placeholder text ("Markdown table with columns"), enrich or reject
     if (
       /Markdown table with columns/i.test(content) &&
-      !/\|[^\n]+\|[^\n]+\|\r?\n\|[-:\s|]+\|\r?\n\|[^\n]+\|[^\n]+\|/.test(content)
+      !/\|[^\n]+\|[^\n]+\|\r?\n\s*\|?[-:\s|]+\|\r?\n\s*\|?[^\n]+\|[^\n]+\|/.test(content)
     ) {
       const realTableMatch = context.lastAssistantContent?.match(
         /(?:^|\n)\s*(\|?[^\n]+\|\r?\n\s*\|?[-:\s|]+\|\r?\n(?:\s*\|?[^\n]+\|\r?\n?)+)/m
@@ -642,6 +656,28 @@ export const generateDeliverableTool: AgentTool = {
           `Cannot generate deliverable "${filename}" with template placeholder text ("Markdown table with columns"). ` +
           `You must provide the complete document content with actual measured values and completed Markdown table rows.`
         );
+      }
+    }
+
+    // If content still lacks a multi-row markdown table, check if the assistant generated one in this turn
+    const hasTableInContent = /\|[^\n]+\|[^\n]+\|\r?\n\s*\|?[-:\s|]+\|\r?\n\s*\|?[^\n]+\|[^\n]+\|/m.test(content);
+    if (!hasTableInContent && context.lastAssistantContent) {
+      const realTableMatch = context.lastAssistantContent.match(
+        /(?:^|\n)\s*(\|?[^\n]+\|\r?\n\s*\|?[-:\s|]+\|\r?\n(?:\s*\|?[^\n]+\|\r?\n?)+)/m
+      );
+      if (realTableMatch && realTableMatch[1]) {
+        const extractedTable = realTableMatch[1].trim();
+        const placeholderRegex = /(\[insert (?:table|findings|measurements)[^\]]*\]|\(insert (?:table|findings|measurements)[^)]*\)|\[table (?:with|of)[^\]]*\]|\[findings table\])/i;
+        if (placeholderRegex.test(content)) {
+          content = content.replace(placeholderRegex, extractedTable);
+        } else {
+          // If there is a Findings or Measurements section header, insert the table right below it
+          const findingsHeaderMatch = content.match(/(#{1,3}\s+(?:\d+\.\s+)?(?:Findings|Measurements|Inspection Results)[^\n]*\n)/i);
+          if (findingsHeaderMatch && findingsHeaderMatch.index !== undefined) {
+            const insertPos = findingsHeaderMatch.index + findingsHeaderMatch[0].length;
+            content = `${content.slice(0, insertPos)}\n${extractedTable}\n\n${content.slice(insertPos)}`;
+          }
+        }
       }
     }
 

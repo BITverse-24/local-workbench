@@ -288,7 +288,7 @@ function parseMarkdownTableRow(line: string): string[] {
 }
 
 export function parseMarkdownTable(tableLines: string[]): Table | null {
-  if (tableLines.length < 2) return null;
+  if (tableLines.length === 0) return null;
 
   const rawRows: string[][] = [];
   for (const line of tableLines) {
@@ -493,6 +493,16 @@ export function renderMarkdownToDocxElements(markdown: string): Array<Paragraph 
       if (parsedTable) {
         elements.push(parsedTable);
         elements.push(new Paragraph({ spacing: { after: 160 } }));
+        continue;
+      } else {
+        for (const line of tableLines) {
+          elements.push(
+            new Paragraph({
+              spacing: { after: 60 },
+              children: parseInlineFormatting(line, 20),
+            }),
+          );
+        }
         continue;
       }
     }

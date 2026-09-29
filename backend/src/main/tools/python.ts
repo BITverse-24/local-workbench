@@ -141,11 +141,15 @@ export async function executePython(
   timeoutMs = 60000,
   workspaceRoot?: string,
 ): Promise<PythonExecutionResult> {
-  void source; // The manager persists the validated source as intermediate/task.py.
   const started = Date.now();
   const staged = stageInputs(runId, inputFiles, aliases, workspaceRoot);
-  const script = path.join(staged.intermediateDir, "task.py");
-  if (!existsSync(script)) throw new Error("generated Python task is missing");
+  const targetScript =
+    source && existsSync(path.join(staged.intermediateDir, source))
+      ? path.join(staged.intermediateDir, source)
+      : path.join(staged.intermediateDir, "task.py");
+  if (!existsSync(targetScript)) throw new Error("generated Python task is missing");
+  const script = targetScript;
+  const scriptBaseName = path.basename(script);
 
   const PYTHON = getPythonExecutable();
   let command: string;
@@ -160,7 +164,7 @@ export async function executePython(
         "--ro-bind", staged.inputDir, "/input", "--ro-bind", staged.intermediateDir, "/intermediate",
         "--bind", staged.outputDir, "/output",
         ...staged.stagedInputs.flatMap((file) => ["--ro-bind", path.join(staged.outputDir, file), path.join("/output", file)]),
-        "--chdir", "/output", "--", PYTHON, "/intermediate/task.py",
+        "--chdir", "/output", "--", PYTHON, `/intermediate/${scriptBaseName}`,
         ...staged.stagedInputs,
       ];
     } else {
@@ -190,8 +194,11 @@ export async function executePython(
     throw new Error(`No supported Python sandbox is available on ${process.platform}`);
   }
 
+  const pythonPath = [staged.outputDir, staged.intermediateDir, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter);
+  const execEnv = { ...process.env, PYTHONPATH: pythonPath };
+
   try {
-    const result = await exec(command, args, { cwd: staged.outputDir, timeout: timeoutMs, maxBuffer: 16384 });
+    const result = await exec(command, args, { cwd: staged.outputDir, env: execEnv, timeout: timeoutMs, maxBuffer: 16384 });
     return { exitCode: 0, stdout: result.stdout.slice(0, 8000), stderr: result.stderr.slice(0, 8000), timedOut: false, outputFiles: outputFiles(staged.outputDir, staged.stagedInputs), durationMs: Date.now() - started };
   } catch (error) {
     const e = error as { code?: number | string; stdout?: string; stderr?: string; killed?: boolean };

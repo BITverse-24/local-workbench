@@ -988,6 +988,18 @@ export class RunManager {
         }
       }
 
+      const dataAttachments = attachments.filter((a) => !/\.(py|js|ts|sh)$/i.test(a.filename));
+      const effectiveDataInputs = dataAttachments.length > 0 ? dataAttachments : attachments;
+
+      const attachmentPriorityDirective = attachments.length > 0
+        ? `\nCRITICAL PRIORITY ON USER ATTACHMENTS:\n` +
+          `The user explicitly attached files (${attachments.map((a) => `"${a.filename}"`).join(", ")}) in this chat.\n` +
+          `• Your PRIMARY objective is to analyze, repair, run, or process THESE attached files.\n` +
+          `• Do NOT search the workspace directory for the attached files or logs — their full contents are already provided in the PRIMARY TARGET USER ATTACHMENTS section above!\n` +
+          `• To verify and test Python scripts against attached data files, invoke \`execute_python\` with the complete repaired script in \`code\` and \`input_files: [${effectiveDataInputs.map((a) => `"${a.filename}"`).join(", ")}]\`.\n` +
+          `• Pass the COMPLETE repaired script directly inside the \`code\` argument of \`execute_python\` (do NOT write a separate runner that tries to import filenames with hyphens).\n`
+        : "";
+
       let systemPrompt: string;
       if (isWorkspaceActive && this.harness) {
         const tree = this.harness.getDirectoryTree();
@@ -1000,18 +1012,6 @@ export class RunManager {
                 .map((f) => `--- ${f.path} ---\n${f.content}\n--- end ${f.path} ---`)
                 .join("\n\n")}\n`
             : "";
-
-        const dataAttachments = attachments.filter((a) => !/\.(py|js|ts|sh)$/i.test(a.filename));
-        const effectiveDataInputs = dataAttachments.length > 0 ? dataAttachments : attachments;
-
-        const attachmentPriorityDirective = attachments.length > 0
-          ? `\nCRITICAL PRIORITY ON USER ATTACHMENTS:\n` +
-            `The user explicitly attached files (${attachments.map((a) => `"${a.filename}"`).join(", ")}) in this chat.\n` +
-            `• Your PRIMARY objective is to analyze, repair, run, or process THESE attached files.\n` +
-            `• Do NOT search the workspace directory for the attached files or logs — their full contents are already provided in the PRIMARY TARGET USER ATTACHMENTS section above!\n` +
-            `• To verify and test Python scripts against attached data files, invoke \`execute_python\` with the complete repaired script in \`code\` and \`input_files: [${effectiveDataInputs.map((a) => `"${a.filename}"`).join(", ")}]\`.\n` +
-            `• Pass the COMPLETE repaired script directly inside the \`code\` argument of \`execute_python\` (do NOT write a separate runner that tries to import filenames with hyphens).\n`
-          : "";
 
         systemPrompt = `You are Sovereign Workbench, an autonomous engineering and coding agent.
 ${attachedFilesSection}
@@ -1091,6 +1091,7 @@ CRITICAL OPERATIONAL RULES:
         systemPrompt = `You are Sovereign Workbench, an expert engineering assistant with access to local tools.
 Solve the user's task step-by-step.
 ${attachedFilesSection}
+${attachmentPriorityDirective}
 OPERATIONAL & PLAN GUIDELINES:
 1. When asked to write code, create files, fix bugs, or test scripts, invoke the appropriate tools (e.g. \`execute_python\`, \`write_file\`, \`generate_deliverable\`).
 2. \`read_file\` automatically extracts and returns readable text from PDFs (.pdf) and Word documents (.docx). Do NOT attempt to install packages or write Python scripts to parse or extract text from PDFs or Word documents.

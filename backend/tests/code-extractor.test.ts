@@ -156,6 +156,27 @@ npm start
     expect(result).toContain("**Implemented**:");
     expect(result).toContain("npm start");
   });
+
+  it("strips fenced exitCode JSON blocks and command output headers from assistant responses", () => {
+    const agentResponse = `
+Execution output:
+\`\`\`json
+{
+  "exitCode": 0,
+  "stdout": "Loaded 5 records",
+  "stderr": ""
+}
+\`\`\`
+
+### Summary of Findings
+- All 5 records processed successfully.
+`;
+    const result = cleanFinalSummary(agentResponse, false);
+    expect(result).not.toContain("exitCode");
+    expect(result).not.toContain("Execution output:");
+    expect(result).toContain("### Summary of Findings");
+    expect(result).toContain("All 5 records processed successfully.");
+  });
 });
 
 describe("cleanPlanPreview", () => {

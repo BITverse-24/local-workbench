@@ -229,5 +229,26 @@ describe("Tool Argument Parsing Resilience", () => {
       expect(res.output).toContain("binary image");
       expect(res.output).toContain("extract_document");
     });
+
+    it("generateDeliverableTool automatically substitutes [insert table] placeholder with real assistant table", async () => {
+      const context = {
+        workspaceRoot: tmpDir,
+        runId: randomUUID(),
+        gateway: {} as any,
+        lastAssistantContent: `### Inspection Findings\n| Component | Value | Limit | Status |\n| --- | --- | --- | --- |\n| Tank A | 12 psi | 15 psi | COMPLIANT |`,
+      };
+
+      const res = await generateDeliverableTool.execute(
+        {
+          type: "docx",
+          filename: "report.docx",
+          content: "# Inspection Summary\n\n## 1. Findings\n[insert table]\n\n## 2. Recommendation\nProceed with operations.",
+        },
+        context,
+      );
+
+      expect(res.artifacts).toBeDefined();
+      expect(res.artifacts?.[0].filename).toBe("report.docx");
+    });
   });
 });
