@@ -161,7 +161,7 @@ describe("Flow C End-to-End: Engineering Drawing Compliance Review", () => {
     // 4. Start run with the exact Flow C user prompt
     const { runId } = await manager.start({
       chatId,
-      userText: "Check this against our piping spec and tell me if anything's non-compliant.",
+      userText: "Check this against our piping spec and draft a corrective action note if anything's non-compliant.",
       attachmentToken: attachment.attachmentId,
     });
 

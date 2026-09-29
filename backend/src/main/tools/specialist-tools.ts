@@ -633,9 +633,10 @@ export const generateDeliverableTool: AgentTool = {
       }
     }
 
-    // If content contains template placeholder text ("Markdown table with columns"), enrich or reject
+    // If content contains template placeholder text ("Markdown table with columns" or "[insert table]"), enrich or reject
+    const placeholderTableRegex = /(?:markdown\s+)?table\s+(?:with|of)\s+columns|\[(?:insert\s+)?(?:table|findings|measurements)[^\]]*\]|\((?:insert\s+)?(?:table|findings|measurements)[^)]*\)/i;
     if (
-      /Markdown table with columns/i.test(content) &&
+      placeholderTableRegex.test(content) &&
       !/\|[^\n]+\|[^\n]+\|\r?\n\s*\|?[-:\s|]+\|\r?\n\s*\|?[^\n]+\|[^\n]+\|/.test(content)
     ) {
       const realTableMatch = context.lastAssistantContent?.match(
@@ -643,7 +644,7 @@ export const generateDeliverableTool: AgentTool = {
       );
       if (realTableMatch && realTableMatch[1]) {
         const extractedTable = realTableMatch[1].trim();
-        content = content.replace(/.*Markdown table with columns.*/i, extractedTable);
+        content = content.replace(new RegExp(`.*(?:${placeholderTableRegex.source}).*`, "i"), extractedTable);
       } else if (
         context.lastAssistantContent &&
         context.lastAssistantContent.length > 200 &&
@@ -653,7 +654,7 @@ export const generateDeliverableTool: AgentTool = {
         content = context.lastAssistantContent;
       } else {
         throw new Error(
-          `Cannot generate deliverable "${filename}" with template placeholder text ("Markdown table with columns"). ` +
+          `Cannot generate deliverable "${filename}" with template placeholder text. ` +
           `You must provide the complete document content with actual measured values and completed Markdown table rows.`
         );
       }

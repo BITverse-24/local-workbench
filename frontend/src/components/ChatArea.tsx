@@ -212,7 +212,8 @@ function renderCellContent(text: string, keyPrefix: string): React.ReactNode {
 function parseMarkdownBlocks(rawText: string): MarkdownBlock[] {
   // Normalize bulleted or indented markdown table rows (e.g. "- | Equipment | ... |" -> "| Equipment | ... |")
   const normalizedText = rawText
-    .replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, '\n$1')
+    .replace(/(?:^|\n)\s*[-*+]\s+(\|.+?)(?=\r?\n|$)/g, '\n$1')
+    .replace(/([^\n|])\n(\s*\|[^\n]+\|\r?\n\s*\|?[-:\s|]+\|)/g, '$1\n\n$2')
     .replace(/^(#{1,6}\s+[^\n]+)\n(?![\r\n])/gm, '$1\n\n');
   const lines = normalizedText.split(/\r?\n/);
   const blocks: MarkdownBlock[] = [];
@@ -357,7 +358,7 @@ function parseMarkdownBlocks(rawText: string): MarkdownBlock[] {
       if (!curTrim) break;
       if (/^#{1,6}\s+/.test(curTrim)) break;
       if (/^(\*{3,}|-{3,}|_{3,})$/.test(curTrim)) break;
-      if (curTrim.startsWith('|') && curTrim.endsWith('|') && i + 1 < lines.length && isTableSep(lines[i + 1])) break;
+      if (isTableRow(curTrim) && i + 1 < lines.length && isTableSep(lines[i + 1])) break;
       if (/^(\s*)([-*+]|\d+\.)\s+/.test(cur)) break;
       if (/^>\s?/.test(curTrim)) break;
 

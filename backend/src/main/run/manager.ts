@@ -1566,10 +1566,19 @@ OPERATIONAL & PLAN GUIDELINES:
         .join(", ");
       this.result(runId, "draft_note", `Compliance evaluation completed: ${checkSummary}`);
 
-      // 4. Generate corrective-action-note.md artifact
-      const artifact = generateComplianceNoteArtifact(runId, assessment);
-      this.persistArtifact(artifact as never);
-      this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
+      // 4. Generate corrective-action-note.md artifact ONLY if explicitly requested
+      const userRequestedArtifact =
+        isDraftChainingRequested ||
+        /\b(approval note|review note|audit memo|audit note|corrective[- ]action note|deliverable|report|file|docx|md|export|document|draft (?:a|an)?\s*(?:note|memo|report))\b/i.test(
+          text,
+        );
+
+      let artifact: any = null;
+      if (userRequestedArtifact) {
+        artifact = generateComplianceNoteArtifact(runId, assessment);
+        this.persistArtifact(artifact as never);
+        this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
+      }
 
       // 5. Present findings and review note to user
       const checksTable = assessment.checks.map(
@@ -1577,7 +1586,7 @@ OPERATIONAL & PLAN GUIDELINES:
           `| **${c.component}** | ${c.observed} | ${c.required} | \`${c.status.toUpperCase()}\` | ${c.citation} | ${c.reasoning} |`,
       ).join("\n");
 
-      const assistantMessage = [
+      const messageLines = [
         `### Engineering Drawing Review — \`${assessment.drawingId}\``,
         "",
         `**Status: NOT APPROVED (Revisions Required)**`,
@@ -1592,9 +1601,13 @@ OPERATIONAL & PLAN GUIDELINES:
         assessment.correctiveAction,
         "",
         "> ⚠️ **Notice**: This finding is a technical review determination, NOT an approval. Drawing release is withheld pending revision and verification against the governing specification.",
-        "",
-        `*A formal corrective action note has been generated: \`${artifact.filename}\`.*`,
-      ].join("\n");
+      ];
+
+      if (artifact) {
+        messageLines.push("", `*A formal corrective action note has been generated: \`${artifact.filename}\`.*`);
+      }
+
+      const assistantMessage = messageLines.join("\n");
 
       this.persistAssistant(runId, assistantMessage, "draft-qwen3");
       this.complete(runId);
@@ -1968,7 +1981,12 @@ OPERATIONAL & PLAN GUIDELINES:
       this.tool(runId, "draft_note", "Evaluating drawing parameters against governing specifications");
       const draftMessageId = randomUUID();
       const draftSystemPrompt =
-        "You are an expert engineering assistant reviewing technical drawings against governing standards. Output your review directly in clear Markdown. Compare each observed component rating, dimension, and tag from the drawing against the retrieved specification criteria. Explicitly cite the governing sections (e.g. [SOP-220 §4.2]). State whether each item is compliant or non-compliant, and state clearly that the drawing is NOT approved and requires corrective action.";
+        "You are an expert engineering assistant reviewing technical drawings against governing standards. Output your review directly in clear Markdown.\n" +
+        "Summarize the evaluation clearly with a clean Markdown table:\n" +
+        "| Component / Parameter | Observed Drawing Value | Governing Requirement | Compliance Status | Section Citation | Engineering Rationale |\n" +
+        "|---|---|---|---|---|---|\n" +
+        "| [Name] | [Value] | [Limit] | NON-COMPLIANT / COMPLIANT | [SOP §X.Y] | [Reasoning] |\n\n" +
+        "Ensure table rows start at column 0 and are never prefixed with list bullets (- or *). Explicitly cite governing sections (e.g. [SOP-220 §4.2]). State whether each item is compliant or non-compliant, conclude with whether drawing release is approved or withheld, and list required corrective actions before sign-off.";
 
       const draftPrompt = [
         text,
@@ -2013,16 +2031,22 @@ OPERATIONAL & PLAN GUIDELINES:
       }
       const draftText = draftResp.value.text;
 
-      this.result(runId, "draft_note", "Compliance evaluation completed and corrective-action note drafted");
+      this.result(runId, "draft_note", "Compliance evaluation completed and findings presented");
       this.persistAssistant(runId, draftText, "draft-qwen3", draftMessageId);
 
-      // 4. Register Markdown Review Deliverable Artifact
-      const explicitMdMatch = text.match(/\b([a-zA-Z0-9_\-]+\.md)\b/i);
-      const deliverableFilename = explicitMdMatch ? explicitMdMatch[1] : "corrective-action-note.md";
-      const rel = writeRunFile(runId, "output", deliverableFilename, draftText);
-      const artifact = artifactRef(runId, "md", deliverableFilename, rel);
-      this.persistArtifact(artifact as never);
-      this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
+      // 4. Register Markdown Review Deliverable Artifact (ONLY if explicitly requested by user)
+      const isDraftRequested =
+        /\b(approval note|review note|audit memo|audit note|corrective[- ]action note|deliverable|report|file|docx|md|export|document|draft (?:a|an)?\s*(?:note|memo|report))\b/i.test(
+          text,
+        );
+      if (isDraftRequested) {
+        const explicitMdMatch = text.match(/\b([a-zA-Z0-9_\-]+\.md)\b/i);
+        const deliverableFilename = explicitMdMatch ? explicitMdMatch[1] : "corrective-action-note.md";
+        const rel = writeRunFile(runId, "output", deliverableFilename, draftText);
+        const artifact = artifactRef(runId, "md", deliverableFilename, rel);
+        this.persistArtifact(artifact as never);
+        this.emit({ type: "artifact_ready", runId, artifact: artifact as never });
+      }
 
       this.complete(runId);
       return;

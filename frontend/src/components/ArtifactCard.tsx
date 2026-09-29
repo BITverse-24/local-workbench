@@ -160,7 +160,7 @@ function renderCellContent(text: string, keyPrefix: string): React.ReactNode {
 }
 
 function parseMarkdownTable(raw: string): { headers: string[]; rows: string[][] } | null {
-  const normalized = raw.replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, "\n$1");
+  const normalized = raw.replace(/(?:^|\n)\s*[-*+]\s+(\|.+?)(?=\r?\n|$)/g, "\n$1");
   const lines = normalized.trim().split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) return null;
 
@@ -245,7 +245,8 @@ function InteractiveMarkdown({ text }: { text: string }) {
         }
 
         const normalizedContent = seg.content
-          .replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, "\n$1")
+          .replace(/(?:^|\n)\s*[-*+]\s+(\|.+?)(?=\r?\n|$)/g, "\n$1")
+          .replace(/([^\n|])\n(\s*\|[^\n]+\|\r?\n\s*\|?[-:\s|]+\|)/g, "$1\n\n$2")
           .replace(/^(#{1,6}\s+[^\n]+)\n(?![\r\n])/gm, "$1\n\n")
           .replace(/(\|[^\n]+\|)\n(?![\r\n|])/g, "$1\n\n");
         const blocks = normalizedContent.split(/\n{2,}/);
