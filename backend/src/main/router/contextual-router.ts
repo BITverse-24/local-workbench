@@ -81,9 +81,17 @@ export function extractReferencedFiles(
   }
 
   // Match files known to exist in the workspace or attachments
+  const combinedLower = combined.toLowerCase();
   const allKnownFiles = [...workspaceFiles, ...attachmentFiles];
   for (const f of allKnownFiles) {
     const base = path.basename(f);
+    const baseLower = base.toLowerCase();
+    const relLower = f.toLowerCase();
+    // PERF OPTIMIZATION: Substring pre-filter avoids constructing and compiling RegExp objects
+    // for workspace files that are not present anywhere in the text.
+    if (!combinedLower.includes(baseLower) && !combinedLower.includes(relLower)) {
+      continue;
+    }
     const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const escapedRel = f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const wordRx = new RegExp(`(?:@|\\b)(?:${escapedRel}|${escapedBase})\\b`, "i");

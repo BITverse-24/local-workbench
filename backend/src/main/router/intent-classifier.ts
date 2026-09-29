@@ -483,8 +483,18 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
   // of prior workspace/file commands rather than standalone conversational chatter.
   const tokens = normalizeTokens(userText);
   const priorMessages = history ?? [];
-  const lastAssistantMsg = [...priorMessages].reverse().find((m) => m.role === "assistant")?.content ?? "";
-  const lastUserMsg = [...priorMessages].reverse().find((m) => m.role === "user")?.content ?? "";
+  let lastAssistantMsg = "";
+  let lastUserMsg = "";
+  for (let i = priorMessages.length - 1; i >= 0; i--) {
+    const msg = priorMessages[i];
+    if (!lastAssistantMsg && msg.role === "assistant") {
+      lastAssistantMsg = msg.content;
+    }
+    if (!lastUserMsg && msg.role === "user") {
+      lastUserMsg = msg.content;
+    }
+    if (lastAssistantMsg && lastUserMsg) break;
+  }
   const priorContext = `${lastUserMsg}\n${lastAssistantMsg}`.toLowerCase();
 
   const isAffirmative =

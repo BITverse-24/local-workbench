@@ -79,6 +79,15 @@ import {
   logScriptRepair,
 } from "../logger.js";
 
+// PERF OPTIMIZATION: Pre-compiled static RegExp constant for artifact request detection.
+// Prevents dynamic regex construction and compilation on every requestsArtifact call.
+const FILE_ACTION_VERBS = "export|download|save|create|generate|write|make|send|give|provide|produce|return|deliver|output";
+const FILE_NOUNS = "file|files|artifact|artifacts|result file|output file|deliverable|deliverables|xlsx|excel|spreadsheet|csv|txt|json|md|markdown";
+const REQUESTS_ARTIFACT_PATTERN = new RegExp(
+  `\\b(${FILE_ACTION_VERBS})\\b[\\s\\S]*\\b(${FILE_NOUNS})\\b|\\b(${FILE_NOUNS})\\b[\\s\\S]*\\b(${FILE_ACTION_VERBS})\\b`,
+  "i",
+);
+
 function inferArtifactKind(filename: string, declaredKind?: string): ArtifactKind {
   if (declaredKind && ["docx", "pdf", "xlsx", "csv", "txt", "json", "md"].includes(declaredKind)) {
     return declaredKind as ArtifactKind;
@@ -155,9 +164,17 @@ export function findReferencedWorkspaceFiles(
   }
 
   // 3. Extract all file paths from tree
+  const combinedUserTextLower = combinedUserText.toLowerCase();
   const allWorkspaceFiles = tree.filter((e) => e.type === "file").map((e) => e.name);
   for (const relPath of allWorkspaceFiles) {
     const baseName = path.basename(relPath);
+    const baseLower = baseName.toLowerCase();
+    const relLower = relPath.toLowerCase();
+    // PERF OPTIMIZATION: Substring pre-filter avoids constructing and compiling RegExp objects
+    // for workspace files that are not present anywhere in the text.
+    if (!combinedUserTextLower.includes(baseLower) && !combinedUserTextLower.includes(relLower)) {
+      continue;
+    }
     const escapedBase = baseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const escapedRel = relPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const wordPattern = new RegExp(`(?:@|\\b)(?:${escapedRel}|${escapedBase})\\b`, "i");
@@ -3318,15 +3335,7 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
     }
   }
   private requestsArtifact(text: string): boolean {
-    const fileActionVerbs =
-      "export|download|save|create|generate|write|make|send|give|provide|produce|return|deliver|output";
-    const fileNouns =
-      "file|files|artifact|artifacts|result file|output file|deliverable|deliverables|xlsx|excel|spreadsheet|csv|txt|json|md|markdown";
-    const pattern = new RegExp(
-      `\\b(${fileActionVerbs})\\b[\\s\\S]*\\b(${fileNouns})\\b|\\b(${fileNouns})\\b[\\s\\S]*\\b(${fileActionVerbs})\\b`,
-      "i",
-    );
-    return pattern.test(text) || /\b(result file|output file|as an artifact)\b/i.test(text);
+    return REQUESTS_ARTIFACT_PATTERN.test(text) || /\b(result file|output file|as an artifact)\b/i.test(text);
   }
   private async awaitConfirmation(
     runId: string,

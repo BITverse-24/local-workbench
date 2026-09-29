@@ -15,22 +15,26 @@ const KEYWORDS = new Set([
   "int", "float", "str", "list", "dict", "bool", "SELECT", "FROM", "WHERE", "JOIN", "ORDER", "BY"
 ]);
 
+// PERF OPTIMIZATION: Module-scoped pre-compiled RegExp constant.
+// Prevents dynamic regex AST re-compilation and Array.from(KEYWORDS).join("|") on every line of code rendered.
+const CODE_HIGHLIGHT_REGEX = new RegExp(
+  '("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|`(?:\\\\.|[^`\\\\])*`|//.*|#.*|/\\*[\\s\\S]*?\\*/|\\b(?:' +
+    Array.from(KEYWORDS).join("|") +
+    ")\\b|\\b\\d+\\.?\\d*\\b)",
+  "g"
+);
+
 function highlightCode(code: string): React.ReactNode[] {
-  const pattern = new RegExp(
-    '("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|`(?:\\\\.|[^`\\\\])*`|//.*|#.*|/\\*[\\s\\S]*?\\*/|\\b(?:' +
-      Array.from(KEYWORDS).join("|") +
-      ")\\b|\\b\\d+\\.?\\d*\\b)",
-    "g"
-  );
+  CODE_HIGHLIGHT_REGEX.lastIndex = 0;
   const nodes: React.ReactNode[] = [];
   let lastIndex = 0;
   let m: RegExpExecArray | null;
   let idx = 0;
-  while ((m = pattern.exec(code)) !== null) {
+  while ((m = CODE_HIGHLIGHT_REGEX.exec(code)) !== null) {
     if (m.index > lastIndex) nodes.push(code.slice(lastIndex, m.index));
     const token = m[0];
     if (!token) {
-      lastIndex = pattern.lastIndex;
+      lastIndex = CODE_HIGHLIGHT_REGEX.lastIndex;
       continue;
     }
     if (token.startsWith('"') || token.startsWith("'") || token.startsWith("`")) {
@@ -44,7 +48,7 @@ function highlightCode(code: string): React.ReactNode[] {
     } else {
       nodes.push(token);
     }
-    lastIndex = pattern.lastIndex;
+    lastIndex = CODE_HIGHLIGHT_REGEX.lastIndex;
   }
   if (lastIndex < code.length) nodes.push(code.slice(lastIndex));
   if (nodes.length === 0) return [code];
