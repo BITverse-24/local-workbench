@@ -1,0 +1,110 @@
+/* ============================================================
+   TOKENS — replace the 8 values in :root with the real SIH
+   template palette and the whole deck follows.
+   ============================================================ */
+:root{
+  --ink:#0E1116;        /* primary text */
+  --ink-2:#39414B;      /* secondary text */
+  --ink-3:#6E7883;      /* labels, tertiary */
+  --rule:#C9CFD6;       /* hairlines */
+  --rule-soft:#E6EAEE;
+  --paper:#FFFFFF;
+  --paper-2:#F3F5F7;
+  --navy:#12456B;       /* structural accent */
+  --navy-deep:#0C2E48;  /* filled areas */
+  --flag:#A32D26;       /* refusal / risk */
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased}
+body{
+  background:#3F444A;padding:44px 0 90px;
+  font-family:'Inter','IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  color:var(--ink);
+}
+.slide{
+  position:relative;width:1280px;height:720px;background:var(--paper);
+  margin:0 auto 44px;padding:56px 68px 48px;
+  display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:0 3px 22px rgba(0,0,0,.3);
+}
+/* ── Headline: large and confident, the first thing read ── */
+.headline{
+  font-size:38px;line-height:1.16;font-weight:700;letter-spacing:-.022em;
+  color:var(--ink);max-width:1050px;
+}
+.headline em{font-style:normal;color:var(--navy)}
+.hr-top{height:3px;background:var(--navy);width:64px;margin:17px 0 0;flex:none}
+.body{flex:1;display:flex;gap:48px;min-height:0;padding-top:23px}
+/* ── Block: label reads as a heading, claim carries the point ── */
+.blocks{display:flex;flex-direction:column;min-width:0}
+.blk{padding-left:0}
+.lbl{
+  font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--navy);margin-bottom:5px;
+}
+.lbl.gray{color:var(--ink-3)}
+.sup{font-size:12px;line-height:1.55;color:var(--ink-2)}
+.sup b{font-weight:600;color:var(--ink)}
+.warn{color:var(--flag);font-weight:600}
+.figcol{display:flex;align-items:center;justify-content:center;flex:none}
+.foot{
+  position:absolute;left:68px;right:68px;bottom:22px;
+  display:flex;justify-content:space-between;align-items:center;
+  font-size:9px;color:var(--ink-3);letter-spacing:.09em;text-transform:uppercase;
+}
+.foot .n{font-variant-numeric:tabular-nums;font-weight:600;color:var(--navy)}
+
+/* ═══ STRUCTURED COMPONENTS ═══ */
+/* Card: the unit that replaces a paragraph */
+.card{border:1px solid var(--rule);border-top:3px solid var(--navy);background:var(--paper);padding:9px 12px 10px}
+.card.grey{border-top-color:var(--ink-3)}
+.card-h{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--navy);margin-bottom:6px}
+.card.grey .card-h{color:var(--ink-3)}
+/* Fragments: short labelled statements, never sentences */
+.frags{list-style:none}
+.frags li{
+  font-size:11.2px;line-height:1.34;color:var(--ink-2);
+  padding:2px 0 2px 12px;position:relative;
+}
+.frags li::before{content:'';position:absolute;left:0;top:8.5px;width:7px;height:1.5px;background:var(--navy)}
+.frags li b{font-weight:600;color:var(--ink)}
+.frags.red li::before{background:var(--flag)}
+.frags.red li{color:var(--ink-2)}
+/* Key-value micro rows: the stack table */
+.srow{display:flex;gap:10px;padding:4.5px 0;border-top:1px solid var(--rule-soft);font-size:10.8px;line-height:1.32}
+.srow:first-of-type{border-top:none}
+.sk{width:112px;flex:none;font-weight:700;color:var(--navy);font-size:10px;letter-spacing:.02em}
+.sv{color:var(--ink-2);flex:1}
+.sv b{font-weight:600;color:var(--ink)}
+/* Bottom strip: three short claims */
+.strip{display:flex;border-top:2px solid var(--rule)}
+.strip-i{flex:1;padding:10px 18px 0 0}
+.strip-t{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--navy);margin-bottom:4px}
+.strip-d{font-size:11px;line-height:1.4;color:var(--ink-2)}
+/* Tier cards, weight-coded */
+.tcard{border:1px solid var(--rule);padding:14px 16px;display:flex;gap:18px;align-items:flex-start}
+.tcard .tn{font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--ink-3);flex:none;width:20px;padding-top:2px}
+.tcard .tt{font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;margin-bottom:3px}
+.tcard .td{font-size:9.5px;color:var(--ink-3);margin-bottom:8px;letter-spacing:.03em}
+.tcard ul{list-style:none}
+.tcard li{font-size:12px;line-height:1.4;color:var(--ink-2);padding:2.5px 0 2.5px 12px;position:relative}
+.tcard li::before{content:'';position:absolute;left:0;top:9px;width:6px;height:1.5px;background:currentColor;opacity:.5}
+.tcard li b{font-weight:600;color:var(--ink)}
+.tcard.heavy{background:var(--navy);border-color:var(--navy)}
+.tcard.heavy .tt,.tcard.heavy .td{color:#fff}
+.tcard.heavy .td{color:rgba(255,255,255,.7)}
+.tcard.heavy li{color:rgba(255,255,255,.88)}
+.tcard.heavy li b{color:#fff}
+.tcard.heavy .tn{color:rgba(255,255,255,.6)}
+.tcard.mid{background:var(--paper-2)}
+.tcard.light{border-color:var(--rule-soft)}
+.tcard.light .tt{color:var(--ink-3)}
+.tcard.light li{color:var(--ink-3);font-size:11px}
+/* Chip grid: technologies as tags, not prose */
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{
+  font-size:10px;line-height:1;color:var(--ink-2);
+  border:1px solid var(--rule);background:var(--paper-2);
+  padding:5px 7px;border-radius:2px;
+}
+.chip.k{color:var(--navy);font-weight:600}

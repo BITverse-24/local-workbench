@@ -1,0 +1,61 @@
+/* ===== SLIDE 2 — claim stack + the T (hero figure) ===== */
+.s2 .body{gap:44px}
+.s2 .blocks{width:648px;flex:none;gap:13px;justify-content:space-between}
+.s2 .figcol{width:420px}
+
+.T{width:100%;display:flex;flex-direction:column}
+.T-cap{font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-3);text-align:center;margin-bottom:12px}
+
+/* --- the bar: filled navy, white type, real presence --- */
+.T-bar{
+  background:var(--navy);padding:13px 16px 14px;
+  display:flex;flex-direction:column;
+}
+.T-bar-t{
+  font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:rgba(255,255,255,.72);margin-bottom:11px;
+}
+.T-skills{display:flex;flex-wrap:wrap;gap:5px}
+.sk{
+  font-size:10.5px;line-height:1;color:#fff;font-weight:500;
+  border:1px solid rgba(255,255,255,.34);padding:6px 9px;
+}
+
+/* --- the stem: outlined, deeper than the bar is tall --- */
+.T-stem{
+  border:2px solid var(--navy);border-top:none;
+  padding:13px 16px 6px;background:var(--paper);width:100%;
+}
+.T-stem-t{
+  font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--navy);margin-bottom:12px;text-align:center;
+}
+.T-stem ol{list-style:none;counter-reset:s;padding:0}
+.T-stem li{
+  counter-increment:s;position:relative;
+  font-size:11.5px;line-height:1.35;color:var(--ink-2);
+  padding:7px 0 7px 28px;border-top:1px solid var(--rule-soft);
+}
+.T-stem li:first-child{border-top:none}
+.T-stem li::before{
+  content:counter(s);position:absolute;left:0;top:7px;
+  width:18px;height:18px;background:var(--navy);color:#fff;
+  font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;
+}
+.T-stem li b{color:var(--ink);font-weight:600}
+.T-stem li.refuse{color:var(--flag);font-weight:600}
+.T-stem li.refuse::before{background:var(--flag)}
+
+.T-note{
+  margin-top:11px;padding-top:10px;border-top:1px solid var(--rule);
+  font-size:10.5px;line-height:1.5;color:var(--ink-3);text-align:center;
+}
+.T-note b{color:var(--ink);font-weight:600}
+
+/* ===== S2 structured layout: 4 cards left, T right, strip across bottom ===== */
+.s2 .body{flex-direction:column;gap:14px;padding-top:20px}
+.s2 .row{display:flex;gap:40px;flex:1;min-height:0}
+.s2 .left{width:600px;flex:none;display:flex;flex-direction:column;gap:11px}
+.s2 .right{flex:1;display:flex;align-items:center;justify-content:center}
+.s2 .left .card{flex:1;display:flex;flex-direction:column;justify-content:center}
