@@ -167,15 +167,17 @@ export function cleanFinalSummary(text: string, hasExecutedTools: boolean): stri
     })
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
     .replace(/```(?:json)?\s*\{[\s\S]*?"exitCode"\s*:\s*\d+[\s\S]*?\}\s*```/gi, "")
-    .replace(/\{[\s\S]*?"exitCode"\s*:\s*\d+[\s\S]*?\n\s*\}/gi, "")
-    .replace(/(?:Execution\s+output|Tool\s+result|Command\s+output)\s*:\s*(?:\r?\n|$)/gim, "")
+    .replace(/\{[\s\S]*?"exitCode"\s*:\s*\d+[\s\S]*?\}/gi, "")
+    .replace(/(?:Execution\s+output|Tool\s+result|Command\s+output|Raw\s+output)\s*:\s*(?:\r?\n|$)/gim, "")
     .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT|ENDTOOLRESULT|TOOL_CALL|END_TOOL_CALL|ENDTOOLCALL)\]/gi, "")
     .replace(/<\/?(?:tool_call|tool_response|tool_result)[^>]*>/gi, "")
     .trim();
 
   // Un-bullet and un-indent markdown table rows so renderers parse them as valid tables:
   // e.g. "  - | Equipment | ... |" -> "| Equipment | ... |"
-  cleanedToolTags = cleanedToolTags.replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, "\n$1");
+  cleanedToolTags = cleanedToolTags
+    .replace(/(?:^|\n)\s*[-*+]\s+(\|.+?)(?=\r?\n|$)/g, "\n$1")
+    .replace(/([^\n|])\n(\s*\|[^\n]+\|\r?\n\s*\|?[-:\s|]+\|)/g, "$1\n\n$2");
 
   // If the summary contains or is an echoed tool result message (e.g. Generated deliverable "approval-note.docx" (...)):
   cleanedToolTags = cleanedToolTags.replace(
@@ -300,10 +302,13 @@ export function cleanPlanPreview(text: string): string {
       return inner;
     })
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
-    .replace(/\{\s*"exitCode"\s*:\s*\d+[\s\S]*?\n\}/gi, "");
+    .replace(/```(?:json)?\s*\{[\s\S]*?"exitCode"\s*:\s*\d+[\s\S]*?\}\s*```/gi, "")
+    .replace(/\{[\s\S]*?"exitCode"\s*:\s*\d+[\s\S]*?\}/gi, "");
 
   // 1.5 Un-bullet and un-indent markdown table rows
-  cleaned = cleaned.replace(/(?:^|\n)\s*[-*+]\s+(\|.*\|\s*)(?=\r?\n|$)/g, "\n$1");
+  cleaned = cleaned
+    .replace(/(?:^|\n)\s*[-*+]\s+(\|.+?)(?=\r?\n|$)/g, "\n$1")
+    .replace(/([^\n|])\n(\s*\|[^\n]+\|\r?\n\s*\|?[-:\s|]+\|)/g, "$1\n\n$2");
 
   // 2. Strip any tool simulator tags without destroying human markdown text
   cleaned = cleaned

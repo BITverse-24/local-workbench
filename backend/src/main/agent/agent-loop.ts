@@ -703,12 +703,12 @@ export class AgentLoop {
         if (
           hasExecutedDiskMutations &&
           modifiedFiles.size > 0 &&
-          !/official deliverable document/i.test(finalText) &&
-          !/approval-note\.docx/i.test(finalText) &&
           Array.from(modifiedFiles).some((f) => f.endsWith(".docx") || f.endsWith(".xlsx"))
         ) {
           const docFile = Array.from(modifiedFiles).find((f) => f.endsWith(".docx") || f.endsWith(".xlsx"));
-          finalText += `\n\n📄 **The official deliverable document has been compiled and saved as [${docFile}].**`;
+          if (docFile && !finalText.includes(docFile) && !/official deliverable document/i.test(finalText)) {
+            finalText += `\n\n📄 **The official deliverable document has been compiled and saved as [${docFile}].**`;
+          }
         }
 
         if (
@@ -804,12 +804,12 @@ export class AgentLoop {
         if (
           hasExecutedDiskMutations &&
           modifiedFiles.size > 0 &&
-          !/official deliverable document/i.test(finalText) &&
-          !/approval-note\.docx/i.test(finalText) &&
           Array.from(modifiedFiles).some((f) => f.endsWith(".docx") || f.endsWith(".xlsx"))
         ) {
           const docFile = Array.from(modifiedFiles).find((f) => f.endsWith(".docx") || f.endsWith(".xlsx"));
-          finalText += `\n\n📄 **The official deliverable document has been compiled and saved as [${docFile}].**`;
+          if (docFile && !finalText.includes(docFile) && !/official deliverable document/i.test(finalText)) {
+            finalText += `\n\n📄 **The official deliverable document has been compiled and saved as [${docFile}].**`;
+          }
         }
         if (
           hasExecutedDiskMutations &&
@@ -977,12 +977,12 @@ export class AgentLoop {
     if (
       hasExecutedDiskMutations &&
       modifiedFiles.size > 0 &&
-      !/official deliverable document/i.test(overflowText) &&
-      !/approval-note\.docx/i.test(overflowText) &&
       Array.from(modifiedFiles).some((f) => f.endsWith(".docx") || f.endsWith(".xlsx"))
     ) {
       const docFile = Array.from(modifiedFiles).find((f) => f.endsWith(".docx") || f.endsWith(".xlsx"));
-      overflowText += `\n\n📄 **The official deliverable document has been compiled and saved as [${docFile}].**`;
+      if (docFile && !overflowText.includes(docFile) && !/official deliverable document/i.test(overflowText)) {
+        overflowText += `\n\n📄 **The official deliverable document has been compiled and saved as [${docFile}].**`;
+      }
     }
     if (
       hasExecutedDiskMutations &&
