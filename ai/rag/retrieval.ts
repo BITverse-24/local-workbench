@@ -1,3 +1,4 @@
+import type Database from "better-sqlite3";
 import { RAGDatabase } from "./db.js";
 import { EmbeddingService } from "./embedding.js";
 import { RetrievalResult } from "./types.js";
@@ -57,7 +58,26 @@ export function sanitizeFtsQuery(query: string): {
 }
 
 export class RetrievalPipeline {
+  // PERF OPTIMIZATION: Cache prepared SQLite Statement objects for FTS queries to avoid repeated SQL string parsing
+  // and compilation overhead on high-frequency document searches and RAG queries.
+  private ftsStmtCache = new WeakMap<Database.Database, Database.Statement>();
+
   constructor(private embeddingService: EmbeddingService) {}
+
+  private getFtsStatement(sqlite: Database.Database): Database.Statement {
+    let stmt = this.ftsStmtCache.get(sqlite);
+    if (!stmt) {
+      stmt = sqlite.prepare(`
+        SELECT chunk_id, text, doc_id, section_label, page, rank
+        FROM chunks_fts
+        WHERE chunks_fts MATCH ?
+        ORDER BY rank
+        LIMIT ?
+      `);
+      this.ftsStmtCache.set(sqlite, stmt);
+    }
+    return stmt;
+  }
 
   async query(text: string, topK: number = 5): Promise<RetrievalResult[]> {
     const cleanQuery = (text || "").replace(/\0/g, "").trim();
@@ -78,14 +98,8 @@ export class RetrievalPipeline {
     // 1a. Tier 1: Exact verbatim phrase match (highest precision)
     if (phraseQuery) {
       try {
-        const phraseStmt = sqlite.prepare(`
-          SELECT chunk_id, text, doc_id, section_label, page, rank
-          FROM chunks_fts
-          WHERE chunks_fts MATCH ?
-          ORDER BY rank
-          LIMIT ?
-        `);
-        const rows = phraseStmt.all(phraseQuery, candidateLimit) as any[];
+        const ftsStmt = this.getFtsStatement(sqlite);
+        const rows = ftsStmt.all(phraseQuery, candidateLimit) as any[];
         for (let i = 0; i < rows.length; i++) {
           keywordMatches.set(rows[i].chunk_id, { rank: i, row: rows[i], isExactPhrase: true });
         }
@@ -97,14 +111,8 @@ export class RetrievalPipeline {
     // 1b. Tier 2: All meaningful keywords present (AND search)
     if (andQuery && keywordMatches.size < candidateLimit) {
       try {
-        const andStmt = sqlite.prepare(`
-          SELECT chunk_id, text, doc_id, section_label, page, rank
-          FROM chunks_fts
-          WHERE chunks_fts MATCH ?
-          ORDER BY rank
-          LIMIT ?
-        `);
-        const rows = andStmt.all(andQuery, candidateLimit) as any[];
+        const ftsStmt = this.getFtsStatement(sqlite);
+        const rows = ftsStmt.all(andQuery, candidateLimit) as any[];
         for (let i = 0; i < rows.length; i++) {
           if (!keywordMatches.has(rows[i].chunk_id)) {
             keywordMatches.set(rows[i].chunk_id, {
@@ -124,14 +132,8 @@ export class RetrievalPipeline {
     // from polluting precision rankings when exact/AND matches exist.
     if (orQuery && keywordMatches.size === 0) {
       try {
-        const orStmt = sqlite.prepare(`
-          SELECT chunk_id, text, doc_id, section_label, page, rank
-          FROM chunks_fts
-          WHERE chunks_fts MATCH ?
-          ORDER BY rank
-          LIMIT ?
-        `);
-        const rows = orStmt.all(orQuery, candidateLimit) as any[];
+        const ftsStmt = this.getFtsStatement(sqlite);
+        const rows = ftsStmt.all(orQuery, candidateLimit) as any[];
         for (let i = 0; i < rows.length; i++) {
           if (!keywordMatches.has(rows[i].chunk_id)) {
             keywordMatches.set(rows[i].chunk_id, {

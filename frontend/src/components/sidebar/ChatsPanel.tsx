@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { formatRelativeTime } from '../../lib/time';
 
@@ -31,7 +31,9 @@ function DotsIcon({ size = 13 }: { size?: number }) {
   );
 }
 
-export default function ChatsPanel({
+// PERF OPTIMIZATION: Memoize ChatsPanel component with React.memo and useMemo for filtered/sorted chats.
+// Prevents unnecessary sidebar re-renders during high-frequency streaming events and avoids array allocation and sort overhead.
+const ChatsPanel = memo(function ChatsPanel({
   chats,
   activeId,
   onSelect,
@@ -139,13 +141,17 @@ export default function ChatsPanel({
     setOpenMenuId(null);
   };
 
-  const filteredChats = chats.filter((c) =>
-    searchQuery ? c.title.toLowerCase().includes(searchQuery.toLowerCase()) : true
-  );
+  const filteredChats = useMemo(() => {
+    if (!searchQuery) return chats;
+    const lower = searchQuery.toLowerCase();
+    return chats.filter((c) => c.title.toLowerCase().includes(lower));
+  }, [chats, searchQuery]);
 
-  const sortedChats = [...filteredChats].sort(
-    (a, b) => Number(!!pinned[b.id]) - Number(!!pinned[a.id])
-  );
+  const sortedChats = useMemo(() => {
+    return [...filteredChats].sort(
+      (a, b) => Number(!!pinned[b.id]) - Number(!!pinned[a.id])
+    );
+  }, [filteredChats, pinned]);
 
   return (
     <div
@@ -443,4 +449,6 @@ export default function ChatsPanel({
       )}
     </div>
   );
-}
+});
+
+export default ChatsPanel;
