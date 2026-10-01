@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import FileTree from '../FileTree';
 
 type Props = {
@@ -39,13 +39,22 @@ export default function FilesPanel({
     return parts[parts.length - 1] || fullPath;
   };
 
-  const fileCount = workspaceTree.filter((e) => e.type === 'file').length;
+  // PERF OPTIMIZATION: Memoize workspace file count and filtered tree computations.
+  // Avoids running linear array scans and case-conversion string matching over thousands of files on every parent re-render.
+  const fileCount = useMemo(
+    () => workspaceTree.filter((e) => e.type === 'file').length,
+    [workspaceTree]
+  );
 
-  const filteredTree = filterQuery
-    ? workspaceTree.filter((e) =>
-        e.name.toLowerCase().includes(filterQuery.toLowerCase())
-      )
-    : workspaceTree;
+  const filteredTree = useMemo(
+    () =>
+      filterQuery
+        ? workspaceTree.filter((e) =>
+            e.name.toLowerCase().includes(filterQuery.toLowerCase())
+          )
+        : workspaceTree,
+    [workspaceTree, filterQuery]
+  );
 
   return (
     <div

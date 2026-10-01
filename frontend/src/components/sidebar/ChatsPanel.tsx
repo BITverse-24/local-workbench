@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { formatRelativeTime } from '../../lib/time';
 
@@ -139,12 +139,22 @@ export default function ChatsPanel({
     setOpenMenuId(null);
   };
 
-  const filteredChats = chats.filter((c) =>
-    searchQuery ? c.title.toLowerCase().includes(searchQuery.toLowerCase()) : true
+  // PERF OPTIMIZATION: Memoize filtered and pinned-sorted conversation list computations.
+  // Prevents re-executing array filtering and sorting on every minor UI re-render.
+  const filteredChats = useMemo(
+    () =>
+      chats.filter((c) =>
+        searchQuery ? c.title.toLowerCase().includes(searchQuery.toLowerCase()) : true
+      ),
+    [chats, searchQuery]
   );
 
-  const sortedChats = [...filteredChats].sort(
-    (a, b) => Number(!!pinned[b.id]) - Number(!!pinned[a.id])
+  const sortedChats = useMemo(
+    () =>
+      [...filteredChats].sort(
+        (a, b) => Number(!!pinned[b.id]) - Number(!!pinned[a.id])
+      ),
+    [filteredChats, pinned]
   );
 
   return (
