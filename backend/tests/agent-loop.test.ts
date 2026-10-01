@@ -246,6 +246,70 @@ module.exports = app;
     expect(result.completed).toBe(true);
   });
 
+  it("does not nudge or reset chat when user asks for a code snippet without workspace file targets", async () => {
+    const loop = new AgentLoop();
+    let callTurn = 0;
+    const emittedEvents: any[] = [];
+
+    const mockWriteFileTool: AgentTool = {
+      name: "write_file",
+      definition: {
+        type: "function",
+        function: {
+          name: "write_file",
+          description: "write",
+          parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } } },
+        },
+      },
+      async execute(args) {
+        return { output: `Saved ${args.path}`, summary: "Saved" };
+      },
+    };
+
+    const snippetText = `Here is a FastAPI snippet that logs incoming IP addresses:
+\`\`\`python
+from fastapi import FastAPI, Request
+app = FastAPI()
+@app.middleware("http")
+async def log_ip(request: Request, call_next):
+    print(f"IP: {request.client.host}")
+    return await call_next(request)
+\`\`\``;
+
+    const mockGateway = {
+      async chatWithTools() {
+        callTurn++;
+        return {
+          ok: true,
+          value: {
+            content: snippetText,
+            tool_calls: null,
+          },
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-snippet",
+      driverModelId: "code-qwen25coder",
+      userPrompt: "Write a fastapi snippet which logs all incoming requests' IP address",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockWriteFileTool],
+      context: { runId: "test-snippet", workspaceRoot: "", gateway: mockGateway as any },
+      emitEvent: (e) => emittedEvents.push(e),
+    });
+
+    expect(callTurn).toBe(1);
+    expect(result.completed).toBe(true);
+    expect(result.finalText).toContain("from fastapi import FastAPI");
+    // Verify assistant_message_reset was NOT emitted
+    const resetEvent = emittedEvents.find((e) => e.type === "assistant_message_reset");
+    expect(resetEvent).toBeUndefined();
+    // Verify agent_thinking was emitted for telemetry
+    const thinkingEvent = emittedEvents.find((e) => e.type === "agent_thinking");
+    expect(thinkingEvent).toBeDefined();
+  });
+
   it("detects and terminates tool call loops when identical tool calls repeat", async () => {
     const loop = new AgentLoop();
     let callCount = 0;

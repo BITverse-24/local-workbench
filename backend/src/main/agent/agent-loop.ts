@@ -402,16 +402,6 @@ export class AgentLoop {
         }
       }
 
-      // 3. Emit model thinking / scratchpad to UI if present
-      if (content) {
-        emitEvent({
-          type: "agent_thinking",
-          runId,
-          text: content,
-          turn,
-        });
-      }
-
       let effectiveToolCalls: any[] | null = null;
       if (Array.isArray(tool_calls)) {
         effectiveToolCalls = tool_calls.map((c: any) => {
@@ -430,8 +420,16 @@ export class AgentLoop {
             arguments: typeof args === "object" && args !== null ? args : {},
           };
         });
+      }
 
-
+      // 3. Emit model thinking / scratchpad to UI if present
+      if (content) {
+        emitEvent({
+          type: "agent_thinking",
+          runId,
+          text: content,
+          turn,
+        });
       }
 
       // If tool calls were returned on this turn, any streamed chunks were intermediate scratchpad UNLESS they contained substantive findings.
@@ -507,8 +505,30 @@ export class AgentLoop {
               : Boolean(dispatcher.getTool("run_command")) &&
                 (!dispatcher.getTool("write_file") ||
                   /\b(?:npm|npx|run|install|test|start|build|node|exec)\b/i.test(userPrompt)));
+          const isSnippetOrChatQuery =
+            /\b(?:snippet|example|sample|how\s*to|explain|explanation|walkthrough|function|query|regex|algorithm|tutorial)\b/i.test(userPrompt) &&
+            semanticTargets.length === 0 &&
+            !/\b(?:save|write\s+(?:it\s+)?to|create\s+(?:a\s+)?file|into\s+[\w.-]+\.\w+|workspace)\b/i.test(userPrompt);
+
+          const hasCodeBlockContent = Boolean(content && content.includes("```"));
+
+          const isUserWorkspaceActive = Boolean(
+            context.harness?.getActiveWorkspace() ||
+              (context.workspaceRoot &&
+                context.workspaceRoot.length > 0 &&
+                !context.workspaceRoot.includes("intermediate") &&
+                !context.workspaceRoot.includes("data/runs")),
+          );
+
+          const isWorkspaceCodeTask =
+            isUserWorkspaceActive ||
+            semanticTargets.length > 0 ||
+            /\b(?:workspace|repository|repo|directory|folder|project)\b/i.test(userPrompt);
+
           const isCodeIntent =
             isSemanticActionable !== false &&
+            !isSnippetOrChatQuery &&
+            (isWorkspaceCodeTask || !hasCodeBlockContent) &&
             semanticIntent?.intentType !== "general_qa" &&
             semanticIntent?.intentType !== "pure_chat" &&
             (semanticIntent

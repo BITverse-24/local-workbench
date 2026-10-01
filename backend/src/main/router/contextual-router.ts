@@ -39,8 +39,8 @@ Available lead models:
 - "vision-qwen25vl": for reading scanned inspection reports, engineering drawings, or diagrams.
 
 CRITICAL ACTIONABILITY & INTENT RULES:
-- If the user is asking questions, seeking explanations, requesting an architectural review, or having general conversation (even inside an active workspace), set "isActionable": false and "intentType": "general_qa" or "pure_chat".
-- ONLY set "isActionable": true if the user explicitly asks to create, modify, delete, build, install, or run code/files on disk ("intentType": "code_modification" or "command_execution").
+- If the user is asking questions, seeking explanations, requesting an architectural review, or asking for code snippets, code examples, functions, queries, regex, or algorithms in chat (e.g. "write a fastapi snippet", "show an example of...", "how do I...", "write a python function to..."), set "isActionable": false and "intentType": "general_qa". Route to "code-qwen25coder" for code questions or snippets. The user wants the code directly in chat, NOT written to a file on disk!
+- ONLY set "isActionable": true for code tasks if the user explicitly asks to create, modify, delete, build, install, or run files ON DISK in a workspace (e.g. "save to app.py", "create src/index.ts", "fix the broken script in workspace", "convert @middleware/rateLimiter.js to TS"). If no workspace is active and no file path or save instruction is specified, code generation is chat-only ("isActionable": false, "intentType": "general_qa").
 - If the user asks to inspect, review, verify, or check compliance of an attached drawing or report in chat without asking for an official export document or file, set "isActionable": false and "intentType": "file_inspection". Route to "vision-qwen25vl" for drawings or scanned documents.
 - ONLY set "intentType": "document_drafting" and "isActionable": true if the user explicitly asks to draft or export an official deliverable document or file (e.g. "draft an approval note", "export report to docx").
 
@@ -218,13 +218,26 @@ LATEST USER REQUEST:
                 .filter((f: string) => f.length > 0)
             : extractReferencedFiles(userPrompt, history, workspaceFiles, attachmentFileNames);
 
+          const isChatCodeQuery =
+            /\b(?:snippet|example|sample|how\s*to|explain|explanation|walkthrough|function|query|regex|algorithm|tutorial)\b/i.test(userPrompt) &&
+            !/\b(?:save|write\s+(?:it\s+)?to|create\s+(?:a\s+)?file|into\s+[\w.-]+\.\w+|workspace)\b/i.test(userPrompt);
+
+          const isActionable =
+            Boolean(parsed.isActionable) &&
+            (hasWorkspace || targetFiles.length > 0 || !isChatCodeQuery) &&
+            !isChatCodeQuery;
+
+          const intentType = isChatCodeQuery && parsed.intentType === "code_modification" && !hasWorkspace
+            ? "general_qa"
+            : (parsed.intentType ?? (hasWorkspace ? "code_modification" : "general_qa"));
+
           return {
             driverModel: validDriverModel,
             taskType: validTaskType,
             primaryGoal: parsed.primaryGoal,
-            isActionable: Boolean(parsed.isActionable),
+            isActionable,
             targetFiles,
-            intentType: parsed.intentType ?? (hasWorkspace ? "code_modification" : "general_qa"),
+            intentType,
             reason: parsed.reason ?? "semantic LLM classification",
           };
         }
@@ -355,6 +368,23 @@ LATEST USER REQUEST:
       targetFiles: referencedFiles,
       intentType: "code_modification",
       reason: "workspace active; routing to code engineering driver",
+    };
+  }
+
+  const isCodingQuery =
+    /\b(?:code|snippet|script|function|class|fastapi|flask|express|react|vue|angular|python|javascript|typescript|ts|js|py|sql|html|css|api|endpoint|middleware|algorithm|async|await)\b/i.test(
+      lowerPrompt,
+    );
+
+  if (isCodingQuery) {
+    return {
+      driverModel: "code-qwen25coder",
+      taskType: "code",
+      primaryGoal: "Code snippet or engineering explanation",
+      isActionable: false,
+      targetFiles: [],
+      intentType: "general_qa",
+      reason: "coding query without active workspace; chat-only code assistance",
     };
   }
 
