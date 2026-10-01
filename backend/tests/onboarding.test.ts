@@ -139,10 +139,9 @@ describe("Onboarding Architecture & IPC Handlers", () => {
       expect(draft?.baseUrl).toBe("http://127.0.0.1:8000/v1");
       expect(draft?.model).toBe("qwen3:8b");
 
-      // Auto-fallback for plan to draft
-      const plan = entries.find((e) => e.id === "plan-qwen3-8b");
-      expect(plan).toBeDefined();
-      expect(plan?.model).toBe("qwen3:8b");
+      // Verify no legacy plan model is synthesized
+      const plan = entries.find((e: any) => e.id === "plan-qwen3-8b");
+      expect(plan).toBeUndefined();
     });
   });
 

@@ -1,6 +1,6 @@
-export type TaskType = "vision" | "draft" | "code" | "plan";
+export type TaskType = "vision" | "draft" | "code";
 export type ModelRuntime = "mlx-lm" | "llama-server" | "ollama";
-export type ModelId = "vision-qwen25vl" | "draft-qwen3" | "code-qwen25coder" | "plan-qwen3-8b";
+export type ModelId = "vision-qwen25vl" | "draft-qwen3" | "code-qwen25coder";
 export type ModelCapability = "text" | "image-input" | "structured-output" | "code-generation";
 export interface ModelRegistryEntry { id: ModelId; taskTypes: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; maxOutputTokens?: number; }
 export interface AttachmentReference { attachmentId: string; filename: string; mediaType: string; sizeBytes: number; relativePath: string; selectedPages?: number[]; }
@@ -40,15 +40,13 @@ export interface CodeModelRequest extends ModelRequestBase { taskType: "code"; m
 export interface CodeSummarizeRequest extends ModelRequestBase { taskType: "code"; modelId: "code-qwen25coder"; responseFormat: "code-summary"; phase: "summarize"; execution: PythonExecutionResult; task: string; }
 export interface ChatModelRequest extends ModelRequestBase { taskType: "draft"; modelId: "draft-qwen3"; responseFormat: "chat-result"; }
 export interface DraftModelRequest extends ModelRequestBase { taskType: "draft"; modelId: "draft-qwen3"; responseFormat: "draft-result"; }
-export interface PlanModelRequest extends ModelRequestBase { taskType: "plan"; modelId: "plan-qwen3-8b"; responseFormat: "chat-result"; }
-export type ModelRequest = VisionModelRequest | CodeModelRequest | CodeSummarizeRequest | ChatModelRequest | DraftModelRequest | PlanModelRequest;
+export type ModelRequest = VisionModelRequest | CodeModelRequest | CodeSummarizeRequest | ChatModelRequest | DraftModelRequest;
 export interface ModelUsage { inputTokens?: number; outputTokens?: number; durationMs?: number; }
 export interface ModelResponseBase { requestId: string; runId: string; modelId: ModelId; completedAt: string; usage?: ModelUsage; }
 export interface VisionModelResponse extends ModelResponseBase { taskType: "vision"; result: VisionResult; }
 export interface CodeModelResponse extends ModelResponseBase { taskType: "code"; result: CodeDraftResult | CodeSummaryResult; }
 export interface ChatModelResponse extends ModelResponseBase { taskType: "draft"; result: ChatResult; }
-export interface PlanModelResponse extends ModelResponseBase { taskType: "plan"; result: ChatResult; }
-export type ModelResponse = VisionModelResponse | CodeModelResponse | ChatModelResponse | PlanModelResponse;
+export type ModelResponse = VisionModelResponse | CodeModelResponse | ChatModelResponse;
 export type Confidence = "high" | "medium" | "low";
 export interface PageReference { id: string; page: number; text: string; location?: string; }
 export interface Finding { findingId: string; title: string; value: string; pageReferenceIds: string[]; confidence: Confidence; evidence: string; }
@@ -171,7 +169,7 @@ export type WorkspaceEvent =
   | { type: "harness_tool_result"; runId: string; tool: HarnessToolName; summary: string; detail?: string };
 
 // ── Onboarding & Model Configuration Contracts ──────────────────────────
-export type ModelRoleType = "vision" | "coding" | "draft" | "plan" | "embedding";
+export type ModelRoleType = "vision" | "coding" | "draft" | "embedding";
 
 export interface ModelConfigRow {
   role: ModelRoleType;

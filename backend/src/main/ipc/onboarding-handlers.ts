@@ -10,7 +10,7 @@ import { buildRegistryFromRows, sanitizeHost, writeRegistryToFile } from "../gat
 
 
 const modelConfigRowSchema = z.object({
-  role: z.enum(["vision", "coding", "draft", "plan", "embedding"]),
+  role: z.enum(["vision", "coding", "draft", "embedding"]),
   modelName: z.string().trim().min(1, "Model name cannot be empty"),
   host: z.string().trim().min(1, "Host / IP cannot be empty"),
   port: z.number().int().min(1, "Port must be at least 1").max(65535, "Port must be <= 65535"),

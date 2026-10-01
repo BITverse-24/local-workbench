@@ -129,7 +129,7 @@ agent/
 │   └── mock-responses/            # Fixture responses for offline testing
 │
 ├── config/                        # Runtime configurations
-│   ├── models.json                # Active model registry (vision, draft, code, plan)
+│   ├── models.json                # Active model registry (vision, draft, code)
 │   └── models.ollama.example.json # Example configuration for local Ollama endpoints
 │
 ├── data/                          # Runtime data (gitignored / persistent)

@@ -36,18 +36,6 @@
       "healthPath": "/models",
       "enabled": true,
       "maxOutputTokens": 8192
-    },
-    {
-      "id": "plan-qwen3-8b",
-      "taskTypes": ["plan"],
-      "runtime": "ollama",
-      "baseUrl": "http://127.0.0.1:11434/v1",
-      "model": "qwen3:8b",
-      "capabilities": ["text", "structured-output"],
-      "requestTimeoutMs": 45000,
-      "healthPath": "/models",
-      "enabled": true,
-      "maxOutputTokens": 8192
     }
   ]
 }

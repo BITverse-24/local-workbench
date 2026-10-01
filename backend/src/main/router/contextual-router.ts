@@ -165,8 +165,8 @@ LATEST USER REQUEST:
 
       const base = requestBase(
         runId,
-        "plan",
-        "plan-qwen3-8b",
+        "draft",
+        "draft-qwen3",
         "chat-result",
         SEMANTIC_ROUTER_SYSTEM_PROMPT,
         prompt,
@@ -177,8 +177,8 @@ LATEST USER REQUEST:
 
       const request = {
         ...base,
-        taskType: "plan" as const,
-        modelId: "plan-qwen3-8b" as const,
+        taskType: "draft" as const,
+        modelId: "draft-qwen3" as const,
         responseFormat: "chat-result" as const,
       };
 

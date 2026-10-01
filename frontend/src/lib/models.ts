@@ -2,11 +2,11 @@ export type Model = {
   id: string;
   name: string;
   desc: string;
-  role?: "vision" | "plan" | "coding" | "draft";
+  role?: "vision" | "coding" | "draft";
 };
 
 /**
- * Builds the 4 model route preferences: Vision, Plan, Coding, Draft.
+ * Builds the 3 lead model route preferences: Coding, Draft, Vision.
  * Dynamically uses the user's configured model name from onboarding (e.g. Qwen 2.5 Coder 7B)
  * instead of hardcoded placeholder names like "Qwen3 4B".
  */
@@ -20,10 +20,9 @@ export function getModelRoutes(configuredModels?: ModelConfigRow[] | null): Mode
   const codingModel = findModelName("coding");
   const draftModel = findModelName("draft");
   const visionModel = findModelName("vision");
-  const planModel = findModelName("plan");
 
   const singleConfigured =
-    codingModel || draftModel || planModel || visionModel || null;
+    codingModel || draftModel || visionModel || null;
 
   return [
     {
@@ -43,12 +42,6 @@ export function getModelRoutes(configuredModels?: ModelConfigRow[] | null): Mode
       role: "vision",
       name: visionModel ? `Vision (${visionModel})` : (singleConfigured ? `Vision (${singleConfigured})` : "Vision & OCR"),
       desc: "Inspection reports, engineering drawings, P&ID diagrams",
-    },
-    {
-      id: "plan-qwen3-8b",
-      role: "plan",
-      name: planModel ? `Plan (${planModel})` : (singleConfigured ? `Plan (${singleConfigured})` : "Routing & Planning"),
-      desc: "Multi-stage subtask decomposition & orchestration",
     },
   ];
 }

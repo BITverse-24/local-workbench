@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { ModelConfigRow, ModelId, ModelRegistryEntry } from "../../shared/contracts.js";
 import { getSetting } from "../persistence/settings-store.js";
 
-const entry = z.object({ id: z.enum(["vision-qwen25vl", "draft-qwen3", "code-qwen25coder", "plan-qwen3-8b"]), taskTypes: z.array(z.enum(["vision", "draft", "code", "plan"])), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
+const entry = z.object({ id: z.enum(["vision-qwen25vl", "draft-qwen3", "code-qwen25coder"]), taskTypes: z.array(z.enum(["vision", "draft", "code"])), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
 const config = z.object({ $comment: z.string().optional(), models: z.array(entry).min(1) }).strict();
 
 
@@ -37,8 +37,6 @@ export function sanitizeHost(host: string): string {
 
 export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntry[] {
   const entries: ModelRegistryEntry[] = [];
-  let draftRow: ModelConfigRow | undefined;
-  let hasPlan = false;
 
   for (const row of rows) {
     const host = sanitizeHost(row.host);
@@ -72,7 +70,6 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
         maxOutputTokens: row.contextLength || 8192,
       });
     } else if (row.role === "draft") {
-      draftRow = row;
       entries.push({
         id: "draft-qwen3",
         taskTypes: ["draft"],
@@ -85,39 +82,7 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
         enabled: true,
         maxOutputTokens: row.contextLength || 8192,
       });
-    } else if (row.role === "plan") {
-      hasPlan = true;
-      entries.push({
-        id: "plan-qwen3-8b",
-        taskTypes: ["plan"],
-        runtime: "ollama",
-        baseUrl,
-        model: row.modelName,
-        capabilities: ["text", "structured-output"],
-        requestTimeoutMs: 180000,
-        healthPath: "/models",
-        enabled: true,
-        maxOutputTokens: row.contextLength || 8192,
-      });
     }
-  }
-
-  // If no explicit plan row was provided, default plan to draft endpoint
-  if (!hasPlan && draftRow) {
-    const host = sanitizeHost(draftRow.host);
-    const port = draftRow.port || 11434;
-    entries.push({
-      id: "plan-qwen3-8b",
-      taskTypes: ["plan"],
-      runtime: "ollama",
-      baseUrl: `http://${host}:${port}/v1`,
-      model: draftRow.modelName,
-      capabilities: ["text", "structured-output"],
-      requestTimeoutMs: 180000,
-      healthPath: "/models",
-      enabled: true,
-      maxOutputTokens: draftRow.contextLength || 8192,
-    });
   }
 
   return entries;
@@ -137,7 +102,6 @@ export function defaultLocalRegistry(): Map<ModelId, ModelRegistryEntry> {
     { role: "vision", modelName: "qwen2.5vl:3b", host: "127.0.0.1", port: 11434, contextLength: 32768 },
     { role: "coding", modelName: "qwen2.5-coder:7b", host: "127.0.0.1", port: 11434, contextLength: 32768 },
     { role: "draft", modelName: "qwen3:8b", host: "127.0.0.1", port: 11434, contextLength: 32768 },
-    { role: "plan", modelName: "qwen3:8b", host: "127.0.0.1", port: 11434, contextLength: 8192 },
   ]);
   return new Map(entries.map((e) => [e.id, e]));
 }

@@ -201,7 +201,6 @@ describe("model gateway health checks", () => {
       ["vision-qwen25vl", baseEntry("vision-qwen25vl", "http://127.0.0.1:1234/v1")],
       ["code-qwen25coder", baseEntry("code-qwen25coder", "http://127.0.0.1:1234/v1")],
       ["draft-qwen3", baseEntry("draft-qwen3", "http://127.0.0.1:1234/v1")],
-      ["plan-qwen3-8b", baseEntry("plan-qwen3-8b" as any, "http://127.0.0.1:1234/v1")],
       ["embedding", baseEntry("draft-qwen3", "http://127.0.0.1:11434/v1")],
     ];
 
@@ -216,7 +215,7 @@ describe("model gateway health checks", () => {
     );
 
     const distinct = await gateway.healthDistinct();
-    // 4 roles on port 1234 deduplicate to 1 probe + 1 role on port 11434 = 2 distinct probes
+    // 3 roles on port 1234 deduplicate to 1 probe + 1 role on port 11434 = 2 distinct probes
     expect(distinct).toHaveLength(2);
     expect(probeCount).toBe(2);
 
