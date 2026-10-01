@@ -513,7 +513,9 @@ export class AgentLoop {
           const hasCodeBlockContent = Boolean(content && content.includes("```"));
 
           const isUserWorkspaceActive = Boolean(
-            context.harness?.getActiveWorkspace() ||
+            context.harness?.isWorkspaceActive?.() ||
+              context.harness?.currentWorkspace?.() ||
+              context.harness?.getActiveWorkspace?.() ||
               (context.workspaceRoot &&
                 context.workspaceRoot.length > 0 &&
                 !context.workspaceRoot.includes("intermediate") &&

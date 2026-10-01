@@ -85,6 +85,10 @@ export class HarnessManager {
     return this.currentWorkspace() !== null;
   }
 
+  getActiveWorkspace(): WorkspaceInfo | null {
+    return this.currentWorkspace();
+  }
+
   requireActiveWorkspace(): WorkspaceInfo {
     return this.workspace.requireActive();
   }
