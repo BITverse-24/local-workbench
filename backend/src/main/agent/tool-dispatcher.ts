@@ -9,7 +9,20 @@ export interface ExecutedToolOutput {
 }
 
 export function formatToolCallSummary(toolName: string, args: Record<string, unknown>): string {
-  const p = typeof args?.path === "string" ? args.path : (typeof args?.filePath === "string" ? args.filePath : (typeof args?.filename === "string" ? args.filename : ""));
+  const p =
+    typeof args?.path === "string"
+      ? args.path
+      : typeof args?.filePath === "string"
+      ? args.filePath
+      : typeof args?.filename === "string"
+      ? args.filename
+      : typeof args?.file === "string"
+      ? args.file
+      : typeof args?.target === "string"
+      ? args.target
+      : typeof args?.document === "string"
+      ? args.document
+      : "";
   const cmd = typeof args?.command === "string" ? args.command : (typeof args?.cmd === "string" ? args.cmd : "");
   const q = typeof args?.query === "string" ? args.query : (typeof args?.search_query === "string" ? args.search_query : "");
 
@@ -26,8 +39,12 @@ export function formatToolCallSummary(toolName: string, args: Record<string, unk
       return p && p !== "." ? `Listing directory "${p}"` : `Listing workspace directory`;
     case "run_command":
       return cmd ? `Running: ${cmd}` : `Running terminal command`;
-    case "execute_python":
-      return `Executing Python script in sandbox`;
+    case "execute_python": {
+      const inputs = Array.isArray(args?.input_files) && args.input_files.length > 0
+        ? ` (${args.input_files.join(", ")})`
+        : "";
+      return `Executing Python script in sandbox${inputs}`;
+    }
     case "draft_code":
       return `Drafting verified code`;
     case "draft_note":
@@ -40,8 +57,10 @@ export function formatToolCallSummary(toolName: string, args: Record<string, unk
     case "retrieve_sop":
     case "retrieve_knowledge":
       return q ? `Querying knowledge base for "${q}"` : `Querying local knowledge base`;
-    case "generate_deliverable":
-      return p ? `Generating deliverable "${p}"` : `Generating deliverable`;
+    case "generate_deliverable": {
+      const target = p || (typeof args?.title === "string" ? args.title : "");
+      return target ? `Generating deliverable "${target}"` : `Generating deliverable`;
+    }
     default:
       return `Executing ${toolName}`;
   }

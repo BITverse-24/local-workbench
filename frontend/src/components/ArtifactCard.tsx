@@ -209,17 +209,24 @@ function InteractiveMarkdown({ text }: { text: string }) {
   }, []);
 
   if (!text) return null;
+  const cleanText = text
+    .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT|ENDTOOLRESULT|TOOL_CALL|END_TOOL_CALL|ENDTOOLCALL)\]/gi, "")
+    .replace(/<\/?(?:tool_call|tool_response|tool_result)[^>]*>/gi, "")
+    .replace(/```(?:json)?\s*\{[\s\S]*?"exitCode"\s*:\s*\d+[\s\S]*?\}\s*```/gi, "")
+    .replace(/\{[\s\S]*?"exitCode"\s*:\s*\d+[\s\S]*?\}/gi, "")
+    .trim();
+  if (!cleanText) return null;
   const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
   const segments: Array<{ type: "text" | "code"; content: string; lang?: string }> = [];
   let lastIdx = 0;
   let match: RegExpExecArray | null;
-  while ((match = codeBlockRegex.exec(text)) !== null) {
-    if (match.index > lastIdx) segments.push({ type: "text", content: text.slice(lastIdx, match.index) });
+  while ((match = codeBlockRegex.exec(cleanText)) !== null) {
+    if (match.index > lastIdx) segments.push({ type: "text", content: cleanText.slice(lastIdx, match.index) });
     segments.push({ type: "code", content: match[2], lang: match[1] });
     lastIdx = codeBlockRegex.lastIndex;
   }
-  if (lastIdx < text.length) segments.push({ type: "text", content: text.slice(lastIdx) });
-  if (segments.length === 0) segments.push({ type: "text", content: text });
+  if (lastIdx < cleanText.length) segments.push({ type: "text", content: cleanText.slice(lastIdx) });
+  if (segments.length === 0) segments.push({ type: "text", content: cleanText });
 
   return (
     <div className="max-h-96 overflow-y-auto p-4 text-xs leading-relaxed space-y-3 font-sans">

@@ -382,6 +382,8 @@ export const BasicMarkdown = React.memo(function BasicMarkdown({ text }: { text:
   const cleanText = text
     .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT|ENDTOOLRESULT|TOOL_CALL|END_TOOL_CALL|ENDTOOLCALL)\]/gi, '')
     .replace(/<\/?(?:tool_call|tool_response|tool_result)[^>]*>/gi, '')
+    .replace(/```(?:json)?\s*\{[\s\S]*?"exitCode"\s*:\s*\d+[\s\S]*?\}\s*```/gi, '')
+    .replace(/\{[\s\S]*?"exitCode"\s*:\s*\d+[\s\S]*?\}/gi, '')
     .trim();
   if (!cleanText) return null;
   const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
