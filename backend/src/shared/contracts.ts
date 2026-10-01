@@ -111,7 +111,7 @@ export type RunEvent =
   | { type: "plan_step"; runId: string; index: number; text: string }
   | { type: "agent_thinking"; runId: string; text: string; turn?: number }
   | { type: "tool_call"; runId: string; tool: ToolName; summary: string; callId?: string; args?: Record<string, unknown> }
-  | { type: "tool_result"; runId: string; tool: ToolName; summary: string; callId?: string; output?: string; durationMs?: number }
+  | { type: "tool_result"; runId: string; tool: ToolName; summary: string; callId?: string; output?: string; durationMs?: number; ok?: boolean; error?: ToolErrorDetail }
   | { type: "context_compaction"; runId: string; metadata: CompactionMetadata }
   | { type: "confirmation_required"; runId: string; action: PendingAction }
   | { type: "artifact_ready"; runId: string; artifact: ArtifactRef }
@@ -266,3 +266,42 @@ export interface AgentTurnResponse {
     durationMs?: number;
   };
 }
+
+export type ToolErrorCode =
+  | "invalid_arguments"
+  | "permission_denied"
+  | "file_not_found"
+  | "timeout"
+  | "sandbox_failure"
+  | "gateway_failure"
+  | "validation_failure"
+  | "tool_not_found"
+  | "internal_error";
+
+export interface ToolErrorDetail {
+  code: ToolErrorCode;
+  message: string;
+  retryable: boolean;
+  details?: unknown;
+}
+
+export type ToolResult =
+  | {
+      ok: true;
+      toolName: string;
+      data: unknown;
+      durationMs: number;
+      artifacts?: ArtifactRef[];
+      output: string;
+      summary: string;
+    }
+  | {
+      ok: false;
+      toolName: string;
+      error: ToolErrorDetail;
+      durationMs: number;
+      artifacts?: ArtifactRef[];
+      output: string;
+      summary: string;
+    };
+

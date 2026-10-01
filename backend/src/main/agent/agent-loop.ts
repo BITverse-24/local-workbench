@@ -893,7 +893,7 @@ export class AgentLoop {
                   ],
                   context,
                 );
-                if (execs.length > 0 && !execs[0].result.output?.startsWith("Error")) {
+                if (execs.length > 0 && execs[0].result.ok) {
                   hasExecutedDiskMutations = true;
                   hasExecutedTools = true;
                   modifiedFiles.add(filename);
@@ -1143,26 +1143,10 @@ export class AgentLoop {
         hasExecutedTools = true;
         let anyError = false;
         for (const exec of executed) {
-          let isError = typeof exec.result.output === "string" && exec.result.output.startsWith("Error");
-          if (!isError && exec.name === "execute_python" && typeof exec.result.output === "string") {
-            try {
-              const parsed = JSON.parse(exec.result.output);
-              if (typeof parsed.exitCode === "number" && parsed.exitCode !== 0) {
-                isError = true;
-                lastErrorMessage = parsed.stderr || `Python script exited with code ${parsed.exitCode}`;
-              } else if (parsed.timedOut) {
-                isError = true;
-                lastErrorMessage = "Python script execution timed out";
-              }
-            } catch {}
-          }
-
-          if (isError) {
+          if (!exec.result.ok) {
             anyError = true;
             lastExecutionFailedTool = exec.name;
-            if (!lastErrorMessage) {
-              lastErrorMessage = exec.result.output;
-            }
+            lastErrorMessage = exec.result.error.message;
           } else {
             if (exec.name === "write_file" || exec.name === "delete_file") {
               const p = (effectiveToolCalls.find((c: any) => c.id === exec.id)?.arguments as any)?.path;

@@ -12,7 +12,8 @@ import { RunManager } from "../src/main/run/manager.js";
 import { initDb, closeDb } from "../src/main/persistence/db.js";
 import { getState, transition, createRun } from "../src/main/run/store.js";
 import { createChat } from "../src/main/persistence/chats.js";
-import type { AgentOutcome, ModelGateway, RunEvent } from "../src/shared/contracts.js";
+import type { AgentOutcome, RunEvent } from "../src/shared/contracts.js";
+import type { ModelGateway } from "../src/main/gateway/model-gateway.js";
 
 describe("P0-02: Truthful Completion Semantics", () => {
   let tempDir: string;

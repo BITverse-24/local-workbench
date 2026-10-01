@@ -132,7 +132,7 @@ type RunEvent =
   | { type: "plan_step"; runId: string; index: number; text: string }
   | { type: "agent_thinking"; runId: string; text: string; turn?: number }
   | { type: "tool_call"; runId: string; tool: string; summary: string; callId?: string; args?: Record<string, unknown> }
-  | { type: "tool_result"; runId: string; tool: string; summary: string; callId?: string; output?: string; durationMs?: number }
+  | { type: "tool_result"; runId: string; tool: string; summary: string; callId?: string; output?: string; durationMs?: number; ok?: boolean; error?: { code: string; message: string; retryable: boolean; details?: unknown } }
   | { type: "context_compaction"; runId: string; metadata: { truncated: boolean; originalChars: number; retainedChars: number; toolName?: string; source?: string; omittedChars?: number; omittedLines?: number; reason?: string } }
   | { type: "confirmation_required"; runId: string; action: PendingAction }
   | { type: "artifact_ready"; runId: string; artifact: ArtifactRef }

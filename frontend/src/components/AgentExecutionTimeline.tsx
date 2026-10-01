@@ -291,11 +291,13 @@ const AgentExecutionTimeline = memo(function AgentExecutionTimeline({
             }
           }
         }
+        const isError =
+          (e as any).ok !== undefined
+            ? (e as any).ok === false
+            : Boolean((e as any).output && String((e as any).output).startsWith("Error")) ||
+              e.summary.toLowerCase().startsWith("error");
         if (targetId && stepMap.has(targetId)) {
           const prev = stepMap.get(targetId)!;
-          const isError =
-            Boolean((e as any).output && String((e as any).output).startsWith("Error")) ||
-            e.summary.toLowerCase().startsWith("error");
           stepMap.set(targetId, {
             ...prev,
             status: isError ? "failed" : "completed",
@@ -311,7 +313,7 @@ const AgentExecutionTimeline = memo(function AgentExecutionTimeline({
             tool: e.tool,
             title: e.summary,
             resultSummary: e.summary,
-            status: "completed",
+            status: isError ? "failed" : "completed",
             output: (e as any).output,
             durationMs: (e as any).durationMs,
           });

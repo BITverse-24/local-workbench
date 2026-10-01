@@ -9,7 +9,7 @@ function iconFor(e: RunEvent): string {
     case "plan_step": return "▣";
     case "agent_thinking": return "💭";
     case "tool_call": return "▶";
-    case "tool_result": return "✓";
+    case "tool_result": return (e as any).ok === false ? "✕" : "✓";
     case "context_compaction": return "✂";
     case "confirmation_required": return "◉";
     case "artifact_ready": return "⬢";
