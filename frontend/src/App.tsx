@@ -73,7 +73,7 @@ export default function App() {
   const activeRouteRef = useRef<{ taskType: string; modelId: string; reason: string } | null>(null);
   activeRouteRef.current = activeRoute;
   const runStartTimeRef = useRef<number | null>(null);
-  const isRunning = runState !== null && !["completed", "failed", "cancelled"].includes(runState);
+  const isRunning = runState !== null && !["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(runState);
 
   // Onboarding state
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
@@ -196,7 +196,7 @@ export default function App() {
         switch (event.type) {
           case "run_state":
             setRunState(event.state);
-            if (event.state === "completed" || event.state === "failed" || event.state === "cancelled") {
+            if (event.state === "completed" || event.state === "partial" || event.state === "failed" || event.state === "cancelled" || event.state === "limit_exceeded") {
               setPendingConfirmation(null);
               const currentEvents = [...runEventsRef.current];
               if (currentEvents.length > 0) {
@@ -207,6 +207,7 @@ export default function App() {
                     updated[lastIdx] = {
                       ...updated[lastIdx]!,
                       execution: {
+                        state: event.state,
                         modelId: activeRouteRef.current?.modelId,
                         taskType: activeRouteRef.current?.taskType,
                         reason: activeRouteRef.current?.reason,

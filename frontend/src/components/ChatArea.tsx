@@ -16,6 +16,7 @@ export type ChatMessage = {
   artifacts?: ArtifactRef[];
   runId?: string;
   execution?: {
+    state?: RunState;
     modelId?: string;
     taskType?: string;
     reason?: string;
@@ -615,6 +616,7 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
                       <AgentExecutionTimeline
                         events={msg.execution.events}
                         isRunning={false}
+                        runState={msg.execution.state ?? null}
                         activeRoute={{
                           taskType: msg.execution.taskType ?? "code",
                           modelId: msg.execution.modelId ?? "agent-loop",

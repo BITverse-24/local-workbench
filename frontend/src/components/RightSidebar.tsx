@@ -36,7 +36,7 @@ export default function RightSidebar({
   runEvents,
   runId,
 }: Props) {
-  const isRunning = runState != null && !["completed", "failed", "cancelled"].includes(runState);
+  const isRunning = runState != null && !["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(runState);
   return (
     <aside
       className={`hidden lg:flex flex-col neu-panel overflow-hidden flex-shrink-0 ${!collapsed ? "animate-apple-right delay-200" : ""}`}

@@ -63,8 +63,26 @@ export interface AIError { kind: "ai-error"; code: AIErrorCode; message: string;
 export interface ValidationFailure { kind: "validation-failure"; code: "wrong-type" | "missing-field" | "invalid-value" | "extra-field"; message: string; path: string; expected: string; received?: string; requestId?: string; }
 export type AIWorkflowError = AIError | ValidationFailure;
 export type AIResult<T> = { ok: true; value: T } | { ok: false; error: AIWorkflowError };
-export type RunState = "created" | "classifying" | "planning" | "acting" | "awaiting_confirmation" | "completed" | "failed" | "cancelled";
 export type ToolName = "read_file" | "draft_note" | "draft_code" | "execute_python" | "generate_xlsx" | "retrieve_sop" | "inspect_drawing";
+
+export type AgentOutcome =
+  | "completed"
+  | "partial"
+  | "failed"
+  | "cancelled"
+  | "limit_exceeded";
+
+export type RunState =
+  | "created"
+  | "classifying"
+  | "planning"
+  | "acting"
+  | "awaiting_confirmation"
+  | "completed"
+  | "partial"
+  | "failed"
+  | "cancelled"
+  | "limit_exceeded";
 export interface PendingAction { actionId: string; runId: string; kind: "generate_docx" | "execute_python" | "generate_xlsx" | "plan_approval"; prompt: string; createdAt: string; expiresAt: string; preview?: string; }
 export interface ArtifactRef { artifactId: string; runId: string; kind: ArtifactKind; filename: string; relativePath: string; sizeBytes: number; createdAt: string; content?: string; isBinary?: boolean; }
 export interface GroundingChunk {
@@ -76,6 +94,17 @@ export interface GroundingChunk {
   page: number;
   score: number;
 }
+export interface CompactionMetadata {
+  truncated: boolean;
+  originalChars: number;
+  retainedChars: number;
+  toolName?: string;
+  source?: string;
+  omittedChars?: number;
+  omittedLines?: number;
+  reason?: string;
+}
+
 export type RunEvent =
   | { type: "run_state"; runId: string; state: RunState }
   | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number; providerEndpoint?: string }
@@ -83,6 +112,7 @@ export type RunEvent =
   | { type: "agent_thinking"; runId: string; text: string; turn?: number }
   | { type: "tool_call"; runId: string; tool: ToolName; summary: string; callId?: string; args?: Record<string, unknown> }
   | { type: "tool_result"; runId: string; tool: ToolName; summary: string; callId?: string; output?: string; durationMs?: number }
+  | { type: "context_compaction"; runId: string; metadata: CompactionMetadata }
   | { type: "confirmation_required"; runId: string; action: PendingAction }
   | { type: "artifact_ready"; runId: string; artifact: ArtifactRef }
   | { type: "assistant_message_chunk"; runId: string; messageId: string; delta: string; modelId: ModelId }

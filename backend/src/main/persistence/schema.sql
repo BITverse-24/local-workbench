@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS runs (
   chat_id         TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
   state           TEXT NOT NULL DEFAULT 'created'
                   CHECK (state IN ('created','classifying','planning','acting',
-                                   'awaiting_confirmation','completed','failed','cancelled')),
+                                   'awaiting_confirmation','completed','partial','failed','cancelled','limit_exceeded')),
   user_text_summary TEXT NOT NULL DEFAULT '',  -- bounded ≤ 500 chars, not full prompt
   attachment_id   TEXT REFERENCES attachments(attachment_id),
   iteration_count INTEGER NOT NULL DEFAULT 0,  -- cap 8

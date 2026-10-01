@@ -360,6 +360,16 @@ const AgentExecutionTimeline = memo(function AgentExecutionTimeline({
   const completedStepCount = steps.filter((s) => s.status === "completed").length;
   const runningStepCount = steps.filter((s) => s.status === "running").length;
 
+  const effectiveTerminalState = useMemo(() => {
+    if (runState) return runState;
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i];
+      if (e.type === "run_state") return e.state;
+      if (e.type === "error") return "failed";
+    }
+    return "completed";
+  }, [runState, events]);
+
   // Active status headline
   const headline = (() => {
     if (runState === "awaiting_confirmation") return "Awaiting confirmation";
@@ -371,6 +381,10 @@ const AgentExecutionTimeline = memo(function AgentExecutionTimeline({
     if (runState === "classifying") return "Analyzing...";
     if (runState === "acting") return "Executing...";
     if (isRunning) return "Thinking...";
+    if (effectiveTerminalState === "limit_exceeded") return "Limit Exceeded";
+    if (effectiveTerminalState === "partial") return "Partial";
+    if (effectiveTerminalState === "failed") return "Failed";
+    if (effectiveTerminalState === "cancelled") return "Cancelled";
     return "Complete";
   })();
 
@@ -402,8 +416,36 @@ const AgentExecutionTimeline = memo(function AgentExecutionTimeline({
             </>
           ) : (
             <>
-              <span className="w-2 h-2 rounded-full bg-[var(--status-success)] shrink-0" />
-              <span>{steps.length > 0 ? `${steps.length} operation${steps.length === 1 ? "" : "s"}` : "Completed"}</span>
+              {effectiveTerminalState === "limit_exceeded" ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-[var(--status-warning)] shrink-0" />
+                  <span className="text-[var(--status-warning)] font-medium">
+                    {steps.length > 0 ? `${steps.length} ops • Limit Exceeded` : "Limit Exceeded"}
+                  </span>
+                </>
+              ) : effectiveTerminalState === "partial" ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-[var(--status-warning)] shrink-0" />
+                  <span className="text-[var(--status-warning)] font-medium">
+                    {steps.length > 0 ? `${steps.length} ops • Partial` : "Partial"}
+                  </span>
+                </>
+              ) : effectiveTerminalState === "failed" ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-[var(--status-error)] shrink-0" />
+                  <span className="text-[var(--status-error)] font-medium">Failed</span>
+                </>
+              ) : effectiveTerminalState === "cancelled" ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-[var(--text-tertiary)] shrink-0" />
+                  <span className="text-[var(--text-tertiary)]">Cancelled</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-[var(--status-success)] shrink-0" />
+                  <span>{steps.length > 0 ? `${steps.length} operation${steps.length === 1 ? "" : "s"}` : "Completed"}</span>
+                </>
+              )}
             </>
           )}
 

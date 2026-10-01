@@ -519,7 +519,7 @@ export class RunManager {
     }
   }
   cancel(runId: string): void {
-    if (["completed", "failed", "cancelled"].includes(getState(runId))) return;
+    if (["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(getState(runId))) return;
     cancelPending(runId);
     transition(runId, "cancelled");
     this.emit({ type: "run_state", runId, state: "cancelled" });
@@ -1195,9 +1195,29 @@ OPERATIONAL & PLAN GUIDELINES:
           emitEvent: (event) => this.emit(event),
         });
 
-        if (loopResult.completed && getState(runId) !== "cancelled") {
+        const outcome = loopResult.outcome ?? (loopResult.completed ? "completed" : "failed");
+
+        if (getState(runId) !== "cancelled") {
           this.persistAssistant(runId, loopResult.finalText, loopResult.modelId, loopResult.messageId);
-          this.complete(runId);
+        }
+
+        switch (outcome) {
+          case "completed":
+            this.complete(runId);
+            break;
+          case "partial":
+            this.partial(runId);
+            break;
+          case "limit_exceeded":
+            this.limitExceeded(runId);
+            break;
+          case "cancelled":
+            this.cancel(runId);
+            break;
+          case "failed":
+          default:
+            this.fail(runId, new Error(loopResult.finalText || "Run execution failed"));
+            break;
         }
         return;
       } catch (err: any) {
@@ -3362,13 +3382,21 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
     this.runTemperatures.delete(runId);
     this.state(runId, "completed");
   }
+  private partial(runId: string) {
+    this.runTemperatures.delete(runId);
+    this.state(runId, "partial");
+  }
+  private limitExceeded(runId: string) {
+    this.runTemperatures.delete(runId);
+    this.state(runId, "limit_exceeded");
+  }
   private fail(runId: string, error: unknown) {
     this.runTemperatures.delete(runId);
     try {
-      if (["completed", "cancelled", "failed"].includes(getState(runId))) return;
+      if (["completed", "partial", "cancelled", "failed", "limit_exceeded"].includes(getState(runId))) return;
       const message = error instanceof Error ? error.message : "run failed";
       recordError(runId, "invalid_model_response", message);
-      transition(runId, "failed");
+      this.state(runId, "failed");
       this.emit({ type: "error", runId, code: "invalid_model_response", message, retryable: false });
     } catch (e) {
       console.error(`[run:${runId.slice(0, 8)}] failure reporting error:`, e);

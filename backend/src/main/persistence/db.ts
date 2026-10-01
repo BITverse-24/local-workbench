@@ -145,6 +145,39 @@ function migrateConfirmationsSchema(db: Db): void {
   }
 }
 
+function migrateRunsSchema(db: Db): void {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='runs'").get() as
+    | { sql: string }
+    | undefined;
+  if (!row?.sql) return;
+  if (!row.sql.includes("state")) return;
+  if (!row.sql.includes("'limit_exceeded'") || !row.sql.includes("'partial'")) {
+    db.pragma("foreign_keys = OFF");
+    const cols = (db.prepare("PRAGMA table_info(runs)").all() as Array<{ name: string }>).map((c) => c.name);
+    const colList = cols.join(", ");
+    db.exec(`
+      CREATE TABLE runs_new (
+        id              TEXT PRIMARY KEY,
+        chat_id         TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+        state           TEXT NOT NULL DEFAULT 'created'
+                        CHECK (state IN ('created','classifying','planning','acting',
+                                         'awaiting_confirmation','completed','partial','failed','cancelled','limit_exceeded')),
+        user_text_summary TEXT NOT NULL DEFAULT '',
+        attachment_id   TEXT REFERENCES attachments(attachment_id),
+        iteration_count INTEGER NOT NULL DEFAULT 0,
+        created_at      TEXT NOT NULL,
+        completed_at    TEXT
+      );
+      INSERT INTO runs_new (${colList})
+        SELECT ${colList} FROM runs;
+      DROP TABLE runs;
+      ALTER TABLE runs_new RENAME TO runs;
+      CREATE INDEX IF NOT EXISTS idx_runs_chat ON runs(chat_id, created_at DESC);
+    `);
+    db.pragma("foreign_keys = ON");
+  }
+}
+
 function seedDefaults(db: Db): void {
   const now = new Date().toISOString();
   const seedSetting = db.prepare(
@@ -175,6 +208,7 @@ export function initDb(dbPath?: string): Db {
   applySchema(db);
   migrateArtifactsSchema(db);
   migrateConfirmationsSchema(db);
+  migrateRunsSchema(db);
   seedDefaults(db);
   instance = db;
   instancePath = resolved;

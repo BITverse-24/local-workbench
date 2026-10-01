@@ -22,6 +22,13 @@ interface PersistedMessage {
   attachments?: AttachmentReference[];
 }
 
+type AgentOutcome =
+  | "completed"
+  | "partial"
+  | "failed"
+  | "cancelled"
+  | "limit_exceeded";
+
 type RunState =
   | "created"
   | "classifying"
@@ -29,8 +36,10 @@ type RunState =
   | "acting"
   | "awaiting_confirmation"
   | "completed"
+  | "partial"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "limit_exceeded";
 
 interface AttachmentReference {
   attachmentId: string;
@@ -124,6 +133,7 @@ type RunEvent =
   | { type: "agent_thinking"; runId: string; text: string; turn?: number }
   | { type: "tool_call"; runId: string; tool: string; summary: string; callId?: string; args?: Record<string, unknown> }
   | { type: "tool_result"; runId: string; tool: string; summary: string; callId?: string; output?: string; durationMs?: number }
+  | { type: "context_compaction"; runId: string; metadata: { truncated: boolean; originalChars: number; retainedChars: number; toolName?: string; source?: string; omittedChars?: number; omittedLines?: number; reason?: string } }
   | { type: "confirmation_required"; runId: string; action: PendingAction }
   | { type: "artifact_ready"; runId: string; artifact: ArtifactRef }
   | { type: "assistant_message_chunk"; runId: string; messageId: string; delta: string; modelId: string }

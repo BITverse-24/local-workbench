@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { ModelId, RunEvent } from "../../shared/contracts.js";
+import type { AgentOutcome, ModelId, RunEvent } from "../../shared/contracts.js";
 import type { AgentTool, ToolExecutionContext } from "../tools/types.js";
 import { ToolDispatcher } from "./tool-dispatcher.js";
-import { compactConversationHistory, type AgentMessage } from "./context-manager.js";
+import { compactConversationHistory, extractSourceArg, type AgentMessage, type CompactionMetadata } from "./context-manager.js";
 import {
   extractCodeBlocksWithFilenames,
   cleanFinalSummary,
@@ -31,8 +31,180 @@ export interface AgentLoopResult {
   finalText: string;
   turns: number;
   completed: boolean;
+  outcome: AgentOutcome;
   modelId: ModelId;
   messageId?: string;
+  deliverables?: {
+    requested: string[];
+    produced: string[];
+    missing: string[];
+  };
+  metadata?: {
+    compactionEvents?: CompactionMetadata[];
+    totalCompactedCount?: number;
+    [key: string]: any;
+  };
+}
+
+export interface ExpectedDeliverable {
+  type: "docx" | "xlsx" | "csv" | "pdf" | "md" | "json" | "file";
+  filename?: string;
+  description: string;
+}
+
+/**
+ * Deterministically analyzes the user's prompt to identify requested output deliverables
+ * (e.g. Word documents, Excel spreadsheets, CSV exports), while filtering out input files
+ * referenced for inspection or reading.
+ */
+export function detectRequestedDeliverables(
+  userPrompt: string,
+  semanticIntent?: SemanticIntent,
+  inputFilenames: string[] = [],
+): ExpectedDeliverable[] {
+  const deliverables: ExpectedDeliverable[] = [];
+  const lowerInputs = new Set(inputFilenames.map((f) => f.toLowerCase()));
+
+  // 1. Detect explicit output filename patterns (e.g. "report.docx", "summary.xlsx", "export data.csv")
+  const fileRegex = /\b([a-zA-Z0-9_\-.]+\.(?:docx|xlsx|csv|pdf|md|json))\b/gi;
+  let match: RegExpExecArray | null;
+  const capturedFiles = new Set<string>();
+
+  while ((match = fileRegex.exec(userPrompt)) !== null) {
+    const rawFilename = match[1];
+    const filenameLower = rawFilename.toLowerCase();
+    // Skip if it's an explicit input file
+    if (lowerInputs.has(filenameLower)) continue;
+    // Check if immediately preceded by input-related words like "from", "inspect", "read"
+    const matchStart = match.index;
+    const precedingContext = userPrompt.slice(Math.max(0, matchStart - 25), matchStart).toLowerCase();
+    if (/\b(?:from|inspect|read|parse|examine|using|check|input)\s+(?:a\s+|an\s+|the\s+)?$/i.test(precedingContext)) continue;
+
+    const ext = rawFilename.split(".").pop()?.toLowerCase();
+    const type = (ext === "docx" ? "docx" : ext === "xlsx" ? "xlsx" : ext === "csv" ? "csv" : ext === "pdf" ? "pdf" : ext === "md" ? "md" : ext === "json" ? "json" : "file") as ExpectedDeliverable["type"];
+
+    if (!capturedFiles.has(filenameLower)) {
+      capturedFiles.add(filenameLower);
+      deliverables.push({
+        type,
+        filename: rawFilename,
+        description: rawFilename,
+      });
+    }
+  }
+
+  // 2. Detect requested deliverable categories if not already captured by explicit filename:
+  // A. DOCX / Word deliverable / Approval Note
+  const requestsDocx =
+    /\b(?:draft|generate|create|produce|compile|export)\b[^.?!]*\b(?:approval\s+note|compliance\s+note|word\s+doc(?:ument)?|docx|in\s+docx)\b/i.test(userPrompt) ||
+    /\b(?:as|in|into)\s+(?:a\s+)?(?:word\s+document|docx\s+file|docx)\b/i.test(userPrompt);
+
+  const hasDocxCaptured = deliverables.some((d) => d.type === "docx");
+  if (requestsDocx && !hasDocxCaptured) {
+    deliverables.push({
+      type: "docx",
+      description: "Word document / Approval note (.docx)",
+    });
+  }
+
+  // B. XLSX / Excel spreadsheet
+  const requestsXlsx =
+    /\b(?:generate|create|produce|compile|export)\b[^.?!]*\b(?:excel|spreadsheet|xlsx|workbook|in\s+xlsx)\b/i.test(userPrompt) ||
+    /\b(?:as|in|into)\s+(?:an?\s+)?(?:excel\s+(?:file|sheet|spreadsheet)?|xlsx\s+file|xlsx)\b/i.test(userPrompt);
+
+  const hasXlsxCaptured = deliverables.some((d) => d.type === "xlsx");
+  if (requestsXlsx && !hasXlsxCaptured) {
+    deliverables.push({
+      type: "xlsx",
+      description: "Excel spreadsheet (.xlsx)",
+    });
+  }
+
+  // C. CSV export
+  const requestsCsv =
+    /\b(?:export|save|generate|create)\b[^.?!]*\b(?:csv\s+file|to\s+csv|as\s+csv)\b/i.test(userPrompt);
+  const hasCsvCaptured = deliverables.some((d) => d.type === "csv");
+  if (requestsCsv && !hasCsvCaptured) {
+    deliverables.push({
+      type: "csv",
+      description: "CSV file (.csv)",
+    });
+  }
+
+  return deliverables;
+}
+
+export function evaluateCompletionOutcome(
+  expectedDeliverables: ExpectedDeliverable[],
+  producedFiles: Set<string>,
+  hadErrors: boolean,
+  isMaxTurnsReached: boolean,
+  isCancelled: boolean,
+): {
+  outcome: AgentOutcome;
+  missingDeliverables: string[];
+  producedDeliverables: string[];
+} {
+  if (isCancelled) {
+    return { outcome: "cancelled", missingDeliverables: [], producedDeliverables: Array.from(producedFiles) };
+  }
+  if (isMaxTurnsReached) {
+    return { outcome: "limit_exceeded", missingDeliverables: [], producedDeliverables: Array.from(producedFiles) };
+  }
+
+  // If no specific deliverables were expected:
+  if (expectedDeliverables.length === 0) {
+    return { outcome: "completed", missingDeliverables: [], producedDeliverables: Array.from(producedFiles) };
+  }
+
+  // Evaluate each expected deliverable
+  const lowerProduced = Array.from(producedFiles).map((f) => ({
+    raw: f,
+    lower: f.toLowerCase(),
+    ext: f.split(".").pop()?.toLowerCase(),
+  }));
+
+  const producedDeliverables: string[] = [];
+  const missingDeliverables: string[] = [];
+
+  for (const exp of expectedDeliverables) {
+    let matched = false;
+    if (exp.filename) {
+      const targetLower = exp.filename.toLowerCase();
+      const match = lowerProduced.find((p) => p.lower === targetLower || p.lower.endsWith(`/${targetLower}`) || p.lower.endsWith(`\\${targetLower}`));
+      if (match) {
+        matched = true;
+        producedDeliverables.push(match.raw);
+      }
+    } else {
+      // Matched by type extension
+      const match = lowerProduced.find((p) => p.ext === exp.type);
+      if (match) {
+        matched = true;
+        producedDeliverables.push(match.raw);
+      }
+    }
+
+    if (!matched) {
+      missingDeliverables.push(exp.filename || exp.description);
+    }
+  }
+
+  if (missingDeliverables.length === 0) {
+    return { outcome: "completed", missingDeliverables, producedDeliverables };
+  }
+
+  // If some deliverables were produced and some missing:
+  if (producedDeliverables.length > 0) {
+    return { outcome: "partial", missingDeliverables, producedDeliverables };
+  }
+
+  // If none of the expected deliverables were produced:
+  return {
+    outcome: hadErrors ? "failed" : "partial",
+    missingDeliverables,
+    producedDeliverables,
+  };
 }
 
 /**
@@ -306,22 +478,65 @@ export class AgentLoop {
     let lastContent: string | null = null;
     let accumulatedInChatFindings = "";
     let assistantMessageId = randomUUID();
+    const compactionHistory: CompactionMetadata[] = [];
+    const emittedCompactionKeys = new Set<string>();
+
+    const inputFilenames = options.semanticIntent?.targetFiles ?? [];
+    const expectedDeliverables = detectRequestedDeliverables(
+      userPrompt,
+      options.semanticIntent,
+      inputFilenames,
+    );
+
+    const buildResult = (
+      resultText: string,
+      outcome: AgentOutcome,
+      deliverableEval?: { missingDeliverables: string[]; producedDeliverables: string[] },
+    ): AgentLoopResult => ({
+      finalText: resultText,
+      turns: turn,
+      completed: outcome === "completed",
+      outcome,
+      modelId: driverModelId,
+      messageId: assistantMessageId,
+      deliverables: deliverableEval
+        ? {
+            requested: expectedDeliverables.map((d) => d.filename || d.description),
+            produced: deliverableEval.producedDeliverables,
+            missing: deliverableEval.missingDeliverables,
+          }
+        : undefined,
+      metadata: {
+        compactionEvents: [...compactionHistory],
+        totalCompactedCount: compactionHistory.length,
+      },
+    });
 
     while (turn < maxTurns) {
       if (options.isCancelled?.()) {
-        return {
-          finalText: "Run cancelled by user.",
-          turns: turn,
-          completed: false,
-          modelId: driverModelId,
-          messageId: assistantMessageId,
-        };
+        return buildResult("Run cancelled by user.", "cancelled");
       }
 
       turn++;
 
       // 1. Sliding window context compaction for turns > 2
       const activeMessages = compactConversationHistory(messages, turn, 2);
+
+      // Emit compaction metadata to UI execution telemetry and record in execution metadata
+      for (const msg of activeMessages) {
+        if (msg.compaction?.truncated) {
+          const compKey = `${msg.turn ?? 0}_${msg.tool_call_id || msg.role}_${msg.compaction.originalChars}`;
+          if (!emittedCompactionKeys.has(compKey)) {
+            emittedCompactionKeys.add(compKey);
+            compactionHistory.push(msg.compaction);
+            emitEvent({
+              type: "context_compaction",
+              runId,
+              metadata: msg.compaction,
+            });
+          }
+        }
+      }
 
       // 2. Dispatch turn to model gateway with native tools
       // Allocate generous 4096 token budget when disk-modifying actions have already succeeded so comprehensive technical inspection and deliverable summaries are never cut off.
@@ -710,13 +925,7 @@ export class AgentLoop {
           if (isMerelyEmptyClaim) {
             const targetHint = semanticTargets.length > 0 ? ` for ${semanticTargets.join(", ")}` : "";
             finalText = `No files were modified on disk${targetHint}. The model did not execute file tools or output code blocks for disk persistence. Please provide the code or confirm the file target.`;
-            return {
-              finalText,
-              turns: turn,
-              completed: true,
-              modelId: driverModelId,
-              messageId: assistantMessageId,
-            };
+            return buildResult(finalText, "failed");
           }
         }
 
@@ -750,6 +959,22 @@ export class AgentLoop {
           !finalText.includes(accumulatedInChatFindings.slice(0, 40))
         ) {
           finalText = `${accumulatedInChatFindings}\n\n${finalText}`.trim();
+        }
+
+        const evalResult = evaluateCompletionOutcome(
+          expectedDeliverables,
+          modifiedFiles,
+          lastExecutionHadError,
+          false,
+          false,
+        );
+
+        if (evalResult.outcome === "partial" && evalResult.missingDeliverables.length > 0) {
+          const missingStr = evalResult.missingDeliverables.join(", ");
+          const partialNotice = `\n\n⚠️ **Notice: Execution partially completed.** The following requested deliverable(s) were not produced: ${missingStr}.`;
+          if (!finalText.includes("Execution partially completed")) {
+            finalText += partialNotice;
+          }
         }
 
         // If chunks were already streamed live to the UI, check if cleanFinalSummary changed the text.
@@ -780,13 +1005,7 @@ export class AgentLoop {
           });
         }
 
-        return {
-          finalText,
-          turns: turn,
-          completed: true,
-          modelId: driverModelId,
-          messageId: assistantMessageId,
-        };
+        return buildResult(finalText, evalResult.outcome, evalResult);
       }
 
       // Loop detection: check if identical tool calls with identical arguments are being repeated consecutively or in alternating cycles
@@ -813,13 +1032,7 @@ export class AgentLoop {
             code: "tool_loop_detected",
             message: failureSummary,
           });
-          return {
-            finalText: failureSummary,
-            turns: turn,
-            completed: false,
-            modelId: driverModelId,
-            messageId: assistantMessageId,
-          };
+          return buildResult(failureSummary, "failed");
         }
 
         finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedDiskMutations);
@@ -850,13 +1063,22 @@ export class AgentLoop {
         ) {
           finalText = `${accumulatedInChatFindings}\n\n${finalText}`.trim();
         }
-        return {
-          finalText,
-          turns: turn,
-          completed: true,
-          modelId: driverModelId,
-          messageId: assistantMessageId,
-        };
+
+        const evalResult = evaluateCompletionOutcome(
+          expectedDeliverables,
+          modifiedFiles,
+          lastExecutionHadError,
+          false,
+          false,
+        );
+        if (evalResult.outcome === "partial" && evalResult.missingDeliverables.length > 0) {
+          const missingStr = evalResult.missingDeliverables.join(", ");
+          const partialNotice = `\n\n⚠️ **Notice: Execution partially completed.** The following requested deliverable(s) were not produced: ${missingStr}.`;
+          if (!finalText.includes("Execution partially completed")) {
+            finalText += partialNotice;
+          }
+        }
+        return buildResult(finalText, evalResult.outcome, evalResult);
       }
       previousCallSignature = currentCallSignature;
       callHistory.push(currentCallSignature);
@@ -897,13 +1119,7 @@ export class AgentLoop {
             code: "action_rejected",
             message: "Action was rejected by user. Execution stopped.",
           });
-          return {
-            finalText: "Action was rejected by user. Execution stopped.",
-            turns: turn,
-            completed: false,
-            modelId: driverModelId,
-            messageId: assistantMessageId,
-          };
+          return buildResult("Action was rejected by user. Execution stopped.", "cancelled");
         }
         confirmed = true;
       }
@@ -918,13 +1134,7 @@ export class AgentLoop {
 
       // 8. Execute tool calls concurrently
       if (options.isCancelled?.()) {
-        return {
-          finalText: "Run cancelled by user.",
-          turns: turn,
-          completed: false,
-          modelId: driverModelId,
-          messageId: assistantMessageId,
-        };
+        return buildResult("Run cancelled by user.", "cancelled");
       }
 
       context.lastAssistantContent = lastContent ?? undefined;
@@ -981,19 +1191,31 @@ export class AgentLoop {
 
       // 9. Record each tool's result in the conversation history
       for (const exec of executed) {
+        const callObj = effectiveToolCalls?.find((c: any) => c.id === exec.id);
+        const source = extractSourceArg(exec.name, callObj?.arguments ?? exec.args);
         messages.push({
           role: "tool",
           tool_call_id: exec.id,
           toolName: exec.name,
+          source,
           content: exec.result.output,
+          rawContent: exec.result.output,
           turn,
         });
       }
     }
 
     // Hit maxTurns without returning text
+    const evalResult = evaluateCompletionOutcome(
+      expectedDeliverables,
+      modifiedFiles,
+      lastExecutionHadError,
+      true, // isMaxTurnsReached
+      false, // isCancelled
+    );
+
     let overflowText = cleanFinalSummary(
-      lastContent || `Completed ${turn} operations.`,
+      lastContent || `Completed ${turn} operations before reaching turn limit.`,
       hasExecutedDiskMutations,
     );
     if (
@@ -1023,12 +1245,7 @@ export class AgentLoop {
     ) {
       overflowText = `${accumulatedInChatFindings}\n\n${overflowText}`.trim();
     }
-    return {
-      finalText: overflowText,
-      turns: turn,
-      completed: true,
-      modelId: driverModelId,
-      messageId: assistantMessageId,
-    };
+    overflowText += `\n\n⚠️ **Notice: Maximum execution turn limit (${maxTurns} turns) reached.** The task was halted before full completion. Work performed up to this point is preserved.`;
+    return buildResult(overflowText, "limit_exceeded", evalResult);
   }
 }
