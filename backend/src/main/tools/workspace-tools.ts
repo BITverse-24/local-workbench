@@ -8,6 +8,7 @@ import { search } from "../harness/tools/search.js";
 import { writeFile } from "../harness/tools/write-file.js";
 import { deleteFile } from "../harness/tools/delete-file.js";
 import { runCommand } from "../harness/tools/run-command.js";
+import { PermissionError } from "../harness/path-guard.js";
 import { resolveRunPath } from "../run/filesystem.js";
 import type { ArtifactKind, ArtifactRef } from "../../shared/contracts.js";
 import { isTextExtractableDocument, readDocumentContent } from "./document-reader.js";
@@ -356,7 +357,21 @@ export const writeFileTool: AgentTool = {
     if (!relPath) {
       throw new Error(`path parameter is required. Received arguments: ${JSON.stringify(args).slice(0, 150)}. Expected format: {"path": "relative/path/to/file", "content": "..."}`);
     }
-    const res = writeFile(context.workspaceRoot, relPath, content);
+
+    if (context.policyGuard && context.policyGuard.isEnforcingExplicit(context.runId)) {
+      const isAuth = context.policyGuard.isAuthorized(context.runId, "write_file", { path: relPath });
+      if (!isAuth) {
+        throw new PermissionError(`Operation not authorized: write_file ${relPath}`);
+      }
+    }
+
+    const lockKey = `file:${relPath}`;
+    const res = context.policyGuard
+      ? await context.policyGuard.withMutationLock(lockKey, () =>
+          writeFile(context.workspaceRoot, relPath, content),
+        )
+      : writeFile(context.workspaceRoot, relPath, content);
+
     if (context.harness) {
       try {
         context.harness.notifyWorkspaceTreeUpdated();
@@ -415,7 +430,21 @@ export const deleteFileTool: AgentTool = {
     if (!relPath) {
       throw new Error(`path parameter is required. Received arguments: ${JSON.stringify(args).slice(0, 150)}. Expected format: {"path": "relative/path/to/file"}`);
     }
-    const res = deleteFile(context.workspaceRoot, relPath);
+
+    if (context.policyGuard && context.policyGuard.isEnforcingExplicit(context.runId)) {
+      const isAuth = context.policyGuard.isAuthorized(context.runId, "delete_file", { path: relPath });
+      if (!isAuth) {
+        throw new PermissionError(`Operation not authorized: delete_file ${relPath}`);
+      }
+    }
+
+    const lockKey = `file:${relPath}`;
+    const res = context.policyGuard
+      ? await context.policyGuard.withMutationLock(lockKey, () =>
+          deleteFile(context.workspaceRoot, relPath),
+        )
+      : deleteFile(context.workspaceRoot, relPath);
+
     if (context.harness) {
       try {
         context.harness.notifyWorkspaceTreeUpdated();
@@ -450,7 +479,20 @@ export const runCommandTool: AgentTool = {
     if (!command) {
       throw new Error(`command parameter is required. Received arguments: ${JSON.stringify(args).slice(0, 150)}. Expected format: {"command": "npm test"}`);
     }
-    const res = await runCommand(context.workspaceRoot, command);
+
+    if (context.policyGuard && context.policyGuard.isEnforcingExplicit(context.runId)) {
+      const isAuth = context.policyGuard.isAuthorized(context.runId, "run_command", { command });
+      if (!isAuth) {
+        throw new PermissionError(`Operation not authorized: run_command ${command}`);
+      }
+    }
+
+    const res = context.policyGuard
+      ? await context.policyGuard.withMutationLock("workspace:run_command", () =>
+          runCommand(context.workspaceRoot, command),
+        )
+      : await runCommand(context.workspaceRoot, command);
+
     const summary = `Command exit ${res.exitCode} in ${res.durationMs}ms: "${command.slice(0, 40)}"`;
     return {
       output: JSON.stringify(res),

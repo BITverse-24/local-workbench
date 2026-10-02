@@ -1,6 +1,7 @@
 import type { AgentToolDefinition, ArtifactRef } from "../../shared/contracts.js";
 import type { ModelGateway } from "../gateway/model-gateway.js";
 import type { HarnessManager } from "../harness/harness-manager.js";
+import type { MutationPolicyGuard } from "../harness/policy-guard.js";
 import type { RAGGroundingProvider } from "../grounding/rag-grounding-provider.js";
 
 export type ToolErrorCode =
@@ -47,6 +48,7 @@ export interface ToolExecutionContext {
   gateway: ModelGateway;
   harness?: HarnessManager;
   grounding?: RAGGroundingProvider;
+  policyGuard?: MutationPolicyGuard;
   emitRunEvent?: (event: any) => void;
   lastAssistantContent?: string;
 }

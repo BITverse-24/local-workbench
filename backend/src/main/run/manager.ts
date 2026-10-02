@@ -28,6 +28,7 @@ import { CodeModel } from "../models/code-model.js";
 import { ChatModel } from "../models/chat-model.js";
 import { HarnessManager } from "../harness/harness-manager.js";
 import { resolveSafe } from "../harness/path-guard.js";
+import { MutationPolicyGuard } from "../harness/policy-guard.js";
 import { buildHarnessSystemPrompt, formatTreeForPrompt } from "../harness/harness-prompt.js";
 import { readFile } from "../harness/tools/read-file.js";
 import type { DirEntry } from "../harness/tools/list-dir.js";
@@ -282,6 +283,7 @@ export class RunManager {
   private readonly codeModel: CodeModel;
   private readonly chatModel: ChatModel;
   public harness?: HarnessManager;
+  public readonly policyGuard = new MutationPolicyGuard();
   public ragService?: RAGService;
   private grounding?: GroundingProvider;
 
@@ -295,6 +297,7 @@ export class RunManager {
 
   setHarness(harness: HarnessManager): void {
     this.harness = harness;
+    (harness as any).policyGuard = this.policyGuard;
   }
 
   setRAGService(ragService: RAGService): void {
@@ -520,6 +523,7 @@ export class RunManager {
   }
   cancel(runId: string): void {
     if (["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(getState(runId))) return;
+    this.policyGuard.revokeRunScopes(runId);
     cancelPending(runId);
     transition(runId, "cancelled");
     this.emit({ type: "run_state", runId, state: "cancelled" });
@@ -1157,6 +1161,7 @@ OPERATIONAL & PLAN GUIDELINES:
           outputExpectation: semanticIntent.outputExpectation,
           tools,
           context: toolContext,
+          policyGuard: this.policyGuard,
           recentChatHistory: history,
           maxTurns: 100,
           isCancelled: () => getState(runId) === "cancelled",
@@ -3380,18 +3385,22 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
     this.emit({ type: "confirmation_required", runId, action });
   }
   private complete(runId: string) {
+    this.policyGuard.revokeRunScopes(runId);
     this.runTemperatures.delete(runId);
     this.state(runId, "completed");
   }
   private partial(runId: string) {
+    this.policyGuard.revokeRunScopes(runId);
     this.runTemperatures.delete(runId);
     this.state(runId, "partial");
   }
   private limitExceeded(runId: string) {
+    this.policyGuard.revokeRunScopes(runId);
     this.runTemperatures.delete(runId);
     this.state(runId, "limit_exceeded");
   }
   private fail(runId: string, error: unknown) {
+    this.policyGuard.revokeRunScopes(runId);
     this.runTemperatures.delete(runId);
     try {
       if (["completed", "partial", "cancelled", "failed", "limit_exceeded"].includes(getState(runId))) return;

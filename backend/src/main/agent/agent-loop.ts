@@ -12,6 +12,7 @@ import {
 import { StreamingTagFilter } from "./streaming-filter.js";
 import type { SemanticIntent } from "../router/contextual-router.js";
 import { determineOutputExpectation, isInformationalInquiry } from "../router/output-expectation.js";
+import { MutationPolicyGuard, extractPathArg, extractCommandArg } from "../harness/policy-guard.js";
 
 export interface AgentLoopOptions {
   runId: string;
@@ -24,6 +25,7 @@ export interface AgentLoopOptions {
   context: ToolExecutionContext;
   recentChatHistory?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   maxTurns?: number;
+  policyGuard?: MutationPolicyGuard;
   onPlanConfirmationRequired?: (plan: string, firstCalls: any[]) => Promise<boolean>;
   isCancelled?: () => boolean;
   emitEvent: (event: RunEvent) => void;
@@ -471,6 +473,12 @@ export class AgentLoop {
       context.emitRunEvent = emitEvent;
     }
 
+    const policyGuard = options.policyGuard ?? context.policyGuard ?? new MutationPolicyGuard();
+    context.policyGuard = policyGuard;
+    if (onPlanConfirmationRequired) {
+      policyGuard.setEnforceExplicit(runId, true);
+    }
+
     const dispatcher = new ToolDispatcher(tools);
     const toolDefinitions = dispatcher.getDefinitions();
 
@@ -483,7 +491,6 @@ export class AgentLoop {
 
     let turn = 0;
     let finalText = "";
-    let confirmed = false;
     let hasExecutedTools = false;
     let hasExecutedDiskMutations = false;
     let lastExecutionHadError = false;
@@ -1078,7 +1085,8 @@ export class AgentLoop {
         callHistory.shift();
       }
 
-      // 6. Plan confirmation check: ONLY pause for confirmation if there are mutating tool calls
+      // 6. Operation-level authorization check (P0-06 §A, §B):
+      // Only pause for confirmation if there are mutating calls that are out of authorized scope
       const READ_ONLY_TOOLS = new Set([
         "read_file",
         "list_dir",
@@ -1092,28 +1100,53 @@ export class AgentLoop {
       ]);
 
       const mutatingCalls = (effectiveToolCalls || []).filter((c: any) => !READ_ONLY_TOOLS.has(c.name));
-      if (!confirmed && mutatingCalls.length > 0 && onPlanConfirmationRequired) {
-        const actionsList = mutatingCalls
-          .map((c: any) => formatToolActionSummary(c.name, c.arguments))
-          .join("\n");
-        const cleanedContent = cleanPlanPreview(content ?? "");
-        const isSubstantive = isSubstantiveReportOrFindings(cleanedContent);
-        const hasCompletedInChatSummary = isSubstantive || Boolean(accumulatedInChatFindings);
-        const planDescription =
-          !isSubstantive && cleanedContent && cleanedContent.length <= 250
-            ? `### Plan Overview\n${cleanedContent}\n\n### Proposed Operations\n${actionsList}`
-            : deriveFormalPlan(userPrompt, mutatingCalls, hasCompletedInChatSummary);
-        const approved = await onPlanConfirmationRequired(planDescription, mutatingCalls);
-        if (!approved) {
+      const unauthorizedMutatingCalls = mutatingCalls.filter((c: any) => {
+        return !policyGuard.isAuthorized(runId, c.name as any, c.arguments);
+      });
+
+      if (unauthorizedMutatingCalls.length > 0) {
+        if (onPlanConfirmationRequired) {
+          const actionsList = unauthorizedMutatingCalls
+            .map((c: any) => formatToolActionSummary(c.name, c.arguments))
+            .join("\n");
+          const cleanedContent = cleanPlanPreview(content ?? "");
+          const isSubstantive = isSubstantiveReportOrFindings(cleanedContent);
+          const hasCompletedInChatSummary = isSubstantive || Boolean(accumulatedInChatFindings);
+          const planDescription =
+            !isSubstantive && cleanedContent && cleanedContent.length <= 250
+              ? `### Plan Overview\n${cleanedContent}\n\n### Proposed Operations\n${actionsList}`
+              : deriveFormalPlan(userPrompt, unauthorizedMutatingCalls, hasCompletedInChatSummary);
+          const approved = await onPlanConfirmationRequired(planDescription, unauthorizedMutatingCalls);
+          if (!approved) {
+            emitEvent({
+              type: "error",
+              runId,
+              code: "action_rejected",
+              message: "Action was rejected by user. Execution stopped.",
+            });
+            return buildResult("Action was rejected by user. Execution stopped.", "cancelled");
+          }
+
+          // Grant explicit scopes bound strictly to the approved calls and targets (P0-06 §B)
+          for (const call of unauthorizedMutatingCalls) {
+            const targetPath = extractPathArg(call.arguments);
+            const command = extractCommandArg(call.arguments);
+            policyGuard.grantScope({
+              runId,
+              operation: call.name as any,
+              targetPath: targetPath || undefined,
+              command: command || undefined,
+            });
+          }
+        } else if (policyGuard.isEnforcingExplicit(runId)) {
           emitEvent({
             type: "error",
             runId,
             code: "action_rejected",
-            message: "Action was rejected by user. Execution stopped.",
+            message: `Mutating operation '${unauthorizedMutatingCalls[0].name}' requires authorization.`,
           });
-          return buildResult("Action was rejected by user. Execution stopped.", "cancelled");
+          return buildResult(`Mutating operation '${unauthorizedMutatingCalls[0].name}' requires authorization.`, "cancelled");
         }
-        confirmed = true;
       }
 
       // 7. Record assistant's tool-calling turn
