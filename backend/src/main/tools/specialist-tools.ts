@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentTool, ToolExecutionContext, ToolExecutionResult } from "./types.js";
 import { requestBase } from "../gateway/model-gateway.js";
 import { executePython } from "./python.js";
-import { generateDocx, generateXlsx, generateXlsxFromContent } from "./artifacts.js";
+import { generateDocx, generateXlsx, generateXlsxFromContent, verifyArtifactFile } from "./artifacts.js";
 import { resolveRunPath } from "../run/filesystem.js";
 import { extractContentArg, extractPathArg, findFileInRunDirectories } from "./workspace-tools.js";
 import type {
@@ -712,10 +712,29 @@ export const generateDeliverableTool: AgentTool = {
       }
       artifacts.push(art);
     } else {
+      const intermediateDir = resolveRunPath(context.runId, "intermediate", "intermediate");
+      const tempName = `staging-${randomUUID()}-${filename}`;
+      const tempPath = path.join(intermediateDir, tempName);
+      mkdirSync(intermediateDir, { recursive: true });
+      writeFileSync(tempPath, content, "utf8");
+
+      const verification = await verifyArtifactFile(tempPath, {
+        runId: context.runId,
+        expectedKind: "md",
+        originalContent: content,
+      });
+
+      if (!verification.valid) {
+        try { rmSync(tempPath, { force: true }); } catch {}
+        throw new Error(`Artifact verification failed for Markdown deliverable "${filename}": ${verification.details.error}`);
+      }
+
       const outDir = resolveRunPath(context.runId, "output", "output");
       const outPath = path.join(outDir, filename);
       mkdirSync(path.dirname(outPath), { recursive: true });
       writeFileSync(outPath, content, "utf8");
+      try { rmSync(tempPath, { force: true }); } catch {}
+
       artifacts.push({
         artifactId: randomUUID(),
         runId: context.runId,
@@ -724,11 +743,18 @@ export const generateDeliverableTool: AgentTool = {
         relativePath: `runs/${context.runId}/output/${filename}`,
         sizeBytes: Buffer.byteLength(content, "utf8"),
         createdAt: new Date().toISOString(),
+        verified: true,
+        verificationDetails: verification.details,
       });
     }
 
+    const primaryArt = artifacts[0];
+    const checkSummary = primaryArt?.verified
+      ? `File passed all structural verification checks (${type.toUpperCase()} package validated)`
+      : `File written (${primaryArt?.sizeBytes ?? 0} bytes)`;
+
     return {
-      output: `Generated deliverable "${filename}" (${artifacts[0]?.sizeBytes ?? 0} bytes) successfully. The file is compiled, verified, and saved to disk in the run output folder. Deliverable creation is complete. Do not re-read this file.`,
+      output: `Deliverable "${filename}" (${primaryArt?.sizeBytes ?? 0} bytes) generated and verified. ${checkSummary}. Saved to disk at ${primaryArt?.relativePath || filename}. Deliverable creation is complete.`,
       summary: `Created deliverable: ${filename}`,
       artifacts,
       sideEffects: [`artifact:${filename}`],

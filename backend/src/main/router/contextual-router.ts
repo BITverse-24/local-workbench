@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { AttachmentReference, ModelId, TaskType } from "../../shared/contracts.js";
 import { ModelGateway, requestBase } from "../gateway/model-gateway.js";
+import { determineOutputExpectation, type OutputExpectation } from "./output-expectation.js";
 
 export interface SemanticIntent {
   driverModel: ModelId;
@@ -17,6 +18,7 @@ export interface SemanticIntent {
     | "pure_chat"
     | "general_qa";
   reason: string;
+  outputExpectation?: OutputExpectation;
 }
 
 export interface SemanticRouterInput {
@@ -231,6 +233,13 @@ LATEST USER REQUEST:
             ? "general_qa"
             : (parsed.intentType ?? (hasWorkspace ? "code_modification" : "general_qa"));
 
+          const outputExpectation = determineOutputExpectation(userPrompt, {
+            attachments,
+            hasWorkspace,
+            workspaceFiles,
+            semanticIntent: parsed,
+          });
+
           return {
             driverModel: validDriverModel,
             taskType: validTaskType,
@@ -239,6 +248,7 @@ LATEST USER REQUEST:
             targetFiles,
             intentType,
             reason: parsed.reason ?? "semantic LLM classification",
+            outputExpectation,
           };
         }
       }
@@ -271,6 +281,8 @@ LATEST USER REQUEST:
   const attachmentFileNames = attachments.map((a) => a.filename).filter(Boolean) as string[];
   const referencedFiles = extractReferencedFiles(userPrompt, history, workspaceFiles, attachmentFileNames);
 
+  const defaultExpectation = () => determineOutputExpectation(userPrompt, { attachments, hasWorkspace, workspaceFiles });
+
   // Pure conversational greeting without attachments
   if (
     attachments.length === 0 &&
@@ -285,11 +297,33 @@ LATEST USER REQUEST:
       targetFiles: [],
       intentType: "pure_chat",
       reason: "pure conversational greeting",
+      outputExpectation: defaultExpectation(),
     };
   }
 
   if (isCodeAttachment) {
     const codeTargetFiles = attachments.map((a) => a.filename).filter(Boolean) as string[];
+    const isExplicitAction = /\b(?:create|write|add|delete|remove|rm|fix|repair|patch|modify|update|edit|refactor|scaffold|convert|migrate|implement|build|install|npm|run|exec|test)\b/i.test(
+      lowerPrompt,
+    );
+    const isQuestionOrInquiry =
+      /\b(?:what|why|how|explain|walk\s*through|tell\s*me\s*about|describe|review|compare|difference|where\s*is|which|meaning|summarize|summary|help\s*me\s*understand|can\s*you\s*(?:explain|clarify|summarize|review))\b/i.test(
+        lowerPrompt,
+      ) || promptTrimmed.endsWith("?");
+
+    if (isQuestionOrInquiry && !isExplicitAction) {
+      return {
+        driverModel: "code-qwen25coder",
+        taskType: "code",
+        primaryGoal: `Explain attached code: ${codeTargetFiles.join(", ")}`,
+        isActionable: false,
+        targetFiles: codeTargetFiles,
+        intentType: "general_qa",
+        reason: "code attachment provided: inquiry and explanation without disk mutation",
+        outputExpectation: defaultExpectation(),
+      };
+    }
+
     return {
       driverModel: "code-qwen25coder",
       taskType: "code",
@@ -298,6 +332,7 @@ LATEST USER REQUEST:
       targetFiles: codeTargetFiles,
       intentType: "code_modification",
       reason: "code or data attachment provided; prioritizing attached files",
+      outputExpectation: defaultExpectation(),
     };
   }
 
@@ -312,6 +347,7 @@ LATEST USER REQUEST:
         targetFiles: referencedFiles,
         intentType: "document_drafting",
         reason: "document drafting requested for attached document",
+        outputExpectation: defaultExpectation(),
       };
     }
     return {
@@ -322,6 +358,7 @@ LATEST USER REQUEST:
       targetFiles: [],
       intentType: "file_inspection",
       reason: "visual document or image attached without code context",
+      outputExpectation: defaultExpectation(),
     };
   }
 
@@ -335,6 +372,7 @@ LATEST USER REQUEST:
         targetFiles: referencedFiles,
         intentType: "document_drafting",
         reason: "workspace active with explicit document drafting intent",
+        outputExpectation: defaultExpectation(),
       };
     }
 
@@ -357,6 +395,7 @@ LATEST USER REQUEST:
         targetFiles: referencedFiles,
         intentType: "general_qa",
         reason: "workspace active: code inquiry and conceptual explanation without disk mutation",
+        outputExpectation: defaultExpectation(),
       };
     }
 
@@ -368,6 +407,7 @@ LATEST USER REQUEST:
       targetFiles: referencedFiles,
       intentType: "code_modification",
       reason: "workspace active; routing to code engineering driver",
+      outputExpectation: defaultExpectation(),
     };
   }
 
@@ -385,6 +425,7 @@ LATEST USER REQUEST:
       targetFiles: [],
       intentType: "general_qa",
       reason: "coding query without active workspace; chat-only code assistance",
+      outputExpectation: defaultExpectation(),
     };
   }
 
@@ -396,5 +437,6 @@ LATEST USER REQUEST:
     targetFiles: [],
     intentType: "general_qa",
     reason: "analytical reasoning and general query",
+    outputExpectation: defaultExpectation(),
   };
 }

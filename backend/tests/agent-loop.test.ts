@@ -892,7 +892,7 @@ async def log_ip(request: Request, call_next):
     expect(thinking.some((t) => t.turn === 2 && t.text.includes("The script crashed"))).toBe(true);
   });
 
-  it("auto-generates deliverable when model drafts approval note without explicit tool call on turn 2", async () => {
+  it("does not auto-manufacture deliverable via regex when model drafts note without tool call on turn 2, marking outcome as partial", async () => {
     const loop = new AgentLoop();
     let turnCount = 0;
     const generatedDeliverables: any[] = [];
@@ -1006,20 +1006,19 @@ async def log_ip(request: Request, call_next):
       emitEvent: (e) => emittedEvents.push(e),
     });
 
-    expect(result.completed).toBe(true);
-    // Deliverable tool must have been executed automatically!
-    expect(generatedDeliverables.length).toBe(1);
-    expect(generatedDeliverables[0].filename).toBe("approval-note.docx");
-    expect(generatedDeliverables[0].title).toBe("Technical Inspection Approval Note");
-    expect(generatedDeliverables[0].content).toContain("Heat Exchanger E-201");
+    // P0-05 / P0-02 Truthful completion: Model stopped without invoking generate_deliverable,
+    // so no deliverable was manufactured via regex fallback, and outcome is partial!
+    expect(result.completed).toBe(false);
+    expect(result.outcome).toBe("partial");
+    expect(generatedDeliverables.length).toBe(0);
 
-    // Artifact ready event must have been emitted!
+    // No artifact ready event should have been emitted
     const artEvent = emittedEvents.find((e) => e.type === "artifact_ready");
-    expect(artEvent).toBeDefined();
-    expect(artEvent.artifact.filename).toBe("approval-note.docx");
+    expect(artEvent).toBeUndefined();
 
-    // Final text must notify user about the generated file!
-    expect(result.finalText).toContain("approval-note.docx");
+    // Missing deliverable is recorded truthfully
+    expect(result.deliverables?.missing).toContain("Word document / Approval note (.docx)");
+    expect(result.finalText).toContain("Execution partially completed");
   });
 
   it("does not auto-generate deliverable when user only asked for an in-chat drawing compliance review", async () => {

@@ -22,6 +22,12 @@ interface PersistedMessage {
   attachments?: AttachmentReference[];
 }
 
+interface OutputExpectation {
+  chatResponse: boolean;
+  expectedFiles: string[];
+  workspaceMutationRequested: boolean;
+}
+
 type AgentOutcome =
   | "completed"
   | "partial"
@@ -59,6 +65,8 @@ interface ArtifactRef {
   createdAt: string;
   content?: string;
   isBinary?: boolean;
+  verified?: boolean;
+  verificationDetails?: Record<string, unknown>;
 }
 
 interface PendingAction {

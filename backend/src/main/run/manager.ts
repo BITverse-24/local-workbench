@@ -1154,6 +1154,7 @@ OPERATIONAL & PLAN GUIDELINES:
           userPrompt: text,
           systemPrompt,
           semanticIntent,
+          outputExpectation: semanticIntent.outputExpectation,
           tools,
           context: toolContext,
           recentChatHistory: history,

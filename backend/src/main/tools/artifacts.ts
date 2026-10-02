@@ -1,4 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
 import ExcelJS from "exceljs";
 import {
   AlignmentType,
@@ -13,8 +15,253 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import { artifactRef, resolveRunPath, writeRunFile } from "../run/filesystem.js";
-import type { ArtifactRef, PythonExecutionResult } from "../../shared/contracts.js";
+import { extractDocxText } from "./document-reader.js";
+import { artifactRef, resolveRunPath, writeRunFile, dataRoot, runRoot } from "../run/filesystem.js";
+import type { ArtifactKind, ArtifactRef, PythonExecutionResult } from "../../shared/contracts.js";
+
+export interface ArtifactVerificationOptions {
+  runId?: string;
+  expectedKind?: ArtifactKind;
+  originalContent?: string;
+  allowEmpty?: boolean;
+}
+
+export interface ArtifactVerificationResult {
+  valid: boolean;
+  filePath: string;
+  kind: ArtifactKind;
+  sizeBytes: number;
+  checks: {
+    exists: boolean;
+    withinAuthorizedDir: boolean;
+    nonEmpty: boolean;
+    extensionMatches: boolean;
+    parserOpened: boolean;
+    structuralValid: boolean;
+  };
+  details: {
+    sheetCount?: number;
+    rowCount?: number;
+    paragraphCount?: number;
+    tableCount?: number;
+    contentMatch?: boolean;
+    error?: string;
+  };
+}
+
+export function inferArtifactKind(filename: string): ArtifactKind {
+  const ext = path.extname(filename).toLowerCase().replace(/^\./, "");
+  if (["xlsx", "xls"].includes(ext)) return "xlsx";
+  if (["docx", "doc"].includes(ext)) return "docx";
+  if (["csv"].includes(ext)) return "csv";
+  if (["json"].includes(ext)) return "json";
+  if (["md", "markdown"].includes(ext)) return "md";
+  if (["pdf"].includes(ext)) return "pdf";
+  return "txt";
+}
+
+export function isAuthorizedArtifactPath(targetPath: string, runId?: string): boolean {
+  try {
+    const resolved = path.resolve(targetPath);
+    if (runId) {
+      const rRoot = path.resolve(runRoot(runId));
+      return resolved.startsWith(rRoot + path.sep) || resolved === rRoot;
+    }
+    const dRoot = path.resolve(dataRoot());
+    return resolved.startsWith(dRoot + path.sep) || resolved === dRoot;
+  } catch {}
+  return false;
+}
+
+export async function verifyArtifactFile(
+  filePath: string,
+  options?: ArtifactVerificationOptions,
+): Promise<ArtifactVerificationResult> {
+  const kind = options?.expectedKind || inferArtifactKind(filePath);
+  const result: ArtifactVerificationResult = {
+    valid: false,
+    filePath,
+    kind,
+    sizeBytes: 0,
+    checks: {
+      exists: false,
+      withinAuthorizedDir: false,
+      nonEmpty: false,
+      extensionMatches: false,
+      parserOpened: false,
+      structuralValid: false,
+    },
+    details: {},
+  };
+
+  // 1. File exists
+  if (!existsSync(filePath)) {
+    result.details.error = `Artifact file does not exist at "${filePath}"`;
+    return result;
+  }
+  result.checks.exists = true;
+
+  // 2. Path within authorized directory
+  if (options?.runId && !isAuthorizedArtifactPath(filePath, options.runId)) {
+    result.details.error = `Artifact path "${filePath}" is outside authorized run directory for run "${options.runId}"`;
+    return result;
+  }
+  result.checks.withinAuthorizedDir = true;
+
+  // 3. File is non-empty
+  let stat;
+  try {
+    stat = statSync(filePath);
+    result.sizeBytes = stat.size;
+  } catch (err: any) {
+    result.details.error = `Failed to stat artifact file: ${err?.message || String(err)}`;
+    return result;
+  }
+
+  if (stat.size === 0 && !options?.allowEmpty) {
+    result.details.error = `Artifact file "${path.basename(filePath)}" is empty (0 bytes)`;
+    return result;
+  }
+  result.checks.nonEmpty = true;
+
+  // 4. File extension agrees with requested type
+  const ext = path.extname(filePath).toLowerCase().replace(/^\./, "");
+  const expectedExts: Record<ArtifactKind, string[]> = {
+    xlsx: ["xlsx", "xls"],
+    docx: ["docx", "doc"],
+    md: ["md", "markdown"],
+    csv: ["csv"],
+    json: ["json"],
+    pdf: ["pdf"],
+    txt: ["txt", "py", "sh", "sql", "log"],
+  };
+
+  const allowedExts = expectedExts[kind] || [kind];
+  if (!allowedExts.includes(ext)) {
+    result.details.error = `File extension ".${ext}" does not agree with requested artifact type "${kind}"`;
+    return result;
+  }
+  result.checks.extensionMatches = true;
+
+  // 5 & 6. Parser opening and structural validation
+  if (kind === "xlsx") {
+    try {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(filePath);
+      result.checks.parserOpened = true;
+
+      if (!workbook.worksheets || workbook.worksheets.length === 0) {
+        result.details.error = "XLSX workbook contains no worksheets";
+        return result;
+      }
+
+      let totalRowsWithData = 0;
+      let hasProhibitedCompletedPlaceholder = false;
+
+      for (const sheet of workbook.worksheets) {
+        let sheetRowsWithData = 0;
+        sheet.eachRow((row) => {
+          const vals = Array.isArray(row.values) ? row.values.slice(1) : [];
+          if (vals.some((v) => v !== null && v !== undefined && String(v).trim().length > 0)) {
+            sheetRowsWithData++;
+            totalRowsWithData++;
+          }
+        });
+
+        if (sheetRowsWithData === 2) {
+          const r1 = String(sheet.getRow(1).values).toLowerCase();
+          const r2 = String(sheet.getRow(2).values).toLowerCase();
+          if (r1.includes("report") && r2.includes("status") && r2.includes("completed")) {
+            hasProhibitedCompletedPlaceholder = true;
+          }
+        }
+      }
+
+      if (hasProhibitedCompletedPlaceholder && totalRowsWithData <= 2) {
+        result.details.error = "XLSX workbook contains prohibited fabricated-success placeholder ('Status: Completed') with no substantive data rows";
+        return result;
+      }
+
+      if (totalRowsWithData === 0 && !options?.allowEmpty) {
+        result.details.error = "XLSX workbook contains no substantive data rows across any worksheet";
+        return result;
+      }
+
+      result.checks.structuralValid = true;
+      result.details.sheetCount = workbook.worksheets.length;
+      result.details.rowCount = totalRowsWithData;
+    } catch (err: any) {
+      result.details.error = `Failed to parse XLSX workbook: ${err?.message || String(err)}`;
+      return result;
+    }
+  } else if (kind === "docx") {
+    try {
+      const docxResult = await extractDocxText(filePath);
+      result.checks.parserOpened = true;
+
+      const text = docxResult.text.trim();
+      if (text.length < 15 && !options?.allowEmpty) {
+        result.details.error = "DOCX document contains insufficient or empty text content";
+        return result;
+      }
+
+      result.checks.structuralValid = true;
+      result.details.paragraphCount = text.split(/\n\s*\n/).filter(Boolean).length;
+      result.details.contentMatch = true;
+    } catch (err: any) {
+      result.details.error = `Failed to open or parse DOCX package: ${err?.message || String(err)}`;
+      return result;
+    }
+  } else if (kind === "json") {
+    try {
+      const content = readFileSync(filePath, "utf8");
+      result.checks.parserOpened = true;
+      JSON.parse(content);
+      result.checks.structuralValid = true;
+      result.details.contentMatch = true;
+    } catch (err: any) {
+      result.details.error = `Failed to parse JSON file: ${err?.message || String(err)}`;
+      return result;
+    }
+  } else {
+    // Markdown / text / CSV
+    try {
+      const content = readFileSync(filePath, "utf8");
+      result.checks.parserOpened = true;
+
+      if (content.trim().length === 0 && !options?.allowEmpty) {
+        result.details.error = "File content is empty";
+        return result;
+      }
+
+      if (options?.originalContent !== undefined) {
+        const normActual = content.trim();
+        const normExpected = options.originalContent.trim();
+        if (normActual !== normExpected) {
+          result.details.error = "File content does not match submitted content";
+          result.details.contentMatch = false;
+          return result;
+        }
+      }
+
+      result.checks.structuralValid = true;
+      result.details.contentMatch = true;
+    } catch (err: any) {
+      result.details.error = `Failed to read file: ${err?.message || String(err)}`;
+      return result;
+    }
+  }
+
+  result.valid =
+    result.checks.exists &&
+    result.checks.withinAuthorizedDir &&
+    result.checks.nonEmpty &&
+    result.checks.extensionMatches &&
+    result.checks.parserOpened &&
+    result.checks.structuralValid;
+
+  return result;
+}
 
 function parseCsvLine(line: string): string[] {
   const result: string[] = [];
@@ -64,19 +311,26 @@ export async function generateXlsx(runId: string, execution: PythonExecutionResu
 
   if (!populated) {
     const lines = (execution.stdout || "").split(/\r?\n/).filter((l) => l.trim().length > 0);
-    if (lines.length > 0) {
-      for (const line of lines) {
+    const delimitedLines = lines.filter((l) => l.includes(",") || l.includes("\t") || l.includes(";") || (l.startsWith("|") && l.endsWith("|")));
+    if (delimitedLines.length > 0) {
+      for (const line of delimitedLines) {
         if (line.includes(",")) {
           sheet.addRow(parseCsvLine(line));
         } else if (line.includes("\t")) {
           sheet.addRow(line.split("\t"));
-        } else {
-          sheet.addRow([line]);
+        } else if (line.includes(";")) {
+          sheet.addRow(line.split(";"));
+        } else if (line.startsWith("|") && line.endsWith("|")) {
+          const cells = line.replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+          sheet.addRow(cells);
         }
       }
-    } else {
-      sheet.addRow(["Execution completed with exit code", execution.exitCode]);
+      populated = true;
     }
+  }
+
+  if (!populated) {
+    throw new Error("Failed to generate XLSX: Execution output contains no CSV or tabular rows to populate workbook.");
   }
 
   const data = await workbook.xlsx.writeBuffer();
@@ -85,8 +339,29 @@ export async function generateXlsx(runId: string, execution: PythonExecutionResu
     candidate = candidate.replace(/\.[^.]+$/, "") + ".xlsx";
   }
   const name = /^[A-Za-z0-9][A-Za-z0-9._-]*\.xlsx$/i.test(candidate) ? candidate : "summary.xlsx";
-  const rel = writeRunFile(runId, "output", name, Buffer.from(data));
-  return artifactRef(runId, "xlsx", name, rel);
+
+  // Staging -> Verification -> Promotion lifecycle
+  const tempName = `staging-${randomUUID()}-${name}`;
+  writeRunFile(runId, "intermediate", tempName, Buffer.from(data), true);
+  const tempPath = resolveRunPath(runId, `intermediate/${tempName}`, "intermediate");
+
+  const verification = await verifyArtifactFile(tempPath, {
+    runId,
+    expectedKind: "xlsx",
+  });
+
+  if (!verification.valid) {
+    try { rmSync(tempPath, { force: true }); } catch {}
+    throw new Error(`Artifact verification failed for XLSX "${name}": ${verification.details.error}`);
+  }
+
+  const rel = writeRunFile(runId, "output", name, Buffer.from(data), true);
+  try { rmSync(tempPath, { force: true }); } catch {}
+
+  const art = artifactRef(runId, "xlsx", name, rel);
+  art.verified = true;
+  art.verificationDetails = verification.details;
+  return art;
 }
 
 export async function generateXlsxFromContent(
@@ -124,19 +399,28 @@ export async function generateXlsxFromContent(
       }
     }
   } else {
-    for (const line of lines) {
+    const delimitedLines = lines.filter((l) => l.includes(",") || l.includes("\t") || l.includes(";"));
+    for (const line of delimitedLines) {
       if (line.includes(",")) {
         rowsToAdd.push(parseCsvLine(line));
       } else if (line.includes("\t")) {
         rowsToAdd.push(line.split("\t").map((c) => c.trim()));
-      } else {
-        rowsToAdd.push([line]);
+      } else if (line.includes(";")) {
+        rowsToAdd.push(line.split(";").map((c) => c.trim()));
       }
     }
   }
 
+  // A failed parse must never generate a workbook claiming completion
   if (rowsToAdd.length === 0) {
-    rowsToAdd.push(["Report", title || "Summary"], ["Status", "Completed"]);
+    throw new Error("Failed to generate XLSX: Content contains no tabular rows or valid CSV/Markdown table data.");
+  }
+
+  const hasSubstantiveData = rowsToAdd.some((row) =>
+    row.some((cell) => cell && cell.trim().length > 0 && !/^(?:report|status|summary|completed)$/i.test(cell.trim())),
+  );
+  if (!hasSubstantiveData) {
+    throw new Error("Failed to generate XLSX: Content contains no substantive tabular data rows.");
   }
 
   // Add rows with clean styling
@@ -194,8 +478,29 @@ export async function generateXlsxFromContent(
     candidate = candidate.replace(/\.[^.]+$/, "") + ".xlsx";
   }
   const name = /^[A-Za-z0-9][A-Za-z0-9._-]*\.xlsx$/i.test(candidate) ? candidate : "deliverable.xlsx";
-  const rel = writeRunFile(runId, "output", name, Buffer.from(data));
-  return artifactRef(runId, "xlsx", name, rel);
+
+  // Staging -> Verification -> Promotion lifecycle
+  const tempName = `staging-${randomUUID()}-${name}`;
+  writeRunFile(runId, "intermediate", tempName, Buffer.from(data), true);
+  const tempPath = resolveRunPath(runId, `intermediate/${tempName}`, "intermediate");
+
+  const verification = await verifyArtifactFile(tempPath, {
+    runId,
+    expectedKind: "xlsx",
+  });
+
+  if (!verification.valid) {
+    try { rmSync(tempPath, { force: true }); } catch {}
+    throw new Error(`Artifact verification failed for XLSX "${name}": ${verification.details.error}`);
+  }
+
+  const rel = writeRunFile(runId, "output", name, Buffer.from(data), true);
+  try { rmSync(tempPath, { force: true }); } catch {}
+
+  const art = artifactRef(runId, "xlsx", name, rel);
+  art.verified = true;
+  art.verificationDetails = verification.details;
+  return art;
 }
 
 export interface DocxDraftInput {
@@ -1056,6 +1361,27 @@ export async function generateDocx(
     candidate = candidate.replace(/\.[^.]+$/, "") + ".docx";
   }
   const name = /^[A-Za-z0-9][A-Za-z0-9._-]*\.docx$/i.test(candidate) ? candidate : "approval-note.docx";
+
+  // Staging -> Verification -> Promotion lifecycle
+  const tempName = `staging-${randomUUID()}-${name}`;
+  writeRunFile(runId, "intermediate", tempName, buffer, true);
+  const tempPath = resolveRunPath(runId, `intermediate/${tempName}`, "intermediate");
+
+  const verification = await verifyArtifactFile(tempPath, {
+    runId,
+    expectedKind: "docx",
+  });
+
+  if (!verification.valid) {
+    try { rmSync(tempPath, { force: true }); } catch {}
+    throw new Error(`Artifact verification failed for DOCX "${name}": ${verification.details.error}`);
+  }
+
   const rel = writeRunFile(runId, "output", name, buffer, true);
-  return artifactRef(runId, "docx", name, rel);
+  try { rmSync(tempPath, { force: true }); } catch {}
+
+  const art = artifactRef(runId, "docx", name, rel);
+  art.verified = true;
+  art.verificationDetails = verification.details;
+  return art;
 }

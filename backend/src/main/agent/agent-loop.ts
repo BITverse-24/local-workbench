@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AgentOutcome, ModelId, RunEvent } from "../../shared/contracts.js";
+import type { AgentOutcome, ModelId, OutputExpectation, RunEvent } from "../../shared/contracts.js";
 import type { AgentTool, ToolExecutionContext } from "../tools/types.js";
 import { ToolDispatcher } from "./tool-dispatcher.js";
 import { compactConversationHistory, extractSourceArg, type AgentMessage, type CompactionMetadata } from "./context-manager.js";
@@ -11,6 +11,7 @@ import {
 } from "./code-extractor.js";
 import { StreamingTagFilter } from "./streaming-filter.js";
 import type { SemanticIntent } from "../router/contextual-router.js";
+import { determineOutputExpectation, isInformationalInquiry } from "../router/output-expectation.js";
 
 export interface AgentLoopOptions {
   runId: string;
@@ -18,6 +19,7 @@ export interface AgentLoopOptions {
   userPrompt: string;
   systemPrompt: string;
   semanticIntent?: SemanticIntent;
+  outputExpectation?: OutputExpectation;
   tools: AgentTool[];
   context: ToolExecutionContext;
   recentChatHistory?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
@@ -34,6 +36,7 @@ export interface AgentLoopResult {
   outcome: AgentOutcome;
   modelId: ModelId;
   messageId?: string;
+  outputExpectation?: OutputExpectation;
   deliverables?: {
     requested: string[];
     produced: string[];
@@ -61,9 +64,24 @@ export function detectRequestedDeliverables(
   userPrompt: string,
   semanticIntent?: SemanticIntent,
   inputFilenames: string[] = [],
+  outputExpectation?: OutputExpectation,
 ): ExpectedDeliverable[] {
   const deliverables: ExpectedDeliverable[] = [];
   const lowerInputs = new Set(inputFilenames.map((f) => f.toLowerCase()));
+
+  // If outputExpectation is explicitly provided and indicates no files and no mutation requested:
+  if (
+    outputExpectation &&
+    !outputExpectation.workspaceMutationRequested &&
+    outputExpectation.expectedFiles.length === 0
+  ) {
+    return [];
+  }
+
+  // If prompt is purely informational inquiry without file creation verbs:
+  if (isInformationalInquiry(userPrompt)) {
+    return [];
+  }
 
   // 1. Detect explicit output filename patterns (e.g. "report.docx", "summary.xlsx", "export data.csv")
   const fileRegex = /\b([a-zA-Z0-9_\-.]+\.(?:docx|xlsx|csv|pdf|md|json))\b/gi;
@@ -75,10 +93,10 @@ export function detectRequestedDeliverables(
     const filenameLower = rawFilename.toLowerCase();
     // Skip if it's an explicit input file
     if (lowerInputs.has(filenameLower)) continue;
-    // Check if immediately preceded by input-related words like "from", "inspect", "read"
+    // Check if immediately preceded by input-related words like "from", "inspect", "read", "explain", "about"
     const matchStart = match.index;
     const precedingContext = userPrompt.slice(Math.max(0, matchStart - 25), matchStart).toLowerCase();
-    if (/\b(?:from|inspect|read|parse|examine|using|check|input)\s+(?:a\s+|an\s+|the\s+)?$/i.test(precedingContext)) continue;
+    if (/\b(?:from|inspect|read|parse|examine|using|check|input|explain|about|show|what)\s+(?:a\s+|an\s+|the\s+)?$/i.test(precedingContext)) continue;
 
     const ext = rawFilename.split(".").pop()?.toLowerCase();
     const type = (ext === "docx" ? "docx" : ext === "xlsx" ? "xlsx" : ext === "csv" ? "csv" : ext === "pdf" ? "pdf" : ext === "md" ? "md" : ext === "json" ? "json" : "file") as ExpectedDeliverable["type"];
@@ -109,7 +127,7 @@ export function detectRequestedDeliverables(
 
   // B. XLSX / Excel spreadsheet
   const requestsXlsx =
-    /\b(?:generate|create|produce|compile|export)\b[^.?!]*\b(?:excel|spreadsheet|xlsx|workbook|in\s+xlsx)\b/i.test(userPrompt) ||
+    /\b(?:generate|create|produce|compile|export|cleaned)\b[^.?!]*\b(?:excel|spreadsheet|xlsx|workbook|in\s+xlsx)\b/i.test(userPrompt) ||
     /\b(?:as|in|into)\s+(?:an?\s+)?(?:excel\s+(?:file|sheet|spreadsheet)?|xlsx\s+file|xlsx)\b/i.test(userPrompt);
 
   const hasXlsxCaptured = deliverables.some((d) => d.type === "xlsx");
@@ -482,11 +500,25 @@ export class AgentLoop {
     const emittedCompactionKeys = new Set<string>();
 
     const inputFilenames = options.semanticIntent?.targetFiles ?? [];
+    const outputExpectation: OutputExpectation =
+      options.outputExpectation ??
+      options.semanticIntent?.outputExpectation ??
+      determineOutputExpectation(userPrompt, {
+        attachments: [],
+        hasWorkspace: Boolean(context.workspaceRoot),
+        semanticIntent: options.semanticIntent,
+      });
+
     const expectedDeliverables = detectRequestedDeliverables(
       userPrompt,
       options.semanticIntent,
       inputFilenames,
+      outputExpectation,
     );
+
+    const shouldAnnouncePyScript = () =>
+      outputExpectation.expectedFiles.some((f) => f.endsWith(".py") || f.toLowerCase().includes("script")) ||
+      (outputExpectation.workspaceMutationRequested && Array.from(modifiedFiles).some((f) => f.endsWith(".py")));
 
     const buildResult = (
       resultText: string,
@@ -499,6 +531,7 @@ export class AgentLoop {
       outcome,
       modelId: driverModelId,
       messageId: assistantMessageId,
+      outputExpectation,
       deliverables: deliverableEval
         ? {
             requested: expectedDeliverables.map((d) => d.filename || d.description),
@@ -667,7 +700,7 @@ export class AgentLoop {
         const semanticTargets = semanticIntent?.targetFiles ?? [];
 
         // A. File creation extraction: If model provided file code blocks in current content or recent assistant messages
-        if (dispatcher.getTool("write_file")) {
+        if (outputExpectation.workspaceMutationRequested && dispatcher.getTool("write_file")) {
           let extractedFiles = extractCodeBlocksWithFilenames(content ?? "", semanticTargets);
           if (extractedFiles.length === 0) {
             // Inspect recent assistant messages for code blocks that weren't persisted
@@ -842,8 +875,13 @@ export class AgentLoop {
         if (!hasExecutedDiskMutations) {
           const semanticTargets = semanticIntent?.targetFiles ?? [];
 
-          // If content contains code blocks, try one final extraction before giving up
-          if (dispatcher.getTool("write_file") && content && content.includes("```")) {
+          // If content contains code blocks, and user requested workspace mutation, try one final extraction before giving up
+          if (
+            outputExpectation.workspaceMutationRequested &&
+            dispatcher.getTool("write_file") &&
+            content &&
+            content.includes("```")
+          ) {
             const finalExtracted = extractCodeBlocksWithFilenames(content, semanticTargets);
             if (finalExtracted.length > 0) {
               for (const file of finalExtracted) {
@@ -852,54 +890,6 @@ export class AgentLoop {
                   hasExecutedDiskMutations = true;
                   modifiedFiles.add(file.path);
                 } catch {}
-              }
-            }
-          }
-          const userExplicitlyRequestedFile =
-            /\b(?:docx|doc|excel|xlsx|csv|in a (?:docx|doc|excel|xlsx|file)|deliverable file|report file|export (?:a |the )?(?:file|deliverable|doc|report))\b/i.test(
-              userPrompt,
-            );
-
-          if (userExplicitlyRequestedFile && dispatcher.getTool("generate_deliverable") && content && content.length > 150) {
-            const hasDocStructure =
-              /#+\s+/m.test(content) ||
-              /\|[^\n]+\|[^\n]+\|/m.test(content);
-
-            if (hasDocStructure) {
-              const titleMatch =
-                content.match(/^#+\s+([^\n]+)/m) ||
-                content.match(/\*\*Subject:\*\*\s*([^\n]+)/i) ||
-                content.match(/^(?:SUBJECT|TITLE):\s*([^\n]+)/im);
-              const extractedTitle = titleMatch
-                ? titleMatch[1].replace(/^[#*\s]+|[#*\s]+$/g, "").trim()
-                : "Technical Inspection Approval Note";
-
-              const fileMatch = userPrompt.match(/([\w.-]+\.(?:docx|pdf|xlsx|html))/i);
-              const filename = fileMatch ? fileMatch[1] : (userPrompt.toLowerCase().includes("xlsx") ? "deliverable.xlsx" : "approval-note.docx");
-
-              try {
-                const execs = await dispatcher.dispatchConcurrent(
-                  [
-                    {
-                      id: `call_${randomUUID().slice(0, 8)}`,
-                      name: "generate_deliverable",
-                      arguments: {
-                        type: filename.endsWith(".xlsx") ? "excel" : "docx",
-                        title: extractedTitle,
-                        content,
-                        filename,
-                      },
-                    },
-                  ],
-                  context,
-                );
-                if (execs.length > 0 && execs[0].result.ok) {
-                  hasExecutedDiskMutations = true;
-                  hasExecutedTools = true;
-                  modifiedFiles.add(filename);
-                }
-              } catch (err) {
-                console.error("[agent-loop] Failed to auto-generate requested deliverable from content:", err);
               }
             }
           }
@@ -943,6 +933,7 @@ export class AgentLoop {
         }
 
         if (
+          shouldAnnouncePyScript() &&
           hasExecutedDiskMutations &&
           modifiedFiles.size > 0 &&
           Array.from(modifiedFiles).some((f) => f.endsWith(".py"))
@@ -1047,6 +1038,7 @@ export class AgentLoop {
           }
         }
         if (
+          shouldAnnouncePyScript() &&
           hasExecutedDiskMutations &&
           modifiedFiles.size > 0 &&
           Array.from(modifiedFiles).some((f) => f.endsWith(".py"))
@@ -1157,9 +1149,15 @@ export class AgentLoop {
               if (cmd) executedCommands.push(cmd);
               hasExecutedDiskMutations = true;
             } else if (exec.name === "generate_deliverable") {
-              const docName = (effectiveToolCalls.find((c: any) => c.id === exec.id)?.arguments as any)?.filename || "deliverable.docx";
-              modifiedFiles.add(docName);
               hasExecutedDiskMutations = true;
+              if (Array.isArray(exec.result.artifacts) && exec.result.artifacts.length > 0) {
+                for (const art of exec.result.artifacts) {
+                  if (art.filename) modifiedFiles.add(art.filename);
+                }
+              } else {
+                const docName = (effectiveToolCalls.find((c: any) => c.id === exec.id)?.arguments as any)?.filename || "approval-note.docx";
+                modifiedFiles.add(docName);
+              }
             } else if (exec.name === "execute_python") {
               hasExecutedDiskMutations = true;
               if (Array.isArray(exec.result.artifacts)) {
@@ -1213,6 +1211,7 @@ export class AgentLoop {
       }
     }
     if (
+      shouldAnnouncePyScript() &&
       hasExecutedDiskMutations &&
       modifiedFiles.size > 0 &&
       Array.from(modifiedFiles).some((f) => f.endsWith(".py"))
