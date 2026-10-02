@@ -95,6 +95,24 @@ describe("P0-05: Output Expectation & Chat vs File vs Artifact Routing", () => {
       const mut2 = detectWorkspaceMutation("Convert codebase to TypeScript", true, ["src/index.js"]);
       expect(mut2.requested).toBe(true);
     });
+
+    it("excludes files in negative directives from deliverable expectations and workspace mutations", () => {
+      const p = "Update notes.md in the active workspace. Change the status from Draft to Reviewed and add a short section titled Review Notes containing the sentence 'Initial document review completed.' Do not modify config.json, unrelated.md, or any other existing file.";
+      const expectation = determineOutputExpectation(p, {
+        hasWorkspace: true,
+        workspaceFiles: ["notes.md", "config.json", "unrelated.md"],
+      });
+
+      expect(expectation.workspaceMutationRequested).toBe(true);
+      expect(expectation.expectedFiles).toContain("notes.md");
+      expect(expectation.expectedFiles).not.toContain("config.json");
+      expect(expectation.expectedFiles).not.toContain("unrelated.md");
+
+      const delivs = detectDeliverableExpectations(p);
+      expect(delivs).toContain("notes.md");
+      expect(delivs).not.toContain("config.json");
+      expect(delivs).not.toContain("unrelated.md");
+    });
   });
 
   describe("Agent Loop Execution Integrity", () => {

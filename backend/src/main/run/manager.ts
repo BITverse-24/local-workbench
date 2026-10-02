@@ -886,6 +886,26 @@ export class RunManager {
         this.gateway,
       );
 
+      if (semanticIntent.status === "failed") {
+        const errorMsg = semanticIntent.failureReason || "Failed to classify user intent";
+        this.emit({
+          type: "error",
+          runId,
+          code: "intent_classification_failed",
+          message: errorMsg,
+          retryable: false,
+        });
+        this.fail(runId, new Error(errorMsg));
+        return;
+      }
+
+      if (semanticIntent.protectedPaths && semanticIntent.protectedPaths.length > 0) {
+        this.policyGuard.setProtectedPaths(runId, semanticIntent.protectedPaths);
+      }
+      if (semanticIntent.restrictMutationsToTargets) {
+        this.policyGuard.setMutationTargetRestriction(runId, true, semanticIntent.targetFiles);
+      }
+
       const requestId = randomUUID();
       recordRouting(runId, requestId, semanticIntent.taskType, semanticIntent.driverModel, semanticIntent.reason);
       this.emit({ type: "routing", runId, taskType: semanticIntent.taskType, modelId: semanticIntent.driverModel, reason: semanticIntent.reason });

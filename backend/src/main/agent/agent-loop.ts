@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import type { AgentOutcome, ModelId, OutputExpectation, RunEvent } from "../../shared/contracts.js";
 import type { AgentTool, ToolExecutionContext } from "../tools/types.js";
 import { ToolDispatcher } from "./tool-dispatcher.js";
@@ -11,7 +12,7 @@ import {
 } from "./code-extractor.js";
 import { StreamingTagFilter } from "./streaming-filter.js";
 import type { SemanticIntent } from "../router/contextual-router.js";
-import { determineOutputExpectation, isInformationalInquiry } from "../router/output-expectation.js";
+import { determineOutputExpectation, isInformationalInquiry, extractNegativeFileConstraints } from "../router/output-expectation.js";
 import { MutationPolicyGuard, extractPathArg, extractCommandArg } from "../harness/policy-guard.js";
 
 export interface AgentLoopOptions {
@@ -19,7 +20,7 @@ export interface AgentLoopOptions {
   driverModelId: ModelId;
   userPrompt: string;
   systemPrompt: string;
-  semanticIntent?: SemanticIntent;
+  semanticIntent?: Partial<SemanticIntent>;
   outputExpectation?: OutputExpectation;
   tools: AgentTool[];
   context: ToolExecutionContext;
@@ -64,21 +65,50 @@ export interface ExpectedDeliverable {
  */
 export function detectRequestedDeliverables(
   userPrompt: string,
-  semanticIntent?: SemanticIntent,
+  semanticIntent?: Partial<SemanticIntent>,
   inputFilenames: string[] = [],
   outputExpectation?: OutputExpectation,
 ): ExpectedDeliverable[] {
-  const deliverables: ExpectedDeliverable[] = [];
-  const lowerInputs = new Set(inputFilenames.map((f) => f.toLowerCase()));
+  // 1. Direct consumption of validated natural language intention:
+  if (semanticIntent?.status === "resolved") {
+    return (semanticIntent.expectedDeliverables ?? []).map((d) => ({
+      type: (d.type || "file") as ExpectedDeliverable["type"],
+      filename: d.filename,
+      description: d.description || d.filename || d.type,
+    }));
+  }
 
-  // If outputExpectation is explicitly provided and indicates no files and no mutation requested:
+  if (semanticIntent?.expectedDeliverables && semanticIntent.expectedDeliverables.length > 0) {
+    return semanticIntent.expectedDeliverables.map((d) => ({
+      type: (d.type || "file") as ExpectedDeliverable["type"],
+      filename: d.filename,
+      description: d.description || d.filename || d.type,
+    }));
+  }
+
+  // 2. Direct consumption of output expectation deliverables:
+  if (outputExpectation?.expectedDeliverables && outputExpectation.expectedDeliverables.length > 0) {
+    return outputExpectation.expectedDeliverables.map((d) => ({
+      type: (d.type || "file") as ExpectedDeliverable["type"],
+      filename: d.filename,
+      description: d.description || d.filename || d.type,
+    }));
+  }
+
+  // 3. Direct chat-only or inquiry short-circuit:
   if (
-    outputExpectation &&
-    !outputExpectation.workspaceMutationRequested &&
-    outputExpectation.expectedFiles.length === 0
+    semanticIntent?.chatResponseOnly === true ||
+    (outputExpectation &&
+      !outputExpectation.workspaceMutationRequested &&
+      outputExpectation.expectedFiles.length === 0 &&
+      isInformationalInquiry(userPrompt))
   ) {
     return [];
   }
+
+  const deliverables: ExpectedDeliverable[] = [];
+  const lowerInputs = new Set(inputFilenames.map((f) => f.toLowerCase()));
+  const negatedFiles = extractNegativeFileConstraints(userPrompt);
 
   // If prompt is purely informational inquiry without file creation verbs:
   if (isInformationalInquiry(userPrompt)) {
@@ -93,12 +123,15 @@ export function detectRequestedDeliverables(
   while ((match = fileRegex.exec(userPrompt)) !== null) {
     const rawFilename = match[1];
     const filenameLower = rawFilename.toLowerCase();
-    // Skip if it's an explicit input file
+    // Skip if it's an explicit input file or subject to a negative constraint
     if (lowerInputs.has(filenameLower)) continue;
-    // Check if immediately preceded by input-related words like "from", "inspect", "read", "explain", "about"
+    if (negatedFiles.has(filenameLower) || negatedFiles.has(path.basename(filenameLower))) continue;
+
+    // Check if immediately preceded by input-related words or negative constraint phrases
     const matchStart = match.index;
-    const precedingContext = userPrompt.slice(Math.max(0, matchStart - 25), matchStart).toLowerCase();
+    const precedingContext = userPrompt.slice(Math.max(0, matchStart - 35), matchStart).toLowerCase();
     if (/\b(?:from|inspect|read|parse|examine|using|check|input|explain|about|show|what)\s+(?:a\s+|an\s+|the\s+)?$/i.test(precedingContext)) continue;
+    if (/\b(?:not\s+modify|not\s+touch|not\s+change|not\s+edit|not\s+create|do\s*n['o]?t|never|exclude|except|leave)\b/i.test(precedingContext)) continue;
 
     const ext = rawFilename.split(".").pop()?.toLowerCase();
     const type = (ext === "docx" ? "docx" : ext === "xlsx" ? "xlsx" : ext === "csv" ? "csv" : ext === "pdf" ? "pdf" : ext === "md" ? "md" : ext === "json" ? "json" : "file") as ExpectedDeliverable["type"];
@@ -116,8 +149,11 @@ export function detectRequestedDeliverables(
   // 2. Detect requested deliverable categories if not already captured by explicit filename:
   // A. DOCX / Word deliverable / Approval Note
   const requestsDocx =
-    /\b(?:draft|generate|create|produce|compile|export)\b[^.?!]*\b(?:approval\s+note|compliance\s+note|word\s+doc(?:ument)?|docx|in\s+docx)\b/i.test(userPrompt) ||
-    /\b(?:as|in|into)\s+(?:a\s+)?(?:word\s+document|docx\s+file|docx)\b/i.test(userPrompt);
+    !negatedFiles.has("approval-note.docx") &&
+    !negatedFiles.has("report.docx") &&
+    !/\b(?:do\s*n['o]?t|never)\s+(?:draft|generate|create)\s+(?:a\s+)?(?:word|docx|report|approval\s+note)\b/i.test(userPrompt) &&
+    (/\b(?:draft|generate|create|produce|compile|export)\b[^.?!]*\b(?:approval\s+note|compliance\s+note|word\s+doc(?:ument)?|docx|in\s+docx)\b/i.test(userPrompt) ||
+    /\b(?:as|in|into)\s+(?:a\s+)?(?:word\s+document|docx\s+file|docx)\b/i.test(userPrompt));
 
   const hasDocxCaptured = deliverables.some((d) => d.type === "docx");
   if (requestsDocx && !hasDocxCaptured) {
@@ -129,8 +165,11 @@ export function detectRequestedDeliverables(
 
   // B. XLSX / Excel spreadsheet
   const requestsXlsx =
-    /\b(?:generate|create|produce|compile|export|cleaned)\b[^.?!]*\b(?:excel|spreadsheet|xlsx|workbook|in\s+xlsx)\b/i.test(userPrompt) ||
-    /\b(?:as|in|into)\s+(?:an?\s+)?(?:excel\s+(?:file|sheet|spreadsheet)?|xlsx\s+file|xlsx)\b/i.test(userPrompt);
+    !negatedFiles.has("workbook.xlsx") &&
+    !negatedFiles.has("cleaned.xlsx") &&
+    !/\b(?:do\s*n['o]?t|never)\s+(?:generate|create|produce)\s+(?:a\s+)?(?:excel|spreadsheet|xlsx|workbook)\b/i.test(userPrompt) &&
+    (/\b(?:generate|create|produce|compile|export|cleaned)\b[^.?!]*\b(?:excel|spreadsheet|xlsx|workbook|in\s+xlsx)\b/i.test(userPrompt) ||
+    /\b(?:as|in|into)\s+(?:an?\s+)?(?:excel\s+(?:file|sheet|spreadsheet)?|xlsx\s+file|xlsx)\b/i.test(userPrompt));
 
   const hasXlsxCaptured = deliverables.some((d) => d.type === "xlsx");
   if (requestsXlsx && !hasXlsxCaptured) {
@@ -142,6 +181,8 @@ export function detectRequestedDeliverables(
 
   // C. CSV export
   const requestsCsv =
+    !negatedFiles.has("export.csv") &&
+    !/\b(?:do\s*n['o]?t|never)\s+(?:export|save|generate)\s+(?:to\s+csv|as\s+csv|csv)\b/i.test(userPrompt) &&
     /\b(?:export|save|generate|create)\b[^.?!]*\b(?:csv\s+file|to\s+csv|as\s+csv)\b/i.test(userPrompt);
   const hasCsvCaptured = deliverables.some((d) => d.type === "csv");
   if (requestsCsv && !hasCsvCaptured) {
@@ -151,7 +192,16 @@ export function detectRequestedDeliverables(
     });
   }
 
-  return deliverables;
+  return deliverables.filter((d) => {
+    if (!d.filename) return true;
+    const lower = d.filename.toLowerCase();
+    return !negatedFiles.has(lower) && !negatedFiles.has(path.basename(lower));
+  });
+}
+
+export interface CompletionWorkspaceContext {
+  expectedMutations?: string[];
+  actualModifiedFiles?: Set<string>;
 }
 
 export function evaluateCompletionOutcome(
@@ -160,10 +210,13 @@ export function evaluateCompletionOutcome(
   hadErrors: boolean,
   isMaxTurnsReached: boolean,
   isCancelled: boolean,
+  workspaceContext?: CompletionWorkspaceContext,
 ): {
   outcome: AgentOutcome;
   missingDeliverables: string[];
   producedDeliverables: string[];
+  missingMutations?: string[];
+  producedMutations?: string[];
 } {
   if (isCancelled) {
     return { outcome: "cancelled", missingDeliverables: [], producedDeliverables: Array.from(producedFiles) };
@@ -172,12 +225,29 @@ export function evaluateCompletionOutcome(
     return { outcome: "limit_exceeded", missingDeliverables: [], producedDeliverables: Array.from(producedFiles) };
   }
 
-  // If no specific deliverables were expected:
-  if (expectedDeliverables.length === 0) {
-    return { outcome: "completed", missingDeliverables: [], producedDeliverables: Array.from(producedFiles) };
+  // 1. Evaluate workspace mutations if expected
+  const expectedMutations = workspaceContext?.expectedMutations ?? [];
+  const actualModified = workspaceContext?.actualModifiedFiles ?? producedFiles;
+  const producedMutations: string[] = [];
+  const missingMutations: string[] = [];
+
+  if (expectedMutations.length > 0) {
+    const lowerModified = Array.from(actualModified).map((f) => f.toLowerCase());
+    for (const exp of expectedMutations) {
+      const expLower = exp.toLowerCase();
+      const expBase = path.basename(expLower);
+      const found = lowerModified.some(
+        (m) => m === expLower || m === expBase || m.endsWith(`/${expBase}`) || m.endsWith(`\\${expBase}`),
+      );
+      if (found) {
+        producedMutations.push(exp);
+      } else {
+        missingMutations.push(exp);
+      }
+    }
   }
 
-  // Evaluate each expected deliverable
+  // 2. Evaluate expected deliverables
   const lowerProduced = Array.from(producedFiles).map((f) => ({
     raw: f,
     lower: f.toLowerCase(),
@@ -191,7 +261,12 @@ export function evaluateCompletionOutcome(
     let matched = false;
     if (exp.filename) {
       const targetLower = exp.filename.toLowerCase();
-      const match = lowerProduced.find((p) => p.lower === targetLower || p.lower.endsWith(`/${targetLower}`) || p.lower.endsWith(`\\${targetLower}`));
+      const match = lowerProduced.find(
+        (p) =>
+          p.lower === targetLower ||
+          p.lower.endsWith(`/${targetLower}`) ||
+          p.lower.endsWith(`\\${targetLower}`),
+      );
       if (match) {
         matched = true;
         producedDeliverables.push(match.raw);
@@ -210,20 +285,36 @@ export function evaluateCompletionOutcome(
     }
   }
 
-  if (missingDeliverables.length === 0) {
-    return { outcome: "completed", missingDeliverables, producedDeliverables };
+  // 3. Combined outcome determination
+  const totalMissing = missingDeliverables.length + missingMutations.length;
+  const totalProduced = producedDeliverables.length + producedMutations.length;
+
+  if (totalMissing === 0) {
+    return {
+      outcome: "completed",
+      missingDeliverables,
+      producedDeliverables,
+      missingMutations,
+      producedMutations,
+    };
   }
 
-  // If some deliverables were produced and some missing:
-  if (producedDeliverables.length > 0) {
-    return { outcome: "partial", missingDeliverables, producedDeliverables };
+  if (totalProduced > 0) {
+    return {
+      outcome: "partial",
+      missingDeliverables,
+      producedDeliverables,
+      missingMutations,
+      producedMutations,
+    };
   }
 
-  // If none of the expected deliverables were produced:
   return {
     outcome: hadErrors ? "failed" : "partial",
     missingDeliverables,
     producedDeliverables,
+    missingMutations,
+    producedMutations,
   };
 }
 
@@ -473,6 +564,12 @@ export class AgentLoop {
     context.policyGuard = policyGuard;
     if (onPlanConfirmationRequired) {
       policyGuard.setEnforceExplicit(runId, true);
+    }
+    if (semanticIntent?.protectedPaths && semanticIntent.protectedPaths.length > 0) {
+      policyGuard.setProtectedPaths(runId, semanticIntent.protectedPaths);
+    }
+    if (semanticIntent?.restrictMutationsToTargets) {
+      policyGuard.setMutationTargetRestriction(runId, true, semanticIntent.targetFiles ?? []);
     }
 
     const dispatcher = new ToolDispatcher(tools);
@@ -954,11 +1051,19 @@ export class AgentLoop {
           lastExecutionHadError,
           false,
           false,
+          {
+            expectedMutations: semanticIntent?.workspaceMutationRequested ? semanticIntent.targetFiles : [],
+            actualModifiedFiles: modifiedFiles,
+          },
         );
 
-        if (evalResult.outcome === "partial" && evalResult.missingDeliverables.length > 0) {
-          const missingStr = evalResult.missingDeliverables.join(", ");
-          const partialNotice = `\n\n⚠️ **Notice: Execution partially completed.** The following requested deliverable(s) were not produced: ${missingStr}.`;
+        const totalMissing = [
+          ...evalResult.missingDeliverables,
+          ...(evalResult.missingMutations ?? []),
+        ];
+        if (evalResult.outcome === "partial" && totalMissing.length > 0) {
+          const missingStr = totalMissing.join(", ");
+          const partialNotice = `\n\n⚠️ **Notice: Execution partially completed.** The following requested item(s) were not produced/modified: ${missingStr}.`;
           if (!finalText.includes("Execution partially completed")) {
             finalText += partialNotice;
           }
@@ -1222,6 +1327,10 @@ export class AgentLoop {
       lastExecutionHadError,
       true, // isMaxTurnsReached
       false, // isCancelled
+      {
+        expectedMutations: semanticIntent?.workspaceMutationRequested ? semanticIntent.targetFiles : [],
+        actualModifiedFiles: modifiedFiles,
+      },
     );
 
     let overflowText = cleanFinalSummary(

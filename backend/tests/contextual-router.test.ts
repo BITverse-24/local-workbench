@@ -226,5 +226,189 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
     expect(intent.intentType).toBe("file_inspection");
     expect(intent.isActionable).toBe(false);
   });
+
+  describe("Natural Language Intention Detection & Semantic Constraints", () => {
+    it("separates workspace operations from deliverables and extracts negative constraints", async () => {
+      const mockGateway = {
+        async execute() {
+          return {
+            ok: true,
+            value: {
+              result: {
+                text: JSON.stringify({
+                  status: "resolved",
+                  driverModel: "code-qwen25coder",
+                  taskType: "code",
+                  primaryGoal: "Update notes.md while protecting other workspace files",
+                  isActionable: true,
+                  chatResponseOnly: false,
+                  workspaceMutationRequested: true,
+                  targetFiles: ["notes.md"],
+                  protectedPaths: ["config.json", "unrelated.md"],
+                  restrictMutationsToTargets: true,
+                  expectedDeliverables: [],
+                  intentType: "code_modification",
+                  reason: "User requested modifying notes.md with explicit negative constraints on config.json and unrelated.md",
+                }),
+              },
+            },
+          };
+        },
+      };
+
+      const intent = await resolveSemanticIntent(
+        {
+          userPrompt: "Update notes.md. Do not modify config.json, unrelated.md, or any other existing file.",
+          hasWorkspace: true,
+          workspaceFiles: ["notes.md", "config.json", "unrelated.md", "package.json"],
+        },
+        mockGateway as any,
+      );
+
+      expect(intent.status).toBe("resolved");
+      expect(intent.workspaceMutationRequested).toBe(true);
+      expect(intent.targetFiles).toEqual(["notes.md"]);
+      expect(intent.expectedDeliverables).toEqual([]);
+      expect(intent.protectedPaths).toContain("config.json");
+      expect(intent.protectedPaths).toContain("unrelated.md");
+      expect(intent.restrictMutationsToTargets).toBe(true);
+      expect(intent.chatResponseOnly).toBe(false);
+
+      // Verify derived output expectation
+      expect(intent.outputExpectation?.chatResponse).toBe(true);
+      expect(intent.outputExpectation?.expectedFiles).toEqual([]);
+      expect(intent.outputExpectation?.workspaceMutationRequested).toBe(true);
+      expect(intent.outputExpectation?.targetFiles).toEqual(["notes.md"]);
+      expect(intent.outputExpectation?.expectedDeliverables).toEqual([]);
+    });
+
+    it("resolves conflicts by prioritizing protectedPaths over targetFiles and sets ambiguous if no targets remain", async () => {
+      const mockGateway = {
+        async execute() {
+          return {
+            ok: true,
+            value: {
+              result: {
+                text: JSON.stringify({
+                  status: "resolved",
+                  driverModel: "code-qwen25coder",
+                  taskType: "code",
+                  primaryGoal: "Conflicting file modification",
+                  isActionable: true,
+                  chatResponseOnly: false,
+                  workspaceMutationRequested: true,
+                  targetFiles: ["config.json"],
+                  protectedPaths: ["config.json"],
+                  restrictMutationsToTargets: true,
+                  expectedDeliverables: [],
+                  intentType: "code_modification",
+                  reason: "Conflicting prompt asking to edit and protect config.json",
+                }),
+              },
+            },
+          };
+        },
+      };
+
+      const intent = await resolveSemanticIntent(
+        {
+          userPrompt: "Modify config.json but do not touch config.json",
+          hasWorkspace: true,
+          workspaceFiles: ["config.json"],
+        },
+        mockGateway as any,
+      );
+
+      // Protected path wins conflict: targetFiles is purged
+      expect(intent.targetFiles).not.toContain("config.json");
+      expect(intent.protectedPaths).toContain("config.json");
+      // Because actionable mutation has no remaining valid targets, status becomes ambiguous
+      expect(intent.status).toBe("ambiguous");
+    });
+
+    it("performs 1-turn bounded JSON repair when initial LLM response is malformed", async () => {
+      let callCount = 0;
+      const mockGateway = {
+        async execute(req: any) {
+          callCount++;
+          if (callCount === 1) {
+            // Malformed JSON (unclosed quote / brace)
+            return {
+              ok: true,
+              value: {
+                result: {
+                  text: '```json\n{"status": "resolved", "primaryGoal": "Refactor app.js", "targetFiles": ["app.js"',
+                },
+              },
+            };
+          }
+          // Repair call successfully outputs valid JSON
+          return {
+            ok: true,
+            value: {
+              result: {
+                text: JSON.stringify({
+                  status: "resolved",
+                  driverModel: "code-qwen25coder",
+                  taskType: "code",
+                  primaryGoal: "Refactor app.js",
+                  isActionable: true,
+                  chatResponseOnly: false,
+                  workspaceMutationRequested: true,
+                  targetFiles: ["app.js"],
+                  protectedPaths: [],
+                  restrictMutationsToTargets: false,
+                  expectedDeliverables: [],
+                  intentType: "code_modification",
+                  reason: "Repaired valid JSON",
+                }),
+              },
+            },
+          };
+        },
+      };
+
+      const intent = await resolveSemanticIntent(
+        {
+          userPrompt: "Refactor app.js to use express router",
+          hasWorkspace: true,
+          workspaceFiles: ["app.js"],
+        },
+        mockGateway as any,
+      );
+
+      expect(callCount).toBe(2);
+      expect(intent.status).toBe("resolved");
+      expect(intent.targetFiles).toEqual(["app.js"]);
+      expect(intent.primaryGoal).toBe("Refactor app.js");
+    });
+
+    it("returns status: failed when JSON remains unrepairable after bounded repair", async () => {
+      const mockGateway = {
+        async execute() {
+          return {
+            ok: true,
+            value: {
+              result: {
+                text: "Here is what I think you want: not valid json at all",
+              },
+            },
+          };
+        },
+      };
+
+      const intent = await resolveSemanticIntent(
+        {
+          userPrompt: "Do something completely unrecognized",
+          hasWorkspace: false,
+        },
+        mockGateway as any,
+      );
+
+      expect(intent.status).toBe("failed");
+      expect(intent.failureReason).toBeDefined();
+    });
+  });
 });
+
 

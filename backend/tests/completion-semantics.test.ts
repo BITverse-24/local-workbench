@@ -90,6 +90,20 @@ describe("P0-02: Truthful Completion Semantics", () => {
       const p2 = "Explain the difference between ASME Section VIII and API 510";
       expect(detectRequestedDeliverables(p2)).toEqual([]);
     });
+
+    it("excludes files subject to negative constraints or prohibitions", () => {
+      const p = "Update notes.md in the active workspace. Change the status from Draft to Reviewed and add a short section titled Review Notes containing the sentence 'Initial document review completed.' Do not modify config.json, unrelated.md, or any other existing file.";
+      const deliverables = detectRequestedDeliverables(p);
+      expect(deliverables.map((d) => d.filename)).toEqual(["notes.md"]);
+      expect(deliverables.some((d) => d.filename === "config.json")).toBe(false);
+      expect(deliverables.some((d) => d.filename === "unrelated.md")).toBe(false);
+
+      const p2 = "Generate report.docx without modifying template.docx or data.xlsx";
+      const deliv2 = detectRequestedDeliverables(p2);
+      expect(deliv2.map((d) => d.filename)).toContain("report.docx");
+      expect(deliv2.some((d) => d.filename === "template.docx")).toBe(false);
+      expect(deliv2.some((d) => d.filename === "data.xlsx")).toBe(false);
+    });
   });
 
   // ── 2. Unit Tests: Outcome Evaluation ───────────────────────────────────
@@ -147,6 +161,18 @@ describe("P0-02: Truthful Completion Semantics", () => {
       expect(res.outcome).toBe("partial");
       expect(res.producedDeliverables).toEqual(["report.docx"]);
       expect(res.missingDeliverables).toEqual(["summary.xlsx"]);
+    });
+
+    it("Scenario 8: Negated files excluded from expected deliverables results in truthful Completed", () => {
+      const prompt = "Update notes.md in the active workspace. Do not modify config.json, unrelated.md, or any other existing file.";
+      const expected = detectRequestedDeliverables(prompt);
+      expect(expected.map((d) => d.filename)).toEqual(["notes.md"]);
+
+      const produced = new Set(["notes.md"]);
+      const res = evaluateCompletionOutcome(expected, produced, false, false, false);
+      expect(res.outcome).toBe("completed");
+      expect(res.missingDeliverables).toEqual([]);
+      expect(res.producedDeliverables).toEqual(["notes.md"]);
     });
   });
 
@@ -502,5 +528,46 @@ describe("P0-02: Truthful Completion Semantics", () => {
       expect(events.some((e) => e.type === "run_state" && e.state === "partial")).toBe(true);
       expect(getState(started.runId)).toBe("partial");
     });
+
+    it("verifies workspace mutation completes truthfully without classifying updated workspace file as deliverable", () => {
+      // Direct evaluateCompletionOutcome verification:
+      // notes.md was modified as expected in workspaceContext, expectedDeliverables is empty
+      const evalOutcome = evaluateCompletionOutcome(
+        [], // expectedDeliverables: empty!
+        new Set(["notes.md"]),
+        false,
+        false,
+        false,
+        {
+          expectedMutations: ["notes.md"],
+          actualModifiedFiles: new Set(["notes.md"]),
+        },
+      );
+
+      expect(evalOutcome.outcome).toBe("completed");
+      expect(evalOutcome.missingDeliverables).toEqual([]);
+      expect(evalOutcome.producedDeliverables).toEqual([]);
+      expect(evalOutcome.missingMutations).toEqual([]);
+      expect(evalOutcome.producedMutations).toEqual(["notes.md"]);
+    });
+
+    it("evaluates workspace mutation as partial if expected target was not modified", () => {
+      const evalOutcome = evaluateCompletionOutcome(
+        [],
+        new Set(),
+        false,
+        false,
+        false,
+        {
+          expectedMutations: ["notes.md"],
+          actualModifiedFiles: new Set(),
+        },
+      );
+
+      expect(evalOutcome.outcome).toBe("partial");
+      expect(evalOutcome.missingDeliverables).toEqual([]);
+      expect(evalOutcome.missingMutations).toEqual(["notes.md"]);
+    });
   });
 });
+

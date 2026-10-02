@@ -65,10 +65,22 @@ export type AIWorkflowError = AIError | ValidationFailure;
 export type AIResult<T> = { ok: true; value: T } | { ok: false; error: AIWorkflowError };
 export type ToolName = "read_file" | "draft_note" | "draft_code" | "execute_python" | "generate_xlsx" | "retrieve_sop" | "inspect_drawing";
 
+export type IntentResolutionStatus = "resolved" | "ambiguous" | "failed";
+
+export interface ExpectedDeliverableSpec {
+  filename?: string;
+  type: "docx" | "xlsx" | "csv" | "pdf" | "md" | "json" | "file";
+  description?: string;
+}
+
 export interface OutputExpectation {
   chatResponse: boolean;
   expectedFiles: string[];
   workspaceMutationRequested: boolean;
+  targetFiles?: string[];
+  expectedDeliverables?: ExpectedDeliverableSpec[];
+  protectedPaths?: string[];
+  restrictMutationsToTargets?: boolean;
 }
 
 export type AgentOutcome =

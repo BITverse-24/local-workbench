@@ -431,5 +431,39 @@ describe("P0-06: Mutation Approvals and Containment Guard", () => {
 
       expect(existsSync(path.join(tempDir, "test.txt"))).toBe(false);
     });
+
+    it("enforces protected paths: write_file and delete_file fail closed on protected paths even with explicit scopes", () => {
+      const guard = new MutationPolicyGuard({ strict: true });
+      guard.grantScope({
+        runId: "run-prot",
+        operation: "*",
+        targetPath: "*",
+      });
+
+      guard.setProtectedPaths("run-prot", ["config.json", "unrelated.md"]);
+
+      // Allowed files can be mutated under granted scope
+      expect(guard.isAuthorized("run-prot", "write_file", { path: "notes.md" })).toBe(true);
+
+      // Protected paths cannot be mutated even with wildcard grant
+      expect(guard.isAuthorized("run-prot", "write_file", { path: "config.json" })).toBe(false);
+      expect(guard.isAuthorized("run-prot", "write_file", { path: "./config.json" })).toBe(false);
+      expect(guard.isAuthorized("run-prot", "delete_file", { path: "unrelated.md" })).toBe(false);
+      expect(guard.isAuthorized("run-prot", "delete_file", { path: "sub/unrelated.md" })).toBe(false);
+    });
+
+    it("enforces mutation target restrictions: rejects mutations on any file other than declared targets", () => {
+      const guard = new MutationPolicyGuard();
+      guard.setMutationTargetRestriction("run-restrict", true, ["notes.md"]);
+
+      // Target file is permitted
+      expect(guard.isAuthorized("run-restrict", "write_file", { path: "notes.md" })).toBe(true);
+      expect(guard.isAuthorized("run-restrict", "write_file", { path: "./notes.md" })).toBe(true);
+
+      // Any other file is rejected
+      expect(guard.isAuthorized("run-restrict", "write_file", { path: "server.ts" })).toBe(false);
+      expect(guard.isAuthorized("run-restrict", "delete_file", { path: "other.md" })).toBe(false);
+    });
   });
 });
+

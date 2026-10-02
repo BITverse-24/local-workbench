@@ -177,9 +177,53 @@ export class MutationPolicyGuard {
   private strictRuns = new Set<string>();
   private globalStrict: boolean = false;
   private authorizer?: MutationAuthorizer;
+  private protectedPathsByRun = new Map<string, Set<string>>();
+  private targetRestrictionsByRun = new Map<string, { restricted: boolean; allowedTargets: Set<string> }>();
 
   constructor(options?: PolicyGuardOptions) {
     this.globalStrict = options?.strict ?? false;
+  }
+
+  setProtectedPaths(runId: string, paths: string[]): void {
+    const set = new Set<string>();
+    for (const p of paths) {
+      const norm = normalizePath(p);
+      if (norm) {
+        set.add(norm.toLowerCase());
+        set.add(path.basename(norm).toLowerCase());
+      }
+    }
+    this.protectedPathsByRun.set(runId, set);
+  }
+
+  setMutationTargetRestriction(runId: string, restricted: boolean, allowedTargets: string[]): void {
+    const set = new Set<string>();
+    for (const t of allowedTargets) {
+      const norm = normalizePath(t);
+      if (norm) {
+        set.add(norm.toLowerCase());
+        set.add(path.basename(norm).toLowerCase());
+      }
+    }
+    this.targetRestrictionsByRun.set(runId, { restricted, allowedTargets: set });
+  }
+
+  isPathProtected(runId: string | undefined, targetPath?: string): boolean {
+    if (!runId || !targetPath) return false;
+    const protectedSet = this.protectedPathsByRun.get(runId);
+    if (!protectedSet) return false;
+    const norm = normalizePath(targetPath).toLowerCase();
+    const base = path.basename(norm).toLowerCase();
+    return protectedSet.has(norm) || protectedSet.has(base);
+  }
+
+  isPathTargetRestricted(runId: string | undefined, targetPath?: string): boolean {
+    if (!runId || !targetPath) return false;
+    const restriction = this.targetRestrictionsByRun.get(runId);
+    if (!restriction || !restriction.restricted) return false;
+    const norm = normalizePath(targetPath).toLowerCase();
+    const base = path.basename(norm).toLowerCase();
+    return !restriction.allowedTargets.has(norm) && !restriction.allowedTargets.has(base);
   }
 
   setEnforceExplicit(runId?: string, enforce: boolean = true): void {
@@ -227,11 +271,15 @@ export class MutationPolicyGuard {
   revokeRunScopes(runId: string): void {
     this.scopes = this.scopes.filter((s) => s.runId !== runId);
     this.strictRuns.delete(runId);
+    this.protectedPathsByRun.delete(runId);
+    this.targetRestrictionsByRun.delete(runId);
   }
 
   clear(): void {
     this.scopes = [];
     this.strictRuns.clear();
+    this.protectedPathsByRun.clear();
+    this.targetRestrictionsByRun.clear();
   }
 
   getActiveScopes(runId?: string): MutationScopeConstraint[] {
@@ -248,14 +296,27 @@ export class MutationPolicyGuard {
     operation: MutationOperation,
     args?: Record<string, unknown>,
   ): boolean {
+    const targetPath = args
+      ? extractPathArg(args) || (typeof args.path === "string" ? args.path : undefined)
+      : undefined;
+
+    // 1. Always check if path is explicitly protected/prohibited by user constraint
+    if (runId && targetPath && this.isPathProtected(runId, targetPath)) {
+      return false;
+    }
+
+    // 2. Always check if mutations are restricted to declared targets only
+    if (runId && targetPath && (operation === "write_file" || operation === "delete_file")) {
+      if (this.isPathTargetRestricted(runId, targetPath)) {
+        return false;
+      }
+    }
+
     if (!this.isEnforcingExplicit(runId)) {
       return true;
     }
 
     const now = Date.now();
-    const targetPath = args
-      ? extractPathArg(args) || (typeof args.path === "string" ? args.path : undefined)
-      : undefined;
     const command = args
       ? extractCommandArg(args) || (typeof args.command === "string" ? args.command : undefined)
       : undefined;
@@ -294,6 +355,13 @@ export class MutationPolicyGuard {
     request: MutationRequest,
     summary?: string,
   ): Promise<boolean> {
+    if (request.runId && request.targetPath && this.isPathProtected(request.runId, request.targetPath)) {
+      return false;
+    }
+    if (request.runId && request.targetPath && this.isPathTargetRestricted(request.runId, request.targetPath)) {
+      return false;
+    }
+
     const isAuth = this.isAuthorized(request.runId, request.operation, {
       path: request.targetPath,
       command: request.command,

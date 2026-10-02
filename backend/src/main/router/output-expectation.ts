@@ -50,6 +50,57 @@ export function isInformationalInquiry(userPrompt: string): boolean {
 }
 
 /**
+ * Extracts filenames that are explicitly subject to negative constraints in the user prompt
+ * (e.g. "do not modify config.json, unrelated.md", "leave notes.txt untouched", "except server.ts").
+ */
+export function extractNegativeFileConstraints(userPrompt: string): Set<string> {
+  const negatedFiles = new Set<string>();
+  if (!userPrompt) return negatedFiles;
+
+  // Split into sentences and clauses by punctuation and contrastive conjunctions
+  const clauses = userPrompt.split(/(?:(?:\.|\?|!|;|\n)['"”)]*(?:\s+|$))|,\s*(?=(?:but|however|except|without|excluding|while)\b)/i);
+
+  const NEGATIVE_DIRECTIVE_REGEX =
+    /\b(?:do\s*n['o]?t|never|should\s*n['o]?t|must\s*n['o]?t|cannot|can['o]?t|won['o]?t)\s+(?:modify|touch|change|edit|update|delete|remove|overwrite|create|write|alter|mutate|affect|save|run)\b|\bwithout\s+(?:modifying|touching|changing|editing|updating|deleting|removing|overwriting|creating|writing|altering)\b|\b(?:except(?:\s+for)?|excluding|exclude|skip|ignore)\b|\b(?:no\s+(?:changes?|modifications?|edits?|updates?)\s+to)\b|\b(?:not\s+(?:to\s+)?(?:modify|touch|change|edit|update|delete|remove|overwrite|create|write))\b/i;
+
+  const FILE_REGEX = /\b([a-zA-Z0-9_.-]+(?:\/|\\)[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+|[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+)\b/g;
+  const LEAVE_REGEX = /\bleave\s+([a-zA-Z0-9_.-]+(?:\/|\\)[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+|[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+)\s+(?:untouched|alone|as[\s-]is|unchanged)\b/i;
+
+  for (const clause of clauses) {
+    const trimmed = clause.trim();
+    if (!trimmed) continue;
+
+    const negMatch = NEGATIVE_DIRECTIVE_REGEX.exec(trimmed);
+    if (negMatch) {
+      const directiveEnd = negMatch.index + negMatch[0].length;
+      const afterText = trimmed.slice(directiveEnd);
+      let fMatch: RegExpExecArray | null;
+      FILE_REGEX.lastIndex = 0;
+      while ((fMatch = FILE_REGEX.exec(afterText)) !== null) {
+        const rawFilename = fMatch[1].trim();
+        const base = path.basename(rawFilename);
+        if (base && !base.startsWith(".")) {
+          negatedFiles.add(rawFilename.toLowerCase());
+          negatedFiles.add(base.toLowerCase());
+        }
+      }
+    }
+
+    const leaveMatch = LEAVE_REGEX.exec(trimmed);
+    if (leaveMatch && leaveMatch[1]) {
+      const rawFilename = leaveMatch[1].trim();
+      const base = path.basename(rawFilename);
+      if (base && !base.startsWith(".")) {
+        negatedFiles.add(rawFilename.toLowerCase());
+        negatedFiles.add(base.toLowerCase());
+      }
+    }
+  }
+
+  return negatedFiles;
+}
+
+/**
  * Detects whether the user explicitly requested output deliverables (Word documents,
  * Excel spreadsheets, CSV exports, standalone reports) and determines their expected names.
  */
@@ -60,6 +111,7 @@ export function detectDeliverableExpectations(
   const lower = userPrompt.toLowerCase();
   const deliverables: string[] = [];
   const lowerInputs = new Set(inputFiles.map((f) => f.toLowerCase()));
+  const negatedFiles = extractNegativeFileConstraints(userPrompt);
 
   // 1. Detect explicit deliverable filenames in prompt (e.g. "report.docx", "cleaned.xlsx", "output.csv")
   const fileRegex = /\b([a-zA-Z0-9_\-.]+\.(?:docx|xlsx|csv|pdf|md))\b/gi;
@@ -68,12 +120,16 @@ export function detectDeliverableExpectations(
     const raw = match[1];
     const rawLower = raw.toLowerCase();
     if (lowerInputs.has(rawLower)) continue;
+    if (negatedFiles.has(rawLower) || negatedFiles.has(path.basename(rawLower))) continue;
 
     const start = match.index;
     const preceding = userPrompt.slice(Math.max(0, start - 30), start).toLowerCase();
 
-    // Skip if preceded by read/inspect/from keywords
+    // Skip if preceded by read/inspect/from keywords or negative directives
     if (/\b(?:from|inspect|read|parse|examine|using|check|input|about|explain)\s+(?:a\s+|an\s+|the\s+)?$/i.test(preceding)) {
+      continue;
+    }
+    if (/\b(?:not\s+modify|not\s+touch|not\s+change|not\s+create|do\s*n['o]?t|never|exclude|except)\b/i.test(preceding)) {
       continue;
     }
 
@@ -89,28 +145,36 @@ export function detectDeliverableExpectations(
   // 2. Detect requested deliverable categories when explicit filename is not given
   // A. DOCX / Word deliverable / Approval Note
   const requestsDocx =
-    /\b(?:draft|generate|create|produce|compile|export)\b[^.?!]*\b(?:approval\s+note|compliance\s+note|word\s+doc(?:ument)?|docx|formal\s+note|report)\b/i.test(lower) ||
-    /\b(?:as|in|into)\s+(?:a\s+)?(?:word\s+document|docx\s+file|docx)\b/i.test(lower);
+    !negatedFiles.has("approval-note.docx") &&
+    !negatedFiles.has("report.docx") &&
+    !/\b(?:do\s*n['o]?t|never)\s+(?:draft|generate|create)\s+(?:a\s+)?(?:word|docx|report|approval\s+note)\b/i.test(userPrompt) &&
+    (/\b(?:draft|generate|create|produce|compile|export)\b[^.?!]*\b(?:approval\s+note|compliance\s+note|word\s+doc(?:ument)?|docx|formal\s+note|report)\b/i.test(lower) ||
+    /\b(?:as|in|into)\s+(?:a\s+)?(?:word\s+document|docx\s+file|docx)\b/i.test(lower));
   const hasDocx = deliverables.some((f) => f.toLowerCase().endsWith(".docx"));
   if (requestsDocx && !hasDocx) {
     const name = /\breport\b/i.test(lower) ? "report.docx" : "approval-note.docx";
-    deliverables.push(name);
+    if (!negatedFiles.has(name)) deliverables.push(name);
   }
 
   // B. XLSX / Excel spreadsheet / Workbook
   const requestsXlsx =
-    /\b(?:generate|create|produce|compile|export|cleaned)\b[^.?!]*\b(?:excel|spreadsheet|xlsx|workbook)\b/i.test(lower) ||
-    /\b(?:as|in|into)\s+(?:an?\s+)?(?:excel\s+(?:file|sheet|spreadsheet|workbook)?|xlsx\s+file|xlsx)\b/i.test(lower);
+    !negatedFiles.has("workbook.xlsx") &&
+    !negatedFiles.has("cleaned.xlsx") &&
+    !/\b(?:do\s*n['o]?t|never)\s+(?:generate|create|produce)\s+(?:a\s+)?(?:excel|spreadsheet|xlsx|workbook)\b/i.test(userPrompt) &&
+    (/\b(?:generate|create|produce|compile|export|cleaned)\b[^.?!]*\b(?:excel|spreadsheet|xlsx|workbook)\b/i.test(lower) ||
+    /\b(?:as|in|into)\s+(?:an?\s+)?(?:excel\s+(?:file|sheet|spreadsheet|workbook)?|xlsx\s+file|xlsx)\b/i.test(lower));
   const hasXlsx = deliverables.some((f) => f.toLowerCase().endsWith(".xlsx"));
   if (requestsXlsx && !hasXlsx) {
     let name = "workbook.xlsx";
     if (/\bcleaned\b/i.test(lower)) name = "cleaned.xlsx";
     else if (/\bsupporting\b/i.test(lower)) name = "supporting-workbook.xlsx";
-    deliverables.push(name);
+    if (!negatedFiles.has(name)) deliverables.push(name);
   }
 
   // C. CSV export
   const requestsCsv =
+    !negatedFiles.has("export.csv") &&
+    !/\b(?:do\s*n['o]?t|never)\s+(?:export|save|generate)\s+(?:to\s+csv|as\s+csv|csv)\b/i.test(userPrompt) &&
     /\b(?:export|save|generate|create)\b[^.?!]*\b(?:to\s+csv|as\s+csv|csv\s+file|csv\s+export)\b/i.test(lower);
   const hasCsv = deliverables.some((f) => f.toLowerCase().endsWith(".csv"));
   if (requestsCsv && !hasCsv) {
@@ -132,6 +196,7 @@ export function detectWorkspaceMutation(
 ): { requested: boolean; files: string[] } {
   const lower = userPrompt.toLowerCase();
   const mutFiles: string[] = [];
+  const negatedFiles = extractNegativeFileConstraints(userPrompt);
 
   // Pure informational inquiry never mutates workspace files
   if (isInformationalInquiry(userPrompt)) {
@@ -149,11 +214,17 @@ export function detectWorkspaceMutation(
   let match: RegExpExecArray | null;
   while ((match = fileRegex.exec(userPrompt)) !== null) {
     const raw = match[1];
+    const rawLower = raw.toLowerCase();
+    if (negatedFiles.has(rawLower) || negatedFiles.has(path.basename(rawLower))) continue;
+
     const start = match.index;
     const preceding = userPrompt.slice(Math.max(0, start - 30), start).toLowerCase();
 
-    // Skip if preceded by inquiry/inspection keywords
+    // Skip if preceded by inquiry/inspection keywords or negative directives
     if (/\b(?:from|inspect|read|parse|examine|using|check|explain|about)\s+(?:a\s+|an\s+|the\s+)?$/i.test(preceding)) {
+      continue;
+    }
+    if (/\b(?:not\s+modify|not\s+touch|not\s+change|not\s+edit|do\s*n['o]?t|never|exclude|except)\b/i.test(preceding)) {
       continue;
     }
 
@@ -165,6 +236,7 @@ export function detectWorkspaceMutation(
   // Match existing workspace files mentioned in conjunction with mutation verbs
   for (const wf of workspaceFiles) {
     const base = path.basename(wf);
+    if (negatedFiles.has(base.toLowerCase()) || negatedFiles.has(wf.toLowerCase())) continue;
     const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const rx = new RegExp(`\\b${escapedBase}\\b`, "i");
     if (rx.test(lower) && hasMutationVerb && !mutFiles.includes(base) && !mutFiles.includes(wf)) {
@@ -185,6 +257,30 @@ export function detectWorkspaceMutation(
 }
 
 /**
+ * Derives runtime output expectations directly from a validated semantic intent record
+ * without reinterpreting the user's natural language request via regex.
+ */
+export function deriveOutputExpectation(intent: Partial<SemanticIntent>): OutputExpectation {
+  const deliverableFiles = (intent.expectedDeliverables ?? [])
+    .map((d) => d.filename)
+    .filter(Boolean) as string[];
+
+  const isMutation =
+    intent.workspaceMutationRequested ??
+    (intent.intentType === "code_modification" && intent.isActionable === true);
+
+  return {
+    chatResponse: true,
+    expectedFiles: deliverableFiles,
+    workspaceMutationRequested: Boolean(isMutation),
+    targetFiles: intent.targetFiles ?? [],
+    expectedDeliverables: intent.expectedDeliverables ?? [],
+    protectedPaths: intent.protectedPaths ?? [],
+    restrictMutationsToTargets: Boolean(intent.restrictMutationsToTargets),
+  };
+}
+
+/**
  * Evaluates the user's request and runtime environment to derive an OutputExpectation record.
  * This represents user intent (chat response, expected deliverable files, workspace mutations)
  * without granting execution permissions.
@@ -200,9 +296,13 @@ export function determineOutputExpectation(
     semanticIntent,
   } = options;
 
+  // If a validated semantic intent is provided, derive expectations directly without regex
+  if (semanticIntent && semanticIntent.status === "resolved") {
+    return deriveOutputExpectation(semanticIntent);
+  }
+
   const inputFilenames = [
     ...attachments.map((a) => a.filename).filter(Boolean),
-    ...(semanticIntent?.targetFiles ?? []),
   ] as string[];
 
   // 1. Is this an informational inquiry or conceptual explanation?
@@ -214,6 +314,10 @@ export function determineOutputExpectation(
       chatResponse: true,
       expectedFiles: [],
       workspaceMutationRequested: false,
+      targetFiles: [],
+      expectedDeliverables: [],
+      protectedPaths: [],
+      restrictMutationsToTargets: false,
     };
   }
 
@@ -228,9 +332,7 @@ export function determineOutputExpectation(
     inputFilenames,
   );
 
-  const isSemanticCodeMod =
-    semanticIntent?.intentType === "code_modification" && semanticIntent?.isActionable === true;
-  const effectiveMutationRequested = mutationRequested || Boolean(isSemanticCodeMod);
+  const effectiveMutationRequested = mutationRequested;
 
   // Combine expected files: deliverables + workspace files targeted for mutation
   const expectedFiles: string[] = [];
@@ -243,9 +345,14 @@ export function determineOutputExpectation(
     }
   }
 
+  const negated = extractNegativeFileConstraints(userPrompt);
+
   return {
     chatResponse: true,
     expectedFiles,
     workspaceMutationRequested: effectiveMutationRequested,
+    targetFiles: mutatedFiles,
+    protectedPaths: Array.from(negated),
+    restrictMutationsToTargets: false,
   };
 }
