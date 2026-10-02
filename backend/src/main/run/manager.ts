@@ -1024,7 +1024,7 @@ CURRENT WORKSPACE DIRECTORY TREE:
 ${treeFormatted}
 ${referencedFilesSection}
 CRITICAL OPERATIONAL RULES:
-1. YOU HAVE DIRECT FILESYSTEM & SHELL ACCESS via tools. NEVER say you cannot interact with files or lack permissions.
+1. WORKSPACE TOOLS & AUTHORIZATION: You have access to workspace tools (write_file, delete_file, read_file, run_command, list_dir, search). Mutating operations and command executions are subject to user review and safety containment. Invoke the appropriate tools to perform requested tasks, respecting workspace boundaries.
 2. NO TOOL SIMULATION OR FAKE RESULTS & FORMAL PLAN DISCIPLINE:
    - When invoking tools, your text content must be a brief, formal, task-based statement of your engineering plan.
    - NEVER dump code, code blocks, or full script implementations in your text when invoking tools! All code MUST be passed strictly inside tool arguments (e.g. \`code\` of \`execute_python\` or \`content\` of \`write_file\`).
@@ -1074,7 +1074,7 @@ CRITICAL OPERATIONAL RULES:
      • You MUST invoke \`write_file\` with {"path": "relative/path/to/file", "content": "..."} for every file needed.
      • When converting files (e.g. JavaScript to TypeScript), you MUST physically write the converted/new files (e.g. \`tsconfig.json\`, \`app.ts\`, \`middleware/rateLimiter.ts\`, \`package.json\`) using \`write_file\`, and remove replaced files using \`delete_file\`.
      • You can invoke multiple \`write_file\` calls in a single turn.
-     • If your model environment outputs markdown code blocks instead of native function calls, you MUST specify the file path on the first line or header (e.g. \`// path/to/file.ts\` or \`### path/to/file.ts\`) so the system can automatically extract and write the files to disk.
+     • Always invoke the native \`write_file\` tool to apply file changes to disk.
      • NEVER merely describe the steps in text or call \`generate_text\`! You must physically create and update the files on disk using \`write_file\`.
      • NEVER claim files were created, converted, or modified if no tools were executed and no code was written to disk.
 6. COMMAND EXECUTION & VERIFICATION:
@@ -2708,7 +2708,7 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
         /\b(create|write|save|make|add|generate)\b/i.test(text) &&
         /\b(file|\.txt|\.js|\.ts|\.json|\.md|\.py|\.csv|\.html)\b/i.test(text)
       ) {
-        conversationHistory += `\n\nAssistant: ${JSON.stringify(parsed)}\n\n[SYSTEM FEEDBACK]: You answered without calling write_file, but the user requested creating/writing a file. You MUST call write_file to save the file into the workspace directory on disk. Output a tool_call action now with {"action": "tool_call", "tool": "write_file", "args": {"path": "<filename>", "content": "<content>"}}.`;
+        conversationHistory += `\n\nAssistant: ${JSON.stringify(parsed)}\n\n[SYSTEM FEEDBACK]: The user requested writing or modifying a file, but no tools were invoked. If you intend to save this file to the workspace, invoke write_file with {"action": "tool_call", "tool": "write_file", "args": {"path": "<filename>", "content": "<content>"}}.`;
         continue;
       }
 

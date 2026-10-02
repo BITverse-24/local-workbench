@@ -250,10 +250,6 @@ export function formatToolActionSummary(name: string, args: any): string {
       const targetPath = args.path || args.filename || "file";
       return `• **delete_file**: Remove \`${targetPath}\``;
     }
-    case "edit_file": {
-      const targetPath = args.path || args.filename || "file";
-      return `• **edit_file**: Patch modifications in \`${targetPath}\``;
-    }
     case "run_command": {
       const cmd = args.command ? `\`${args.command}\`` : "command";
       return `• **run_command**: ${cmd}`;
@@ -496,6 +492,7 @@ export class AgentLoop {
     let lastExecutionHadError = false;
     let lastExecutionFailedTool: string | null = null;
     let lastErrorMessage = "";
+    let lastErrorCode = "";
     const modifiedFiles = new Set<string>();
     const executedCommands: string[] = [];
     let previousCallSignature: string | null = null;
@@ -707,7 +704,11 @@ export class AgentLoop {
         const semanticTargets = semanticIntent?.targetFiles ?? [];
 
         // A. File creation extraction: If model provided file code blocks in current content or recent assistant messages
-        if (outputExpectation.workspaceMutationRequested && dispatcher.getTool("write_file")) {
+        if (
+          !isInformationalInquiry(userPrompt) &&
+          outputExpectation.workspaceMutationRequested &&
+          dispatcher.getTool("write_file")
+        ) {
           let extractedFiles = extractCodeBlocksWithFilenames(content ?? "", semanticTargets);
           if (extractedFiles.length === 0) {
             // Inspect recent assistant messages for code blocks that weren't persisted
@@ -735,7 +736,11 @@ export class AgentLoop {
         }
 
         // B. Shell command extraction: If model provided shell code blocks
-        if ((!effectiveToolCalls || effectiveToolCalls.length === 0) && dispatcher.getTool("run_command")) {
+        if (
+          !isInformationalInquiry(userPrompt) &&
+          (!effectiveToolCalls || effectiveToolCalls.length === 0) &&
+          dispatcher.getTool("run_command")
+        ) {
           const isCommandIntent = semanticIntent?.intentType === "command_execution";
           const extractedCmds = extractShellCommands(content ?? "");
           if (extractedCmds.length > 0 && isCommandIntent) {
@@ -760,10 +765,13 @@ export class AgentLoop {
               : Boolean(dispatcher.getTool("run_command")) &&
                 (!dispatcher.getTool("write_file") ||
                   /\b(?:npm|npx|run|install|test|start|build|node|exec)\b/i.test(userPrompt)));
+          const isPureChat = !outputExpectation.workspaceMutationRequested && outputExpectation.expectedFiles.length === 0;
           const isSnippetOrChatQuery =
-            /\b(?:snippet|example|sample|how\s*to|explain|explanation|walkthrough|function|query|regex|algorithm|tutorial)\b/i.test(userPrompt) &&
+            isPureChat ||
+            isInformationalInquiry(userPrompt) ||
+            (/\b(?:snippet|example|sample|how\s*to|explain|explanation|walkthrough|function|query|regex|algorithm|tutorial)\b/i.test(userPrompt) &&
             semanticTargets.length === 0 &&
-            !/\b(?:save|write\s+(?:it\s+)?to|create\s+(?:a\s+)?file|into\s+[\w.-]+\.\w+|workspace)\b/i.test(userPrompt);
+            !/\b(?:save|write\s+(?:it\s+)?to|create\s+(?:a\s+)?file|into\s+[\w.-]+\.\w+|workspace)\b/i.test(userPrompt));
 
           const hasCodeBlockContent = Boolean(content && content.includes("```"));
 
@@ -811,7 +819,7 @@ export class AgentLoop {
             });
             messages.push({
               role: "user",
-              content: `[SYSTEM FEEDBACK]: The user requested executing commands or installing dependencies ("${userPrompt.trim()}"), but no tools were invoked. You MUST invoke the \`run_command\` tool (with {"command": "..."}) to execute these actions on disk. Please invoke \`run_command\` now.`,
+              content: `[SYSTEM FEEDBACK]: The user requested executing commands or installing dependencies ("${userPrompt.trim()}"), but no tools were invoked. If you intend to execute these actions on disk, please invoke the \`run_command\` tool (with {"command": "..."}). All commands remain subject to workspace safety policies.`,
               turn,
             });
             continue;
@@ -839,11 +847,11 @@ export class AgentLoop {
               (/\b(?:python|\.py|crash|crashing|script|parser|csv)\b/i.test(userPrompt) ||
                 semanticTargets.some((t) => t.endsWith(".py")));
             const toolInstruction = isPythonTask
-              ? `You MUST invoke the native \`execute_python\` tool (with {"code": "..."}) to run and verify the fix in the sandbox.`
-              : `You MUST invoke the native \`write_file\` tool (with {"path": "relative/path/to/file", "content": "..."}) or output markdown code blocks with the target path on the first line (e.g. \`\`\`typescript\n// relative/path/to/file.ts\n...\`\`\`) so the files can be saved to the workspace.`;
+              ? `If you intend to verify the fix, invoke the native \`execute_python\` tool (with {"code": "..."}) in the sandbox.`
+              : `If you intend to write or update workspace files, invoke the native \`write_file\` tool (with {"path": "relative/path/to/file", "content": "..."}).`;
             messages.push({
               role: "user",
-              content: `[SYSTEM FEEDBACK]: You did not execute tools or write files to disk${targetHint}. ${toolInstruction} Please do this now.`,
+              content: `[SYSTEM FEEDBACK]: You did not execute tools or write files to disk${targetHint}. ${toolInstruction}`,
               turn,
             });
             continue;
@@ -869,7 +877,7 @@ export class AgentLoop {
             });
             messages.push({
               role: "user",
-              content: `[SYSTEM FEEDBACK]: You responded with a brief placeholder ("${(content ?? "").trim()}"), but no tools were invoked and no content was produced. You MUST invoke the native \`generate_deliverable\` tool or provide the complete document content now. Please do this now.`,
+              content: `[SYSTEM FEEDBACK]: You responded with a brief placeholder ("${(content ?? "").trim()}"), but no tools were invoked and no content was produced. If drafting an official document, invoke the native \`generate_deliverable\` tool with complete content, or provide the complete engineering evaluation directly in chat.`,
               turn,
             });
             continue;
@@ -881,25 +889,6 @@ export class AgentLoop {
       if (!effectiveToolCalls || effectiveToolCalls.length === 0) {
         if (!hasExecutedDiskMutations) {
           const semanticTargets = semanticIntent?.targetFiles ?? [];
-
-          // If content contains code blocks, and user requested workspace mutation, try one final extraction before giving up
-          if (
-            outputExpectation.workspaceMutationRequested &&
-            dispatcher.getTool("write_file") &&
-            content &&
-            content.includes("```")
-          ) {
-            const finalExtracted = extractCodeBlocksWithFilenames(content, semanticTargets);
-            if (finalExtracted.length > 0) {
-              for (const file of finalExtracted) {
-                try {
-                  await dispatcher.getTool("write_file")!.execute({ path: file.path, content: file.content }, context);
-                  hasExecutedDiskMutations = true;
-                  modifiedFiles.add(file.path);
-                } catch {}
-              }
-            }
-          }
 
 
 
@@ -1023,7 +1012,8 @@ export class AgentLoop {
             ? `Files modified so far: ${Array.from(modifiedFiles).join(", ")}.`
             : "No files were modified on disk.";
           const failedToolName = lastExecutionFailedTool || effectiveToolCalls[0]?.name || "tool";
-          const failureSummary = `Execution stopped: The model repeatedly encountered errors invoking \`${failedToolName}\` (${lastErrorMessage}). ${modifiedList} Please check the workspace or specify the file targets.`;
+          const errDetail = lastErrorCode ? `[${lastErrorCode}] ${lastErrorMessage}` : lastErrorMessage;
+          const failureSummary = `Execution stopped: The model repeatedly encountered errors invoking \`${failedToolName}\` (${errDetail}). ${modifiedList} Please check the workspace or specify the file targets.`;
           emitEvent({
             type: "error",
             runId,
@@ -1172,6 +1162,7 @@ export class AgentLoop {
             anyError = true;
             lastExecutionFailedTool = exec.name;
             lastErrorMessage = exec.result.error.message;
+            lastErrorCode = exec.result.error.code;
           } else {
             if (exec.name === "write_file" || exec.name === "delete_file") {
               const p = (effectiveToolCalls.find((c: any) => c.id === exec.id)?.arguments as any)?.path;
@@ -1182,14 +1173,18 @@ export class AgentLoop {
               if (cmd) executedCommands.push(cmd);
               hasExecutedDiskMutations = true;
             } else if (exec.name === "generate_deliverable") {
-              hasExecutedDiskMutations = true;
               if (Array.isArray(exec.result.artifacts) && exec.result.artifacts.length > 0) {
+                hasExecutedDiskMutations = true;
                 for (const art of exec.result.artifacts) {
                   if (art.filename) modifiedFiles.add(art.filename);
                 }
-              } else {
-                const docName = (effectiveToolCalls.find((c: any) => c.id === exec.id)?.arguments as any)?.filename || "approval-note.docx";
-                modifiedFiles.add(docName);
+              } else if (exec.result.ok) {
+                const callArgs = (effectiveToolCalls.find((c: any) => c.id === exec.id)?.arguments as any);
+                const docName = callArgs?.filename || callArgs?.path;
+                if (docName) {
+                  hasExecutedDiskMutations = true;
+                  modifiedFiles.add(docName);
+                }
               }
             } else if (exec.name === "execute_python") {
               hasExecutedDiskMutations = true;
