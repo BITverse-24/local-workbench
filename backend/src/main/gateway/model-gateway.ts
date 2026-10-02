@@ -86,7 +86,11 @@ const nativeTransport: GatewayTransport = {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return await fetch(url, { ...init, signal: controller.signal });
+      const response = await fetch(url, { ...init, signal: controller.signal });
+      // Headers may arrive before inference finishes. Keep the deadline active
+      // while receiving the body, not just until fetch resolves its headers.
+      const body = await response.text();
+      return { status: response.status, text: async () => body };
     } finally {
       clearTimeout(timer);
     }
@@ -840,9 +844,9 @@ export class ModelGateway implements ModelClient {
     const userContent = isVision
       ? [{ type: "text", text: (request as { userPrompt: string }).userPrompt }, ...(visionParts ?? [])]
       : (request as { userPrompt: string }).userPrompt;
-    // For free-text chat/draft turns and execution summaries, disable structured output to avoid CPU GBNF grammar compilation
-    // stalls and JSON string escaping overhead. Only structured tasks (code, vision) enforce JSON.
-    const isFreeText = request.responseFormat === "chat-result" || request.responseFormat === "code-summary";
+    // Ordinary chat and summaries use free text. Classification explicitly
+    // supplies its own schema even though it uses the chat-result contract.
+    const isFreeText = !request.responseSchema && (request.responseFormat === "chat-result" || request.responseFormat === "code-summary");
     const systemPrompt = isFreeText
       ? request.systemPrompt
       : (/json/i.test(request.systemPrompt)
@@ -850,17 +854,17 @@ export class ModelGateway implements ModelClient {
         : `${request.systemPrompt} Respond with valid JSON.`);
     const isLocal = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/i.test(model.baseUrl) || model.runtime === "ollama" || model.runtime === "mlx-lm" || model.runtime === "llama-server";
 
-    // Map the internal ResponseFormat to a strict JSON schema if applicable.
-    // Map the internal ResponseFormat to a strict JSON schema if applicable.
-    // For local model servers (LM Studio, mlx-lm, llama-server, Ollama), compiling complex
-    // multi-property JSON schemas into GBNF grammars on the CPU blocks execution for 2-4 seconds
-    // before GPU prefill begins. Using { type: "json_object" } eliminates this CPU grammar stall
-    // completely while local instruct models adhere to the requested JSON shape in the prompt.
-    const jsonSchemaPayload = getJsonSchema(request.responseFormat);
+    // Explicit schemas take precedence over the existing local json_object
+    // compatibility mode used by specialist generation tasks.
+    const jsonSchemaPayload = request.responseSchema
+      ? { type: "json_schema", json_schema: request.responseSchema }
+      : getJsonSchema(request.responseFormat);
     let responseFormatPayload: any = undefined;
     if (isFreeText) {
       // Free text chat / drafting / execution summary: disable structured output completely.
       responseFormatPayload = undefined;
+    } else if (request.responseSchema) {
+      responseFormatPayload = jsonSchemaPayload;
     } else if (isLocal && (request.responseFormat === "code-result" || request.responseFormat === "harness-step" || request.responseFormat === "vision-result" || request.responseFormat === "draft-result")) {
       responseFormatPayload = { type: "json_object" };
     } else if (jsonSchemaPayload) {
@@ -889,12 +893,19 @@ export class ModelGateway implements ModelClient {
     if (responseFormatPayload !== undefined) {
       requestPayload.response_format = responseFormatPayload;
     }
+    if (request.reasoningEffort !== undefined) {
+      requestPayload.reasoning_effort = request.reasoningEffort;
+    }
     if (request.onChunk) {
       requestPayload.stream = true;
     }
     const body = JSON.stringify(requestPayload);
     const minTimeout = isLocal ? (request.taskType === "code" ? 300000 : 180000) : 0;
-    const effectiveTimeout = Math.max(request.timeoutMs ?? 0, model.requestTimeoutMs ?? 0, minTimeout) || 60000;
+    // Classification has its own latency budget; document/code generation timeouts
+    // must not silently turn its 15-second deadline into a three-minute wait.
+    const effectiveTimeout = request.purpose === "intent_classification"
+      ? request.timeoutMs
+      : Math.max(request.timeoutMs ?? 0, model.requestTimeoutMs ?? 0, minTimeout) || 60000;
 
     const outboundLog = {
       phase: "request" as const,
@@ -906,6 +917,8 @@ export class ModelGateway implements ModelClient {
       maxTokens,
       temperature: request.temperature ?? 0.2,
       timeoutMs: effectiveTimeout,
+      purpose: request.purpose,
+      reasoningEffort: request.reasoningEffort,
       systemPromptChars: request.systemPrompt.length,
       systemPromptPreview: request.systemPrompt.slice(0, 800),
       userPromptChars: typeof userContent === "string" ? userContent.length : JSON.stringify(userContent).length,
@@ -953,7 +966,7 @@ export class ModelGateway implements ModelClient {
       try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
 
       // 1. If provider rejects response_format (e.g. LM Studio, Ollama, or local model server requiring 'json_schema' or 'text')
-      if (response.status === 400 && /response_format|json_schema|json_object|type.*must be/i.test(rawText)) {
+      if (request.purpose !== "intent_classification" && response.status === 400 && /response_format|json_schema|json_object|type.*must be/i.test(rawText)) {
         let retryFormat: any = undefined;
         // If provider explicitly requires json_schema or text (e.g. LM Studio rejecting json_object):
         if (/must be 'json_schema'|json_schema.*text|text.*json_schema/i.test(rawText) && jsonSchemaPayload && responseFormatPayload?.type !== "json_schema") {
@@ -1139,7 +1152,15 @@ export class ModelGateway implements ModelClient {
 
       persistGatewayTrace(request.runId, request.requestId, { phase: "provider_content_raw", taskType: request.taskType, extractedContent, reasoning });
 
-      if (request.responseFormat === "chat-result" || request.responseFormat === "code-summary") {
+      if (request.purpose === "intent_classification") {
+        if (finishReason === "length") {
+          throw new Error("Intent classifier exhausted its output budget before completing JSON. Check the model's reasoning control.");
+        }
+        if (typeof extractedContent !== "string" || !extractedContent.trim()) {
+          throw new Error("Intent classifier returned no final JSON. The provider may have spent its output budget on reasoning.");
+        }
+        parsedJson = parseProviderContent(extractedContent);
+      } else if (request.responseFormat === "chat-result" || request.responseFormat === "code-summary") {
         if (typeof extractedContent === "string" && extractedContent.trim().length > 0) {
           const trimmed = extractedContent.trim();
           if (trimmed.startsWith("{") && trimmed.endsWith("}")) {

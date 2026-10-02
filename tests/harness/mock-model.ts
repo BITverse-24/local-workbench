@@ -8,7 +8,7 @@ export function parserMock(options: { brokenRepair?: boolean; fault?: "invalid-j
     if (route.endsWith("/embeddings")) { const input = Array.isArray(body.input) ? body.input : [body.input]; return { body: { data: input.map((_, index) => ({ index, embedding: [1, 0, 0, 0] })) } }; }
     const messages = body.messages as Array<{ role: string; content: string }>;
     const system = messages?.find((m) => m.role === "system")?.content ?? "";
-    if (system.includes("Semantic Intent Orchestrator")) return completion(body, JSON.stringify({ intentType: "code_modification", taskType: "code", driverModel: "code-qwen25coder", primaryGoal: "Repair CSV parser", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: ["parser.py"], protectedPaths: ["README.md"], restrictMutationsToTargets: true, expectedDeliverables: [], reason: "Scripted framework calibration" }));
+    if ((body.response_format as any)?.json_schema?.name === "semantic_intent") return completion(body, JSON.stringify({ intentType: "code_modification", taskType: "code", driverModel: "code-qwen25coder", primaryGoal: "Repair CSV parser", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: ["parser.py"], protectedPaths: ["README.md"], restrictMutationsToTargets: true, expectedDeliverables: [], reason: "Scripted framework calibration" }));
     if (options.fault === "http-429") return { status: 429, body: { error: { message: "Fixture rate limit" } } };
     if (options.fault === "http-500") return { status: 500, body: { error: { message: "Fixture provider failure" } } };
     if (options.fault === "invalid-json") return { raw: "this is not JSON" };

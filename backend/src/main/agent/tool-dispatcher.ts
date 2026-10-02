@@ -331,7 +331,7 @@ export class ToolDispatcher {
 
         try {
           if (typeof call.arguments.raw === "string") {
-            throw { code: "invalid_arguments", message: "Invalid or malformed tool arguments. Resend complete JSON data. Python checks require command, python_module, python_function, python_text_rows (raw lines), and python_reference_pipeline (independent module:function callables). success_marker is optional. No operation was executed.", retryable: true };
+            throw { code: "invalid_arguments", message: "Invalid or malformed tool arguments. Resend a complete JSON object for this tool. For workspace Python tests use run_command with command and python_code; python_module checks additionally require python_function, raw input lines and a matching independent python_reference_pipeline. For attached scripts use execute_python with code and input_files. No operation was executed.", retryable: true };
           }
           const rawResult = await tool.execute(call.arguments, context);
           const durationMs = Date.now() - t0;

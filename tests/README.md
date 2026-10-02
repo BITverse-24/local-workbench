@@ -30,6 +30,25 @@ These are scripted calibration runs. `bridge-smoke` separately launches a real
 BrowserWindow using the production preload and IPC handlers, with temporary
 persistence and a scripted model. Neither establishes real-model behavior.
 
+`test:behavioral` checks framework and evaluator calibration; its passing count
+does not establish that an application request works with a live model.
+For the intent/approval/attachment regression checks against the application's
+currently saved model configuration, run:
+
+```sh
+WORKBENCH_LIVE_TESTS=1 node scripts/test.cjs backend/tests/live-intention-verification.test.ts
+```
+
+These tests use the production gateway and isolated temporary run/workspace
+directories. They verify classification latency and scope, rejection before
+generation, and an approved Python repair with independent output assertions.
+An explicit live run fails if the endpoint is unavailable; normal unit runs mark
+these cases skipped. Development settings default to `data/data/workbench.db`;
+set `WORKBENCH_LIVE_DB_PATH` for another app installation, or
+`WORKBENCH_LIVE_MODELS_PATH` for an explicit registry. Fixed campaign profiles are
+snapshots and must be checked against current app settings before their results
+are used as evidence about the app.
+
 ## Explicit model profiles
 
 Copy `tests/profiles/local.example.json` to `tests/profiles/your-machine.local.json`

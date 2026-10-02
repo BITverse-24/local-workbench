@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -495,6 +495,7 @@ describe("P0-02: Truthful Completion Semantics", () => {
 
       const events: RunEvent[] = [];
       const mockGateway = {
+        async execute() { return { ok: true, value: { result: { intentType: "document_drafting", driverModel: "draft-qwen3", taskType: "draft", primaryGoal: "Draft approval note", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [{ type: "docx", filename: "approval-note.docx" }] } } }; },
         async chatWithTools() {
           // Model finishes without creating requested docx
           return {
@@ -510,20 +511,19 @@ describe("P0-02: Truthful Completion Semantics", () => {
         },
       } as unknown as ModelGateway;
 
-      const manager = new RunManager(mockGateway, (event) => events.push(event));
+      let manager: RunManager;
+      manager = new RunManager(mockGateway, (event) => {
+        events.push(event);
+        if (event.type === "confirmation_required") {
+          void manager.confirm({ runId: event.runId, actionId: event.action.actionId, approved: true });
+        }
+      });
       const started = await manager.start({
         userText: "Draft an approval note in docx format",
       });
 
       // Wait for run_state event indicating terminal state
-      await new Promise((resolve) => {
-        const interval = setInterval(() => {
-          if (events.some((e) => e.type === "run_state" && (e.state === "partial" || e.state === "completed"))) {
-            clearInterval(interval);
-            resolve(true);
-          }
-        }, 20);
-      });
+      await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && ["partial", "completed", "failed"].includes(e.state))).toBe(true), { timeout: 2000 });
 
       expect(events.some((e) => e.type === "run_state" && e.state === "partial")).toBe(true);
       expect(getState(started.runId)).toBe("partial");
@@ -570,4 +570,3 @@ describe("P0-02: Truthful Completion Semantics", () => {
     });
   });
 });
-

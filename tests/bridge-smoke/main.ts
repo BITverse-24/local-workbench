@@ -38,7 +38,7 @@ app.whenReady().then(async () => {
   const profile = loadProfile(path.join(root, "tests/profiles/local.example.json"));
   relay = new ModelRelay(profile, "mock", () => {}, (_route, body) => {
     const messages = body.messages as Array<{ role: string; content: string }> | undefined;
-    if (messages?.some((m) => m.role === "system" && m.content.includes("Semantic Intent Orchestrator"))) return completion(body, JSON.stringify({ intentType: "general_qa", taskType: "draft", driverModel: "draft-qwen3", primaryGoal: "Answer greeting", isActionable: false, chatResponseOnly: true, workspaceMutationRequested: false, targetFiles: [], protectedPaths: [], restrictMutationsToTargets: false, expectedDeliverables: [], reason: "Bridge transport calibration" }));
+    if ((body.response_format as any)?.json_schema?.name === "semantic_intent") return completion(body, JSON.stringify({ intentType: "general_qa", taskType: "draft", driverModel: "draft-qwen3", primaryGoal: "Answer greeting", isActionable: false, chatResponseOnly: true, workspaceMutationRequested: false, targetFiles: [], protectedPaths: [], restrictMutationsToTargets: false, expectedDeliverables: [], reason: "Bridge transport calibration" }));
     return completion(body, "BRIDGE_SMOKE_OK");
   });
   const origin = await relay.start();

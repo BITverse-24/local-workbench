@@ -31,6 +31,9 @@ export interface ModelRequestBase {
   userPrompt: string;
   timeoutMs: number;
   maxTokens?: number;
+  purpose?: "intent_classification";
+  reasoningEffort?: "none";
+  responseSchema?: { name: string; schema: Record<string, unknown> };
   temperature?: number;
   history?: ModelConversationMessage[];
   onChunk?: (delta: string) => void;
@@ -322,4 +325,3 @@ export type ToolResult =
       output: string;
       summary: string;
     };
-

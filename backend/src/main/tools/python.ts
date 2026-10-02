@@ -3,6 +3,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { resolveRunPath } from "../run/filesystem.js";
+import { resolveSafe } from "../harness/path-guard.js";
 import type { PythonExecutionResult } from "../../shared/contracts.js";
 
 const exec = promisify(execFile);
@@ -65,14 +66,7 @@ function stageInputs(runId: string, inputFiles: string[], aliases: InputAlias[] 
 
     let source: string | null = null;
 
-    // 1. Direct path check if inputFile exists on disk
-    if (existsSync(rawTrimmed)) {
-      source = rawTrimmed;
-    } else if (workspaceRoot && existsSync(path.resolve(workspaceRoot, rawTrimmed))) {
-      source = path.resolve(workspaceRoot, rawTrimmed);
-    }
-
-    // 2. Run input directory (direct filename or UUID-prefixed)
+    // Run attachments take precedence over identically named workspace files.
     if (!source) {
       const directInput = path.join(inputDir, sourceName);
       if (existsSync(directInput)) {
@@ -84,6 +78,11 @@ function stageInputs(runId: string, inputFiles: string[], aliases: InputAlias[] 
           source = path.join(inputDir, matched);
         }
       }
+    }
+
+    if (!source && workspaceRoot) {
+      const workspaceInput = resolveSafe(workspaceRoot, rawTrimmed);
+      if (existsSync(workspaceInput)) source = workspaceInput;
     }
 
     // 3. Intermediate directory
@@ -127,7 +126,7 @@ function stageInputs(runId: string, inputFiles: string[], aliases: InputAlias[] 
 }
 
 function outputFiles(outputDir: string, stagedInputs: string[]): string[] {
-  const inputNames = new Set(stagedInputs);
+  const inputNames = new Set(stagedInputs.flatMap((name) => name.endsWith(".py") && name.includes("-") ? [name, name.replace(/-/g, "_")] : [name]));
   return readdirSync(outputDir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name !== ".DS_Store" && !inputNames.has(entry.name))
     .map((entry) => entry.name);
@@ -195,7 +194,7 @@ export async function executePython(
   }
 
   const pythonPath = [staged.outputDir, staged.intermediateDir, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter);
-  const execEnv = { ...process.env, PYTHONPATH: pythonPath };
+  const execEnv = { ...process.env, PYTHONPATH: pythonPath, PYTHONDONTWRITEBYTECODE: "1" };
 
   try {
     const result = await exec(command, args, { cwd: staged.outputDir, env: execEnv, timeout: timeoutMs, maxBuffer: 16384 });

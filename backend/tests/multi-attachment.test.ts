@@ -208,7 +208,7 @@ describe("Multi-Attachment Support & Persistence", () => {
     );
   });
 
-  it("executes Flow A multi-document inspection with routing, SOP-114 evaluation, and DOCX confirmation", async () => {
+  it("executes multi-document inspection without retrieving criteria when grounding is disabled", async () => {
     const chatId = createChat("Flow A chat");
     const buf1 = Buffer.from("Heat Exchanger E-201 Report ID: IR-E201-2026-08-20 RECHECK WELD JOINT 4B - field inspector");
     const buf2 = Buffer.from("Heat Exchanger E-201 Followup Report Maximum pitting depth: 1.8 mm");
@@ -252,10 +252,8 @@ describe("Multi-Attachment Support & Persistence", () => {
     expect(visionRoute).toBeDefined();
     expect((visionRoute as any).reason).toBe("scanned inspection bundle");
 
-    // Verify criteria check tool result was emitted
-    const criteriaTool = runEvents.find((e) => e.type === "tool_result" && e.tool === "retrieve_sop");
-    expect(criteriaTool).toBeDefined();
-    expect((criteriaTool as any).summary).toContain("SOP-114 §3.2");
+    // Grounding is opt-in. The run must not claim or emit criteria retrieval when disabled.
+    expect(runEvents.some((e) => e.type === "tool_result" && e.tool === "retrieve_sop")).toBe(false);
 
     // Verify router transitioned to draft model
     const draftRoute = runEvents.find((e) => e.type === "routing" && e.taskType === "draft");
@@ -399,4 +397,3 @@ describe("Multi-Attachment Support & Persistence", () => {
     expect(turn2Artifacts).toContain("repaired-vendor-log.csv");
   });
 });
-

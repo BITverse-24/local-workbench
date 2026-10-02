@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { RunManager } from "../src/main/run/manager.js";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { initDb, closeDb } from "../src/main/persistence/db.js";
@@ -8,6 +8,12 @@ import path from "node:path";
 
 describe("Unified Agent Loop v2 RunManager Integration", () => {
   let tempDir = "";
+  afterEach(() => {
+    closeDb();
+    delete process.env.WORKBENCH_DATA_ROOT;
+    delete process.env.WORKBENCH_AGENT_V2;
+    if (tempDir) rmSync(tempDir, { recursive: true, force: true });
+  });
 
   it("executes unified agent loop when WORKBENCH_AGENT_V2 is active", async () => {
     tempDir = mkdtempSync(path.join(process.cwd(), ".tmp-v2-run-"));
@@ -18,6 +24,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     const events: RunEvent[] = [];
 
     const mockGateway = {
+      async execute() { return { ok: true, value: { result: { intentType: "general_qa", driverModel: "draft-qwen3", taskType: "draft", primaryGoal: "Calculate thermal efficiency", isActionable: false, chatResponseOnly: true, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [] } } }; },
       async chatWithTools() {
         return {
           ok: true,
@@ -36,14 +43,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     const started = await manager.start({ userText: "Calculate thermal efficiency" });
 
     // Wait for completed state
-    await new Promise((resolve) => {
-      const interval = setInterval(() => {
-        if (events.some((e) => e.type === "run_state" && e.state === "completed")) {
-          clearInterval(interval);
-          resolve(true);
-        }
-      }, 20);
-    });
+    await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true), { timeout: 2000 });
 
     // Verify routing and thinking events
     expect(events.some((e) => e.type === "routing" && e.modelId === "draft-qwen3")).toBe(true);
@@ -56,7 +56,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("pauses on turn 1 tool calls with kind 'plan_approval' (not execute_python) and resumes upon confirmation", async () => {
+  it("pauses before driver generation with plan_approval and resumes after confirmation", async () => {
     tempDir = mkdtempSync(path.join(process.cwd(), ".tmp-v2-plan-"));
     process.env.WORKBENCH_DATA_ROOT = path.join(tempDir, "data");
     process.env.WORKBENCH_AGENT_V2 = "true";
@@ -66,20 +66,21 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     let callTurn = 0;
 
     const mockGateway = {
+      async execute() { return { ok: true, value: { result: { intentType: "code_modification", driverModel: "code-qwen25coder", taskType: "code", primaryGoal: "Write temp.txt", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: ["temp.txt"], expectedDeliverables: [] } } }; },
       async chatWithTools() {
         callTurn++;
         if (callTurn === 1) {
           return {
             ok: true,
             value: {
-              content: "To delete the files in the current workspace, I will:\n1. Inspect directory contents\n2. Clean up files",
+              content: "To write temp.txt, I will:\n1. Inspect directory contents\n2. Write the requested file",
               tool_calls: [
                 {
                   id: "call_1",
                   type: "function",
                   function: {
-                    name: "delete_file",
-                    arguments: JSON.stringify({ path: "temp.txt" }),
+                    name: "write_file",
+                    arguments: JSON.stringify({ path: "temp.txt", content: "written content" }),
                   },
                 },
               ],
@@ -89,7 +90,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
         return {
           ok: true,
           value: {
-            content: "Workspace cleaned up successfully.",
+            content: "Requested file written successfully.",
             tool_calls: null,
           },
         };
@@ -100,25 +101,20 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     } as unknown as ModelGateway;
 
     const manager = new RunManager(mockGateway, (event) => events.push(event));
-    const started = await manager.start({ userText: "Delete the files in the current workspace" });
+    const started = await manager.start({ userText: "Write temp.txt in the current workspace" });
 
     // Wait for confirmation_required event
     let confirmationEvent: any = null;
-    await new Promise((resolve) => {
-      const interval = setInterval(() => {
-        const found = events.find((e) => e.type === "confirmation_required");
-        if (found) {
-          confirmationEvent = found;
-          clearInterval(interval);
-          resolve(true);
-        }
-      }, 20);
-    });
+    await vi.waitFor(() => {
+      confirmationEvent = events.find((e) => e.type === "confirmation_required");
+      expect(confirmationEvent).toBeDefined();
+    }, { timeout: 2000 });
 
     // Verify it is strictly plan_approval, NOT execute_python
     expect(confirmationEvent).toBeDefined();
     expect(confirmationEvent.action.kind).toBe("plan_approval");
-    expect(confirmationEvent.action.preview).toContain("To delete the files in the current workspace");
+    expect(confirmationEvent.action.preview).toContain("temp.txt");
+    expect(callTurn).toBe(0);
 
     // State should be awaiting_confirmation
     expect(events.some((e) => e.type === "run_state" && e.state === "awaiting_confirmation")).toBe(true);
@@ -131,17 +127,10 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     });
 
     // Wait for completed state
-    await new Promise((resolve) => {
-      const interval = setInterval(() => {
-        if (events.some((e) => e.type === "run_state" && e.state === "completed")) {
-          clearInterval(interval);
-          resolve(true);
-        }
-      }, 20);
-    });
+    await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true), { timeout: 2000 });
 
     expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
-    expect(events.some((e) => e.type === "assistant_message" && (e as any).text.includes("Workspace cleaned up successfully"))).toBe(true);
+    expect(events.some((e) => e.type === "assistant_message" && (e as any).text.includes("Requested file written successfully"))).toBe(true);
 
     closeDb();
     delete process.env.WORKBENCH_DATA_ROOT;
@@ -159,6 +148,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     let callTurn = 0;
 
     const mockGateway = {
+      async execute() { return { ok: true, value: { result: { intentType: "file_inspection", driverModel: "code-qwen25coder", taskType: "code", primaryGoal: "Search syntax errors", isActionable: false, chatResponseOnly: false, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [] } } }; },
       async chatWithTools() {
         callTurn++;
         if (callTurn === 1) {
@@ -196,14 +186,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     await manager.start({ userText: "Search for syntax errors" });
 
     // Wait for completed state
-    await new Promise((resolve) => {
-      const interval = setInterval(() => {
-        if (events.some((e) => e.type === "run_state" && e.state === "completed")) {
-          clearInterval(interval);
-          resolve(true);
-        }
-      }, 20);
-    });
+    await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true), { timeout: 2000 });
 
     // Verify confirmation_required was NEVER emitted
     expect(events.some((e) => e.type === "confirmation_required")).toBe(false);

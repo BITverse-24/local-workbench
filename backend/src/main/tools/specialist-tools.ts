@@ -5,7 +5,7 @@ import type { AgentTool, ToolExecutionContext, ToolExecutionResult } from "./typ
 import { requestBase } from "../gateway/model-gateway.js";
 import { executePython } from "./python.js";
 import { generateDocx, generateXlsx, generateXlsxFromContent, verifyArtifactFile } from "./artifacts.js";
-import { resolveRunPath } from "../run/filesystem.js";
+import { resolveRunPath, writeRunFile, artifactRef } from "../run/filesystem.js";
 import { extractContentArg, extractPathArg, findFileInRunDirectories } from "./workspace-tools.js";
 import type {
   ArtifactKind,
@@ -424,6 +424,7 @@ export const executePythonTool: AgentTool = {
             description: "Filenames from run input directory to stage into sandbox.",
           },
           filename: { type: "string", description: "Name of the script file. Defaults to 'task.py'." },
+          validation_code: { type: "string", description: "Optional separate Python assertions, run after the repaired script succeeds. The dict 'repaired' contains the exact repaired script's functions (use repaired['function'](...)). Input files are available by filename. Derive assertions from the request and actual source data. Validation code is not included in the downloadable repaired source." },
         },
         required: ["code"],
       },
@@ -478,7 +479,7 @@ export const executePythonTool: AgentTool = {
     });
 
     const intermediateDir = resolveRunPath(context.runId, "intermediate", "intermediate");
-    const scriptPath = path.join(intermediateDir, filename);
+    const scriptPath = resolveRunPath(context.runId, `intermediate/${filename}`, "intermediate");
     mkdirSync(path.dirname(scriptPath), { recursive: true });
     writeFileSync(scriptPath, code, "utf8");
 
@@ -491,8 +492,21 @@ export const executePythonTool: AgentTool = {
       writeFileSync(path.join(intermediateDir, underscored), code, "utf8");
     }
 
-    const execResult = await executePython(context.runId, filename, inputFiles, [], 60000, context.workspaceRoot);
+    let execResult = await executePython(context.runId, filename, inputFiles, [], 60000, context.workspaceRoot);
+    if (execResult.exitCode === 0 && !execResult.timedOut && typeof args.validation_code === "string" && args.validation_code.trim()) {
+      const validationName = `validation-${randomUUID()}.py`;
+      const validationSource = `import pathlib, runpy\nrepaired = runpy.run_path(str(pathlib.Path(__file__).parent / ${JSON.stringify(filename)}), run_name="workbench_validation")\n${args.validation_code}\n`;
+      writeRunFile(context.runId, "intermediate", validationName, validationSource);
+      const validation = await executePython(context.runId, validationName, inputFiles, [], 60000, context.workspaceRoot);
+      execResult = { ...validation, stdout: `${execResult.stdout}\n${validation.stdout}`.trim(), durationMs: execResult.durationMs + validation.durationMs };
+    }
     const summary = `Executed Python (${filename}): exit ${execResult.exitCode} in ${execResult.durationMs}ms`;
+
+    if (execResult.exitCode !== 0 || execResult.timedOut) {
+      return { ok: false, output: JSON.stringify(execResult, null, 2), summary,
+        error: { code: execResult.timedOut ? "timeout" : "validation_failure", retryable: true,
+          message: execResult.stderr || `Python execution failed with exit ${execResult.exitCode}` } };
+    }
 
     const artifacts: ArtifactRef[] = [];
     const outputDir = resolveRunPath(context.runId, "output", "output");
@@ -531,16 +545,14 @@ export const executePythonTool: AgentTool = {
           }
         }
       }
-      const artifactScriptFilename =
+      const requestedScript = context.requestedArtifacts?.filter((item) => item.type === "file" && item.filename.endsWith(".py"));
+      const artifactScriptFilename = requestedScript?.length === 1 ? requestedScript[0].filename :
         targetName.startsWith("repaired-") || targetName.startsWith("fixed-")
           ? targetName
           : `repaired-${targetName}`;
-      const scriptOutPath = path.join(outputDir, artifactScriptFilename);
+      const scriptOutPath = resolveRunPath(context.runId, `output/${artifactScriptFilename}`, "output");
+      mkdirSync(path.dirname(scriptOutPath), { recursive: true });
       writeFileSync(scriptOutPath, code, "utf8");
-      if (artifactScriptFilename.includes("-")) {
-        const underscoredArtifact = artifactScriptFilename.replace(/-/g, "_");
-        writeFileSync(path.join(outputDir, underscoredArtifact), code, "utf8");
-      }
       artifacts.push({
         artifactId: randomUUID(),
         runId: context.runId,
@@ -550,10 +562,17 @@ export const executePythonTool: AgentTool = {
         sizeBytes: Buffer.byteLength(code, "utf8"),
         createdAt: new Date().toISOString(),
       });
-    } catch {}
+    } catch (error) {
+      throw new Error(`Repaired source export failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
 
     return {
-      output: JSON.stringify(execResult, null, 2),
+      output: JSON.stringify({
+        ...execResult,
+        artifacts: artifacts.map((artifact) => ({ filename: artifact.filename, relativePath: artifact.relativePath })),
+        validationPassed: typeof args.validation_code === "string" && Boolean(args.validation_code.trim()),
+        deliveryStatus: "The executed source is already exported. If validation passed, provide the final answer; do not create another export or helper script.",
+      }, null, 2),
       summary,
       artifacts: artifacts.length > 0 ? artifacts : undefined,
       sideEffects: [`executed:${filename}`],
@@ -571,14 +590,14 @@ export const generateDeliverableTool: AgentTool = {
     function: {
       name: "generate_deliverable",
       description:
-        "Generate an official deliverable document file (Word .docx, Excel .xlsx, or Markdown .md) in the run output folder. Use ONLY when the user explicitly requests an export file, report document, or formal deliverable. Do NOT invoke if the user is only asking for a review, comparison, explanation, or direct engineering answers in chat.",
+        "Generate a requested downloadable file in the run output folder: Word, Excel, Markdown or a source/text file. Use type='file' for repaired code with its exact filename and source content. Use ONLY for requested deliverables, including attached-code repairs. Do NOT invoke for chat-only reviews or explanations.",
       parameters: {
         type: "object",
         properties: {
           type: {
             type: "string",
-            enum: ["docx", "xlsx", "md"],
-            description: "Format of the deliverable document: 'docx' for Word, 'xlsx' for Excel spreadsheet, 'md' for Markdown report.",
+            enum: ["docx", "xlsx", "md", "file"],
+            description: "'docx' for Word, 'xlsx' for Excel, 'md' for Markdown, 'file' for exact source/text content and filename.",
           },
           title: {
             type: "string",
@@ -587,7 +606,7 @@ export const generateDeliverableTool: AgentTool = {
           content: {
             type: "string",
             description:
-              "The complete, publication-grade document body in Markdown. Must contain the full synthesized engineering findings, actual measured values, and complete Markdown tables with real data rows. Do NOT pass template outlines or placeholder text.",
+              "Complete Markdown document body, or exact source/text content for type='file'. Do not pass outlines or placeholder text.",
           },
           filename: {
             type: "string",
@@ -604,10 +623,17 @@ export const generateDeliverableTool: AgentTool = {
     let content = extractContentArg(args) || String(args.content ?? args.body ?? args.text ?? args.markdown ?? "");
     const requested = context.requestedArtifacts?.filter((artifact) => artifact.type === type);
     let filename = String(args.filename ?? args.path ?? args.file ?? (requested?.length === 1 ? requested[0].filename : `deliverable.${type}`));
-    if (!filename.endsWith(`.${type}`)) filename += `.${type}`;
+    if (type !== "file" && !filename.endsWith(`.${type}`)) filename += `.${type}`;
     if (context.requestedArtifacts?.length && !requested?.some((artifact) => artifact.filename === filename)) {
       throw { code: "invalid_arguments", retryable: true,
         message: `Use the requested deliverable type and filename: ${context.requestedArtifacts.map((artifact) => artifact.filename).join(", ")}. Received ${filename}.` };
+    }
+
+    if (type === "file") {
+      if (!content.trim() || !args.filename) throw { code: "invalid_arguments", retryable: true, message: "Source file deliverables require filename and complete nonempty content." };
+      const relativePath = writeRunFile(context.runId, "output", filename, content, true);
+      const artifact = artifactRef(context.runId, inferArtifactKind(filename), filename, relativePath);
+      return { output: `Created downloadable file ${filename} (${artifact.sizeBytes} bytes).`, summary: `Created deliverable: ${filename}`, artifacts: [artifact], sideEffects: [`artifact:${filename}`] };
     }
 
     // Clean placeholder markers if present
