@@ -602,8 +602,13 @@ export const generateDeliverableTool: AgentTool = {
     const type = String(args.type ?? args.kind ?? args.format ?? "md").toLowerCase();
     let title = String(args.title ?? args.name ?? args.heading ?? "Deliverable");
     let content = extractContentArg(args) || String(args.content ?? args.body ?? args.text ?? args.markdown ?? "");
-    let filename = String(args.filename ?? args.path ?? args.file ?? `deliverable.${type}`);
+    const requested = context.requestedArtifacts?.filter((artifact) => artifact.type === type);
+    let filename = String(args.filename ?? args.path ?? args.file ?? (requested?.length === 1 ? requested[0].filename : `deliverable.${type}`));
     if (!filename.endsWith(`.${type}`)) filename += `.${type}`;
+    if (context.requestedArtifacts?.length && !requested?.some((artifact) => artifact.filename === filename)) {
+      throw { code: "invalid_arguments", retryable: true,
+        message: `Use the requested deliverable type and filename: ${context.requestedArtifacts.map((artifact) => artifact.filename).join(", ")}. Received ${filename}.` };
+    }
 
     // Clean placeholder markers if present
     content = content
@@ -632,6 +637,11 @@ export const generateDeliverableTool: AgentTool = {
         );
       }
     }
+
+    // Keep provenance from actual document extraction in the exported artifact,
+    // even when the model mentions the source only in its chat response.
+    const citations = (context.sourceReferences ?? []).map((source) => `${source.filename}, page ${source.page}`);
+    if (citations.length > 0) content += `\n\n## Source documents\n${citations.map((citation) => `- ${citation}`).join("\n")}`;
 
     // If content contains template placeholder text ("Markdown table with columns" or "[insert table]"), enrich or reject
     const placeholderTableRegex = /(?:markdown\s+)?table\s+(?:with|of)\s+columns|\[(?:insert\s+)?(?:table|findings|measurements)[^\]]*\]|\((?:insert\s+)?(?:table|findings|measurements)[^)]*\)/i;

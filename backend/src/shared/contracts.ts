@@ -63,7 +63,7 @@ export interface AIError { kind: "ai-error"; code: AIErrorCode; message: string;
 export interface ValidationFailure { kind: "validation-failure"; code: "wrong-type" | "missing-field" | "invalid-value" | "extra-field"; message: string; path: string; expected: string; received?: string; requestId?: string; }
 export type AIWorkflowError = AIError | ValidationFailure;
 export type AIResult<T> = { ok: true; value: T } | { ok: false; error: AIWorkflowError };
-export type ToolName = "read_file" | "draft_note" | "draft_code" | "execute_python" | "generate_xlsx" | "retrieve_sop" | "inspect_drawing";
+export type ToolName = "read_file" | "draft_note" | "draft_code" | "execute_python" | "generate_xlsx" | "retrieve_sop" | "retrieve_knowledge" | "inspect_drawing";
 
 export type IntentResolutionStatus = "resolved" | "ambiguous" | "failed";
 

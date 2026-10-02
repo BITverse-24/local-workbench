@@ -51,6 +51,10 @@ export interface ToolExecutionContext {
   policyGuard?: MutationPolicyGuard;
   emitRunEvent?: (event: any) => void;
   lastAssistantContent?: string;
+  isCancelled?: () => boolean;
+  sourceReferences?: Array<{ filename: string; page: number }>;
+  requestedArtifacts?: Array<{ type: string; filename: string }>;
+  indexedKnowledgeSources?: Array<{ filename: string; docId: string }>;
 }
 
 export interface ToolExecutionResult {

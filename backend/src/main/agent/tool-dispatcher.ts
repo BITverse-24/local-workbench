@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { AgentToolCall } from "../../shared/contracts.js";
 import type {
   AgentTool,
@@ -266,15 +267,14 @@ export class ToolDispatcher {
 
   /**
    * Execute multiple tool calls emitted in a single model turn.
-   * Tool calls from the same turn are independent and are executed concurrently
-   * via Promise.all() to maximize throughput across distributed LAN endpoints.
+   * Read-only calls may overlap. Mutations, executions and generation calls are
+   * barriers: their results must be available before later calls begin.
    */
   async dispatchConcurrent(
     toolCalls: AgentToolCall[],
     context: ToolExecutionContext,
   ): Promise<ExecutedToolOutput[]> {
-    return Promise.all(
-      toolCalls.map(async (call) => {
+    const execute = async (call: AgentToolCall): Promise<ExecutedToolOutput> => {
         const tool = this.toolMap.get(call.name);
         const t0 = Date.now();
 
@@ -330,6 +330,9 @@ export class ToolDispatcher {
         }
 
         try {
+          if (typeof call.arguments.raw === "string") {
+            throw { code: "invalid_arguments", message: "Invalid or malformed tool arguments. Resend complete JSON data. Python checks require command, python_module, python_function, python_text_rows (raw lines), and python_reference_pipeline (independent module:function callables). success_marker is optional. No operation was executed.", retryable: true };
+          }
           const rawResult = await tool.execute(call.arguments, context);
           const durationMs = Date.now() - t0;
 
@@ -466,6 +469,19 @@ export class ToolDispatcher {
             };
           }
 
+          if (normalizedResult.ok && (call.name === "extract_document" || call.name === "ocr_extract")) {
+            const data = normalizedResult.data as { pageReferences?: Array<{ page?: number }> } | undefined;
+            const filename = call.arguments.filename ?? call.arguments.path ?? call.arguments.file;
+            if (typeof filename === "string" && Array.isArray(data?.pageReferences)) {
+              context.sourceReferences ??= [];
+              for (const reference of data.pageReferences) {
+                if (!Number.isInteger(reference.page) || reference.page! < 1) continue;
+                const source = { filename: path.basename(filename), page: reference.page! };
+                if (!context.sourceReferences.some((existing) => existing.filename === source.filename && existing.page === source.page)) context.sourceReferences.push(source);
+              }
+            }
+          }
+
           // Notify UI about tool completion
           if (context.emitRunEvent) {
             context.emitRunEvent({
@@ -535,7 +551,25 @@ export class ToolDispatcher {
             result: failureResult,
           };
         }
-      }),
-    );
+    };
+    const readOnly = new Set(["read_file", "list_dir", "search", "extract_document", "retrieve_knowledge", "retrieve_sop", "ocr_extract", "inspect_drawing", "get_file_info"]);
+    const results: ExecutedToolOutput[] = [];
+    let reads: AgentToolCall[] = [];
+    const flush = async () => {
+      results.push(...await Promise.all(reads.map(execute)));
+      reads = [];
+    };
+    for (const call of toolCalls) {
+      if (context.isCancelled?.()) break;
+      if (readOnly.has(call.name)) {
+        reads.push(call);
+      } else {
+        await flush();
+        if (context.isCancelled?.()) break;
+        results.push(await execute(call));
+      }
+    }
+    if (!context.isCancelled?.()) await flush();
+    return results;
   }
 }

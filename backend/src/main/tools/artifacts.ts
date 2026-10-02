@@ -375,17 +375,12 @@ export async function generateXlsxFromContent(
 
   const lines = (content || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
-  // 1. Check if there are markdown table rows
-  const tableLines: string[] = [];
-  let inTable = false;
-  for (const line of lines) {
-    if (line.includes("|") && !line.startsWith("```") && !line.startsWith("#")) {
-      tableLines.push(line);
-      inTable = true;
-    } else if (inTable && !line.includes("|")) {
-      break;
-    }
-  }
+  // Preserve all tables and surrounding source notes. Citations and explicit
+  // missing-measurement statements often live outside the measurement table.
+  const tableLines = lines.filter((line) => /^\|.*\|$/.test(line));
+  let proseLines = tableLines.length >= 2
+    ? lines.filter((line) => !tableLines.includes(line) && !/^```/.test(line))
+    : [];
 
   const rowsToAdd: string[][] = [];
 
@@ -399,8 +394,19 @@ export async function generateXlsxFromContent(
       }
     }
   } else {
+    const fields = lines.filter((line) => !/^#/.test(line)).flatMap((line) => {
+      const clean = line.replace(/^[-*]\s+/, "").replace(/\*\*/g, "");
+      return clean.split(/\.\s+(?=[A-Z][^.:]*:)/).flatMap((part) => {
+        const field = part.match(/^([A-Za-z][^:]{0,99}):\s*(\S[\s\S]*)$/);
+        return field ? [[field[1].trim(), field[2].trim()]] : [];
+      });
+    });
+    if (fields.length > 0) {
+      rowsToAdd.push(["Field", "Value"], ...fields);
+      proseLines = lines;
+    }
     const delimitedLines = lines.filter((l) => l.includes(",") || l.includes("\t") || l.includes(";"));
-    for (const line of delimitedLines) {
+    for (const line of rowsToAdd.length ? [] : delimitedLines) {
       if (line.includes(",")) {
         rowsToAdd.push(parseCsvLine(line));
       } else if (line.includes("\t")) {
@@ -456,6 +462,16 @@ export async function generateXlsxFromContent(
         cell.alignment = { vertical: "middle", horizontal: "left" };
       });
       excelRow.height = 20;
+    }
+  }
+
+  if (proseLines.length > 0) {
+    const notes = workbook.addWorksheet(sheet.name === "Source Notes" ? "Source Notes 2" : "Source Notes");
+    notes.getColumn(1).width = 90;
+    for (const line of proseLines) {
+      const row = notes.addRow([line.replace(/^#{1,6}\s+/, "").replace(/\*\*(.*?)\*\*/g, "$1")]);
+      row.getCell(1).alignment = { vertical: "top", wrapText: true };
+      row.height = Math.max(20, Math.ceil(String(row.getCell(1).value).length / 90) * 16);
     }
   }
 

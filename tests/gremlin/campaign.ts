@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { loadCorpus } from "../scenarios/corpus.js";
-import { families } from "../scenarios/schema.js";
+import type { Scenario } from "../scenarios/schema.js";
 import { runScenario, type RunOptions } from "../runner.js";
 import { confirmedChecks, appendFinding, findingFingerprint } from "../findings.js";
 import { EffortProvider } from "./provider.js";
@@ -12,8 +12,16 @@ import { standardEffort } from "../config.js";
 import type { ExecutionRecord } from "../recorder.js";
 import { safeJSON } from "../helpers/redact.js";
 
-export async function runCampaign(options: RunOptions, limits = standardEffort) {
+export function selectCampaignScenarios(scenarios: Scenario[], ids?: string[]): Scenario[] {
+  const selected = ids ? scenarios.filter((scenario) => ids.includes(scenario.id)) : scenarios;
+  if (!selected.length || (ids && selected.length !== new Set(ids).size)) throw new Error("Unknown or empty campaign scenario IDs");
+  return selected;
+}
+
+export async function runCampaign(options: RunOptions, limits = standardEffort, scenarioIds?: string[]) {
   const corpus = loadCorpus(options.runtimeRoot);
+  const scenarios = selectCampaignScenarios(corpus.scenarios, scenarioIds);
+  const families = [...new Set(scenarios.map((scenario) => scenario.family))];
   const effort = new CampaignEffort(limits);
   const provider = new EffortProvider(options.profile.attacker, options.profile.attackerFallback, limits.attackerCalls, undefined, options.signal);
   const coverage = Object.fromEntries(families.map((family) => [family, 0]));
@@ -24,7 +32,7 @@ export async function runCampaign(options: RunOptions, limits = standardEffort) 
   const directory = path.join(options.runtimeRoot, "tests/.runtime/campaigns", options.campaignId); mkdirSync(directory, { recursive: true });
   while (effort.available() && !options.signal?.aborted) {
     const least = [...families].sort((a, b) => coverage[a] < 2 || coverage[b] < 2 ? coverage[a] - coverage[b] : (coverage[a] / (1 + rewards[a])) - (coverage[b] / (1 + rewards[b])))[0];
-    const seeds = corpus.scenarios.filter((s) => s.family === least);
+    const seeds = scenarios.filter((s) => s.family === least);
     const seed = seeds[coverage[least] % seeds.length];
     let proposed;
     try { proposed = await proposeAttack(provider, seed, previous, effort.started + limits.durationMs); } catch (error) { errors.push(String(error)); break; }
@@ -47,7 +55,7 @@ export async function runCampaign(options: RunOptions, limits = standardEffort) 
     }
     if (record.healthError && record.events.length === 0) { errors.push(record.healthError); break; }
   }
-  const report = { campaignId: options.campaignId, interrupted: options.signal?.aborted || false, targetMode: options.mode, attacks, executions: effort.executions, discoveryExecutions: effort.discoveryExecutions, triageExecutions: effort.triageExecutions, attackerCalls: provider.calls, coverage, uncoveredFamilies: families.filter((f) => coverage[f] < 2), rewards, findings, errors, providerEvents: provider.events, elapsedMs: Date.now() - effort.started, limits };
+  const report = { scenarioIds: scenarios.map((scenario) => scenario.id), campaignId: options.campaignId, interrupted: options.signal?.aborted || false, targetMode: options.mode, attacks, executions: effort.executions, discoveryExecutions: effort.discoveryExecutions, triageExecutions: effort.triageExecutions, attackerCalls: provider.calls, coverage, uncoveredFamilies: families.filter((f) => coverage[f] < 2), rewards, findings, errors, providerEvents: provider.events, elapsedMs: Date.now() - effort.started, limits };
   writeFileSync(path.join(directory, "report.json"), safeJSON(report));
   return report;
 }

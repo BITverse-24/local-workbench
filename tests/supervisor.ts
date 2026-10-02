@@ -87,7 +87,7 @@ async function main(): Promise<void> {
   if (command === "campaign") {
     const limits = { ...standardEffort, executions: Number(flags.get("executions") ?? standardEffort.executions), attackerCalls: Number(flags.get("attacker-calls") ?? standardEffort.attackerCalls), durationMs: Number(flags.get("duration-ms") ?? standardEffort.durationMs), reservedExecutions: Number(flags.get("reserve") ?? standardEffort.reservedExecutions) };
     if (Object.values(limits).some((n) => !Number.isInteger(n) || n < 0) || limits.executions <= limits.reservedExecutions || !limits.attackerCalls || !limits.durationMs) throw new Error("Invalid campaign effort limits");
-    const report = await runCampaign(options, limits); console.log(JSON.stringify(report, null, 2)); process.exitCode = report.errors.length ? 2 : report.findings.length ? 1 : 0; return;
+    const report = await runCampaign(options, limits, flags.get("ids")?.split(",")); console.log(JSON.stringify(report, null, 2)); process.exitCode = report.errors.length ? 2 : report.findings.length ? 1 : 0; return;
   }
   if (command !== "run") throw new Error("Unknown command");
   const record = await runScenario(scenario, options);

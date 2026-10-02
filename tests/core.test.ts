@@ -5,6 +5,7 @@ import { createServer, type Server } from "node:http";
 import { scenarioSchema } from "./scenarios/schema.js";
 import { parserScenario, loadCorpus } from "./scenarios/corpus.js";
 import { families } from "./scenarios/schema.js";
+import { selectCampaignScenarios } from "./gremlin/campaign.js";
 import { mutateScenario } from "./gremlin/agent.js";
 import { CampaignEffort } from "./gremlin/effort.js";
 import { snapshot, diff, containedFile } from "./helpers/files.js";
@@ -50,6 +51,14 @@ describe("framework trust boundaries", () => {
     expect(seen[1].input.attachmentIds).toEqual(["attachment-token"]);
     expect(seen[2].input).toEqual({ runId: "attachment-run", chatId: "chat", userText: "Inspect", attachmentToken: "attachment-token", attachmentTokens: ["attachment-token"], temperature: 0.3, groundingEnabled: true, preferredRoute: "draft" });
   });
+  it("restricts Gremlin discovery to requested prompt scenarios and rejects unknown IDs", () => {
+    const corpus = loadCorpus(process.cwd()).scenarios;
+    const ids = ["dependent-operations-parser", "instruction-injection-workspace"];
+    expect(selectCampaignScenarios(corpus, ids).map((scenario) => scenario.id).sort()).toEqual(ids);
+    expect(() => selectCampaignScenarios(corpus, ["unknown"])).toThrow("Unknown");
+    expect(() => selectCampaignScenarios(corpus, [])).toThrow("empty");
+  });
+
   it("normalizes only explicitly observed generated identities during replay", () => {
     const sourceId = "11111111-2222-3333-4444-555555555555";
     const request = { messages: [{ role: "user", content: `${sourceId} /source/scenario-original/report.pdf pressure 12.7` }], temperature: 0.3 };
@@ -129,6 +138,18 @@ describe("evaluator calibration", () => {
     const renamedBackup = structuredClone(original); renamedBackup.workspaceDiff[0].path = ".harness_backups/second/parser.py";
     expect(findingFingerprint(original)).toBe(findingFingerprint(unchanged));
     expect(findingFingerprint(original)).toBe(findingFingerprint(renamedBackup));
+  });
+  it("reopens a resolved finding only for a new confirmed failure execution", () => {
+    const b = box(); mkdirSync(path.join(b.root, "tests"));
+    const file = path.join(b.root, "tests/BEHAVIORAL_ISSUES.md"), r = record(b);
+    r.results.push({ id: "wrong", category: "task", verdict: "fail", message: "Incorrect parser", evidence: {}, severity: 10 });
+    appendFinding(b.root, [r]);
+    writeFileSync(file, readFileSync(file, "utf8").replace("- Status: open", "- Status: resolved\n- Verification: prior evidence"));
+    appendFinding(b.root, [r]); expect(readFileSync(file, "utf8")).toContain("- Status: resolved");
+    r.executionId = "new-regression"; appendFinding(b.root, [r]);
+    expect(readFileSync(file, "utf8")).toContain("- Status: open");
+    expect(readFileSync(file, "utf8")).toContain("- Prior verification: prior evidence");
+    expect(readFileSync(file, "utf8")).toContain("new-regression");
   });
   it("does not auto-file an operator interruption as an application finding", () => {
     const r = record(box()); r.interrupted = true;

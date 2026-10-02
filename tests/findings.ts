@@ -37,6 +37,15 @@ export function appendFinding(root: string, records: ExecutionRecord[]): string 
   const replayCommand = `npm run behavioral -- run --target=replay --profile=${path.relative(root, path.join(first.evidenceDir, "profile.json"))} --scenario=${path.relative(root, path.join(first.evidenceDir, "scenario.json"))} --record=${path.relative(root, path.join(first.evidenceDir, "record.json"))}`;
   const relativeEvidence = records.map((r) => `[${r.executionId}](${path.relative(path.dirname(file), path.join(r.evidenceDir, "record.json"))})`).join(", ");
   if (existing.includes(marker)) {
+    const start = existing.indexOf(marker);
+    const next = existing.indexOf("\n## ", start);
+    const end = next < 0 ? existing.length : next;
+    const section = existing.slice(start, end);
+    if (section.includes("- Status: resolved")) {
+      const reopened = section.replace("- Status: resolved", "- Status: open")
+        .replace("- Verification:", "- Prior verification:");
+      writeFileSync(file, existing.slice(0, start) + reopened + existing.slice(end));
+    }
     appendFileSync(file, redact(`\n### Additional occurrence: ${fingerprint}\n\n${occurrence}\nDate: ${first.timestamp}; commit: ${first.commit}; reproduced ${failed}/${records.length}.\n\nEvidence: ${relativeEvidence}\n`));
     return fingerprint;
   }

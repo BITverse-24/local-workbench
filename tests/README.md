@@ -102,6 +102,9 @@ minimization; early triage cannot consume discovery coverage slots. Custom
 development bounds use `--executions=N --reserve=N --attacker-calls=N
 --duration-ms=N`. Reports identify any uncovered families and incomplete triage.
 
+Use `--ids=id1,id2` on a campaign to restrict discovery and reproduction to
+specific corpus prompt sequences. Unselected scenario families are not sampled.
+
 Gremlin receives only user-visible messages, displayed tool activity, confirmation
 previews, accessible artifact text and fixture inputs. It never receives checks,
 hidden validator expectations, evaluation results, canaries or host credentials.

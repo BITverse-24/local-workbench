@@ -32,8 +32,8 @@ describe("Agent Loop Engine & Context Manager", () => {
     let order: string[] = [];
 
     const toolA: AgentTool = {
-      name: "tool_a",
-      definition: { type: "function", function: { name: "tool_a", description: "a", parameters: { type: "object", properties: {} } } },
+      name: "read_file",
+      definition: { type: "function", function: { name: "read_file", description: "a", parameters: { type: "object", properties: {} } } },
       async execute() {
         await new Promise((r) => setTimeout(r, 20));
         order.push("a");
@@ -42,8 +42,8 @@ describe("Agent Loop Engine & Context Manager", () => {
     };
 
     const toolB: AgentTool = {
-      name: "tool_b",
-      definition: { type: "function", function: { name: "tool_b", description: "b", parameters: { type: "object", properties: {} } } },
+      name: "search",
+      definition: { type: "function", function: { name: "search", description: "b", parameters: { type: "object", properties: {} } } },
       async execute() {
         await new Promise((r) => setTimeout(r, 10));
         order.push("b");
@@ -54,8 +54,8 @@ describe("Agent Loop Engine & Context Manager", () => {
     const dispatcher = new ToolDispatcher([toolA, toolB]);
     const results = await dispatcher.dispatchConcurrent(
       [
-        { id: "1", name: "tool_a", arguments: {} },
-        { id: "2", name: "tool_b", arguments: {} },
+        { id: "1", name: "read_file", arguments: {} },
+        { id: "2", name: "search", arguments: {} },
       ],
       { runId: "test", workspaceRoot: ".", gateway: {} as any },
     );
@@ -65,6 +65,102 @@ describe("Agent Loop Engine & Context Manager", () => {
     expect(order).toEqual(["b", "a"]);
     expect(results[0].result.output).toBe("result_a");
     expect(results[1].result.output).toBe("result_b");
+  });
+
+  it("waits for reads and writes before running validation in the same batch", async () => {
+    let written = false;
+    const order: string[] = [];
+    const makeTool = (name: string, execute: AgentTool["execute"]): AgentTool => ({
+      name, definition: { type: "function", function: { name, description: name, parameters: { type: "object", properties: {} } } }, execute,
+    });
+    const dispatcher = new ToolDispatcher([
+      makeTool("read_file", async () => { await new Promise((r) => setTimeout(r, 15)); order.push("read"); return { output: "old", summary: "read" }; }),
+      makeTool("write_file", async () => { await new Promise((r) => setTimeout(r, 15)); written = true; order.push("write"); return { output: "saved", summary: "saved" }; }),
+      makeTool("run_command", async () => { expect(written).toBe(true); order.push("validate"); return { output: '{"exitCode":0,"stdout":"verified"}', summary: "verified" }; }),
+    ]);
+    const result = await dispatcher.dispatchConcurrent([
+      { id: "read", name: "read_file", arguments: { path: "module.py" } },
+      { id: "write", name: "write_file", arguments: { path: "module.py", content: "source" } },
+      { id: "test", name: "run_command", arguments: { command: "python3 -B -c 'import module'" } },
+    ], { runId: "test", workspaceRoot: ".", gateway: {} as any });
+    expect(result.every((r) => r.result.ok)).toBe(true);
+    expect(order).toEqual(["read", "write", "validate"]);
+  });
+
+  it("never executes a malformed executable tool argument", async () => {
+    let invoked = false;
+    const dispatcher = new ToolDispatcher([{
+      name: "write_file", definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } },
+      async execute() { invoked = true; return { output: "saved", summary: "saved" }; },
+    }]);
+    const [result] = await dispatcher.dispatchConcurrent([{ id: "bad", name: "write_file", arguments: { raw: '{"content":"truncated' } }], { runId: "test", workspaceRoot: ".", gateway: {} as any });
+    expect(invoked).toBe(false);
+    expect(result.result.ok).toBe(false);
+    if (!result.result.ok) expect(result.result.error.code).toBe("invalid_arguments");
+  });
+
+  it("continues past an empty module launch until written-code assertions produce the requested marker", async () => {
+    const calls = [
+      { name: "write_file", arguments: { path: "module.py", content: "def calculate(): return 5" } },
+      { name: "run_command", arguments: { command: "python3 -B module.py" } },
+      null,
+      { name: "run_command", arguments: { command: "python3 -B -c 'import module; assert module.calculate() == 5; print(\"CHECK_OK\")'" } },
+      null,
+    ];
+    let index = 0;
+    let sawFeedback = false;
+    const gateway = { async chatWithTools(_model: any, messages: any[]) {
+      sawFeedback ||= messages.some((message: any) => String(message.content).includes("Running a module without invoking"));
+      const call = calls[index++];
+      return { ok: true, value: { content: "Validation complete", tool_calls: call ? [{ id: String(index), ...call }] : null } };
+    } };
+    const tools: AgentTool[] = [
+      { name: "write_file", definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } }, async execute() { return { summary: "saved", output: "saved" }; } },
+      { name: "run_command", definition: { type: "function", function: { name: "run_command", description: "run", parameters: { type: "object", properties: {} } } }, async execute(args) { return { summary: "ran", output: JSON.stringify({ exitCode: 0, stdout: String(args.command).includes("assert") ? "CHECK_OK" : "" }) }; } },
+    ];
+    const result = await new AgentLoop().run({ runId: "validation", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py, validate the written code and print CHECK_OK only if it passes.", systemPrompt: "repair", semanticIntent: { intentType: "code_modification", workspaceMutationRequested: true, targetFiles: ["module.py"] }, tools, context: { runId: "validation", workspaceRoot: ".", gateway: gateway as any }, emitEvent() {} });
+    expect(sawFeedback).toBe(true);
+    expect(index).toBe(5);
+    expect(result.outcome).toBe("completed");
+  });
+
+  it("records actual extracted page references before dependent deliverable generation", async () => {
+    const context = { runId: "sources", workspaceRoot: ".", gateway: {} as any, sourceReferences: [] as Array<{ filename: string; page: number }> };
+    const tools: AgentTool[] = [
+      { name: "extract_document", definition: { type: "function", function: { name: "extract_document", description: "extract", parameters: { type: "object", properties: {} } } }, async execute() { return { output: JSON.stringify({ pageReferences: [{ page: 2 }, { page: 2 }, { page: 0 }] }), summary: "extracted" }; } },
+      { name: "generate_deliverable", definition: { type: "function", function: { name: "generate_deliverable", description: "compile", parameters: { type: "object", properties: {} } } }, async execute(_args, current) { expect(current.sourceReferences).toEqual([{ filename: "source.pdf", page: 2 }]); return { output: "compiled", summary: "compiled" }; } },
+    ];
+    const result = await new ToolDispatcher(tools).dispatchConcurrent([{ id: "extract", name: "extract_document", arguments: { filename: "source.pdf" } }, { id: "compile", name: "generate_deliverable", arguments: {} }], context);
+    expect(result.every((item) => item.result.ok)).toBe(true);
+  });
+
+  it("allows a bounded correction after repeated validation syntax errors", async () => {
+    const broken = { id: "bad", name: "run_command", arguments: { command: "python3 -B", python_code: "assert (" } };
+    const turns = [
+      { content: null, tool_calls: [{ id: "write", name: "write_file", arguments: { path: "module.py", content: "value = 1" } }] },
+      { content: null, tool_calls: [broken] },
+      { content: null, tool_calls: [broken] },
+      { content: null, tool_calls: [{ id: "fixed", name: "run_command", arguments: { command: "python3 -B", python_code: "import module\nassert module.value == 1\nprint('CHECK_OK')" } }] },
+      { content: "Verified.", tool_calls: null },
+    ];
+    let index = 0, executions = 0, sawCorrection = false;
+    const gateway = { async chatWithTools(_model: unknown, messages: AgentMessage[], _tools: unknown, options: { onChunk?: unknown }) {
+      expect(typeof options.onChunk).toBe("function");
+      sawCorrection ||= messages.some((message) => message.content?.includes("The actual error was: SyntaxError"));
+      return { ok: true, value: turns[index++] };
+    } };
+    const tools: AgentTool[] = [
+      { name: "write_file", definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } }, async execute() { return { output: "saved", summary: "saved" }; } },
+      { name: "run_command", definition: { type: "function", function: { name: "run_command", description: "execute", parameters: { type: "object", properties: {} } } }, async execute(args) {
+        executions++;
+        if (args.python_code === "assert (") throw { code: "sandbox_failure", message: "SyntaxError: '(' was never closed", retryable: true };
+        return { output: JSON.stringify({ exitCode: 0, stdout: "CHECK_OK\n" }), summary: "passed" };
+      } },
+    ];
+    const result = await new AgentLoop().run({ runId: "retry", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py and validate it. Print CHECK_OK only on success.", systemPrompt: "repair", semanticIntent: { intentType: "code_modification", workspaceMutationRequested: true, targetFiles: ["module.py"] }, tools, context: { runId: "retry", workspaceRoot: ".", gateway: gateway as any }, emitEvent() {} });
+    expect(result.outcome).toBe("completed");
+    expect(sawCorrection).toBe(true);
+    expect(executions).toBe(2);
   });
 
   it("terminates pure chat on turn 1 without triggering confirmation", async () => {
@@ -1537,5 +1633,3 @@ async def log_ip(request: Request, call_next):
     expect(upfrontPlan).toContain("2. **Document Generation**");
   });
 });
-
-

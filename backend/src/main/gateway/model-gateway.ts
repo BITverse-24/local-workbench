@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { parseStructuredData } from "./structured-data.js";
 import type {
   AIResult,
   AgentToolCall,
@@ -144,6 +145,7 @@ const nativeTransport: GatewayTransport = {
                     }
                     if (Array.isArray(delta.tool_calls)) {
                       for (const tc of delta.tool_calls) {
+                        if (!tc || typeof tc !== "object") continue;
                         const idx = typeof tc.index === "number" ? tc.index : accumulatedToolCalls.length;
                         if (!accumulatedToolCalls[idx]) {
                           accumulatedToolCalls[idx] = {
@@ -183,7 +185,7 @@ const nativeTransport: GatewayTransport = {
         content: accumulatedText.length > 0 ? accumulatedText : (accumulatedToolCalls.length > 0 ? null : ""),
       };
       if (accumulatedToolCalls.length > 0) {
-        messageObj.tool_calls = accumulatedToolCalls;
+        messageObj.tool_calls = accumulatedToolCalls.filter(Boolean);
       }
 
       const syntheticEnvelope = JSON.stringify({
@@ -335,27 +337,8 @@ export function formatMessagesForFallback(
 }
  
 export function normalizeParsedToolArgs(val: unknown): any {
-  if (typeof val === "string") {
-    // If the string contains literal escaped newlines (\n) but no real newlines (\n),
-    // the LLM doubly escaped linebreaks in its JSON string argument.
-    if (val.includes("\\n") && !val.includes("\n")) {
-      return val
-        .replace(/\\r\\n/g, "\n")
-        .replace(/\\n/g, "\n")
-        .replace(/\\t/g, "\t");
-    }
-    return val;
-  }
-  if (Array.isArray(val)) {
-    return val.map(normalizeParsedToolArgs);
-  }
-  if (val && typeof val === "object") {
-    const res: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(val)) {
-      res[k] = normalizeParsedToolArgs(v);
-    }
-    return res;
-  }
+  // JSON.parse already decoded transport escapes. Code and commands may contain
+  // intentional literal backslashes; a second decoding changes their meaning.
   return val;
 }
 
@@ -371,12 +354,12 @@ export function parseToolCallArguments(raw: unknown): Record<string, unknown> {
 
   // 1. Direct standard JSON.parse
   try {
-    const parsed = JSON.parse(str);
+    const parsed = parseStructuredData(str);
     if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
       return normalizeParsedToolArgs(parsed as Record<string, unknown>);
     }
     if (typeof parsed === "string" && parsed.trim().startsWith("{")) {
-      const doubleParsed = JSON.parse(parsed.trim());
+      const doubleParsed = parseStructuredData(parsed.trim());
       if (typeof doubleParsed === "object" && doubleParsed !== null && !Array.isArray(doubleParsed)) {
         return normalizeParsedToolArgs(doubleParsed as Record<string, unknown>);
       }
@@ -394,34 +377,9 @@ export function parseToolCallArguments(raw: unknown): Record<string, unknown> {
     }
   } catch {}
 
-  // 3. Regex extraction of key fields if JSON is truncated or has syntax flaws
-  const result: Record<string, unknown> = { raw: str };
-  const pathMatch = str.match(/["']?(?:path|filePath|file_path|filename|fileName|file|target)["']?\s*:\s*["']([^"'\r\n]+)["']/i);
-  if (pathMatch && pathMatch[1]) {
-    result.path = pathMatch[1].trim();
-  }
-
-  const contentMatch = str.match(/["']?(?:content|code|body|fileContent|text)["']?\s*:\s*["']([\s\S]*?)(?:["']\s*(?:,\s*["']|\})|$)/);
-  if (contentMatch && contentMatch[1]) {
-    result.content = contentMatch[1]
-      .replace(/["']\s*\}?\s*$/, "")
-      .replace(/\\"/g, '"')
-      .replace(/\\n/g, "\n")
-      .replace(/\\t/g, "\t")
-      .replace(/\\\\/g, "\\");
-  }
-
-  const commandMatch = str.match(/["']?(?:command|cmd|shell_command|script|exec)["']?\s*:\s*["']([^"'\r\n]+)["']/i);
-  if (commandMatch && commandMatch[1]) {
-    result.command = commandMatch[1].trim();
-  }
-
-  const queryMatch = str.match(/["']?(?:query|search_query|pattern)["']?\s*:\s*["']([^"'\r\n]+)["']/i);
-  if (queryMatch && queryMatch[1]) {
-    result.query = queryMatch[1].trim();
-  }
-
-  return result;
+  // Never recover executable content with regex: truncated strings and Python
+  // triple quotes cannot be decoded losslessly. Let the model retry valid JSON.
+  return { raw: str };
 }
 
 export function extractEmbeddedToolCalls(rawContent: string): { toolCalls: AgentToolCall[]; cleanedContent: string | null } {
@@ -1476,6 +1434,7 @@ export class ModelGateway implements ModelClient {
 
           if (Array.isArray(rawToolCalls)) {
             for (const call of rawToolCalls) {
+              if (!call || typeof call !== "object") continue;
               const callName = call.function?.name || call.name;
               if (callName) {
                 const parsedArgs = parseToolCallArguments(call.function?.arguments ?? call.arguments);
@@ -1638,6 +1597,7 @@ export class ModelGateway implements ModelClient {
         const toolCalls: AgentToolCall[] = [];
         if (Array.isArray(parsedJson?.tool_calls)) {
           for (const tc of parsedJson.tool_calls) {
+            if (!tc || typeof tc !== "object") continue;
             const callName = tc.name || tc.function?.name;
             if (callName) {
               toolCalls.push({

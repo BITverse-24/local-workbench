@@ -8,14 +8,18 @@ import {
   readFileTool,
   deleteFileTool,
   runCommandTool,
+  normalizeRunCommandArgs,
   searchTool,
 } from "../src/main/tools/workspace-tools.js";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createDocxBuffer } from "../src/main/tools/artifacts.js";
+import ExcelJS from "exceljs";
+import { absoluteDataPath } from "../src/main/run/filesystem.js";
 import { generateDeliverableTool } from "../src/main/tools/specialist-tools.js";
+import { AgentLoop } from "../src/main/agent/agent-loop.js";
 
 describe("Tool Argument Parsing Resilience", () => {
   describe("parseToolCallArguments", () => {
@@ -34,6 +38,13 @@ describe("Tool Argument Parsing Resilience", () => {
       expect(res.content).toBe("console.log('hi');");
     });
 
+    it("decodes complete single-quoted data without changing literal source escapes", () => {
+      const raw = String.raw`{path:'module.py', content:'print("a\\nb")',}`;
+      expect(parseToolCallArguments(raw)).toEqual({ path: "module.py", content: String.raw`print("a\nb")` });
+      expect(parseToolCallArguments("{command:'python3 -B', missing: NaN}")).toHaveProperty("raw");
+      expect(parseToolCallArguments("{command:'python3 -B', missing: None}")).toHaveProperty("raw");
+    });
+
     it("repairs and parses raw unescaped newlines and tabs inside string literals", () => {
       // Raw newline (not \n escape sequence) inside JSON string literal
       const badJson = '{"path": "routes/index.ts", "content": "import express from \'express\';\nconst app = express();\nexport default app;"}';
@@ -43,23 +54,24 @@ describe("Tool Argument Parsing Resilience", () => {
       expect(res.content).toContain("export default app;");
     });
 
-    it("falls back to regex extraction when JSON syntax is truncated or corrupted", () => {
-      const brokenJson = '{"path": "src/app.ts", "content": "import express from \\"express\\"; console.log(1);';
-      const res = parseToolCallArguments(brokenJson);
-      expect(res.path).toBe("src/app.ts");
-      expect(res.content).toContain("import express");
+    it("rejects truncated executable strings instead of recovering partial code", () => {
+      const raw = '{"path":"src/app.ts","content":"console.log(1);';
+      expect(parseToolCallArguments(raw)).toEqual({ raw });
     });
 
-    it("unescapes double-escaped newlines and tabs from JSON string arguments", () => {
-      // LLMs frequently emit \\n inside string arguments when generating function calls
-      const doubleEscapedJson = '{"path": "fixed-parser.py", "content": "import sys\\\\nimport csv\\\\n\\\\ndef summarize():\\\\n    return 42"}';
-      const res = parseToolCallArguments(doubleEscapedJson);
-      expect(res.path).toBe("fixed-parser.py");
-      expect(typeof res.content).toBe("string");
-      expect(res.content).toContain("\n");
-      expect(res.content).not.toContain("\\n");
-      expect((res.content as string).split("\n").length).toBe(5);
+    it("rejects Python triple quoted tool arguments", () => {
+      const raw = '{"path":"module.py","content": """def parse(text):\n    return text.split(\'\\n\')\n"""}';
+      expect(parseToolCallArguments(raw)).toEqual({ raw });
     });
+
+    it("preserves literal source escapes and command escapes exactly", () => {
+      const content = String.raw`print('a\nb')`;
+      const command = String.raw`python3 -c "print('a\nb')"`;
+      const parsed = parseToolCallArguments(JSON.stringify({ content, command }));
+      expect(parsed).toEqual({ content, command });
+      expect(extractContentArg(parsed)).toBe(content);
+    });
+
   });
 
   describe("workspace tool extractors", () => {
@@ -108,6 +120,20 @@ describe("Tool Argument Parsing Resilience", () => {
       } catch {}
     });
 
+    it.each(["docx", "xlsx", "pdf"])("rejects text writes to %s documents before creating or corrupting them", async (extension) => {
+      const filename = `existing.${extension}`;
+      const original = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff]);
+      writeFileSync(path.join(tmpDir, filename), original);
+      const context = { workspaceRoot: tmpDir, runId: randomUUID(), gateway: {} as any };
+      for (const target of [filename, `new.${extension}`]) {
+        await expect(writeFileTool.execute({ path: target, content: "# Revised document" }, context))
+          .rejects.toMatchObject({ code: "invalid_arguments", retryable: true });
+      }
+      expect(readFileSync(path.join(tmpDir, filename))).toEqual(original);
+      expect(existsSync(path.join(tmpDir, `new.${extension}`))).toBe(false);
+      expect(existsSync(absoluteDataPath(`runs/${context.runId}`))).toBe(false);
+    });
+
     it("writeFileTool succeeds with filePath alias and nested parameters", async () => {
       const context = { workspaceRoot: tmpDir, runId: "test-run", gateway: {} as any };
 
@@ -132,6 +158,24 @@ describe("Tool Argument Parsing Resilience", () => {
       expect(res.output).toContain("const a = 1;");
     });
 
+    it("reads an exact indexed source when its workspace file is absent without substituting unrelated evidence", async () => {
+      let queries = 0;
+      let docId = "source-id";
+      const context = { workspaceRoot: tmpDir, runId: randomUUID(), gateway: {} as any,
+        indexedKnowledgeSources: [{ filename: "flow.txt", docId }],
+        grounding: { async prepare() { queries++; return { chunks: [{ docId, chunkId: "chunk-id", page: 2, text: "Measured flow: 27 L/s." }] }; } } as any };
+      const result = await readFileTool.execute({ path: "flow.txt" }, context);
+      expect(result.output).toContain("Measured flow: 27 L/s.");
+      expect(result.summary).toContain("knowledge base; no workspace file");
+      expect(existsSync(path.join(tmpDir, "flow.txt"))).toBe(false);
+      await expect(readFileTool.execute({ path: "absent.txt" }, context)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFileTool.execute({ path: "../flow.txt" }, context)).rejects.toThrow();
+      expect(queries).toBe(1);
+      docId = "unrelated-id";
+      await expect(readFileTool.execute({ path: "flow.txt" }, context)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(queries).toBe(2);
+    });
+
     it("deleteFileTool succeeds with file_path alias", async () => {
       const context = { workspaceRoot: tmpDir, runId: "test-run", gateway: {} as any };
       writeFileSync(path.join(tmpDir, "temp.js"), "const x = 1;");
@@ -146,6 +190,101 @@ describe("Tool Argument Parsing Resilience", () => {
 
       const res = await searchTool.execute({ search_query: "sovereign" }, context);
       expect(res.summary).toContain("Found 1 matches");
+    });
+
+    it("rejects malformed structured checks without executing a fallback shell command", async () => {
+      await expect(runCommandTool.execute({ command: "touch forbidden", python_validation: {
+        module: "module", function: "read", cases: [{ text_rows: ["input"] }],
+      } }, { workspaceRoot: tmpDir, runId: "invalid", gateway: {} as any })).rejects.toMatchObject({ code: "invalid_arguments" });
+      expect(existsSync(path.join(tmpDir, "forbidden"))).toBe(false);
+    });
+
+    it("binds requested CSV validation defaults before approval and executes real assertions", async () => {
+      writeFileSync(path.join(tmpDir, "README.md"), "protected\n");
+      const runId = randomUUID(), events: any[] = [], approvals: any[] = [];
+      const turns = [
+        { content: null, tool_calls: [{ id: "write", name: "write_file", arguments: { path: "module.py", content: "import csv, io\ndef read_csv(text): return list(csv.DictReader(io.StringIO(text)))\n" } }] },
+        { content: null, tool_calls: [{ id: "validate", name: "run_command", arguments: { command: "python3 -B", python_module: "module", python_function: "read_csv", python_text_rows: ["field,value", '"quoted, field",17', "", "missing"] } }] },
+        { content: "Verified.", tool_calls: null },
+      ];
+      let turn = 0;
+      const gateway = { async chatWithTools() { return { ok: true, value: turns[turn++] }; } };
+      const result = await new AgentLoop().run({ runId, driverModelId: "code-qwen25coder",
+        userPrompt: "Repair module.py's read_csv(text) CSV parser for quoted fields, blank lines and missing values. Validate the written parser and print CHECK_OK only if it passes.", systemPrompt: "repair",
+        semanticIntent: { intentType: "code_modification", workspaceMutationRequested: true, targetFiles: ["module.py"], protectedPaths: ["README.md"], restrictMutationsToTargets: true },
+        tools: [writeFileTool, runCommandTool], context: { runId, workspaceRoot: tmpDir, gateway: gateway as any }, emitEvent(event) { events.push(event); },
+        async onPlanConfirmationRequired(_plan, calls) { approvals.push(...calls); return true; },
+      });
+      expect(result.outcome).toBe("completed");
+      const approved = approvals.find((call) => call.name === "run_command").arguments;
+      expect(approved.python_reference_pipeline).toEqual(["io:StringIO", "csv:DictReader", "builtins:list"]);
+      expect(approved.success_marker).toBe("CHECK_OK");
+      expect(approved.command).toContain("assert actual == expected");
+      const validation = events.find((event) => event.type === "tool_result" && event.tool === "run_command");
+      expect(validation.ok).toBe(true);
+      expect(JSON.parse(validation.output).stdout).toContain("CHECK_OK");
+      expect(existsSync(path.join(tmpDir, "__pycache__"))).toBe(false);
+    });
+
+    it("runs structured function checks and prints success only after all assertions pass", async () => {
+      writeFileSync(path.join(tmpDir, "module.py"), "import csv, io\ndef read(text): return list(csv.DictReader(io.StringIO(text)))\n");
+      const args = { command: "python3 -B", python_validation: {
+        module: "module", function: "read", success_marker: "CHECK_OK",
+        cases: [{ args: ['field,value\n"quoted, field",17\n'], expected: [{ field: "quoted, field", value: "17" }] },
+          { args: ['field,value\nmissing\n'], expected: [{ field: "missing", value: null }] }],
+      } };
+      expect(normalizeRunCommandArgs(normalizeRunCommandArgs(args))).toEqual(normalizeRunCommandArgs(args));
+      const context = { workspaceRoot: tmpDir, runId: "structured", gateway: {} as any };
+      const result = JSON.parse((await runCommandTool.execute(args, context)).output!);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("CHECK_OK");
+      const rowsResult = JSON.parse((await runCommandTool.execute({ command: "python3 -B", python_validation: {
+        module: "module", function: "read", success_marker: "ROWS_OK",
+        cases: [{ text_rows: ["field,value", "", '"quoted, field",17', "missing"], expected: [
+          { field: "quoted, field", value: "17" }, { field: "missing", value: null },
+        ] }],
+      } }, context)).output!);
+      expect(rowsResult.stdout).toContain("ROWS_OK");
+      expect(rowsResult.exitCode).toBe(0);
+      const flatArgs = { command: "python3 -B", python_module: "module", python_function: "read",
+        python_text_rows: ["field,value", "", '"quoted, field",17', "missing"],
+        python_reference_pipeline: ["io:StringIO", "csv:DictReader", "builtins:list"], success_marker: "FLAT_OK" };
+      expect(normalizeRunCommandArgs(normalizeRunCommandArgs(flatArgs))).toEqual(normalizeRunCommandArgs(flatArgs));
+      const flatResult = JSON.parse((await runCommandTool.execute(flatArgs, context)).output!);
+      expect(flatResult.stdout).toContain("FLAT_OK");
+      expect(flatResult.exitCode).toBe(0);
+      const referenceArgs = { command: "python3 -B", python_module: "module", python_function: "read",
+        python_text_rows: flatArgs.python_text_rows, python_reference_pipeline: ["io:StringIO", "csv:DictReader", "builtins:list"], success_marker: "REFERENCE_OK" };
+      const referenceResult = JSON.parse((await runCommandTool.execute(referenceArgs, context)).output!);
+      expect(referenceResult.stdout).toContain("REFERENCE_OK");
+      writeFileSync(path.join(tmpDir, "module.py"), "def read(text): return []\n");
+      const brokenReferenceResult = JSON.parse((await runCommandTool.execute(referenceArgs, context)).output!);
+      expect(brokenReferenceResult.exitCode).toBe(1);
+      expect(brokenReferenceResult.stdout).toBe("");
+      writeFileSync(path.join(tmpDir, "module.py"), "import csv, io\ndef read(text): return list(csv.DictReader(io.StringIO(text)))\n");
+      args.python_validation.cases[0].expected = [];
+      const failed = JSON.parse((await runCommandTool.execute(args, context)).output!);
+      expect(failed.exitCode).toBe(1);
+      expect(failed.stdout).toBe("");
+      expect(failed.stderr).toContain("AssertionError");
+      expect(existsSync(path.join(tmpDir, "__pycache__"))).toBe(false);
+    });
+
+    it("runs typed Python validation with quoted CSV fields preserved and no helper files", async () => {
+      writeFileSync(path.join(tmpDir, "module.py"), "import csv, io\ndef read(text): return list(csv.DictReader(io.StringIO(text)))\n");
+      const code = String.raw`import module
+assert module.read('field,value\n"quoted, field",17\n') == [{'field':'quoted, field','value':'17'}]
+print('CHECK_OK')`;
+      const args = { command: "python3 -B", python_code: code };
+      const normalized = normalizeRunCommandArgs(args);
+      expect(String(normalized.command)).toContain(code);
+      expect(normalizeRunCommandArgs(normalized)).toEqual(normalized);
+      const result = await runCommandTool.execute(normalized, { workspaceRoot: tmpDir, runId: "test-run", gateway: {} as any });
+      const execution = JSON.parse(result.output);
+      expect(execution.exitCode).toBe(0);
+      expect(execution.stdout.trim()).toBe("CHECK_OK");
+      expect(requireNoHelpers()).toBe(true);
+      function requireNoHelpers() { return !existsSync(path.join(tmpDir, "__pycache__")) && !existsSync(path.join(tmpDir, "test_module.py")); }
     });
 
     it("createDocxBuffer parses bulleted markdown tables into valid docx without errors", async () => {
@@ -219,6 +358,47 @@ describe("Tool Argument Parsing Resilience", () => {
       expect(res.artifacts?.[0].kind).toBe("xlsx");
       expect(res.artifacts?.[0].filename).toBe("findings.xlsx");
       expect(res.summary).toContain("findings.xlsx");
+    });
+
+    it("keeps the requested document filename and rejects extra artifacts", async () => {
+      const context = { workspaceRoot: tmpDir, runId: randomUUID(), gateway: {} as any,
+        requestedArtifacts: [{ type: "docx", filename: "inspection-review.docx" }] };
+      const content = "# Inspection review\n\nThe source records a completed inspection with no measured torque.";
+      await expect(generateDeliverableTool.execute({ type: "docx", filename: "other.docx", content }, context))
+        .rejects.toMatchObject({ code: "invalid_arguments", retryable: true });
+      expect(existsSync(absoluteDataPath(`runs/${context.runId}`))).toBe(false);
+      const result = await generateDeliverableTool.execute({ type: "docx", content }, context);
+      expect(result.artifacts?.[0].filename).toBe("inspection-review.docx");
+      expect(readFileSync(absoluteDataPath(result.artifacts![0].relativePath)).subarray(0, 2).toString()).toBe("PK");
+      rmSync(absoluteDataPath(`runs/${context.runId}`), { recursive: true, force: true });
+    });
+
+    it("preserves prose citations and absent measurements alongside Excel tables", async () => {
+      const context = { workspaceRoot: tmpDir, runId: randomUUID(), gateway: {} as any };
+      const result = await generateDeliverableTool.execute({
+        type: "xlsx", filename: "observations.xlsx", content: "# Observations\n\n| Quantity | Value |\n| --- | --- |\n| Flow | 24 L/s |\n\n**Note:** Torque was not measured.\n**Source:** source.pdf, page 3",
+      }, context);
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(absoluteDataPath(result.artifacts![0].relativePath));
+      const cells: string[] = [];
+      workbook.eachSheet((sheet) => sheet.eachRow((row) => row.eachCell((cell) => cells.push(String(cell.value)))));
+      expect(cells.join("\n")).toContain("24 L/s");
+      expect(cells.join("\n")).toContain("Torque was not measured");
+      expect(cells.join("\n")).toContain("source.pdf, page 3");
+    });
+
+    it("compiles real Markdown field lists into Excel without requiring a table", async () => {
+      const context = { workspaceRoot: tmpDir, runId: randomUUID(), gateway: {} as any, sourceReferences: [{ filename: "instrument.pdf", page: 7 }] };
+      const result = await generateDeliverableTool.execute({ type: "xlsx", filename: "field-report.xlsx", content: "# Measurement Report\n- **Flow:** 24 L/s\n- **Speed:** 120 rpm\n\n**Note:** Torque was not measured.\n**Source:** source.pdf page 3" }, context);
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(absoluteDataPath(result.artifacts![0].relativePath));
+      expect(workbook.worksheets[0].getRow(2).getCell(1).value).toBe("Flow");
+      expect(workbook.worksheets[0].getRow(2).getCell(2).value).toBe("24 L/s");
+      const values: string[] = [];
+      workbook.eachSheet((sheet) => sheet.eachRow((row) => row.eachCell((cell) => values.push(String(cell.value)))));
+      expect(values.join("\n")).toContain("Torque was not measured");
+      expect(values.join("\n")).toContain("source.pdf page 3");
+      expect(values.join("\n")).toContain("instrument.pdf, page 7");
     });
 
     it("readFileTool returns friendly advice when reading binary image files instead of crashing", async () => {
