@@ -25,25 +25,29 @@ const PYTHON_BUILTINS = new Set([
   "super", "sys", "os", "csv", "json", "math", "re"
 ]);
 
+// PERF OPTIMIZATION: Module-level pre-compiled RegExp constant.
+// Prevents repeatedly re-instantiating RegExp objects and re-compiling ASTs when syntax-highlighting Python code lines in ConfirmationModal.
+const PYTHON_HIGHLIGHT_PATTERN = new RegExp(
+  '("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|#.*|\\b(?:' +
+    Array.from(PYTHON_KEYWORDS).join("|") +
+    ')\\b|\\b(?:' +
+    Array.from(PYTHON_BUILTINS).join("|") +
+    ')\\b|\\b\\d+\\.?\\d*\\b)',
+  "g"
+);
+
 function highlightPython(code: string): React.ReactNode[] {
   if (!code) return [" "];
-  const pattern = new RegExp(
-    '("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|#.*|\\b(?:' +
-      Array.from(PYTHON_KEYWORDS).join("|") +
-      ')\\b|\\b(?:' +
-      Array.from(PYTHON_BUILTINS).join("|") +
-      ')\\b|\\b\\d+\\.?\\d*\\b)',
-    "g"
-  );
+  PYTHON_HIGHLIGHT_PATTERN.lastIndex = 0;
   const nodes: React.ReactNode[] = [];
   let lastIndex = 0;
   let m: RegExpExecArray | null;
   let idx = 0;
-  while ((m = pattern.exec(code)) !== null) {
+  while ((m = PYTHON_HIGHLIGHT_PATTERN.exec(code)) !== null) {
     if (m.index > lastIndex) nodes.push(code.slice(lastIndex, m.index));
     const token = m[0];
     if (!token) {
-      lastIndex = pattern.lastIndex;
+      lastIndex = PYTHON_HIGHLIGHT_PATTERN.lastIndex;
       continue;
     }
     if (token.startsWith('"') || token.startsWith("'")) {
@@ -59,7 +63,7 @@ function highlightPython(code: string): React.ReactNode[] {
     } else {
       nodes.push(token);
     }
-    lastIndex = pattern.lastIndex;
+    lastIndex = PYTHON_HIGHLIGHT_PATTERN.lastIndex;
   }
   if (lastIndex < code.length) nodes.push(code.slice(lastIndex));
   if (nodes.length === 0) return [code];

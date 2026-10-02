@@ -57,33 +57,37 @@ const HIGHLIGHT_KEYWORDS = new Set([
   'if','else','for','while','return','function','class','const','let','var','import','export','from','as','async','await','try','catch','finally','throw','new','this','super','extends','implements','interface','enum','type','public','private','protected','static','yield','break','continue','switch','case','default','do','in','of','instanceof','typeof','void','delete','true','false','null','undefined','def','elif','except','lambda','with','pass','raise','global','nonlocal','assert','and','or','not','is','print','int','float','str','list','dict','bool','package','struct','func','select','chan','map','defer','goto','include','define','using','namespace','template','typename','virtual','override','final','abstract','throws','synchronized','transient','volatile','native','strictfp','where','order','by','group','having','union','insert','update','create','alter','drop','join','inner','left','right','outer','on','double','char','long','short','byte','boolean','select',
 ]);
 
+// PERF OPTIMIZATION: Module-level pre-compiled RegExp constant for code syntax highlighting in chat message code blocks.
+const CHAT_HIGHLIGHT_PATTERN = new RegExp(
+  '("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|`(?:\\\\.|[^`\\\\])*`|//.*|#.*|/\\*[\\s\\S]*?\\*/|<!--[\\s\\S]*?-->|\\b(?:' + Array.from(HIGHLIGHT_KEYWORDS).join('|') + ')\\b|\\b\\d+\\.?\\d*\\b)',
+  'g'
+);
+
+// PERF OPTIMIZATION: Module-level pre-compiled RegExp constant for inline Markdown formatting.
+const INLINE_MARKDOWN_PATTERN = /\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|`([^`]+?)`|\[(.+?)\]\((.+?)\)/g;
+
 function highlightCode(code: string): React.ReactNode[] {
-  const keywords = HIGHLIGHT_KEYWORDS;
-  // strings, comments, numbers, keywords
-  const pattern = new RegExp(
-    '("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|`(?:\\\\.|[^`\\\\])*`|//.*|#.*|/\\*[\\s\\S]*?\\*/|<!--[\\s\\S]*?-->|\\b(?:' + Array.from(keywords).join('|') + ')\\b|\\b\\d+\\.?\\d*\\b)',
-    'g'
-  );
+  CHAT_HIGHLIGHT_PATTERN.lastIndex = 0;
   const nodes: React.ReactNode[] = [];
   let lastIndex = 0;
   let m: RegExpExecArray | null;
   let idx = 0;
-  while ((m = pattern.exec(code)) !== null) {
+  while ((m = CHAT_HIGHLIGHT_PATTERN.exec(code)) !== null) {
     if (m.index > lastIndex) nodes.push(code.slice(lastIndex, m.index));
     const token = m[0];
-    if (!token) { lastIndex = pattern.lastIndex; continue; }
+    if (!token) { lastIndex = CHAT_HIGHLIGHT_PATTERN.lastIndex; continue; }
     if (token.startsWith('"') || token.startsWith("'") || token.startsWith('`')) {
       nodes.push(<span key={`hl-s-${idx++}`} className="text-emerald-300">{token}</span>);
     } else if (token.startsWith('//') || token.startsWith('#') || token.startsWith('/*') || token.startsWith('<!--')) {
       nodes.push(<span key={`hl-c-${idx++}`} className="text-zinc-500 italic">{token}</span>);
     } else if (/^\d/.test(token)) {
       nodes.push(<span key={`hl-n-${idx++}`} className="text-amber-300">{token}</span>);
-    } else if (keywords.has(token)) {
+    } else if (HIGHLIGHT_KEYWORDS.has(token)) {
       nodes.push(<span key={`hl-k-${idx++}`} className="text-sky-300 font-medium">{token}</span>);
     } else {
       nodes.push(token);
     }
-    lastIndex = pattern.lastIndex;
+    lastIndex = CHAT_HIGHLIGHT_PATTERN.lastIndex;
   }
   if (lastIndex < code.length) nodes.push(code.slice(lastIndex));
   if (nodes.length === 0) return [code];
@@ -91,12 +95,12 @@ function highlightCode(code: string): React.ReactNode[] {
 }
 
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
+  INLINE_MARKDOWN_PATTERN.lastIndex = 0;
   const nodes: React.ReactNode[] = [];
-  const pattern = /\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|`([^`]+?)`|\[(.+?)\]\((.+?)\)/g;
   let lastIndex = 0;
   let m: RegExpExecArray | null;
   let idx = 0;
-  while ((m = pattern.exec(text)) !== null) {
+  while ((m = INLINE_MARKDOWN_PATTERN.exec(text)) !== null) {
     if (m.index > lastIndex) {
       nodes.push(text.slice(lastIndex, m.index));
     }
@@ -113,7 +117,7 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
     } else if (m[6] && m[7]) {
       nodes.push(<a key={`${keyPrefix}-a-${idx++}`} href={m[7]} target="_blank" rel="noreferrer" className="underline underline-offset-2 decoration-[var(--border-strong)] hover:text-[var(--accent)] text-[var(--text-primary)] transition-colors">{m[6]}</a>);
     }
-    lastIndex = pattern.lastIndex;
+    lastIndex = INLINE_MARKDOWN_PATTERN.lastIndex;
   }
   if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
   // handle case with no matches

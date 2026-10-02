@@ -79,6 +79,14 @@ import {
   logScriptRepair,
 } from "../logger.js";
 
+// PERF OPTIMIZATION: Module-level pre-compiled RegExp constant for artifact request detection.
+const FILE_ACTION_VERBS = "export|download|save|create|generate|write|make|send|give|provide|produce|return|deliver|output";
+const FILE_NOUNS = "file|files|artifact|artifacts|result file|output file|deliverable|deliverables|xlsx|excel|spreadsheet|csv|txt|json|md|markdown";
+const REQUESTS_ARTIFACT_PATTERN = new RegExp(
+  `\\b(${FILE_ACTION_VERBS})\\b[\\s\\S]*\\b(${FILE_NOUNS})\\b|\\b(${FILE_NOUNS})\\b[\\s\\S]*\\b(${FILE_ACTION_VERBS})\\b`,
+  "i",
+);
+
 function inferArtifactKind(filename: string, declaredKind?: string): ArtifactKind {
   if (declaredKind && ["docx", "pdf", "xlsx", "csv", "txt", "json", "md"].includes(declaredKind)) {
     return declaredKind as ArtifactKind;
@@ -3356,15 +3364,8 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
     }
   }
   private requestsArtifact(text: string): boolean {
-    const fileActionVerbs =
-      "export|download|save|create|generate|write|make|send|give|provide|produce|return|deliver|output";
-    const fileNouns =
-      "file|files|artifact|artifacts|result file|output file|deliverable|deliverables|xlsx|excel|spreadsheet|csv|txt|json|md|markdown";
-    const pattern = new RegExp(
-      `\\b(${fileActionVerbs})\\b[\\s\\S]*\\b(${fileNouns})\\b|\\b(${fileNouns})\\b[\\s\\S]*\\b(${fileActionVerbs})\\b`,
-      "i",
-    );
-    return pattern.test(text) || /\b(result file|output file|as an artifact)\b/i.test(text);
+    REQUESTS_ARTIFACT_PATTERN.lastIndex = 0;
+    return REQUESTS_ARTIFACT_PATTERN.test(text) || /\b(result file|output file|as an artifact)\b/i.test(text);
   }
   private async awaitConfirmation(
     runId: string,

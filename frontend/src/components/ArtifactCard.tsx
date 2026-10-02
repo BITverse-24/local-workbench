@@ -15,22 +15,29 @@ const KEYWORDS = new Set([
   "int", "float", "str", "list", "dict", "bool", "SELECT", "FROM", "WHERE", "JOIN", "ORDER", "BY"
 ]);
 
+// PERF OPTIMIZATION: Module-level pre-compiled RegExp constant.
+// Prevents repeatedly re-instantiating RegExp objects and re-compiling ASTs on every line rendered in code blocks.
+const HIGHLIGHT_PATTERN = new RegExp(
+  '("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|`(?:\\\\.|[^`\\\\])*`|//.*|#.*|/\\*[\\s\\S]*?\\*/|\\b(?:' +
+    Array.from(KEYWORDS).join("|") +
+    ")\\b|\\b\\d+\\.?\\d*\\b)",
+  "g"
+);
+
+// PERF OPTIMIZATION: Module-level pre-compiled RegExp constant for inline Markdown formatting.
+const INLINE_MARKDOWN_PATTERN = /\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|`([^`]+?)`|\[(.+?)\]\((.+?)\)/g;
+
 function highlightCode(code: string): React.ReactNode[] {
-  const pattern = new RegExp(
-    '("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|`(?:\\\\.|[^`\\\\])*`|//.*|#.*|/\\*[\\s\\S]*?\\*/|\\b(?:' +
-      Array.from(KEYWORDS).join("|") +
-      ")\\b|\\b\\d+\\.?\\d*\\b)",
-    "g"
-  );
+  HIGHLIGHT_PATTERN.lastIndex = 0;
   const nodes: React.ReactNode[] = [];
   let lastIndex = 0;
   let m: RegExpExecArray | null;
   let idx = 0;
-  while ((m = pattern.exec(code)) !== null) {
+  while ((m = HIGHLIGHT_PATTERN.exec(code)) !== null) {
     if (m.index > lastIndex) nodes.push(code.slice(lastIndex, m.index));
     const token = m[0];
     if (!token) {
-      lastIndex = pattern.lastIndex;
+      lastIndex = HIGHLIGHT_PATTERN.lastIndex;
       continue;
     }
     if (token.startsWith('"') || token.startsWith("'") || token.startsWith("`")) {
@@ -44,7 +51,7 @@ function highlightCode(code: string): React.ReactNode[] {
     } else {
       nodes.push(token);
     }
-    lastIndex = pattern.lastIndex;
+    lastIndex = HIGHLIGHT_PATTERN.lastIndex;
   }
   if (lastIndex < code.length) nodes.push(code.slice(lastIndex));
   if (nodes.length === 0) return [code];
@@ -114,12 +121,12 @@ function parseCsv(raw: string): { headers: string[]; rows: string[][] } {
 }
 
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
+  INLINE_MARKDOWN_PATTERN.lastIndex = 0;
   const nodes: React.ReactNode[] = [];
-  const pattern = /\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|`([^`]+?)`|\[(.+?)\]\((.+?)\)/g;
   let lastIndex = 0;
   let m: RegExpExecArray | null;
   let idx = 0;
-  while ((m = pattern.exec(text)) !== null) {
+  while ((m = INLINE_MARKDOWN_PATTERN.exec(text)) !== null) {
     if (m.index > lastIndex) {
       nodes.push(text.slice(lastIndex, m.index));
     }
@@ -136,7 +143,7 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
     } else if (m[6] && m[7]) {
       nodes.push(<a key={`${keyPrefix}-a-${idx++}`} href={m[7]} target="_blank" rel="noreferrer" className="underline underline-offset-2 decoration-white/30 hover:decoration-white/60 text-sky-400">{m[6]}</a>);
     }
-    lastIndex = pattern.lastIndex;
+    lastIndex = INLINE_MARKDOWN_PATTERN.lastIndex;
   }
   if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
   if (nodes.length === 0) return [text];
