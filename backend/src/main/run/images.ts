@@ -196,14 +196,14 @@ function computeFnv1a32(buffer: Buffer): number {
  * Parses <text>, <tspan>, <title>, and <desc> XML nodes from SVG vector drawings,
  * stripping internal tags, decoding XML entities, and preserving drawing identifiers.
  */
-export function extractSvgText(svgBuffer: Buffer): string {
+export function extractSvgText(svgBuffer: Buffer, maxChars: number | null = 8000): string {
   const key = computeFnv1a32(svgBuffer);
   const cached = svgTextCache.get(key);
   if (cached !== undefined) {
     // Refresh position for true LRU eviction
     svgTextCache.delete(key);
     svgTextCache.set(key, cached);
-    return cached;
+    return maxChars === null ? cached : cached.slice(0, maxChars);
   }
 
   const result = computeExtractSvgText(svgBuffer);
@@ -214,7 +214,7 @@ export function extractSvgText(svgBuffer: Buffer): string {
   }
   svgTextCache.set(key, result);
 
-  return result;
+  return maxChars === null ? result : result.slice(0, maxChars);
 }
 
 function computeExtractSvgText(svgBuffer: Buffer): string {
@@ -253,7 +253,7 @@ function computeExtractSvgText(svgBuffer: Buffer): string {
     }
   }
 
-  return lines.join("\n").slice(0, 8000);
+  return lines.join("\n");
 }
 
 export async function createPlaceholderImagesFromText(text: string): Promise<PreparedImage[]> {
@@ -578,5 +578,4 @@ export async function rankPagesByVisualDensity(
     estimatedTokensSaved: savedTokens,
   };
 }
-
 

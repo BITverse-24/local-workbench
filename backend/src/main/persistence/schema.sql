@@ -171,4 +171,31 @@ CREATE TABLE IF NOT EXISTS kv_meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
--- ('schema_version','1')
+-- ('schema_version','2')
+
+-- P1 foundation: immutable normalized contracts and intermediate-result manifests.
+CREATE TABLE IF NOT EXISTS run_contracts (
+  run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+  schema_version INTEGER NOT NULL,
+  contract_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS intermediate_results (
+  result_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  schema_version INTEGER NOT NULL,
+  result_type TEXT NOT NULL CHECK (result_type IN ('text','document','table','structured','execution')),
+  status TEXT NOT NULL CHECK (status IN ('complete','partial')),
+  origin TEXT NOT NULL CHECK (origin IN ('source_extracted','model_derived','execution')),
+  relative_path TEXT NOT NULL UNIQUE,
+  encoding TEXT NOT NULL CHECK (encoding IN ('utf8','json')),
+  size_bytes INTEGER NOT NULL,
+  sha256 TEXT NOT NULL,
+  producer_tool TEXT NOT NULL,
+  producer_call_id TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  structured_schema_json TEXT,
+  sources_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_intermediate_results_run ON intermediate_results(run_id, created_at, result_id);

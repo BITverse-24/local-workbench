@@ -1,7 +1,8 @@
-import type { ModelId } from "../../shared/contracts.js";
+import type { ModelId, RunContract } from "../../shared/contracts.js";
 import type { AgentTool } from "../tools/types.js";
 import type { SemanticIntent } from "./contextual-router.js";
 import { workspaceTools } from "../tools/workspace-tools.js";
+import { retrieveResultTool } from "../tools/result-retrieval.js";
 import {
   extractDocumentTool,
   generateCodeTool,
@@ -14,7 +15,9 @@ import {
 export interface EnvironmentState {
   hasWorkspace: boolean;
   hasAttachments: boolean;
+  hasVisualAttachments?: boolean;
   hasKnowledgeBaseDocs: boolean;
+  hasRetrievableResults?: boolean;
 }
 
 /**
@@ -28,24 +31,27 @@ export interface EnvironmentState {
 export function composeTools(env: EnvironmentState, driverModelId: ModelId): AgentTool[] {
   const tools: AgentTool[] = [];
 
-  // 1. Always available capabilities
+  // 1. Python execution & deliverable generation
   tools.push(executePythonTool);
   tools.push(generateDeliverableTool);
 
-  // 2. Knowledge base tool (RAG query)
+  // 2. Result retrieval tool: available in tool dispatcher, filtered dynamically per turn until results exist
+  tools.push(retrieveResultTool);
+
+  // 3. Knowledge base tool (RAG query)
   if (env.hasKnowledgeBaseDocs) {
     tools.push(retrieveKnowledgeTool);
   }
 
-  // 3. Workspace file tools (always active: mounts user workspace, or falls back to run sandbox dir)
+  // 4. Workspace file tools (always active: mounts user workspace, or falls back to run sandbox dir)
   tools.push(...workspaceTools);
 
-  // 4. Multimodal document extraction (if user attached images or documents)
-  if (env.hasAttachments) {
+  // 5. Multimodal document extraction (strictly if user attached visual documents, PDFs, or drawings)
+  if (env.hasVisualAttachments ?? env.hasAttachments) {
     tools.push(extractDocumentTool);
   }
 
-  // 5. Cross-specialist delegation tools
+  // 6. Cross-specialist delegation tools
   // If the driver is NOT the code model, provide code generation capability
   if (driverModelId !== "code-qwen25coder") {
     tools.push(generateCodeTool);
@@ -62,29 +68,103 @@ export function composeTools(env: EnvironmentState, driverModelId: ModelId): Age
 }
 
 /** Apply execution scope independently of which workspace is mounted. */
-export function constrainToolsToIntent(tools: AgentTool[], intent: Partial<SemanticIntent>): AgentTool[] {
+export function constrainToolsToIntent(
+  tools: AgentTool[],
+  intent: Partial<SemanticIntent>,
+  contract?: RunContract,
+  env?: EnvironmentState,
+): AgentTool[] {
   const formattedDocumentRevision = intent.intentType === "document_drafting" &&
     [...(intent.targetFiles ?? []), ...(intent.expectedDeliverables ?? []).map((d) => d.filename ?? "")]
       .some((filename) => /\.(?:docx|xlsx|pdf)$/i.test(filename));
-  if (!formattedDocumentRevision && (intent.workspaceMutationRequested || intent.intentType === "command_execution")) return tools;
-  const excluded = new Set(["write_file", "delete_file", "run_command"]);
-  if (intent.intentType === "file_inspection" || intent.intentType === "document_drafting") {
-    excluded.add("generate_code");
-    excluded.add("execute_python");
+
+  const isPureChat = Boolean(
+    (intent.intentType === "pure_chat" || intent.intentType === "general_qa") &&
+    !env?.hasWorkspace && !env?.hasAttachments && !env?.hasKnowledgeBaseDocs
+  );
+
+  const chatOnly = Boolean(
+    contract?.response.chatOnly ||
+    intent.chatResponseOnly ||
+    isPureChat
+  );
+
+  const workspaceMutationRequested = Boolean(
+    !formattedDocumentRevision &&
+    !chatOnly &&
+    (contract?.workspace.requested ?? intent.workspaceMutationRequested)
+  );
+
+  const commandExecutionRequested = Boolean(
+    !chatOnly &&
+    (intent.intentType === "command_execution" ||
+     contract?.workspace.operations?.some((op) => op.operation === "execute"))
+  );
+
+  const hasDeliverables = Boolean(
+    (contract?.deliverables && contract.deliverables.length > 0) ||
+    (intent.expectedDeliverables && intent.expectedDeliverables.length > 0) ||
+    intent.intentType === "document_drafting"
+  );
+
+  const excluded = new Set<string>();
+
+  // 1. Mutation tools: prune during explicitly chat-only/read-only execution
+  if (!workspaceMutationRequested) {
+    excluded.add("write_file");
+    excluded.add("delete_file");
   }
+  if (!workspaceMutationRequested && !commandExecutionRequested) {
+    excluded.add("run_command");
+  }
+
+  // Pure chat with no workspace, attachments, or KB docs needs no workspace or execution tools
+  if (isPureChat) {
+    excluded.add("read_file");
+    excluded.add("list_dir");
+    excluded.add("search");
+    excluded.add("write_file");
+    excluded.add("delete_file");
+    excluded.add("run_command");
+    excluded.add("execute_python");
+    excluded.add("generate_code");
+    excluded.add("generate_text");
+    excluded.add("generate_deliverable");
+    excluded.add("retrieve_result");
+  }
+
+  // 4. Avoid unnecessary specialist-tool overlap
+  if (!hasDeliverables) {
+    excluded.add("generate_deliverable");
+  }
+
+  if (intent.taskType !== "code" && intent.intentType !== "code_modification") {
+    excluded.add("generate_code");
+  }
+
+  if (intent.intentType !== "document_drafting") {
+    excluded.add("generate_text");
+  }
+
+  if (intent.intentType === "file_inspection" || intent.intentType === "document_drafting" || chatOnly) {
+    if (intent.intentType !== "command_execution" && intent.intentType !== "code_modification") {
+      excluded.add("execute_python");
+    }
+  }
+
   if (intent.intentType === "code_modification") {
     excluded.add("generate_text");
     excluded.add("generate_code");
     const deliverables = intent.expectedDeliverables ?? [];
-    // execute_python already exports the exact source that passed validation.
-    // A separate export would rewrite that artifact and invalidate its checks.
     if (deliverables.length > 0 && deliverables.every((file) => file.filename?.endsWith(".py"))) {
       excluded.add("generate_deliverable");
     }
   }
+
   const pythonDeliverables = intent.intentType === "code_modification"
     ? (intent.expectedDeliverables ?? []).filter((file) => file.filename?.endsWith(".py")).map((file) => file.filename!)
     : [];
+
   return tools.filter((tool) => !excluded.has(tool.name)).map((tool) => {
     if (tool.name !== "execute_python" || pythonDeliverables.length === 0) return tool;
     const parameters = tool.definition.function.parameters;

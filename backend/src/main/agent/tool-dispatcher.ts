@@ -1,5 +1,8 @@
 import path from "node:path";
-import type { AgentToolCall } from "../../shared/contracts.js";
+import type { AgentToolCall, IntermediateResultInput, SourceReference } from "../../shared/contracts.js";
+import { compactToolObservation } from "./context-manager.js";
+import { resolveSafe, PermissionError } from "../harness/path-guard.js";
+import { extractPathArg } from "../tools/workspace-tools.js";
 import type {
   AgentTool,
   ToolExecutionContext,
@@ -61,6 +64,7 @@ export function classifyToolError(err: unknown, toolName?: string): ToolErrorDet
       "gateway_failure",
       "validation_failure",
       "tool_not_found",
+      "persistence_failure",
       "internal_error",
     ];
     if (validCodes.includes(candidate.code)) {
@@ -333,7 +337,11 @@ export class ToolDispatcher {
           if (typeof call.arguments.raw === "string") {
             throw { code: "invalid_arguments", message: "Invalid or malformed tool arguments. Resend a complete JSON object for this tool. For workspace Python tests use run_command with command and python_code; python_module checks additionally require python_function, raw input lines and a matching independent python_reference_pipeline. For attached scripts use execute_python with code and input_files. No operation was executed.", retryable: true };
           }
-          const rawResult = await tool.execute(call.arguments, context);
+          if (context.resultStore && (call.name === "write_file" || call.name === "delete_file")) {
+            const target = resolveSafe(context.workspaceRoot, extractPathArg(call.arguments));
+            if (context.resultStore.isStoragePath(target)) throw new PermissionError("Durable result payloads are immutable; create a new result instead");
+          }
+          const rawResult = await tool.execute(call.arguments, { ...context, currentCallId: call.id });
           const durationMs = Date.now() - t0;
 
           const rawOutput = typeof rawResult.output === "string" ? rawResult.output : "";
@@ -482,6 +490,37 @@ export class ToolDispatcher {
             }
           }
 
+          // Persist before returning success or publishing the observation. The store is run-bound;
+          // standalone/legacy callers without it retain their original tool contract.
+          if (context.resultStore && call.name !== "retrieve_result" && (
+            rawResult.intermediate || ["read_file", "extract_document", "execute_python"].includes(call.name) ||
+            // Command output also drives P0 verification inside AgentLoop; retain that typed control result.
+            (call.name !== "run_command" && rawOutput.length > 4000 && !normalizedResult.artifacts?.length)
+          )) {
+            if (context.resultStore.runId !== context.runId) throw { code: "permission_denied", message: "Result store belongs to another run", retryable: false };
+            const data = rawResult.data ?? tryParseJson(rawOutput);
+            const filename = call.arguments.filename ?? call.arguments.path ?? call.arguments.file;
+            const sources: SourceReference[] = typeof filename === "string" && call.name !== "execute_python" ? [{ filename, relation: "source" }] : [];
+            const origin = call.name === "read_file" ? "source_extracted" : call.name === "execute_python" ? "execution" : "model_derived";
+            const intermediate: Omit<IntermediateResultInput, "producer" | "summary"> = rawResult.intermediate ?? {
+              type: call.name === "read_file" ? "text" : call.name === "execute_python" ? "execution" : typeof data === "object" && data !== null ? "structured" : "text",
+              payload: typeof data === "string" || (data !== null && typeof data === "object") ? data as string | Record<string, unknown> | unknown[] : rawOutput,
+              status: normalizedResult.ok ? "complete" : "partial", origin, sources,
+            };
+            let record;
+            try {
+              record = context.resultStore.registerResult({ ...intermediate,
+                status: normalizedResult.ok ? intermediate.status : "partial", producer: { tool: call.name, callId: call.id }, summary: rawSummary,
+              });
+            } catch (error) {
+              throw { code: "persistence_failure", message: `Tool ${call.name} ran but its result could not be persisted. Side effects may already exist. ${error instanceof Error ? error.message : String(error)}`, retryable: false };
+            }
+            const body = compactToolObservation({ content: rawOutput, toolName: call.name, source: filename as string | undefined, resultId: record.resultId, isOlderTurn: false });
+            normalizedResult = { ...normalizedResult, output: body.content, resultRef: record,
+              ...(normalizedResult.ok ? { data: { resultId: record.resultId, type: record.type, status: record.status } } : {}),
+            };
+          }
+
           // Notify UI about tool completion
           if (context.emitRunEvent) {
             context.emitRunEvent({
@@ -552,7 +591,7 @@ export class ToolDispatcher {
           };
         }
     };
-    const readOnly = new Set(["read_file", "list_dir", "search", "extract_document", "retrieve_knowledge", "retrieve_sop", "ocr_extract", "inspect_drawing", "get_file_info"]);
+    const readOnly = new Set(["read_file", "list_dir", "search", "extract_document", "retrieve_knowledge", "retrieve_result", "retrieve_sop", "ocr_extract", "inspect_drawing", "get_file_info"]);
     const results: ExecutedToolOutput[] = [];
     let reads: AgentToolCall[] = [];
     const flush = async () => {

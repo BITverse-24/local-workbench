@@ -1,6 +1,31 @@
 import type { CompactionMetadata } from "../../shared/contracts.js";
+import { encode } from "gpt-tokenizer";
 
 export type { CompactionMetadata };
+
+export function countTokens(text: string): number {
+  if (!text) return 0;
+  try {
+    return encode(text).length;
+  } catch {
+    return Math.ceil(text.length / 4);
+  }
+}
+
+export function estimateMessageTokens(messages: AgentMessage[]): number {
+  let count = 0;
+  for (const m of messages) {
+    count += 4;
+    if (m.content) count += countTokens(m.content);
+    if (m.tool_calls) count += countTokens(JSON.stringify(m.tool_calls));
+  }
+  return count;
+}
+
+export function estimateToolTokens(tools: any[]): number {
+  if (!tools || tools.length === 0) return 0;
+  return countTokens(JSON.stringify(tools));
+}
 
 export interface AgentMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -12,6 +37,7 @@ export interface AgentMessage {
   source?: string;
   rawContent?: string;
   compaction?: CompactionMetadata;
+  resultId?: string;
 }
 
 /**
@@ -25,6 +51,7 @@ export const TOOL_OBSERVATION_BUDGETS: Record<string, number> = {
   run_command: 3000,
   extract_document: 4000,
   retrieve_knowledge: 4000,
+  retrieve_result: 4000,
   // Aliases / related tool names
   ocr_extract: 4000,
   inspect_drawing: 4000,
@@ -50,6 +77,7 @@ export const OLDER_TOOL_BUDGETS: Record<string, number> = {
   run_command: 1500,
   extract_document: 2000,
   retrieve_knowledge: 2000,
+  retrieve_result: 2000,
   ocr_extract: 2000,
   inspect_drawing: 2000,
   retrieve_sop: 2000,
@@ -90,6 +118,7 @@ export interface CompactObservationParams {
   isOlderTurn: boolean;
   maxBudget?: number;
   maxLines?: number;
+  resultId?: string;
 }
 
 export interface CompactObservationResult {
@@ -102,6 +131,7 @@ export interface CompactObservationResult {
  */
 export function extractSourceArg(toolName: string, args: any): string {
   if (!args || typeof args !== "object") return "";
+  if (typeof args.result_id === "string") return args.result_id;
   if (typeof args.path === "string" && args.path.trim()) return args.path.trim();
   if (typeof args.filename === "string" && args.filename.trim()) return args.filename.trim();
   if (typeof args.filePath === "string" && args.filePath.trim()) return args.filePath.trim();
@@ -118,6 +148,19 @@ export function extractSourceArg(toolName: string, args: any): string {
  * and character/line budgets. Always enforces the global safety limit.
  */
 export function compactToolObservation(params: CompactObservationParams): CompactObservationResult {
+  // Reserve a prefix before applying existing budgets: head/tail compaction must never remove the ID.
+  if (params.resultId) {
+    const budget = Math.min(params.maxBudget ?? (params.isOlderTurn ? OLDER_TOOL_BUDGETS[params.toolName ?? ""] ?? DEFAULT_OLDER_TOOL_BUDGET : TOOL_OBSERVATION_BUDGETS[params.toolName ?? ""] ?? DEFAULT_TOOL_BUDGET), GLOBAL_SAFETY_LIMIT);
+    const fullPrefix = `[DURABLE RESULT: ${params.resultId}; retrieve_result action=read result_id=${params.resultId}]\n`;
+    const shortPrefix = `[DURABLE RESULT: ${params.resultId}; retrieve_result]\n`;
+    const prefix = budget >= fullPrefix.length ? fullPrefix : shortPrefix;
+    if (budget < prefix.length) throw new RangeError("Observation budget cannot preserve the durable result ID and retrieval instruction");
+    const existingPrefix = params.content.startsWith(fullPrefix) ? fullPrefix : params.content.startsWith(shortPrefix) ? shortPrefix : "";
+    const contentWithoutPrefix = params.content.slice(existingPrefix.length);
+    const result = compactToolObservation({ ...params, content: contentWithoutPrefix, resultId: undefined, maxBudget: Math.max(1, budget - prefix.length) });
+    const content = `${prefix}${result.content}`.slice(0, budget);
+    return { content, metadata: { ...result.metadata, resultId: params.resultId, retainedChars: content.length } };
+  }
   const { content, toolName, source, isOlderTurn } = params;
   if (!content) {
     return {
@@ -170,12 +213,14 @@ export function compactToolObservation(params: CompactObservationParams): Compac
       retainedChars: retainedBudget,
       toolName: toolName || "unknown",
       source: effectiveSource,
+      ...(params.resultId ? { resultId: params.resultId } : {}),
     },
     null,
     2,
   );
 
-  const headerNotice = `[OBSERVATION COMPACTED: Truncated to fit context budget]\n${metadataJson}\n\n`;
+  const resultIdNotice = params.resultId ? ` (resultId: ${params.resultId})` : "";
+  const headerNotice = `[OBSERVATION COMPACTED: Truncated to fit context budget${resultIdNotice}]\n${metadataJson}\n\n`;
   const estimatedSeparatorLen = 140;
   const availableContentChars = Math.max(100, targetBudget - headerNotice.length - estimatedSeparatorLen);
 
@@ -229,7 +274,8 @@ export function compactToolObservation(params: CompactObservationParams): Compac
     omittedLines = lines.length - headLines.length - tailLines.length;
     omittedChars = content.length - retainedHead.length - retainedTail.length;
 
-    const separator = `\n... [compacted ${omittedChars} characters across ${omittedLines} lines; full data preserved in source: ${effectiveSource}] ...\n`;
+    const resultIdRef = params.resultId ? `; resultId: ${params.resultId}` : "";
+    const separator = `\n... [compacted ${omittedChars} characters across ${omittedLines} lines; full data preserved in source: ${effectiveSource}${resultIdRef}] ...\n`;
     finalContent = `${headerNotice}${retainedHead}${separator}${retainedTail}`;
   } else {
     // Single-line JSON, minified text, or lines exceeding the head/tail budgets
@@ -237,7 +283,8 @@ export function compactToolObservation(params: CompactObservationParams): Compac
     const retainedTail = content.slice(-tailBudget);
     omittedChars = content.length - retainedHead.length - retainedTail.length;
 
-    const separator = `\n... [compacted ${omittedChars} characters; full observation preserved in source: ${effectiveSource}] ...\n`;
+    const resultIdRef = params.resultId ? `; resultId: ${params.resultId}` : "";
+    const separator = `\n... [compacted ${omittedChars} characters; full observation preserved in source: ${effectiveSource}${resultIdRef}] ...\n`;
     finalContent = `${headerNotice}${retainedHead}${separator}${retainedTail}`;
   }
 
@@ -257,6 +304,7 @@ export function compactToolObservation(params: CompactObservationParams): Compac
     source: effectiveSource,
     omittedChars,
     omittedLines,
+    resultId: params.resultId,
   };
 
   return {
@@ -371,9 +419,10 @@ export function compactConversationHistory(
         source: msg.source,
         isOlderTurn: isOlder,
         maxBudget: options?.globalSafetyLimit,
+        resultId: msg.resultId,
       });
 
-      if (result.metadata.truncated) {
+      if (result.metadata.truncated || msg.resultId) {
         return {
           ...msg,
           content: result.content,
@@ -387,4 +436,89 @@ export function compactConversationHistory(
 
     return msg;
   });
+}
+
+export interface ContextBudgetPlan {
+  contextLimit: number;
+  safetyMargin: number;
+  toolTokens: number;
+  messageTokens: number;
+  maxGenerationTokens: number;
+  isOverBudget: boolean;
+}
+
+/**
+ * Pre-invocation context window budgeting (Phase 4).
+ * Ensures combined serialized messages, tool schemas, generation allowance and safety margin
+ * fit within the configured context window limit (e.g. 8,192 tokens).
+ */
+export function enforceContextBudget(
+  messages: AgentMessage[],
+  tools: any[],
+  contextLimit = 8192,
+  options?: {
+    safetyMargin?: number;
+    minGenerationTokens?: number;
+    requestedGenerationTokens?: number;
+    currentTurn?: number;
+  },
+): {
+  messages: AgentMessage[];
+  maxGenerationTokens?: number;
+  budgetPlan: ContextBudgetPlan;
+} {
+  const safetyMargin = options?.safetyMargin ?? 256;
+  const minGenerationTokens = options?.minGenerationTokens ?? 256;
+  const currentTurn = options?.currentTurn ?? 1;
+  const toolTokens = estimateToolTokens(tools);
+  const requestedGen = options?.requestedGenerationTokens;
+
+  const targetGen = requestedGen !== undefined
+    ? Math.min(requestedGen, Math.max(minGenerationTokens, Math.floor(contextLimit * 0.5)))
+    : 1024;
+
+  // 1. Initial standard compaction (sliding window of 2 turns)
+  let compacted = compactConversationHistory(messages, currentTurn, 2);
+  let messageTokens = estimateMessageTokens(compacted);
+
+  // 2. If messages + toolTokens + targetGen + safetyMargin > contextLimit, compact more aggressively
+  if (messageTokens + toolTokens + targetGen + safetyMargin > contextLimit) {
+    // Stage 1 aggressive: keep 1 full turn, tighten older assistant and tool observation budgets
+    compacted = compactConversationHistory(messages, currentTurn, 1, {
+      olderAssistantBudget: 800,
+      globalSafetyLimit: 3000,
+    });
+    messageTokens = estimateMessageTokens(compacted);
+
+    // Stage 2 aggressive: if still over budget, tighten all past turns
+    if (messageTokens + toolTokens + minGenerationTokens + safetyMargin > contextLimit && currentTurn > 1) {
+      compacted = compactConversationHistory(messages, currentTurn, 0, {
+        olderAssistantBudget: 400,
+        globalSafetyLimit: 1500,
+      });
+      messageTokens = estimateMessageTokens(compacted);
+    }
+  }
+
+  // 3. Compute budget-aware generation allowance
+  const remainingTokens = Math.max(minGenerationTokens, contextLimit - safetyMargin - toolTokens - messageTokens);
+  let maxGenerationTokens: number | undefined = undefined;
+  if (requestedGen !== undefined) {
+    maxGenerationTokens = Math.min(requestedGen, remainingTokens);
+  } else if (remainingTokens < 2048) {
+    maxGenerationTokens = remainingTokens;
+  }
+
+  return {
+    messages: compacted,
+    maxGenerationTokens,
+    budgetPlan: {
+      contextLimit,
+      safetyMargin,
+      toolTokens,
+      messageTokens,
+      maxGenerationTokens: maxGenerationTokens ?? remainingTokens,
+      isOverBudget: messageTokens + toolTokens + (maxGenerationTokens ?? minGenerationTokens) + safetyMargin > contextLimit,
+    },
+  };
 }

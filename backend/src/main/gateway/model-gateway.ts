@@ -13,6 +13,7 @@ import type {
   ModelRegistryEntry,
   ModelRequest,
   ModelResponse,
+  TaskType,
 } from "../../shared/contracts.js";
 import type { ModelClient } from "../models/ports.js";
 import {
@@ -34,6 +35,21 @@ import {
   logModelSummary,
   logVisionFindings,
 } from "../logger.js";
+import { countTokens } from "../agent/context-manager.js";
+
+export interface DelegatedInvocationTelemetry {
+  runId: string;
+  requestId: string;
+  parentCallId?: string;
+  modelId: ModelId | string;
+  taskType: TaskType;
+  purpose?: string;
+  isRetry: boolean;
+  latencyMs: number;
+  promptTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
 
 function gatewayConsole(level: "log" | "warn" | "error", request: { requestId: string; runId: string; taskType: string; modelId: string }, message: string, extra?: unknown) {
   const prefix = `[model-gateway:${request.taskType}:${request.modelId}:${request.requestId.slice(0, 8)}]`;
@@ -616,6 +632,14 @@ export class ModelGateway implements ModelClient {
   private roundRobinCounter = 0;
   externalRequestCount = 0;
   lastVisionUpload?: VisionUploadInfo;
+  private delegatedInvocationListeners: Array<(event: DelegatedInvocationTelemetry) => void> = [];
+
+  onDelegatedInvocation(listener: (event: DelegatedInvocationTelemetry) => void): () => void {
+    this.delegatedInvocationListeners.push(listener);
+    return () => {
+      this.delegatedInvocationListeners = this.delegatedInvocationListeners.filter((l) => l !== listener);
+    };
+  }
 
   constructor(
     private readonly transport: GatewayTransport = nativeTransport,
@@ -881,7 +905,12 @@ export class ModelGateway implements ModelClient {
     }
     messagesPayload.push({ role: "user", content: userContent });
 
-    const maxTokens = request.maxTokens ?? model.maxOutputTokens ?? (isFreeText ? 1536 : 2048);
+    const contextLimit = model.contextLength ?? 8192;
+    const safetyMargin = 256;
+    const requestedMaxTokens = request.maxTokens ?? model.maxOutputTokens ?? (isFreeText ? 1536 : 2048);
+    const estimatedInputTokens = countTokens(JSON.stringify(messagesPayload));
+    const maxAllowedTokens = Math.max(128, contextLimit - estimatedInputTokens - safetyMargin);
+    const maxTokens = Math.min(requestedMaxTokens, maxAllowedTokens);
     const defaultTemperature = (isLocal && (request.taskType === "code" || request.taskType === "vision")) ? 0.0 : 0.2;
     const effectiveTemperature = request.temperature ?? defaultTemperature;
     const requestPayload: Record<string, any> = {
@@ -937,7 +966,7 @@ export class ModelGateway implements ModelClient {
       temperature: request.temperature ?? 0.2,
       userPromptPreview: typeof userContent === "string" ? userContent : "[multipart vision]",
     });
-    persistGatewayTrace(request.runId, request.requestId, { ...outboundLog, bodyPreview: body.slice(0, 4000), bodyChars: body.length });
+    persistGatewayTrace(request.runId, request.requestId, { ...outboundLog, bodyPreview: body.slice(0, 4000), bodyChars: body.length, parentToolCallId: request.parentToolCallId, isRetry: request.isRetry });
     let rawText = "";
     let envelope: unknown = null;
     let extractedContent: unknown = null;
@@ -1227,11 +1256,62 @@ export class ModelGateway implements ModelClient {
       }
 
       persistGatewayTrace(request.runId, request.requestId, { phase: "normalized", taskType: request.taskType, latencyMs, finishReason, usage, result: normalized.result, resultChars: JSON.stringify(normalized.result).length, envelope, rawText, extractedContent, parsedJson });
+
+      if (request.parentToolCallId) {
+        const promptTokens = (usage as any)?.prompt_tokens ?? (usage as any)?.input_tokens ?? 0;
+        const outputTokens = (usage as any)?.completion_tokens ?? (usage as any)?.output_tokens ?? 0;
+        const totalTokens = (usage as any)?.total_tokens ?? (promptTokens + outputTokens);
+        const tele: DelegatedInvocationTelemetry = {
+          runId: request.runId,
+          requestId: request.requestId,
+          parentCallId: request.parentToolCallId,
+          modelId: model.id,
+          taskType: request.taskType,
+          purpose: request.purpose,
+          isRetry: Boolean(request.isRetry),
+          latencyMs,
+          promptTokens,
+          outputTokens,
+          totalTokens,
+        };
+        for (const listener of this.delegatedInvocationListeners) {
+          try {
+            listener(tele);
+          } catch (e) {
+            console.error("[model-gateway] error in delegated invocation listener:", e);
+          }
+        }
+      }
+
       return { ok: true, value: normalized };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logGatewayError(request, `gateway failed: ${msg}`);
       persistGatewayTrace(request.runId, request.requestId, { phase: "gateway_error", taskType: request.taskType, error: msg, stack: error instanceof Error ? error.stack?.slice(0, 3000) : undefined, rawText, envelope, extractedContent, parsedJson });
+
+      if (request.parentToolCallId) {
+        const tele: DelegatedInvocationTelemetry = {
+          runId: request.runId,
+          requestId: request.requestId,
+          parentCallId: request.parentToolCallId,
+          modelId: model.id,
+          taskType: request.taskType,
+          purpose: request.purpose,
+          isRetry: Boolean(request.isRetry),
+          latencyMs: 0,
+          promptTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+        };
+        for (const listener of this.delegatedInvocationListeners) {
+          try {
+            listener(tele);
+          } catch (e) {
+            console.error("[model-gateway] error in delegated invocation listener:", e);
+          }
+        }
+      }
+
       return { ok: false, error: providerError(error, request) };
     }
   }

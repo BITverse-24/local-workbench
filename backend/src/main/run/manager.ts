@@ -66,6 +66,8 @@ import { composeTools, constrainToolsToIntent } from "../router/tool-compositor.
 import { pickDriverModel } from "../router/driver-router.js";
 import { resolveSemanticIntent, extractReferencedFiles } from "../router/contextual-router.js";
 import { AgentLoop } from "../agent/agent-loop.js";
+import { normalizeRunContract, persistRunContract, intentFromContract } from "./contract.js";
+import { RunResultStore } from "./result-store.js";
 import { executePython } from "../tools/python.js";
 import { generateDocx, generateXlsx } from "../tools/artifacts.js";
 import { sanitizePythonSource } from "../validators/responses.js";
@@ -136,8 +138,10 @@ export function findReferencedWorkspaceFiles(
   workspaceRoot: string,
   tree: DirEntry[],
   explicitFiles?: string[],
+  canonicalTargetsOnly = false,
 ): Array<{ path: string; content: string }> {
   const referencedPaths = new Set<string>(explicitFiles ?? []);
+  const allWorkspaceFiles = tree.filter((e) => e.type === "file").map((e) => e.name);
 
   // 1. Combine recent user messages and current text
   const combinedUserText = [
@@ -145,6 +149,7 @@ export function findReferencedWorkspaceFiles(
     text,
   ].join("\n");
 
+  if (!canonicalTargetsOnly) {
   // 2. Look for @path/to/file mentions
   const atPathRegex = /@([a-zA-Z0-9_.\-/]+\.[a-zA-Z0-9]+)/g;
   let match: RegExpExecArray | null;
@@ -154,7 +159,6 @@ export function findReferencedWorkspaceFiles(
   }
 
   // 3. Extract all file paths from tree
-  const allWorkspaceFiles = tree.filter((e) => e.type === "file").map((e) => e.name);
   for (const relPath of allWorkspaceFiles) {
     const baseName = path.basename(relPath);
     const escapedBase = baseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -192,10 +196,10 @@ export function findReferencedWorkspaceFiles(
     }
   }
 
+  }
   // If user requests deletion/removal of files, do NOT pre-load their contents into the prompt.
   // The directory tree listing is already present in the prompt to inform tool calls.
-  const isDeletionIntent = /\b(?:delete|remove|rm|clean|wipe|unlink|destroy|clear)\b/i.test(combinedUserText);
-  if (isDeletionIntent) {
+  if (!canonicalTargetsOnly && /\b(?:delete|remove|rm|clean|wipe|unlink|destroy|clear)\b/i.test(combinedUserText)) {
     return [];
   }
 
@@ -291,6 +295,23 @@ export class RunManager {
   ) {
     this.codeModel = new CodeModel(gateway);
     this.chatModel = new ChatModel(gateway);
+    if (typeof (this.gateway as any).onDelegatedInvocation === "function") {
+      this.gateway.onDelegatedInvocation((telemetry) => {
+        this.emit({
+          type: "delegated_model_invocation",
+          runId: telemetry.runId,
+          parentCallId: telemetry.parentCallId,
+          modelId: telemetry.modelId,
+          taskType: telemetry.taskType,
+          purpose: telemetry.purpose,
+          isRetry: telemetry.isRetry,
+          latencyMs: telemetry.latencyMs,
+          promptTokens: telemetry.promptTokens,
+          outputTokens: telemetry.outputTokens,
+          totalTokens: telemetry.totalTokens,
+        });
+      });
+    }
   }
 
   setHarness(harness: HarnessManager): void {
@@ -878,7 +899,7 @@ export class RunManager {
         ? this.harness.getDirectoryTree().filter((e) => e.type === "file").map((e) => e.name)
         : [];
 
-      const semanticIntent = await resolveSemanticIntent(
+      const resolvedIntent = await resolveSemanticIntent(
         {
           userPrompt: text,
           runId,
@@ -890,8 +911,11 @@ export class RunManager {
         this.gateway,
       );
 
-      if (semanticIntent.status === "failed") {
-        const errorMsg = semanticIntent.failureReason || "Failed to classify user intent";
+      // Persist the interpretation (including a failed resolution) before any V2 execution.
+      const runContract = persistRunContract(normalizeRunContract(runId, resolvedIntent));
+      const semanticIntent = intentFromContract(runContract);
+      if (resolvedIntent.status === "failed") {
+        const errorMsg = resolvedIntent.failureReason || "Failed to classify user intent";
         this.emit({
           type: "error",
           runId,
@@ -920,22 +944,30 @@ export class RunManager {
       const activeGrounding = this.groundingForRun(runId);
       const kbStats = activeGrounding ? this.ragService?.getStats() : undefined;
       const hasKnowledgeBaseDocs = Boolean(kbStats && kbStats.docCount > 0 && kbStats.chunkCount > 0);
+      const resultStore = new RunResultStore(runId);
+      const hasVisualAttachments = attachments.some((a) =>
+        /\.(?:pdf|svg|png|jpe?g|bmp|tiff?)$/i.test(a.filename)
+      );
+      const envState = {
+        hasWorkspace: isWorkspaceActive,
+        hasAttachments: attachments.length > 0,
+        hasVisualAttachments,
+        hasKnowledgeBaseDocs,
+        hasRetrievableResults: resultStore.listResults().length > 0,
+      };
       let tools = composeTools(
-        {
-          hasWorkspace: isWorkspaceActive,
-          hasAttachments: attachments.length > 0,
-          hasKnowledgeBaseDocs,
-        },
+        envState,
         semanticIntent.driverModel,
       );
 
-      tools = constrainToolsToIntent(tools, semanticIntent);
+      tools = constrainToolsToIntent(tools, semanticIntent, runContract, envState);
       const attachedRepair = attachments.length > 0 && semanticIntent.intentType === "code_modification" &&
         !semanticIntent.workspaceMutationRequested;
       const useMountedWorkspace = isWorkspaceActive && !attachedRepair;
       if (isWorkspaceActive && semanticIntent.intentType === "code_modification" &&
           attachments.length === 0 && semanticIntent.expectedDeliverables.length === 0) {
         const workspaceTools = new Set(["read_file", "list_dir", "search", "write_file", "delete_file", "run_command"]);
+        if (envState.hasRetrievableResults) workspaceTools.add("retrieve_result");
         tools = tools.filter((tool) => workspaceTools.has(tool.name) || (hasKnowledgeBaseDocs && tool.name === "retrieve_knowledge"));
       }
 
@@ -945,6 +977,8 @@ export class RunManager {
 
       const toolContext = {
         runId,
+        runContract,
+        resultStore,
         workspaceRoot,
         gateway: this.gateway,
         harness: useMountedWorkspace ? this.harness : undefined,
@@ -1032,7 +1066,7 @@ export class RunManager {
       const treeFormatted = useMountedWorkspace && this.harness
         ? formatTreeForPrompt(this.harness.getDirectoryTree()) : "Run sandbox only.";
       const referencedFiles = useMountedWorkspace && this.harness
-        ? findReferencedWorkspaceFiles(text, history, workspaceRoot, this.harness.getDirectoryTree(), semanticIntent.targetFiles || []) : [];
+        ? findReferencedWorkspaceFiles(text, history, workspaceRoot, this.harness.getDirectoryTree(), semanticIntent.targetFiles || [], true) : [];
       const referencedFilesSection = referencedFiles.map((file) =>
         `--- SOURCE FILE: ${file.path} ---\n${file.content}\n--- END SOURCE FILE ---`).join("\n\n");
       let systemPrompt = attachedRepair
@@ -1085,6 +1119,7 @@ ${referencedFilesSection}`;
           userPrompt: text,
           systemPrompt,
           semanticIntent,
+          runContract,
           outputExpectation: semanticIntent.outputExpectation,
           tools,
           context: toolContext,

@@ -5,6 +5,8 @@ import { initDb, closeDb } from "../src/main/persistence/db.js";
 import type { RunEvent } from "../src/shared/contracts.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import path from "node:path";
+import { getRunContract } from "../src/main/run/contract.js";
+import { writeRunFile } from "../src/main/run/filesystem.js";
 
 describe("Unified Agent Loop v2 RunManager Integration", () => {
   let tempDir = "";
@@ -49,11 +51,49 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     expect(events.some((e) => e.type === "routing" && e.modelId === "draft-qwen3")).toBe(true);
     expect(events.some((e) => e.type === "agent_thinking")).toBe(true);
     expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
+    expect(getRunContract(started.runId)?.objective).toBe("Calculate thermal efficiency");
 
     closeDb();
     delete process.env.WORKBENCH_DATA_ROOT;
     delete process.env.WORKBENCH_AGENT_V2;
     rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("uses a persisted contract and native result retrieval through the active V2 loop with one classification", async () => {
+    tempDir = mkdtempSync(path.join(process.cwd(), ".tmp-v2-memory-"));
+    process.env.WORKBENCH_DATA_ROOT = path.join(tempDir, "data"); process.env.WORKBENCH_AGENT_V2 = "true";
+    initDb(path.join(tempDir, "workbench.sqlite"));
+    let turns = 0, classifications = 0;
+    let resultId = "";
+    const events: RunEvent[] = [];
+    const gateway = {
+      async execute() { classifications++; return { ok: true, value: { result: { intentType: "file_inspection", primaryGoal: "Explain stored facts", isActionable: false, chatResponseOnly: true, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [] } } }; },
+      async chatWithTools(_model: unknown, messages: any[], tools: any[], options: { runId: string }) {
+        turns++;
+        if (turns === 1) {
+          expect(tools.some((t) => t.function.name === "retrieve_result")).toBe(false);
+          writeRunFile(options.runId, "intermediate", "facts.txt", Array.from({ length: 700 }, (_, line) => `fact ${line}: preserved-${line}`).join("\n"));
+          return { ok: true, value: { content: null, tool_calls: [{ id: "read", name: "read_file", arguments: { path: "facts.txt" } }] } };
+        }
+        if (turns === 2) {
+          expect(tools.some((t) => t.function.name === "retrieve_result")).toBe(true);
+          const observation = messages.find((m) => m.tool_call_id === "read").content;
+          resultId = observation.match(/DURABLE RESULT: ([0-9a-f-]{36})/)[1];
+          expect(observation).not.toContain("fact 350:");
+          return { ok: true, value: { content: null, tool_calls: [{ id: "recover", name: "retrieve_result", arguments: { result_id: resultId, mode: "lines", start_line: 351, count: 1 } }] } };
+        }
+        expect(messages.find((m) => m.tool_call_id === "recover").content).toContain("fact 350: preserved-350");
+        return { ok: true, value: { content: "The stored source says fact 350: preserved-350.", tool_calls: null } };
+      }, health: async () => [],
+    } as unknown as ModelGateway;
+    const manager = new RunManager(gateway, (e) => events.push(e));
+    const { runId } = await manager.start({ userText: "Explain the source facts in chat; do not create deliverables." });
+    await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true), { timeout: 3000 });
+    expect(classifications).toBe(1);
+    expect(turns).toBe(3);
+    expect(resultId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(getRunContract(runId)?.deliverables).toEqual([]);
+    expect(events.some((e) => e.type === "artifact_ready")).toBe(false);
   });
 
   it("pauses before driver generation with plan_approval and resumes after confirmation", async () => {
@@ -67,7 +107,8 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
 
     const mockGateway = {
       async execute() { return { ok: true, value: { result: { intentType: "code_modification", driverModel: "code-qwen25coder", taskType: "code", primaryGoal: "Write temp.txt", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: ["temp.txt"], expectedDeliverables: [] } } }; },
-      async chatWithTools() {
+      async chatWithTools(_model: unknown, messages: any[]) {
+        expect(messages[0].content).not.toContain("then validate the written implementation");
         callTurn++;
         if (callTurn === 1) {
           return {
@@ -131,6 +172,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
 
     expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
     expect(events.some((e) => e.type === "assistant_message" && (e as any).text.includes("Requested file written successfully"))).toBe(true);
+    expect(events.some((e) => e.type === "artifact_ready")).toBe(false);
 
     closeDb();
     delete process.env.WORKBENCH_DATA_ROOT;

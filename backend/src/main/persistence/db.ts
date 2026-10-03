@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const SCHEMA_VERSION = "1";
+export const SCHEMA_VERSION = "2";
 
 export const SETTING_DEFAULTS: Record<string, unknown> = {
   selectedModel: "draft-qwen3",
@@ -187,7 +187,7 @@ function seedDefaults(db: Db): void {
     for (const [key, value] of Object.entries(SETTING_DEFAULTS)) {
       seedSetting.run(key, JSON.stringify(value), now);
     }
-    db.prepare("INSERT OR IGNORE INTO kv_meta(key, value) VALUES ('schema_version', ?)").run(
+    db.prepare("INSERT INTO kv_meta(key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(
       SCHEMA_VERSION,
     );
   });
@@ -203,7 +203,16 @@ export function initDb(dbPath?: string): Db {
     mkdirSync(path.dirname(resolved), { recursive: true });
   }
   const db = new Database(resolved);
+  // Never apply an older application's schema to a database created by a future version.
+  if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='kv_meta'").get()) {
+    const version = (db.prepare("SELECT value FROM kv_meta WHERE key='schema_version'").get() as { value: string } | undefined)?.value;
+    if (version && (!/^\d+$/.test(version) || Number(version) > Number(SCHEMA_VERSION))) {
+      db.close();
+      throw new Error(`Unsupported database schema version: ${version}`);
+    }
+  }
   db.pragma("journal_mode = WAL");
+  db.pragma("synchronous = FULL");
   db.pragma("foreign_keys = ON");
   applySchema(db);
   migrateArtifactsSchema(db);

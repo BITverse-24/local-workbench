@@ -15,6 +15,7 @@ import {
   getSchemaVersion,
   initDb,
   SETTING_DEFAULTS,
+  SCHEMA_VERSION,
 } from "../src/main/persistence/db.js";
 import { addMessage, editMessage, listMessages } from "../src/main/persistence/messages.js";
 import { assertSafeRelativePath } from "../src/main/persistence/paths.js";
@@ -41,6 +42,8 @@ const ALL_DDL_TABLES = [
   "run_errors",
   "settings",
   "kv_meta",
+  "run_contracts",
+  "intermediate_results",
 ];
 
 let dir = "";
@@ -70,7 +73,7 @@ describe("Phase DB — SQLite working", () => {
     const names = tableNames();
     for (const t of REQUIRED_TABLES) expect(names).toContain(t);
     for (const t of ALL_DDL_TABLES) expect(names).toContain(t);
-    expect(getSchemaVersion()).toBe("1");
+    expect(getSchemaVersion()).toBe(SCHEMA_VERSION);
     // settings defaults seeded
     for (const [k, v] of Object.entries(SETTING_DEFAULTS)) {
       expect(getSetting(k)).toEqual(v);
@@ -147,7 +150,26 @@ describe("Phase DB — SQLite working", () => {
     initDb(dbPath); // second launch
     expect(getChat(chatId)?.id).toBe(chatId);
     expect(listMessages(chatId).map((m) => m.content)).toEqual(["before restart"]);
-    expect(getSchemaVersion()).toBe("1");
+    expect(getSchemaVersion()).toBe(SCHEMA_VERSION);
+  });
+
+  it("upgrades the version-1 database additively and preserves existing messages", () => {
+    const chatId = createChat("version-one migration");
+    addMessage({ chat_id: chatId, role: "user", content: "preserve this existing message" });
+    getDb().exec("DROP TABLE intermediate_results; DROP TABLE run_contracts; UPDATE kv_meta SET value='1' WHERE key='schema_version'");
+    closeDb(); initDb(dbPath);
+    expect(getSchemaVersion()).toBe(SCHEMA_VERSION);
+    expect(tableNames()).toEqual(expect.arrayContaining(["run_contracts", "intermediate_results"]));
+    expect(listMessages(chatId).map((message) => message.content)).toEqual(["preserve this existing message"]);
+  });
+
+  it("rejects future database versions without downgrading their version marker", () => {
+    getDb().prepare("UPDATE kv_meta SET value='99' WHERE key='schema_version'").run();
+    closeDb();
+    expect(() => initDb(dbPath)).toThrow("Unsupported database schema version: 99");
+    const readonlyDb = new (require("better-sqlite3"))(dbPath, { readonly: true });
+    expect(readonlyDb.prepare("SELECT value FROM kv_meta WHERE key='schema_version'").get().value).toBe("99");
+    readonlyDb.close();
   });
 
   it("permits artifacts of all supported kinds: docx, pdf, xlsx, csv, txt, json, md", () => {

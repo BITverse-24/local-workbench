@@ -246,6 +246,7 @@ export const readFileTool: AgentTool = {
         return {
           output: formattedContent,
           summary: docResult.summary,
+          intermediate: { type: "document", status: docResult.hasText ? "complete" : "partial", origin: "source_extracted", payload: docResult.text, sources: [{ filename: relPath, relation: "source" }] },
         };
       }
     }
@@ -253,9 +254,11 @@ export const readFileTool: AgentTool = {
     const ext = path.extname(relPath).toLowerCase();
     const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".ico"]);
     if (imageExtensions.has(ext)) {
+      const output = `File "${relPath}" is a binary image (${ext.slice(1).toUpperCase()}). To inspect its contents, visual details, annotations, or extract text/measurements from it, use the 'extract_document' tool with filename: "${relPath}".`;
       return {
-        output: `File "${relPath}" is a binary image (${ext.slice(1).toUpperCase()}). To inspect its contents, visual details, annotations, or extract text/measurements from it, use the 'extract_document' tool with filename: "${relPath}".`,
+        output,
         summary: `Identified binary image "${relPath}" - advised extract_document`,
+        intermediate: { type: "structured", status: "partial", origin: "source_extracted", payload: { filename: relPath, extension: ext, observation: output }, sources: [{ filename: relPath, relation: "source" }] },
       };
     }
 
@@ -280,6 +283,10 @@ export const readFileTool: AgentTool = {
               return {
                 output: chunks.map((chunk) => `[INDEXED SOURCE: ${indexed.filename}; CITATION: ${chunk.chunkId}; Page ${chunk.page}]\n${chunk.text}`).join("\n\n"),
                 summary: `Read ${chunks.length} indexed excerpts from "${indexed.filename}" (knowledge base; no workspace file)`,
+                intermediate: {
+                  type: "document", status: "partial", origin: "source_extracted", payload: { chunks },
+                  sources: chunks.map((chunk) => ({ filename: indexed.filename, page: chunk.page, locator: chunk.chunkId, relation: "source" as const })),
+                },
               };
             }
           }
@@ -305,6 +312,7 @@ export const readFileTool: AgentTool = {
     return {
       output: formattedContent,
       summary: `Read "${relPath}" (${content.length} chars, ${lines.length} lines)`,
+      intermediate: { type: "text", status: "complete", origin: "source_extracted", payload: content, sources: [{ filename: relPath, relation: "source" }] },
     };
   },
 };
@@ -390,9 +398,9 @@ export const writeFileTool: AgentTool = {
       } catch {}
     }
 
-    // Mirror to run output directory as an artifact deliverable
+    // Legacy callers mirror writes; V2 workspace changes are independent of exports.
     const artifacts: ArtifactRef[] = [];
-    if (context.runId) {
+    if (context.runId && !context.runContract) {
       try {
         const baseName = path.basename(relPath);
         const outDir = resolveRunPath(context.runId, "output", "output");

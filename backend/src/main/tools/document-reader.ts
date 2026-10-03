@@ -304,7 +304,7 @@ export async function readDocumentContent(filePath: string): Promise<DocumentCon
   if (isSvgFile(filePath)) {
     try {
       const raw = readFileSync(filePath);
-      const svgText = extractSvgText(raw);
+      const svgText = extractSvgText(raw, null);
       if (svgText && svgText.trim().length > 0) {
         const formatted = `[Document: ${base} (SVG Vector Drawing, ${svgText.length} characters)]\n\n${svgText}`;
         return {

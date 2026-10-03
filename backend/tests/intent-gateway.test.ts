@@ -31,7 +31,7 @@ describe("Production intent classifier request and failure boundaries", () => {
       expect(payload.response_format.type).toBe("json_schema");
       expect(payload.response_format.json_schema.schema.properties.expectedDeliverables.items.properties.type.enum).toContain("file");
       expect(timeoutMs).toBe(15000);
-      expect(payload.max_tokens).toBe(512);
+      expect(payload.max_tokens).toBe(768);
       return { status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify(artifactIntent), reasoning_content: "" }, finish_reason: "stop" }] }) };
     }) };
     const intent = await resolveSemanticIntent({ userPrompt: "Repair the attached reader and return it as a file.", hasWorkspace: true }, new ModelGateway(transport, registry));

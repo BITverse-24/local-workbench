@@ -2,7 +2,7 @@ export type TaskType = "vision" | "draft" | "code";
 export type ModelRuntime = "mlx-lm" | "llama-server" | "ollama";
 export type ModelId = "vision-qwen25vl" | "draft-qwen3" | "code-qwen25coder";
 export type ModelCapability = "text" | "image-input" | "structured-output" | "code-generation";
-export interface ModelRegistryEntry { id: ModelId; taskTypes: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; maxOutputTokens?: number; }
+export interface ModelRegistryEntry { id: ModelId; taskTypes: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; maxOutputTokens?: number; contextLength?: number; }
 export interface AttachmentReference { attachmentId: string; filename: string; mediaType: string; sizeBytes: number; relativePath: string; selectedPages?: number[]; }
 export interface InputFileReference { attachmentId: string; filename: string; mediaType: string; columns?: string[]; rowCount?: number; }
 export type OutputMode = "chat" | "artifact" | "chat_and_artifact";
@@ -37,6 +37,8 @@ export interface ModelRequestBase {
   temperature?: number;
   history?: ModelConversationMessage[];
   onChunk?: (delta: string) => void;
+  parentToolCallId?: string;
+  isRetry?: boolean;
 }
 export interface VisionModelRequest extends ModelRequestBase { taskType: "vision"; modelId: "vision-qwen25vl"; responseFormat: "vision-result"; attachment: AttachmentReference; inputMode: "typed-scan"; }
 export interface CodeModelRequest extends ModelRequestBase { taskType: "code"; modelId: "code-qwen25coder"; responseFormat: "code-result" | "file-result" | "harness-step"; task: string; inputFile: InputFileReference; allowedLanguage: "python"; executionRules: string[]; }
@@ -59,7 +61,7 @@ export interface ApprovalNoteSection { id: ApprovalNoteSectionId; heading: strin
 export interface MissingInformation { field: string; note: string; }
 export interface DraftResult { title: string; body: string; sections: ApprovalNoteSection[]; missingInformation: MissingInformation[]; }
 export interface CodeDraftResult { filename: "task.py"; source: string; expectedResult: string; inputFiles: string[]; outputFiles: string[]; allowedImports: string[]; outputMode?: OutputMode; artifactKind?: ArtifactKind; artifactFilename?: string; artifactRationale?: string; }
-export interface PythonExecutionResult { exitCode: number; stdout: string; stderr: string; timedOut: boolean; outputFiles: string[]; durationMs: number; }
+export interface PythonExecutionResult { exitCode: number; stdout: string; stderr: string; timedOut: boolean; outputFiles: string[]; durationMs: number; capturedOutput?: { stdout: string; stderr: string; truncated: boolean }; }
 export interface CodeSummaryResult { summary: string; verified: boolean; }
 export type AIErrorCode = "model_unavailable" | "model_timeout" | "model_rejected_request" | "empty_model_response" | "invalid_model_response" | "unsupported_task" | "missing_required_content" | "unsafe_generated_code";
 export interface AIError { kind: "ai-error"; code: AIErrorCode; message: string; retryable: boolean; requestId?: string; runId?: string; taskType?: TaskType; modelId?: ModelId; }
@@ -84,6 +86,78 @@ export interface OutputExpectation {
   expectedDeliverables?: ExpectedDeliverableSpec[];
   protectedPaths?: string[];
   restrictMutationsToTargets?: boolean;
+}
+
+// P1: interpreted expectations, never an authorization grant. No raw prompt copy.
+export interface RunContract {
+  schemaVersion: 1;
+  runId: string;
+  createdAt: string;
+  objective: string;
+  resolution: { status: IntentResolutionStatus; ambiguity?: string };
+  routing: { intentType: string; taskType: TaskType; driverModel: ModelId; actionable: boolean };
+  response: { required: boolean; chatOnly: boolean };
+  workspace: { requested: boolean; operations: ExpectedWorkspaceOperation[] };
+  deliverables: Array<ExpectedDeliverableSpec & { id: string }>;
+  constraints: { protectedPaths: string[]; restrictMutationsToTargets: boolean; userConstraints: string[] };
+  acceptance: { validateWrittenCode: boolean; validatedPythonDeliverables: string[]; successMarker?: string };
+}
+
+export interface ExpectedWorkspaceOperation {
+  id: string;
+  operation: "mutate" | "write" | "delete" | "execute";
+  targetPath?: string;
+}
+
+export type IntermediateResultType = "text" | "document" | "table" | "structured" | "execution";
+export type ResultOrigin = "source_extracted" | "model_derived" | "execution";
+export interface SourceReference {
+  filename?: string;
+  resultId?: string;
+  page?: number;
+  section?: string;
+  sheet?: string;
+  range?: string;
+  textSpan?: { start: number; end: number };
+  locator?: string;
+  relation: "source" | "input";
+}
+export interface IntermediateResultRecord {
+  schemaVersion: 1;
+  resultId: string;
+  runId: string;
+  type: IntermediateResultType;
+  status: "complete" | "partial";
+  origin: ResultOrigin;
+  createdAt: string;
+  producer: { tool: string; callId: string };
+  storage: { relativePath: string; encoding: "utf8" | "json"; sizeBytes: number; sha256: string };
+  summary: string;
+  structuredSchema?: Record<string, unknown>;
+  sources: SourceReference[];
+}
+export interface IntermediateResultInput {
+  type: IntermediateResultType;
+  status: "complete" | "partial";
+  origin: ResultOrigin;
+  producer: { tool: string; callId: string };
+  summary: string;
+  payload: string | Record<string, unknown> | unknown[];
+  structuredSchema?: Record<string, unknown>;
+  sources?: SourceReference[];
+}
+export type ResultSliceRequest =
+  | { mode: "text"; offset?: number; maxChars?: number }
+  | { mode: "lines"; startLine?: number; count?: number; maxChars?: number }
+  | { mode: "json"; pointer?: string; start?: number; count?: number; offset?: number; maxChars?: number };
+export interface ResultSlice {
+  resultId: string;
+  content: string;
+  truncated: boolean;
+  nextOffset?: number;
+  nextLine?: number;
+  nextStart?: number;
+  totalChars: number;
 }
 
 export type AgentOutcome =
@@ -124,6 +198,7 @@ export interface CompactionMetadata {
   omittedChars?: number;
   omittedLines?: number;
   reason?: string;
+  resultId?: string;
 }
 
 export type RunEvent =
@@ -140,7 +215,8 @@ export type RunEvent =
   | { type: "assistant_message_reset"; runId: string; messageId: string }
   | { type: "assistant_message"; runId: string; messageId: string; text: string; modelId: ModelId }
   | { type: "error"; runId: string; code: string; message: string; retryable?: boolean }
-  | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] };
+  | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] }
+  | { type: "delegated_model_invocation"; runId: string; parentCallId?: string; modelId: ModelId | string; taskType: TaskType; purpose?: string; isRetry?: boolean; latencyMs: number; promptTokens: number; outputTokens: number; totalTokens: number };
 export interface RunSummary { runId: string; chatId: string; state: RunState; createdAt: string; completedAt: string | null; }
 export interface ModelHealth { modelId: ModelId | string; port?: number; available: boolean; checkedAt: string; latencyMs?: number; message?: string; }
 
@@ -297,6 +373,7 @@ export type ToolErrorCode =
   | "gateway_failure"
   | "validation_failure"
   | "tool_not_found"
+  | "persistence_failure"
   | "internal_error";
 
 export interface ToolErrorDetail {
@@ -315,6 +392,7 @@ export type ToolResult =
       artifacts?: ArtifactRef[];
       output: string;
       summary: string;
+      resultRef?: IntermediateResultRecord;
     }
   | {
       ok: false;
@@ -324,4 +402,5 @@ export type ToolResult =
       artifacts?: ArtifactRef[];
       output: string;
       summary: string;
+      resultRef?: IntermediateResultRecord;
     };

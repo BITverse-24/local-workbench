@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { matchesContractDeliverable } from "../run/contract.js";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentTool, ToolExecutionContext, ToolExecutionResult } from "./types.js";
@@ -102,6 +103,7 @@ export const extractDocumentTool: AgentTool = {
       return {
         output: JSON.stringify(docResult, null, 2),
         summary: `Extracted text from Word document "${filename}" (${docxRes.totalChars} chars)`,
+        intermediate: { type: "document", status: "complete", origin: "source_extracted", payload: docResult, sources: [{ filename: cleanRawPath, relation: "source" }] },
       };
     }
 
@@ -133,6 +135,7 @@ export const extractDocumentTool: AgentTool = {
           return {
             output: JSON.stringify(digitalResult, null, 2),
             summary: `Extracted digital text across ${pdfRes.numPages} pages from "${filename}" (${pdfRes.totalChars} chars)`,
+            intermediate: { type: "document", status: "complete", origin: "source_extracted", payload: { ...digitalResult, pages: pdfRes.pages }, sources: pdfRes.pages.map((p) => ({ filename: cleanRawPath, page: p.pageNumber, relation: "source" as const })) },
           };
         }
       } catch (err) {
@@ -145,7 +148,7 @@ export const extractDocumentTool: AgentTool = {
     if (ext === ".svg") {
       try {
         const raw = readFileSync(filePath);
-        const svgText = extractSvgText(raw);
+        const svgText = extractSvgText(raw, null);
         if (svgText && svgText.trim().length > 0) {
           const pageReferences = [{ id: "svg-1", page: 1, text: svgText.slice(0, 1000) }];
           const findings = [
@@ -167,6 +170,7 @@ export const extractDocumentTool: AgentTool = {
           return {
             output: JSON.stringify(svgResult, null, 2),
             summary: `Extracted vector diagram text and annotations from SVG "${filename}" (${svgText.length} chars)`,
+            intermediate: { type: "document", status: "complete", origin: "source_extracted", payload: svgResult, sources: [{ filename: cleanRawPath, relation: "source" }] },
           };
         }
       } catch (err) {
@@ -211,6 +215,7 @@ export const extractDocumentTool: AgentTool = {
         relativePath: `runs/${context.runId}/input/${filename}`,
       },
       inputMode: "typed-scan",
+      parentToolCallId: context.currentCallId,
     };
 
     const resp = await context.gateway.execute(req);
@@ -224,6 +229,7 @@ export const extractDocumentTool: AgentTool = {
     return {
       output: JSON.stringify(visionResult, null, 2),
       summary,
+      intermediate: { type: "document", status: "complete", origin: "model_derived", payload: visionResult, sources: [{ filename: cleanRawPath, relation: "input" }] },
     };
   },
 };
@@ -277,6 +283,7 @@ export const generateCodeTool: AgentTool = {
       inputFile: { attachmentId: randomUUID(), filename, mediaType: "text/x-python", rowCount: 1 },
       allowedLanguage: "python",
       executionRules: ["sandbox-isolated"],
+      parentToolCallId: context.currentCallId,
     };
 
     const resp = await context.gateway.execute(req);
@@ -339,6 +346,7 @@ export const generateTextTool: AgentTool = {
       taskType: "draft",
       modelId: "draft-qwen3",
       responseFormat: "chat-result",
+      parentToolCallId: context.currentCallId,
     } as any);
 
     if (!resp.ok) {
@@ -498,12 +506,19 @@ export const executePythonTool: AgentTool = {
       const validationSource = `import pathlib, runpy\nrepaired = runpy.run_path(str(pathlib.Path(__file__).parent / ${JSON.stringify(filename)}), run_name="workbench_validation")\n${args.validation_code}\n`;
       writeRunFile(context.runId, "intermediate", validationName, validationSource);
       const validation = await executePython(context.runId, validationName, inputFiles, [], 60000, context.workspaceRoot);
-      execResult = { ...validation, stdout: `${execResult.stdout}\n${validation.stdout}`.trim(), durationMs: execResult.durationMs + validation.durationMs };
+      execResult = { ...validation, stdout: `${execResult.stdout}\n${validation.stdout}`.trim(), durationMs: execResult.durationMs + validation.durationMs,
+        capturedOutput: { stdout: `${execResult.capturedOutput?.stdout ?? execResult.stdout}\n${validation.capturedOutput?.stdout ?? validation.stdout}`.trim(), stderr: `${execResult.capturedOutput?.stderr ?? execResult.stderr}\n${validation.capturedOutput?.stderr ?? validation.stderr}`.trim(), truncated: Boolean(execResult.capturedOutput?.truncated || validation.capturedOutput?.truncated) },
+      };
     }
     const summary = `Executed Python (${filename}): exit ${execResult.exitCode} in ${execResult.durationMs}ms`;
+    const intermediate: ToolExecutionResult["intermediate"] = {
+      type: "execution", status: execResult.exitCode === 0 && !execResult.timedOut && !execResult.capturedOutput?.truncated ? "complete" : "partial", origin: "execution",
+      payload: { ...execResult }, sources: inputFiles.map((file) => ({ filename: file, relation: "input" })),
+    };
+    const { capturedOutput: _capturedOutput, ...observation } = execResult;
 
     if (execResult.exitCode !== 0 || execResult.timedOut) {
-      return { ok: false, output: JSON.stringify(execResult, null, 2), summary,
+      return { ok: false, output: JSON.stringify(observation, null, 2), summary, intermediate,
         error: { code: execResult.timedOut ? "timeout" : "validation_failure", retryable: true,
           message: execResult.stderr || `Python execution failed with exit ${execResult.exitCode}` } };
     }
@@ -513,6 +528,7 @@ export const executePythonTool: AgentTool = {
 
     // Collect any output files created during execution
     for (const outFile of execResult.outputFiles) {
+      if (context.runContract && !matchesContractDeliverable(context.runContract, outFile)) continue;
       const outPath = path.join(outputDir, outFile);
       if (existsSync(outPath)) {
         try {
@@ -531,7 +547,7 @@ export const executePythonTool: AgentTool = {
     }
 
     // Also persist the executed/repaired script itself as an artifact
-    try {
+    if (!context.runContract || context.runContract.deliverables.some((d) => d.filename?.endsWith(".py"))) try {
       const scriptBase = path.basename(filename);
       // If the filename was generic (task.py or run_fixed_script.py), check if run attachments have a source python script
       let targetName = scriptBase;
@@ -568,7 +584,7 @@ export const executePythonTool: AgentTool = {
 
     return {
       output: JSON.stringify({
-        ...execResult,
+        ...observation,
         artifacts: artifacts.map((artifact) => ({ filename: artifact.filename, relativePath: artifact.relativePath })),
         validationPassed: typeof args.validation_code === "string" && Boolean(args.validation_code.trim()),
         deliveryStatus: "The executed source is already exported. If validation passed, provide the final answer; do not create another export or helper script.",
@@ -576,6 +592,7 @@ export const executePythonTool: AgentTool = {
       summary,
       artifacts: artifacts.length > 0 ? artifacts : undefined,
       sideEffects: [`executed:${filename}`],
+      intermediate,
     };
   },
 };
@@ -624,6 +641,9 @@ export const generateDeliverableTool: AgentTool = {
     const requested = context.requestedArtifacts?.filter((artifact) => artifact.type === type);
     let filename = String(args.filename ?? args.path ?? args.file ?? (requested?.length === 1 ? requested[0].filename : `deliverable.${type}`));
     if (type !== "file" && !filename.endsWith(`.${type}`)) filename += `.${type}`;
+    if (context.runContract && !matchesContractDeliverable(context.runContract, filename, type)) {
+      throw { code: "invalid_arguments", retryable: true, message: `The persisted run contract does not request this deliverable: ${filename}.` };
+    }
     if (context.requestedArtifacts?.length && !requested?.some((artifact) => artifact.filename === filename)) {
       throw { code: "invalid_arguments", retryable: true,
         message: `Use the requested deliverable type and filename: ${context.requestedArtifacts.map((artifact) => artifact.filename).join(", ")}. Received ${filename}.` };
