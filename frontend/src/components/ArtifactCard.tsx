@@ -15,13 +15,20 @@ const KEYWORDS = new Set([
   "int", "float", "str", "list", "dict", "bool", "SELECT", "FROM", "WHERE", "JOIN", "ORDER", "BY"
 ]);
 
+// PERF OPTIMIZATION: Module-level pre-compiled RegExp patterns for code highlighting and inline markdown rendering.
+// Hoisting these RegExp objects avoids re-instantiating `new RegExp(...)` on every code line / markdown segment evaluation.
+const CODE_HIGHLIGHT_PATTERN = new RegExp(
+  '("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|`(?:\\\\.|[^`\\\\])*`|//.*|#.*|/\\*[\\s\\S]*?\\*/|\\b(?:' +
+    Array.from(KEYWORDS).join("|") +
+    ")\\b|\\b\\d+\\.?\\d*\\b)",
+  "g"
+);
+
+const INLINE_MARKDOWN_PATTERN = /\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|`([^`]+?)`|\[(.+?)\]\((.+?)\)/g;
+
 function highlightCode(code: string): React.ReactNode[] {
-  const pattern = new RegExp(
-    '("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|`(?:\\\\.|[^`\\\\])*`|//.*|#.*|/\\*[\\s\\S]*?\\*/|\\b(?:' +
-      Array.from(KEYWORDS).join("|") +
-      ")\\b|\\b\\d+\\.?\\d*\\b)",
-    "g"
-  );
+  CODE_HIGHLIGHT_PATTERN.lastIndex = 0;
+  const pattern = CODE_HIGHLIGHT_PATTERN;
   const nodes: React.ReactNode[] = [];
   let lastIndex = 0;
   let m: RegExpExecArray | null;
@@ -114,8 +121,9 @@ function parseCsv(raw: string): { headers: string[]; rows: string[][] } {
 }
 
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
+  INLINE_MARKDOWN_PATTERN.lastIndex = 0;
+  const pattern = INLINE_MARKDOWN_PATTERN;
   const nodes: React.ReactNode[] = [];
-  const pattern = /\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|`([^`]+?)`|\[(.+?)\]\((.+?)\)/g;
   let lastIndex = 0;
   let m: RegExpExecArray | null;
   let idx = 0;
