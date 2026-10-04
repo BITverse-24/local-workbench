@@ -180,6 +180,13 @@ CREATE TABLE IF NOT EXISTS run_contracts (
   contract_json TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+-- P1-C1: compact operational state. Large observations remain in intermediate_results.
+CREATE TABLE IF NOT EXISTS run_execution_ledgers (
+  run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+  schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+  ledger_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS intermediate_results (
   result_id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,

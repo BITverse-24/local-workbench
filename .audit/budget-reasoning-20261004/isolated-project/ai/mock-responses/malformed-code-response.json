@@ -1,0 +1,15 @@
+{
+  "requestId": "fixture-request-code-malformed",
+  "runId": "fixture-run-flow-b-malformed-code",
+  "modelId": "code-qwen25coder",
+  "completedAt": "2026-08-20T00:00:31.000Z",
+  "taskType": "code",
+  "result": {
+    "filename": "task.py",
+    "expectedResult": "OUT_OF_RANGE 7/240 (high=5, low=2)",
+    "inputFiles": ["reactor-temperature-log.csv"],
+    "outputFiles": ["out-of-range-rows.csv"],
+    "allowedImports": ["csv"],
+    "unexpectedField": "model commentary was not allowed"
+  }
+}

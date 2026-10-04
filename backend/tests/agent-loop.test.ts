@@ -166,9 +166,11 @@ describe("Agent Loop Engine & Context Manager", () => {
   it("terminates pure chat on turn 1 without triggering confirmation", async () => {
     const loop = new AgentLoop();
     let confirmationTriggered = false;
+    let modelCalls = 0;
 
     const mockGateway = {
       async chatWithTools() {
+        modelCalls++;
         return {
           ok: true,
           value: {
@@ -195,6 +197,7 @@ describe("Agent Loop Engine & Context Manager", () => {
 
     expect(result.completed).toBe(true);
     expect(result.turns).toBe(1);
+    expect(modelCalls).toBe(1);
     expect(result.finalText).toBe("A heat exchanger transfers heat safely.");
     expect(confirmationTriggered).toBe(false);
   });
@@ -235,7 +238,39 @@ describe("Agent Loop Engine & Context Manager", () => {
         } as any }, emitEvent() {},
       });
       expect(result.completed).toBe(true);
-      expect(budgets).toEqual([1024]);
+      expect(budgets).toEqual([2048]);
+    } finally {
+      if (previousProfile === undefined) delete process.env.SW_AGENT_GENERATION_PROFILE;
+      else process.env.SW_AGENT_GENERATION_PROFILE = previousProfile;
+    }
+  });
+
+  it("uses the Demo/Fast post-validation cap after a successful workspace write", async () => {
+    const budgets: number[] = [];
+    const previousProfile = process.env.SW_AGENT_GENERATION_PROFILE;
+    process.env.SW_AGENT_GENERATION_PROFILE = "demo_fast";
+    const writeTool: AgentTool = {
+      name: "write_file",
+      definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: { path: { type: "string" } } } } },
+      async execute() { return { output: "saved", summary: "saved" }; },
+    };
+    try {
+      let calls = 0;
+      const result = await new AgentLoop().run({
+        runId: "demo-fast-post-validation", driverModelId: "code-qwen25coder", userPrompt: "Write parser.py.", systemPrompt: "repair",
+        semanticIntent: { intentType: "code_modification", isActionable: true, workspaceMutationRequested: true, targetFiles: ["parser.py"] },
+        tools: [writeTool], context: { runId: "demo-fast-post-validation", workspaceRoot: ".", gateway: {
+          async chatWithTools(_modelId: string, _messages: any, _tools: any, options: any) {
+            budgets.push(options.maxTokens);
+            calls++;
+            return { ok: true, value: calls === 1
+              ? { content: null, finishReason: "tool_calls", tool_calls: [{ id: "write-1", name: "write_file", arguments: { path: "parser.py", content: "value = 1" } }] }
+              : { content: "Written.", finishReason: "stop", tool_calls: null } };
+          },
+        } as any }, onPlanConfirmationRequired: async () => true, emitEvent() {},
+      });
+      expect(result.completed).toBe(true);
+      expect(budgets).toEqual([2048, 1280]);
     } finally {
       if (previousProfile === undefined) delete process.env.SW_AGENT_GENERATION_PROFILE;
       else process.env.SW_AGENT_GENERATION_PROFILE = previousProfile;

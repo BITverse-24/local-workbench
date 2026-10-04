@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { AgentToolCall, IntermediateResultInput, SourceReference } from "../../shared/contracts.js";
 import { compactToolObservation } from "./context-manager.js";
+import { recordExecutionToolOutcome } from "../run/execution-ledger.js";
 import { resolveSafe, PermissionError } from "../harness/path-guard.js";
 import { extractPathArg } from "../tools/workspace-tools.js";
 import type {
@@ -311,6 +312,7 @@ export class ToolDispatcher {
               error: notFoundError,
             });
           }
+          recordExecutionToolOutcome({ runId: context.runId, callId: call.id, tool: call.name, args: call.arguments, summary: notFoundResult.summary, ok: false, error: notFoundError.message });
 
           return {
             id: call.id,
@@ -556,6 +558,10 @@ export class ToolDispatcher {
             }
           }
 
+          recordExecutionToolOutcome({ runId: context.runId, callId: call.id, tool: call.name, args: call.arguments, summary: normalizedResult.summary,
+            ok: normalizedResult.ok, error: normalizedResult.ok ? undefined : normalizedResult.error.message,
+            resultId: normalizedResult.resultRef?.resultId, artifacts: normalizedResult.artifacts });
+
           return {
             id: call.id,
             name: call.name,
@@ -590,6 +596,7 @@ export class ToolDispatcher {
               error: errorDetail,
             });
           }
+          recordExecutionToolOutcome({ runId: context.runId, callId: call.id, tool: call.name, args: call.arguments, summary: errorSummary, ok: false, error: errorDetail.message });
 
           return {
             id: call.id,

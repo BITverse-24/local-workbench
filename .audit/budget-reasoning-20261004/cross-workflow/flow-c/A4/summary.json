@@ -1,0 +1,99 @@
+{
+  "workflow": "flow-c",
+  "profile": "A4",
+  "caps": [
+    4096,
+    4096
+  ],
+  "exitCode": 0,
+  "accepted": true,
+  "wallMs": 82860,
+  "flowWallSeconds": 81.8,
+  "outcome": "completed",
+  "acceptance": {
+    "passed": 8,
+    "failed": 0,
+    "total": 8
+  },
+  "calls": {
+    "working": 3,
+    "classification": 0,
+    "delegated": 0,
+    "total": 3
+  },
+  "tokens": {
+    "input": 10674,
+    "completion": 937,
+    "reasoning": 713,
+    "nonReasoning": 224
+  },
+  "lengthStopCount": 0,
+  "toolSequence": [
+    "retrieve_knowledge",
+    "extract_document",
+    "extract_document",
+    "extract_document"
+  ],
+  "toolExecutionDurationMs": 44,
+  "failedTools": [],
+  "repeatedTools": [
+    "extract_document"
+  ],
+  "perCall": [
+    {
+      "purpose": "working_1",
+      "durationMs": 22340,
+      "ttftMs": 10846,
+      "finishReason": "tool_calls",
+      "inputTokens": 2214,
+      "completionTokens": 232,
+      "reasoningTokens": 120,
+      "maxTokens": 4096,
+      "toolCalls": [
+        {
+          "name": "retrieve_knowledge",
+          "argumentsChars": 73
+        },
+        {
+          "name": "extract_document",
+          "argumentsChars": 121
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_2",
+      "durationMs": 38755,
+      "ttftMs": 18167,
+      "finishReason": "tool_calls",
+      "inputTokens": 3771,
+      "completionTokens": 410,
+      "reasoningTokens": 354,
+      "maxTokens": 4096,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 97
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_3",
+      "durationMs": 20443,
+      "ttftMs": 5675,
+      "finishReason": "tool_calls",
+      "inputTokens": 4689,
+      "completionTokens": 295,
+      "reasoningTokens": 239,
+      "maxTokens": 4089,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 97
+        }
+      ],
+      "cacheUsage": null
+    }
+  ]
+}

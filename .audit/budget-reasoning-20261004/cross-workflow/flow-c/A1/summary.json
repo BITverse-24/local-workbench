@@ -1,0 +1,130 @@
+{
+  "workflow": "flow-c",
+  "profile": "A1",
+  "caps": [
+    1280,
+    1024
+  ],
+  "exitCode": 0,
+  "accepted": true,
+  "wallMs": 117957,
+  "flowWallSeconds": 117,
+  "outcome": "completed",
+  "acceptance": {
+    "passed": 8,
+    "failed": 0,
+    "total": 8
+  },
+  "calls": {
+    "working": 5,
+    "classification": 0,
+    "delegated": 0,
+    "total": 5
+  },
+  "tokens": {
+    "input": 19231,
+    "completion": 1471,
+    "reasoning": 1004,
+    "nonReasoning": 467
+  },
+  "lengthStopCount": 0,
+  "toolSequence": [
+    "retrieve_knowledge",
+    "extract_document",
+    "extract_document",
+    "extract_document",
+    "extract_document"
+  ],
+  "toolExecutionDurationMs": 33,
+  "failedTools": [],
+  "repeatedTools": [
+    "extract_document"
+  ],
+  "perCall": [
+    {
+      "purpose": "working_1",
+      "durationMs": 16233,
+      "ttftMs": 10774,
+      "finishReason": "tool_calls",
+      "inputTokens": 2213,
+      "completionTokens": 111,
+      "reasoningTokens": 64,
+      "maxTokens": 1280,
+      "toolCalls": [
+        {
+          "name": "retrieve_knowledge",
+          "argumentsChars": 78
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_2",
+      "durationMs": 31980,
+      "ttftMs": 3484,
+      "finishReason": "tool_calls",
+      "inputTokens": 2692,
+      "completionTokens": 563,
+      "reasoningTokens": 331,
+      "maxTokens": 1280,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 103
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_3",
+      "durationMs": 36754,
+      "ttftMs": 18805,
+      "finishReason": "tool_calls",
+      "inputTokens": 3895,
+      "completionTokens": 354,
+      "reasoningTokens": 290,
+      "maxTokens": 1280,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 124
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_4",
+      "durationMs": 9306,
+      "ttftMs": 5251,
+      "finishReason": "tool_calls",
+      "inputTokens": 4868,
+      "completionTokens": 83,
+      "reasoningTokens": 21,
+      "maxTokens": 1280,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 125
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_5",
+      "durationMs": 22490,
+      "ttftMs": 3815,
+      "finishReason": "tool_calls",
+      "inputTokens": 5563,
+      "completionTokens": 360,
+      "reasoningTokens": 298,
+      "maxTokens": 1280,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 125
+        }
+      ],
+      "cacheUsage": null
+    }
+  ]
+}

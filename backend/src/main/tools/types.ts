@@ -8,6 +8,7 @@ import type {
   RunContract,
 } from "../../shared/contracts.js";
 import type { RunResultStore } from "../run/result-store.js";
+import type { RunExecutionLedger } from "../run/execution-ledger.js";
 import type { ModelGateway } from "../gateway/model-gateway.js";
 import type { HarnessManager } from "../harness/harness-manager.js";
 import type { MutationPolicyGuard } from "../harness/policy-guard.js";
@@ -69,6 +70,7 @@ export interface ToolExecutionContext {
   indexedKnowledgeSources?: Array<{ filename: string; docId: string }>;
   runContract?: RunContract;
   resultStore?: RunResultStore;
+  executionLedger?: RunExecutionLedger;
   currentCallId?: string;
   envelope?: ExecutionEnvelope;
   activeCapabilities?: Set<CapabilityGroup>;

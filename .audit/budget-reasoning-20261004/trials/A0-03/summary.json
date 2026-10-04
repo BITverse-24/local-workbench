@@ -1,0 +1,130 @@
+{
+  "profile": "A0",
+  "trial": 3,
+  "caps": {
+    "actionValidation": 1024,
+    "postValidation": 768
+  },
+  "exitCode": 1,
+  "accepted": false,
+  "wallMs": 110182,
+  "wallClockSource": "outer process elapsed",
+  "flowWallSeconds": 109.4,
+  "outcome": "partial",
+  "acceptance": {
+    "passed": 2,
+    "failed": 5,
+    "total": 7
+  },
+  "calls": {
+    "working": 2,
+    "classification": 1,
+    "delegated": 0,
+    "total": 3
+  },
+  "tokens": {
+    "input": 7031,
+    "completion": 1969,
+    "reasoning": 1387,
+    "nonReasoning": 582
+  },
+  "lengthStopCount": 1,
+  "toolSequence": [
+    "read_file",
+    "write_file"
+  ],
+  "toolExecutionDurationMs": 2,
+  "failedTools": [],
+  "repeatedTools": [],
+  "acceptanceLog": [
+    "❌ FAIL: Run Outcome is 'completed' (actual: partial)",
+    "✅ PASS: Modal Confirmations <= 1 (actual: 1)",
+    "✅ PASS: Assistant message produced (length: 135 chars)",
+    "❌ FAIL: Diagnosed float conversion / missing value bug ",
+    "❌ FAIL: Diagnosed 350.0 boundary condition bug ",
+    "❌ FAIL: Repaired Python script located (not found)",
+    "❌ FAIL: Independent execution exits 0 on vendor log "
+  ],
+  "perCall": [
+    {
+      "purpose": "classification",
+      "model": "qwen/qwen3.5-9b",
+      "durationMs": 9742,
+      "ttftMs": null,
+      "decodeMs": null,
+      "finishReason": "stop",
+      "inputTokens": 742,
+      "completionTokens": 170,
+      "reasoningTokens": 0,
+      "nonReasoningTokens": 170,
+      "toolSchemaChars": 0,
+      "estimatedToolSchemaTokens": 0,
+      "generation": {
+        "temperature": 0,
+        "max_tokens": 768,
+        "reasoning_effort": "none"
+      },
+      "cacheUsage": null,
+      "toolCalls": []
+    },
+    {
+      "purpose": "working_1",
+      "model": "qwen/qwen3.5-9b",
+      "durationMs": 40406,
+      "ttftMs": 1657,
+      "decodeMs": 38749,
+      "finishReason": "tool_calls",
+      "inputTokens": 2798,
+      "completionTokens": 776,
+      "reasoningTokens": 719,
+      "nonReasoningTokens": 57,
+      "toolSchemaChars": 4643,
+      "estimatedToolSchemaTokens": 1161,
+      "generation": {
+        "temperature": 0.2,
+        "max_tokens": 1024,
+        "presence_penalty": 0.1,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "cacheUsage": null,
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "argumentsChars": 38
+        }
+      ]
+    },
+    {
+      "purpose": "working_2",
+      "model": "qwen/qwen3.5-9b",
+      "durationMs": 59063,
+      "ttftMs": 7374,
+      "decodeMs": 51689,
+      "finishReason": "length",
+      "inputTokens": 3491,
+      "completionTokens": 1023,
+      "reasoningTokens": 668,
+      "nonReasoningTokens": 355,
+      "toolSchemaChars": 6024,
+      "estimatedToolSchemaTokens": 1506,
+      "generation": {
+        "temperature": 0.2,
+        "max_tokens": 1024,
+        "presence_penalty": 0.1,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "cacheUsage": null,
+      "toolCalls": [
+        {
+          "name": "write_file",
+          "argumentsChars": 0
+        }
+      ]
+    }
+  ],
+  "unsafeOrUnexpectedTools": []
+}

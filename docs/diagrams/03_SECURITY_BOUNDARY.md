@@ -8,30 +8,32 @@ flowchart TB
         UI["Operator + approval UI"]
         IPC["Validated IPC bridge"]
         AG["AgentLoop + dispatcher"]
+        MD["Local model, loopback"]
         PG["PathGuard + scopes"]
         PY["Python and shell runner"]
         LX["bwrap net isolation, Linux"]
         ST["SQLite + run folders"]
     end
-    MD["Local model, loopback"]
-    DG["Air-gap deployment, conditional"]
+    DG["Physical air-gap: deployment choice"]
 
     UI --> IPC
     IPC --> AG
+    AG --> MD
     AG --> PG
     PG --> PY
     PY --> LX
     AG --> ST
-    AG --> MD
     DG -.-> BOX
-    MD -.-> BOX
+
+    style BOX fill:transparent
 ```
 
 ## What this communicates
 
 Defence in depth as implemented: validated IPC, workspace containment, scoped mutation grants with explicit human approval,
 verified artifacts, and opportunistic OS isolation — inside a workstation whose physical disconnection is a deployment
-choice, not an app firewall.
+choice, not an app firewall. The local model node is declared inside the workstation subgraph (directly under the
+agent dispatcher); only the air-gap note sits outside, since disconnection is an operational condition, not a component.
 
 ## Simplifications
 

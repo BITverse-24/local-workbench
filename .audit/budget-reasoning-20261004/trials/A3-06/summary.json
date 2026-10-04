@@ -1,0 +1,184 @@
+{
+  "profile": "A3",
+  "trial": 6,
+  "caps": {
+    "actionValidation": 2048,
+    "postValidation": 1280
+  },
+  "exitCode": 0,
+  "accepted": true,
+  "wallMs": 153404,
+  "wallClockSource": "outer process elapsed",
+  "flowWallSeconds": 152.7,
+  "outcome": "completed",
+  "acceptance": {
+    "passed": 7,
+    "failed": 0,
+    "total": 7
+  },
+  "calls": {
+    "working": 4,
+    "classification": 1,
+    "delegated": 0,
+    "total": 5
+  },
+  "tokens": {
+    "input": 14903,
+    "completion": 2594,
+    "reasoning": 1611,
+    "nonReasoning": 983
+  },
+  "lengthStopCount": 0,
+  "toolSequence": [
+    "read_file",
+    "write_file",
+    "run_command"
+  ],
+  "toolExecutionDurationMs": 65,
+  "failedTools": [],
+  "repeatedTools": [],
+  "acceptanceLog": [
+    "✅ PASS: Run Outcome is 'completed' (actual: completed)",
+    "✅ PASS: Modal Confirmations <= 1 (actual: 1)",
+    "✅ PASS: Assistant message produced (length: 1024 chars)",
+    "✅ PASS: Diagnosed float conversion / missing value bug ",
+    "✅ PASS: Diagnosed 350.0 boundary condition bug ",
+    "✅ PASS: Repaired Python script located (broken-vendor-log-parser.py)",
+    "✅ PASS: Independent execution exits 0 on vendor log (Exit 0; stdout: {'ok': 3, 'malformed': 1, 'high': 1})"
+  ],
+  "perCall": [
+    {
+      "purpose": "classification",
+      "model": "qwen/qwen3.5-9b",
+      "durationMs": 9684,
+      "ttftMs": null,
+      "decodeMs": null,
+      "finishReason": "stop",
+      "inputTokens": 742,
+      "completionTokens": 170,
+      "reasoningTokens": 0,
+      "nonReasoningTokens": 170,
+      "toolSchemaChars": 0,
+      "estimatedToolSchemaTokens": 0,
+      "generation": {
+        "temperature": 0,
+        "max_tokens": 768,
+        "reasoning_effort": "none"
+      },
+      "cacheUsage": null,
+      "toolCalls": []
+    },
+    {
+      "purpose": "working_1",
+      "model": "qwen/qwen3.5-9b",
+      "durationMs": 31844,
+      "ttftMs": 1649,
+      "decodeMs": 30195,
+      "finishReason": "tool_calls",
+      "inputTokens": 2798,
+      "completionTokens": 609,
+      "reasoningTokens": 547,
+      "nonReasoningTokens": 62,
+      "toolSchemaChars": 4643,
+      "estimatedToolSchemaTokens": 1161,
+      "generation": {
+        "temperature": 0.2,
+        "max_tokens": 2048,
+        "presence_penalty": 0.1,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "cacheUsage": null,
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "argumentsChars": 38
+        }
+      ]
+    },
+    {
+      "purpose": "working_2",
+      "model": "qwen/qwen3.5-9b",
+      "durationMs": 62012,
+      "ttftMs": 7380,
+      "decodeMs": 54632,
+      "finishReason": "tool_calls",
+      "inputTokens": 3494,
+      "completionTokens": 1082,
+      "reasoningTokens": 715,
+      "nonReasoningTokens": 367,
+      "toolSchemaChars": 6024,
+      "estimatedToolSchemaTokens": 1506,
+      "generation": {
+        "temperature": 0.2,
+        "max_tokens": 2048,
+        "presence_penalty": 0.1,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "cacheUsage": null,
+      "toolCalls": [
+        {
+          "name": "write_file",
+          "argumentsChars": 965
+        }
+      ]
+    },
+    {
+      "purpose": "working_3",
+      "model": "qwen/qwen3.5-9b",
+      "durationMs": 12565,
+      "ttftMs": 9174,
+      "decodeMs": 3391,
+      "finishReason": "tool_calls",
+      "inputTokens": 3920,
+      "completionTokens": 69,
+      "reasoningTokens": 26,
+      "nonReasoningTokens": 43,
+      "toolSchemaChars": 6024,
+      "estimatedToolSchemaTokens": 1506,
+      "generation": {
+        "temperature": 0.2,
+        "max_tokens": 2048,
+        "presence_penalty": 0.1,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "cacheUsage": null,
+      "toolCalls": [
+        {
+          "name": "run_command",
+          "argumentsChars": 79
+        }
+      ]
+    },
+    {
+      "purpose": "working_4",
+      "model": "qwen/qwen3.5-9b",
+      "durationMs": 36320,
+      "ttftMs": 3375,
+      "decodeMs": 32945,
+      "finishReason": "stop",
+      "inputTokens": 3949,
+      "completionTokens": 664,
+      "reasoningTokens": 323,
+      "nonReasoningTokens": 341,
+      "toolSchemaChars": 6024,
+      "estimatedToolSchemaTokens": 1506,
+      "generation": {
+        "temperature": 0.2,
+        "max_tokens": 1280,
+        "presence_penalty": 0.1,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "cacheUsage": null,
+      "toolCalls": []
+    }
+  ],
+  "unsafeOrUnexpectedTools": []
+}

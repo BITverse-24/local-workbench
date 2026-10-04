@@ -1,0 +1,4 @@
+{
+  "validForCandidateResults": false,
+  "reason": "Initial runner set SW_AGENT_GENERATION_PROFILE=default. That variable takes priority over the temporary experimental budget profile, so telemetry showed max_tokens=4096 instead of the intended 1024. Trial stopped before completion. The raw trace is retained to document the setup correction."
+}

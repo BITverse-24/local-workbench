@@ -1,0 +1,98 @@
+{
+  "workflow": "flow-a",
+  "profile": "A4",
+  "caps": [
+    4096,
+    4096
+  ],
+  "exitCode": 0,
+  "accepted": true,
+  "wallMs": 202821,
+  "flowWallSeconds": 201.8,
+  "outcome": "completed",
+  "acceptance": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9
+  },
+  "calls": {
+    "working": 3,
+    "classification": 0,
+    "delegated": 0,
+    "total": 3
+  },
+  "tokens": {
+    "input": 15023,
+    "completion": 2589,
+    "reasoning": 775,
+    "nonReasoning": 1814
+  },
+  "lengthStopCount": 0,
+  "toolSequence": [
+    "extract_document",
+    "extract_document",
+    "retrieve_knowledge",
+    "generate_deliverable"
+  ],
+  "toolExecutionDurationMs": 151,
+  "failedTools": [],
+  "repeatedTools": [
+    "extract_document"
+  ],
+  "perCall": [
+    {
+      "purpose": "working_1",
+      "durationMs": 34407,
+      "ttftMs": 14016,
+      "finishReason": "tool_calls",
+      "inputTokens": 2897,
+      "completionTokens": 400,
+      "reasoningTokens": 176,
+      "maxTokens": 4096,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 184
+        },
+        {
+          "name": "extract_document",
+          "argumentsChars": 183
+        },
+        {
+          "name": "retrieve_knowledge",
+          "argumentsChars": 95
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_2",
+      "durationMs": 123029,
+      "ttftMs": 29867,
+      "finishReason": "tool_calls",
+      "inputTokens": 6098,
+      "completionTokens": 1712,
+      "reasoningTokens": 579,
+      "maxTokens": 2823,
+      "toolCalls": [
+        {
+          "name": "generate_deliverable",
+          "argumentsChars": 4281
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_3",
+      "durationMs": 43619,
+      "ttftMs": 19507,
+      "finishReason": "stop",
+      "inputTokens": 6028,
+      "completionTokens": 477,
+      "reasoningTokens": 20,
+      "maxTokens": 2815,
+      "toolCalls": [],
+      "cacheUsage": null
+    }
+  ]
+}

@@ -71,6 +71,7 @@ import { resolveSemanticIntent, extractReferencedFiles, type ValidatedSemanticIn
 import type { ExpectedDeliverableSpec } from "../../shared/contracts.js";
 import { AgentLoop } from "../agent/agent-loop.js";
 import { normalizeRunContract, persistRunContract, intentFromContract } from "./contract.js";
+import { initializeExecutionLedger, updateExecutionLedgerState } from "./execution-ledger.js";
 import { RunResultStore } from "./result-store.js";
 import { executePython } from "../tools/python.js";
 import { generateDocx, generateXlsx } from "../tools/artifacts.js";
@@ -592,6 +593,7 @@ export class RunManager {
     this.policyGuard.revokeRunScopes(runId);
     cancelPending(runId);
     transition(runId, "cancelled");
+    updateExecutionLedgerState(runId, "cancelled", "Run was cancelled.");
     this.emit({ type: "run_state", runId, state: "cancelled" });
   }
   history(limit?: number) {
@@ -834,6 +836,7 @@ export class RunManager {
   }
   private state(runId: string, state: RunState) {
     transition(runId, state);
+    updateExecutionLedgerState(runId, state, state === "partial" ? "Run ended before all known work was confirmed." : undefined);
     logRunTransition(runId, state);
     this.emit({ type: "run_state", runId, state });
   }
@@ -1058,6 +1061,9 @@ export class RunManager {
 
       // Persist the interpretation before any execution.
       const runContract = persistRunContract(normalizeRunContract(runId, resolvedIntent));
+      const executionLedger = runContract.routing.actionable && !runContract.response.chatOnly
+        ? initializeExecutionLedger(runContract)
+        : undefined;
       const semanticIntent = intentFromContract(runContract);
       if (resolvedIntent.status === "failed") {
         const errorMsg = resolvedIntent.failureReason || "Failed to process user intent";
@@ -1153,6 +1159,7 @@ export class RunManager {
       const toolContext = {
         runId,
         runContract,
+        executionLedger,
         resultStore,
         workspaceRoot,
         gateway: this.gateway,
@@ -3556,6 +3563,7 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
     finalizeRunTelemetry(runId, "limit_exceeded");
     this.policyGuard.revokeRunScopes(runId);
     this.runTemperatures.delete(runId);
+    updateExecutionLedgerState(runId, "limit_exceeded", "Execution stopped at its configured limit.");
     this.state(runId, "limit_exceeded");
   }
   private fail(runId: string, error: unknown) {
@@ -3566,6 +3574,7 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
       if (["completed", "partial", "cancelled", "failed", "limit_exceeded"].includes(getState(runId))) return;
       const message = error instanceof Error ? error.message : "run failed";
       recordError(runId, "invalid_model_response", message);
+      updateExecutionLedgerState(runId, "failed", message);
       this.state(runId, "failed");
       this.emit({ type: "error", runId, code: "invalid_model_response", message, retryable: false });
     } catch (e) {

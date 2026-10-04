@@ -27,6 +27,7 @@ import { StreamingTagFilter } from "./streaming-filter.js";
 import type { SemanticIntent } from "../router/contextual-router.js";
 import { determineOutputExpectation, isInformationalInquiry, extractNegativeFileConstraints } from "../router/output-expectation.js";
 import { MutationPolicyGuard, extractPathArg, extractCommandArg } from "../harness/policy-guard.js";
+import { addExecutionLedgerBlocker, executionLedgerSummary } from "../run/execution-ledger.js";
 
 export interface AgentLoopOptions {
   runId: string;
@@ -72,7 +73,9 @@ type AgentGenerationBudgetProfile = "default" | "roomy" | "bounded" | "demo_fast
 
 function requestedGenerationTokens(profile: AgentGenerationBudgetProfile, isFinalResponse: boolean, defaultLimit: number): number {
   if (profile === "roomy") return isFinalResponse ? 1024 : 2048;
-  if (profile === "bounded" || profile === "demo_fast") return isFinalResponse ? 768 : 1024;
+  // Bounded (1024/768) remains experimental; demo_fast is the supported 2048/1280 baseline.
+  if (profile === "bounded") return isFinalResponse ? 768 : 1024;
+  if (profile === "demo_fast") return isFinalResponse ? 1280 : 2048;
   return defaultLimit;
 }
 
@@ -840,6 +843,11 @@ When calculations, reconciliation, or Python scripts are requested, invoke execu
 
       turn++;
 
+      // A compact operational note survives history compaction. Chat-only runs have
+      // no ledger activity and therefore add no model-facing state.
+      const ledgerSummary = context.executionLedger ? executionLedgerSummary(runId) : undefined;
+      messages[0].content = ledgerSummary ? `${systemPrompt}\n\n${ledgerSummary}` : systemPrompt;
+
       // Dynamic per-turn progressive capability exposure:
       const hasRetrievableResults = (context.resultStore?.listResults().length ?? 0) > 0;
       if (hasRetrievableResults) {
@@ -971,6 +979,7 @@ When calculations, reconciliation, or Python scripts are requested, invoke execu
       }
 
       if (turnResponse.value.finishReason === "length") {
+        addExecutionLedgerBlocker(runId, "Model output limit reached. The truncated response was not dispatched.");
         // Never dispatch a tool proposal from a response that exhausted its output budget.
         // The content may be incomplete even when the provider surfaced parseable tool calls.
         const notice = hasExecutedDiskMutations

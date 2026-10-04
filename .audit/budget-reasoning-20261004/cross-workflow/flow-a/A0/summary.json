@@ -1,0 +1,86 @@
+{
+  "workflow": "flow-a",
+  "profile": "A0",
+  "caps": [
+    1024,
+    768
+  ],
+  "exitCode": 1,
+  "accepted": false,
+  "wallMs": 118341,
+  "flowWallSeconds": 116.2,
+  "outcome": "partial",
+  "acceptance": {
+    "passed": 1,
+    "failed": 8,
+    "total": 9
+  },
+  "calls": {
+    "working": 2,
+    "classification": 0,
+    "delegated": 0,
+    "total": 2
+  },
+  "tokens": {
+    "input": 9089,
+    "completion": 1437,
+    "reasoning": 692,
+    "nonReasoning": 745
+  },
+  "lengthStopCount": 1,
+  "toolSequence": [
+    "extract_document",
+    "extract_document",
+    "retrieve_knowledge",
+    "generate_deliverable"
+  ],
+  "toolExecutionDurationMs": 72,
+  "failedTools": [],
+  "repeatedTools": [
+    "extract_document"
+  ],
+  "perCall": [
+    {
+      "purpose": "working_1",
+      "durationMs": 34598,
+      "ttftMs": 14003,
+      "finishReason": "tool_calls",
+      "inputTokens": 2892,
+      "completionTokens": 414,
+      "reasoningTokens": 189,
+      "maxTokens": 1024,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 190
+        },
+        {
+          "name": "extract_document",
+          "argumentsChars": 189
+        },
+        {
+          "name": "retrieve_knowledge",
+          "argumentsChars": 104
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_2",
+      "durationMs": 80946,
+      "ttftMs": 28563,
+      "finishReason": "length",
+      "inputTokens": 6197,
+      "completionTokens": 1023,
+      "reasoningTokens": 503,
+      "maxTokens": 1024,
+      "toolCalls": [
+        {
+          "name": "generate_deliverable",
+          "argumentsChars": 0
+        }
+      ],
+      "cacheUsage": null
+    }
+  ]
+}
