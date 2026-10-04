@@ -363,10 +363,18 @@ export function extractReferencedFiles(
     if (p) referenced.add(p);
   }
 
-  // Match files known to exist in the workspace or attachments
+  // Match files known to exist in the workspace or attachments with fast substring pre-check
+  // PERF OPTIMIZATION: Check if file basename or relative path exists in lowercased prompt
+  // before constructing a dynamic RegExp instance for every file in the workspace list.
   const allKnownFiles = [...workspaceFiles, ...attachmentFiles];
+  const combinedLower = combined.toLowerCase();
   for (const f of allKnownFiles) {
     const base = path.basename(f);
+    const baseLower = base.toLowerCase();
+    const fLower = f.toLowerCase();
+    if (!combinedLower.includes(baseLower) && !combinedLower.includes(fLower)) {
+      continue;
+    }
     const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const escapedRel = f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const wordRx = new RegExp(`(?:@|\\b)(?:${escapedRel}|${escapedBase})\\b`, "i");

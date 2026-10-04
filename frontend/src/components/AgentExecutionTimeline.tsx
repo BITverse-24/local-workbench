@@ -217,11 +217,16 @@ function ToolBadge({
   );
 }
 
+// PERF OPTIMIZATION: Module-level static empty array allocation for events prop.
+// Prevents default array allocation `[]` on every render evaluation when events is undefined,
+// ensuring React.memo shallow prop comparison (prevProps.events === nextProps.events) succeeds.
+const EMPTY_EVENTS: RunEvent[] = [];
+
 // PERF OPTIMIZATION: Memoize AgentExecutionTimeline component with React.memo.
 // Prevents unnecessary component re-renders and virtual DOM tree diffs during streaming event updates
 // when timeline props (events, isRunning, runState, activeRoute) have not changed.
 const AgentExecutionTimeline = memo(function AgentExecutionTimeline({
-  events = [],
+  events = EMPTY_EVENTS,
   isRunning = false,
   runState = null,
   activeRoute = null,
