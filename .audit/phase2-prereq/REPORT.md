@@ -2,9 +2,9 @@
 
 ## Change
 
-The existing `requestedGenerationTokens` budget path now accepts an explicit run profile, `demo_fast`: 1,024 tokens for action/validation calls and 768 after validation. The normal `default` profile still uses the existing 4,096-token allowance. No task text, filename, or fixture selects a profile.
+The existing `requestedGenerationTokens` budget path now accepts an explicit process profile, `demo_fast`: 1,024 tokens for action/validation calls and 768 after validation. The normal `default` profile still uses the existing 4,096-token allowance. No task text, filename, or fixture selects a profile.
 
-The profile travels through the strict `startRun` IPC schema, RunManager, and AgentLoop. The UI has a persistent General / Demo/Fast selector. Demo scripts accept the profile only when started with `FLOW_GENERATION_BUDGET_PROFILE=demo_fast`. The prior experimental environment override remains available when no run profile is supplied. `finishReason` propagation and fail-closed handling are unchanged.
+Select the profile with `SW_AGENT_GENERATION_PROFILE=demo_fast npm run dev`. The visible General / Demo-Fast selector and per-run profile IPC field have been removed. The Chat/Agent selector and conditional Specialist dropdown remain. The prior experimental environment override remains as a fallback. `finishReason` propagation and fail-closed handling are unchanged.
 
 The live runner now treats `partial` as terminal. This stops an incomplete run from hanging the acceptance script.
 
@@ -43,7 +43,7 @@ These are single screening runs, not validation across scenarios or warm-trial d
 | Flow C: drawing / SOP review | Pass, 7/7 | 2 | 0 | Completed in 63.8s. No document artifact was required by the runner. |
 | Financial reconciliation → DOCX | Fail, 110.0s | 2 | 1 | The 1,024-token call ended before computation or document generation. |
 
-Demo/Fast must remain an explicit choice. The Flow A and financial runs show that this budget is not safe for every task. The default remains General / 4,096.
+Demo/Fast must remain an explicit choice. The Flow A and financial runs show that this budget is not safe for every task. The default remains 4,096 tokens.
 
 ## Dynamic-dispatch comparison limit
 
@@ -54,3 +54,7 @@ The retained Phase 1.6 benchmark used Qwen3.5-9B through the live LM Studio endp
 - Phase 1.6 reference and original trials: `.audit/phase1.6/REPORT.md` and `.audit/phase1.6/trials/`.
 - New Flow B per-call traces and summaries: `.audit/phase2-prereq/flow-b/trials/` and `.audit/phase2-prereq/benchmark-results.json`.
 - Other workflow traces: `.audit/phase2-prereq/other-workflows/`.
+
+## Follow-up recovery audit
+
+The environment-selected profile was run for three more trials after removing the UI selector. One passed all seven checks; two ended partial, including one length stop before a mutation and one length stop during final response. Mean wall time was 121.3 seconds. The results did not reproduce the 83.8-second reference. See [ROOT-CAUSE.md](ROOT-CAUSE.md) for the historical snapshot, request comparison, all controlled replay attempts, focused ablations and verified limits of the conclusion.

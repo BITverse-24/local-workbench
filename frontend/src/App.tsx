@@ -72,16 +72,6 @@ export default function App() {
     }
     return "chat";
   });
-  const [generationBudgetProfile, setGenerationBudgetProfile] = useState<"default" | "demo_fast">(() => {
-    if (typeof window !== "undefined" && localStorage.getItem("workbench:generation_budget_profile") === "demo_fast") return "demo_fast";
-    return "default";
-  });
-
-  const handleGenerationBudgetProfileChange = (next: "default" | "demo_fast") => {
-    setGenerationBudgetProfile(next);
-    try { localStorage.setItem("workbench:generation_budget_profile", next); } catch {}
-  };
-
   const handleToggleMode = () => {
     setExecutionMode((prev) => {
       const next = prev === "chat" ? "agent" : "chat";
@@ -762,7 +752,6 @@ export default function App() {
             preferredRoute: selectedModel?.id,
             selectedModel: selectedModel?.id,
             mode: executionMode,
-            generationBudgetProfile,
           });
           setActiveRunId(runId);
           activeRunRef.current = runId;
@@ -934,8 +923,6 @@ export default function App() {
             setGroundingEnabled={setGroundingEnabled}
             mode={executionMode}
             onToggleMode={handleToggleMode}
-            generationBudgetProfile={generationBudgetProfile}
-            onGenerationBudgetProfileChange={handleGenerationBudgetProfileChange}
           />
         </ChatPanel>
 

@@ -92,7 +92,6 @@ export const startRunSchema = z
     preferredRoute: z.string().optional(),
     selectedModel: z.string().optional(),
     mode: z.enum(["chat", "agent"]).optional(),
-    generationBudgetProfile: z.enum(["default", "demo_fast"]).optional(),
   })
   .strict()
   .refine(

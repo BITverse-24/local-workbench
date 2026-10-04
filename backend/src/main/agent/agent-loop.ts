@@ -44,7 +44,6 @@ export interface AgentLoopOptions {
   onPlanConfirmationRequired?: (plan: string, firstCalls: any[]) => Promise<boolean>;
   isCancelled?: () => boolean;
   envelope?: ExecutionEnvelope;
-  generationBudgetProfile?: "default" | "demo_fast";
   emitEvent: (event: RunEvent) => void;
 }
 
@@ -886,9 +885,12 @@ When calculations, reconciliation, or Python scripts are requested, invoke execu
         : (semanticIntent?.intentType === "code_modification" && semanticIntent.workspaceMutationRequested === false)
           ? 2048
           : 4096;
+      const configuredProfile = process.env.SW_AGENT_GENERATION_PROFILE;
       const rawBudgetProfile = process.env.SW_AGENT_EXPERIMENTAL_BUDGET_PROFILE;
       const experimentalProfile: AgentGenerationBudgetProfile = rawBudgetProfile === "roomy" || rawBudgetProfile === "bounded" ? rawBudgetProfile : "default";
-      const budgetProfile: AgentGenerationBudgetProfile = options.generationBudgetProfile ?? experimentalProfile;
+      const budgetProfile: AgentGenerationBudgetProfile = configuredProfile === "demo_fast" || configuredProfile === "default"
+        ? configuredProfile
+        : experimentalProfile;
       const finalResponseState = hasExecutedDiskMutations && !lastExecutionHadError &&
         (!requiresWrittenValidation || validationAfterWrite);
       const requestedGen = requestedGenerationTokens(budgetProfile, finalResponseState, defaultRequestedGen);

@@ -159,10 +159,8 @@ describe("Multi-Attachment Support & Persistence", () => {
     expect(invalidEmpty.success).toBe(false);
   });
 
-  it("accepts only explicit supported generation budget profiles", () => {
-    expect(startRunSchema.safeParse({ userText: "test", generationBudgetProfile: "demo_fast" }).success).toBe(true);
-    expect(startRunSchema.safeParse({ userText: "test", generationBudgetProfile: "default" }).success).toBe(true);
-    expect(startRunSchema.safeParse({ userText: "test", generationBudgetProfile: "bounded" }).success).toBe(false);
+  it("rejects unsupported run fields; generation profiles are selected outside run payloads", () => {
+    expect(startRunSchema.safeParse({ userText: "test", generationBudgetProfile: "demo_fast" }).success).toBe(false);
   });
 
   it("persists multiple attachments in run_attachments join table", async () => {

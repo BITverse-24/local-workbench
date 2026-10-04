@@ -1,0 +1,192 @@
+[
+  {
+    "profile": "demo_fast",
+    "trial": 1,
+    "exitCode": 1,
+    "accepted": false,
+    "wallMs": 64760,
+    "flowWallSeconds": 64.3,
+    "outcome": "partial",
+    "strictChecksPassed": 2,
+    "strictChecksFailed": 5,
+    "calls": {
+      "classification": 1,
+      "working_turn": 1,
+      "delegated": 0
+    },
+    "promptTokens": 3540,
+    "completionTokens": 1193,
+    "reasoningTokens": 731,
+    "lengthTerminations": 1,
+    "toolSequence": [
+      "write_file"
+    ],
+    "retries": {
+      "write_file": 1
+    },
+    "perCall": [
+      {
+        "purpose": "classification",
+        "ms": 10636,
+        "finishReason": "stop",
+        "maxTokens": 768,
+        "tools": []
+      },
+      {
+        "purpose": "working_1",
+        "ms": 53459,
+        "finishReason": "length",
+        "maxTokens": 1024,
+        "tools": [
+          "write_file"
+        ]
+      }
+    ]
+  },
+  {
+    "profile": "demo_fast",
+    "trial": 2,
+    "exitCode": 0,
+    "accepted": true,
+    "wallMs": 125799,
+    "flowWallSeconds": 125,
+    "outcome": "completed",
+    "strictChecksPassed": 7,
+    "strictChecksFailed": 0,
+    "calls": {
+      "classification": 1,
+      "working_turn": 4,
+      "delegated": 0
+    },
+    "promptTokens": 14883,
+    "completionTokens": 1973,
+    "reasoningTokens": 1339,
+    "lengthTerminations": 0,
+    "toolSequence": [
+      "read_file",
+      "write_file",
+      "run_command"
+    ],
+    "retries": {
+      "read_file": 1,
+      "write_file": 1,
+      "run_command": 1
+    },
+    "perCall": [
+      {
+        "purpose": "classification",
+        "ms": 9985,
+        "finishReason": "stop",
+        "maxTokens": 768,
+        "tools": []
+      },
+      {
+        "purpose": "working_1",
+        "ms": 27968,
+        "finishReason": "tool_calls",
+        "maxTokens": 1024,
+        "tools": [
+          "read_file"
+        ]
+      },
+      {
+        "purpose": "working_2",
+        "ms": 52919,
+        "finishReason": "tool_calls",
+        "maxTokens": 1024,
+        "tools": [
+          "write_file"
+        ]
+      },
+      {
+        "purpose": "working_3",
+        "ms": 12609,
+        "finishReason": "tool_calls",
+        "maxTokens": 1024,
+        "tools": [
+          "run_command"
+        ]
+      },
+      {
+        "purpose": "working_4",
+        "ms": 21322,
+        "finishReason": "stop",
+        "maxTokens": 768,
+        "tools": []
+      }
+    ]
+  },
+  {
+    "profile": "demo_fast",
+    "trial": 3,
+    "exitCode": 1,
+    "accepted": false,
+    "wallMs": 175155,
+    "flowWallSeconds": 174.5,
+    "outcome": "partial",
+    "strictChecksPassed": 4,
+    "strictChecksFailed": 3,
+    "calls": {
+      "classification": 1,
+      "working_turn": 4,
+      "delegated": 0
+    },
+    "promptTokens": 14905,
+    "completionTokens": 2928,
+    "reasoningTokens": 2106,
+    "lengthTerminations": 1,
+    "toolSequence": [
+      "read_file",
+      "write_file",
+      "run_command"
+    ],
+    "retries": {
+      "read_file": 1,
+      "write_file": 1,
+      "run_command": 1
+    },
+    "perCall": [
+      {
+        "purpose": "classification",
+        "ms": 9934,
+        "finishReason": "stop",
+        "maxTokens": 768,
+        "tools": []
+      },
+      {
+        "purpose": "working_1",
+        "ms": 50104,
+        "finishReason": "tool_calls",
+        "maxTokens": 1024,
+        "tools": [
+          "read_file"
+        ]
+      },
+      {
+        "purpose": "working_2",
+        "ms": 58320,
+        "finishReason": "tool_calls",
+        "maxTokens": 1024,
+        "tools": [
+          "write_file"
+        ]
+      },
+      {
+        "purpose": "working_3",
+        "ms": 13360,
+        "finishReason": "tool_calls",
+        "maxTokens": 1024,
+        "tools": [
+          "run_command"
+        ]
+      },
+      {
+        "purpose": "working_4",
+        "ms": 42503,
+        "finishReason": "length",
+        "maxTokens": 768,
+        "tools": []
+      }
+    ]
+  }
+]

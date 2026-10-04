@@ -1,0 +1,258 @@
+[
+  {
+    "profile": "phase16-runtime",
+    "trial": 1,
+    "exitCode": 1,
+    "passed": false,
+    "wallSeconds": 105.5,
+    "terminalState": "partial",
+    "strictPasses": 2,
+    "strictFailures": 5,
+    "workingCalls": 2,
+    "completionTokens": 1706,
+    "reasoningTokens": 1373,
+    "promptTokens": 6285,
+    "lengthStops": 1,
+    "toolSequence": [
+      "read_file",
+      "write_file"
+    ],
+    "capabilityDiscoveryCalls": 0,
+    "perCall": [
+      {
+        "purpose": "working_1",
+        "latencyMs": 35871,
+        "finishReason": "tool_calls",
+        "promptTokens": 2798,
+        "completionTokens": 683,
+        "reasoningTokens": 626,
+        "maxTokens": 1024,
+        "tools": [
+          "read_file"
+        ]
+      },
+      {
+        "purpose": "working_2",
+        "latencyMs": 58661,
+        "finishReason": "length",
+        "promptTokens": 3487,
+        "completionTokens": 1023,
+        "reasoningTokens": 747,
+        "maxTokens": 1024,
+        "tools": [
+          "write_file"
+        ]
+      }
+    ]
+  },
+  {
+    "profile": "current-head",
+    "trial": 1,
+    "exitCode": 1,
+    "passed": false,
+    "wallSeconds": 64.3,
+    "terminalState": "partial",
+    "strictPasses": 2,
+    "strictFailures": 5,
+    "workingCalls": 1,
+    "completionTokens": 1023,
+    "reasoningTokens": 1023,
+    "promptTokens": 2798,
+    "lengthStops": 1,
+    "toolSequence": [],
+    "capabilityDiscoveryCalls": 0,
+    "perCall": [
+      {
+        "purpose": "working_1",
+        "latencyMs": 54270,
+        "finishReason": "length",
+        "promptTokens": 2798,
+        "completionTokens": 1023,
+        "reasoningTokens": 1023,
+        "maxTokens": 1024,
+        "tools": []
+      }
+    ]
+  },
+  {
+    "profile": "phase16-runtime",
+    "trial": 2,
+    "exitCode": 1,
+    "passed": false,
+    "wallSeconds": 111,
+    "terminalState": "partial",
+    "strictPasses": 2,
+    "strictFailures": 5,
+    "workingCalls": 2,
+    "completionTokens": 1827,
+    "reasoningTokens": 1770,
+    "promptTokens": 6289,
+    "lengthStops": 1,
+    "toolSequence": [
+      "read_file"
+    ],
+    "capabilityDiscoveryCalls": 0,
+    "perCall": [
+      {
+        "purpose": "working_1",
+        "latencyMs": 42004,
+        "finishReason": "tool_calls",
+        "promptTokens": 2798,
+        "completionTokens": 804,
+        "reasoningTokens": 747,
+        "maxTokens": 1024,
+        "tools": [
+          "read_file"
+        ]
+      },
+      {
+        "purpose": "working_2",
+        "latencyMs": 58809,
+        "finishReason": "length",
+        "promptTokens": 3491,
+        "completionTokens": 1023,
+        "reasoningTokens": 1023,
+        "maxTokens": 1024,
+        "tools": []
+      }
+    ]
+  },
+  {
+    "profile": "current-head",
+    "trial": 2,
+    "exitCode": 1,
+    "passed": false,
+    "wallSeconds": 111.8,
+    "terminalState": "partial",
+    "strictPasses": 2,
+    "strictFailures": 5,
+    "workingCalls": 2,
+    "completionTokens": 1817,
+    "reasoningTokens": 1461,
+    "promptTokens": 6291,
+    "lengthStops": 1,
+    "toolSequence": [
+      "read_file",
+      "write_file"
+    ],
+    "capabilityDiscoveryCalls": 0,
+    "perCall": [
+      {
+        "purpose": "working_1",
+        "latencyMs": 41743,
+        "finishReason": "tool_calls",
+        "promptTokens": 2798,
+        "completionTokens": 794,
+        "reasoningTokens": 737,
+        "maxTokens": 1024,
+        "tools": [
+          "read_file"
+        ]
+      },
+      {
+        "purpose": "working_2",
+        "latencyMs": 59826,
+        "finishReason": "length",
+        "promptTokens": 3493,
+        "completionTokens": 1023,
+        "reasoningTokens": 724,
+        "maxTokens": 1024,
+        "tools": [
+          "write_file"
+        ]
+      }
+    ]
+  },
+  {
+    "profile": "phase16-runtime",
+    "trial": 3,
+    "exitCode": 1,
+    "passed": false,
+    "wallSeconds": 110,
+    "terminalState": "partial",
+    "strictPasses": 2,
+    "strictFailures": 5,
+    "workingCalls": 2,
+    "completionTokens": 1780,
+    "reasoningTokens": 1431,
+    "promptTokens": 6272,
+    "lengthStops": 1,
+    "toolSequence": [
+      "read_file",
+      "write_file"
+    ],
+    "capabilityDiscoveryCalls": 0,
+    "perCall": [
+      {
+        "purpose": "working_1",
+        "latencyMs": 40055,
+        "finishReason": "tool_calls",
+        "promptTokens": 2798,
+        "completionTokens": 757,
+        "reasoningTokens": 711,
+        "maxTokens": 1024,
+        "tools": [
+          "read_file"
+        ]
+      },
+      {
+        "purpose": "working_2",
+        "latencyMs": 59750,
+        "finishReason": "length",
+        "promptTokens": 3474,
+        "completionTokens": 1023,
+        "reasoningTokens": 720,
+        "maxTokens": 1024,
+        "tools": [
+          "write_file"
+        ]
+      }
+    ]
+  },
+  {
+    "profile": "current-head",
+    "trial": 3,
+    "exitCode": 1,
+    "passed": false,
+    "wallSeconds": 107.9,
+    "terminalState": "partial",
+    "strictPasses": 2,
+    "strictFailures": 5,
+    "workingCalls": 2,
+    "completionTokens": 1708,
+    "reasoningTokens": 1314,
+    "promptTokens": 6286,
+    "lengthStops": 1,
+    "toolSequence": [
+      "read_file",
+      "write_file"
+    ],
+    "capabilityDiscoveryCalls": 0,
+    "perCall": [
+      {
+        "purpose": "working_1",
+        "latencyMs": 36941,
+        "finishReason": "tool_calls",
+        "promptTokens": 2798,
+        "completionTokens": 685,
+        "reasoningTokens": 628,
+        "maxTokens": 1024,
+        "tools": [
+          "read_file"
+        ]
+      },
+      {
+        "purpose": "working_2",
+        "latencyMs": 60984,
+        "finishReason": "length",
+        "promptTokens": 3488,
+        "completionTokens": 1023,
+        "reasoningTokens": 686,
+        "maxTokens": 1024,
+        "tools": [
+          "write_file"
+        ]
+      }
+    ]
+  }
+]

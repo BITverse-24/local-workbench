@@ -287,7 +287,6 @@ export interface StartRunInput {
   preferredRoute?: string;
   selectedModel?: string;
   mode?: ExecutionMode;
-  generationBudgetProfile?: "default" | "demo_fast";
 }
 export interface ConfirmInput {
   runId: string;
@@ -316,7 +315,6 @@ export class RunManager {
   private readonly runGroundingEnabled = new Map<string, boolean>();
   private readonly runSelectedModels = new Map<string, string>();
   private readonly runModes = new Map<string, ExecutionMode>();
-  private readonly runGenerationBudgetProfiles = new Map<string, "default" | "demo_fast">();
   private readonly codeModel: CodeModel;
   private readonly chatModel: ChatModel;
   public harness?: HarnessManager;
@@ -508,9 +506,6 @@ export class RunManager {
     }
     if (input.mode) {
       this.runModes.set(runId, input.mode);
-    }
-    if (input.generationBudgetProfile) {
-      this.runGenerationBudgetProfiles.set(runId, input.generationBudgetProfile);
     }
     if (attachments.length > 0 && requestedAttachments.length === 0) {
       // A follow-up gets a fresh run workspace. Copy the prior attachments into
@@ -1305,7 +1300,6 @@ ${referencedFilesSection}`;
           tools,
           context: toolContext,
           envelope: executionEnvelope,
-          generationBudgetProfile: this.runGenerationBudgetProfiles.get(runId),
           policyGuard: this.policyGuard,
           recentChatHistory: history,
           maxTurns: 100,

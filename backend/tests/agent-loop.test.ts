@@ -221,18 +221,25 @@ describe("Agent Loop Engine & Context Manager", () => {
 
   it("applies the explicit Demo/Fast profile through the existing context budget", async () => {
     const budgets: number[] = [];
-    const result = await new AgentLoop().run({
-      runId: "demo-fast-profile", driverModelId: "code-qwen25coder", userPrompt: "Summarize this code.", systemPrompt: "helpful",
-      tools: [], generationBudgetProfile: "demo_fast",
-      context: { runId: "demo-fast-profile", workspaceRoot: ".", gateway: {
-        async chatWithTools(_modelId: string, _messages: any, _tools: any, options: any) {
-          budgets.push(options.maxTokens);
-          return { ok: true, value: { content: "Summary.", tool_calls: null, finishReason: "stop" } };
-        },
-      } as any }, emitEvent() {},
-    });
-    expect(result.completed).toBe(true);
-    expect(budgets).toEqual([1024]);
+    const previousProfile = process.env.SW_AGENT_GENERATION_PROFILE;
+    process.env.SW_AGENT_GENERATION_PROFILE = "demo_fast";
+    try {
+      const result = await new AgentLoop().run({
+        runId: "demo-fast-profile", driverModelId: "code-qwen25coder", userPrompt: "Summarize this code.", systemPrompt: "helpful",
+        tools: [],
+        context: { runId: "demo-fast-profile", workspaceRoot: ".", gateway: {
+          async chatWithTools(_modelId: string, _messages: any, _tools: any, options: any) {
+            budgets.push(options.maxTokens);
+            return { ok: true, value: { content: "Summary.", tool_calls: null, finishReason: "stop" } };
+          },
+        } as any }, emitEvent() {},
+      });
+      expect(result.completed).toBe(true);
+      expect(budgets).toEqual([1024]);
+    } finally {
+      if (previousProfile === undefined) delete process.env.SW_AGENT_GENERATION_PROFILE;
+      else process.env.SW_AGENT_GENERATION_PROFILE = previousProfile;
+    }
   });
 
   it("never dispatches a tool call returned with finish_reason length", async () => {

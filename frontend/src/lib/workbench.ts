@@ -147,7 +147,6 @@ export async function startRun(input: {
   preferredRoute?: string;
   selectedModel?: string;
   mode?: "chat" | "agent";
-  generationBudgetProfile?: "default" | "demo_fast";
 }): Promise<{ runId: string }> {
   return bridge().startRun(input);
 }

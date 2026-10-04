@@ -5,7 +5,7 @@ const { spawn } = require("node:child_process");
 const root = path.resolve(__dirname, "../..");
 const hook = path.join(root, ".audit/telemetry-hook.cjs");
 const script = path.join(root, "scripts/test-flow-b.cjs");
-const outRoot = path.join(__dirname, "flow-b", "trials");
+const outRoot = path.join(__dirname, "env-profile-trials");
 const schedule = [["demo_fast", 1], ["demo_fast", 2], ["demo_fast", 3]];
 
 function readTelemetry(dir) {
@@ -26,7 +26,7 @@ async function runOne(profile, trial) {
     cwd: root,
     env: {
       ...process.env,
-      FLOW_GENERATION_BUDGET_PROFILE: "demo_fast",
+      SW_AGENT_GENERATION_PROFILE: "demo_fast",
       FLOW_AUDIT_OUTDIR: dir,
       NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${hook}`].filter(Boolean).join(" "),
     },
@@ -89,6 +89,6 @@ async function runOne(profile, trial) {
     process.stdout.write(`\n=== BEGIN ${profile} trial ${trial} ===\n`);
     results.push(await runOne(profile, trial));
   }
-  fs.writeFileSync(path.join(__dirname, "benchmark-results.json"), JSON.stringify(results, null, 2));
-  process.stdout.write(`\nSaved ${results.length} trial summaries to ${path.join(__dirname, "benchmark-results.json")}\n`);
+  fs.writeFileSync(path.join(__dirname, "env-profile-results.json"), JSON.stringify(results, null, 2));
+  process.stdout.write(`\nSaved ${results.length} trial summaries to ${path.join(__dirname, "env-profile-results.json")}\n`);
 })().catch((error) => { console.error(error); process.exitCode = 1; });

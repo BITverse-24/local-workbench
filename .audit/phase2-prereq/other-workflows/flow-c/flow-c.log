@@ -1,0 +1,41 @@
+================================================================================
+⚡ STARTING FLOW C: Drawing Cross-Check Against Piping SOP (pump-skid-P204.svg)
+================================================================================
+1. Staging demo fixtures...
+2. Starting CLI worker...
+[Flow C:stderr] [log] [rag:embedding] Dispatching embedBatch (4 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+[Flow C] Worker ready! Model registry active.
+3. Sending prompt: "Check this against our piping spec and tell me if anything's non-compliant."
+   Attachment: pump-skid-P204.svg
+   Grounding: true (SOP-220 indexed)
+   Run started with ID: 90f50f20-c367-42aa-aff8-7b50946c4700
+4. Awaiting run completion...
+🧭 [Flow C] Route Selected: draft -> draft-qwen3 (Reason: single configured model)
+[Flow C:stderr] [log] [run:90f50f20] ➜ planning
+📍 [Flow C] State: planning
+[Flow C:stderr] [log] [run:90f50f20] ➜ acting
+📍 [Flow C] State: acting
+💭 [Flow C] Scratchpad (Turn 1): The user wants me to check the attached pump-skid-P204.svg drawing against the piping specifications (SOP-220) to identify any non-compliant items.  Let me first retrieve the knowl...
+🛠️ [Flow C] Tool Call: retrieve_knowledge({"query":"SOP-220 valve rating DN80 DN100 hydrocarbon service class 150"})
+[Flow C:stderr] [log] [rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+✅ [Flow C] Tool Result: retrieve_knowledge (SUCCESS)
+💭 [Flow C] Scratchpad (Turn 2):   Based on the attached drawing and SOP-220 piping specifications, I've identified **2 non-compliant items**:  ## Compliance Review Summary  | Item | Drawing Value | SOP-220 Requir...
+[Flow C:stderr] [log] [run:90f50f20] ➜ completed
+📍 [Flow C] State: completed
+
+🏁 Run reached terminal state: completed in 63.8s
+
+================================================================================
+🔍 STRICT EVALUATION REPORT FOR FLOW C
+================================================================================
+✅ PASS: Run Outcome is 'completed' (actual: completed)
+✅ PASS: Modal Confirmations <= 1 (actual: 0)
+✅ PASS: Assistant message produced (length: 1600 chars)
+✅ PASS: Identified Valve XV-204 discrepancy (Class 150 vs Class 300) 
+✅ PASS: Identified Discharge Line discrepancy (DN80 vs DN100) 
+✅ PASS: Declared NON-COMPLIANT / Refused unconditional approval 
+✅ PASS: Cited Governing Standard (SOP-220) 
+✅ PASS: Compliance report deliverable produced (in chat text)
+--------------------------------------------------------------------------------
+Flow C Summary: 🎉 ALL CHECKS PASSED (100%)
+================================================================================
