@@ -1,4 +1,12 @@
-import type { AgentToolDefinition, ArtifactRef, IntermediateResultInput, IntermediateResultRecord, RunContract } from "../../shared/contracts.js";
+import type {
+  AgentToolDefinition,
+  ArtifactRef,
+  CapabilityGroup,
+  ExecutionEnvelope,
+  IntermediateResultInput,
+  IntermediateResultRecord,
+  RunContract,
+} from "../../shared/contracts.js";
 import type { RunResultStore } from "../run/result-store.js";
 import type { ModelGateway } from "../gateway/model-gateway.js";
 import type { HarnessManager } from "../harness/harness-manager.js";
@@ -62,6 +70,8 @@ export interface ToolExecutionContext {
   runContract?: RunContract;
   resultStore?: RunResultStore;
   currentCallId?: string;
+  envelope?: ExecutionEnvelope;
+  activeCapabilities?: Set<CapabilityGroup>;
 }
 
 export interface ToolExecutionResult {

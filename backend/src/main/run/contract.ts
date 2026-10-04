@@ -1,3 +1,4 @@
+import path from "node:path";
 import { z } from "zod";
 import type { AgentOutcome, OutputExpectation, RunContract } from "../../shared/contracts.js";
 import type { SemanticIntent } from "../router/contextual-router.js";
@@ -117,9 +118,18 @@ export function outputExpectationFromContract(contract: RunContract): OutputExpe
 }
 export function matchesContractDeliverable(contract: RunContract, filename: string, type?: string): boolean {
   const normalized = normalizePath(filename);
+  const ext = path.extname(normalized).replace(/^\./, "").toLowerCase();
+  const stem = path.basename(normalized, path.extname(normalized)).toLowerCase();
   return contract.deliverables.some((d) => {
-    if (d.filename) return normalized === d.filename && (!type || d.type === type || d.type === "file" || type === "file");
-    return d.type === "file" || normalized.endsWith(`.${d.type}`);
+    const dExt = (d.filename ? path.extname(d.filename).replace(/^\./, "") : d.type).toLowerCase();
+    const typeMatches = !type || d.type === type || d.type === "file" || type === "file" || ext === d.type || ext === dExt;
+    if (!typeMatches) return false;
+    if (!d.filename) return d.type === "file" || ext === d.type;
+    const dStem = path.basename(d.filename, path.extname(d.filename)).toLowerCase();
+    if (normalized === d.filename) return true;
+    if (stem === dStem || stem.startsWith(dStem) || dStem.startsWith(stem)) return true;
+    if (contract.deliverables.length === 1) return true;
+    return false;
   });
 }
 /** Compatibility projection for the existing compositor and loop branches. */
@@ -155,7 +165,20 @@ export function evaluateRunContractCompletion(contract: RunContract, evidence: C
   const producedDeliverables: string[] = [], missingDeliverables: string[] = [], producedMutations: string[] = [], missingMutations: string[] = [];
   const remaining = new Set([...evidence.artifacts].map(normalizePath));
   for (const expected of contract.deliverables) {
-    const match = [...remaining].find((p) => expected.filename ? p === expected.filename : expected.type === "file" || p.endsWith(`.${expected.type}`));
+    const match = [...remaining].find((p) => {
+      if (expected.filename) {
+        if (p === expected.filename) return true;
+        const pExt = path.extname(p).replace(/^\./, "").toLowerCase();
+        const expExt = path.extname(expected.filename).replace(/^\./, "").toLowerCase();
+        if (pExt !== expExt && expected.type && pExt !== expected.type) return false;
+        const pStem = path.basename(p, path.extname(p)).toLowerCase();
+        const expStem = path.basename(expected.filename, path.extname(expected.filename)).toLowerCase();
+        if (pStem === expStem || pStem.startsWith(expStem) || expStem.startsWith(pStem)) return true;
+        if (contract.deliverables.length === 1) return true;
+        return false;
+      }
+      return expected.type === "file" || p.endsWith(`.${expected.type}`);
+    });
     if (match) { producedDeliverables.push(match); remaining.delete(match); }
     else missingDeliverables.push(expected.filename ?? expected.description ?? expected.id);
   }

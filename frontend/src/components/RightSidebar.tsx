@@ -23,7 +23,7 @@ type Props = {
 export default function RightSidebar({
   collapsed,
   onCollapse,
-  models: _models,
+  models,
   selectedModel,
   modelOpen,
   setModelOpen,
@@ -89,27 +89,28 @@ export default function RightSidebar({
           )}
         </div>
 
-        {/* Model route preference */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-[var(--text-secondary)]">Model route {isRunning ? "(locked during run)" : "(preference)"}</label>
-          <button
-            ref={modelBtnRef as React.RefObject<HTMLButtonElement>}
-            onClick={() => !isRunning && setModelOpen(!modelOpen)}
-            disabled={isRunning}
-            className={`w-full rounded-[var(--radius-md)] p-3 neu-raised flex items-center justify-between text-left ${isRunning ? "opacity-60 cursor-not-allowed" : ""}`}
-          >
-            <div>
-              <div className="text-sm font-medium text-[var(--text-primary)]">{activeRoute ? `${activeRoute.taskType} → ${activeRoute.modelId}` : selectedModel.name}</div>
-              <div className="text-xs text-[var(--text-tertiary)] mt-0.5">{activeRoute ? `Reason: ${activeRoute.reason}` : selectedModel.desc}</div>
-            </div>
-            <span
-              className={`w-6 h-6 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs transition-transform duration-150 ${modelOpen ? "rotate-180" : "rotate-0"}`}
+        {/* Model selection (only exposed when multiple usable models are configured) */}
+        {models.length > 1 && (
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-[var(--text-secondary)]">Model selection {isRunning ? "(locked during run)" : ""}</label>
+            <button
+              ref={modelBtnRef as React.RefObject<HTMLButtonElement>}
+              onClick={() => !isRunning && setModelOpen(!modelOpen)}
+              disabled={isRunning}
+              className={`w-full rounded-[var(--radius-md)] p-3 neu-raised flex items-center justify-between text-left ${isRunning ? "opacity-60 cursor-not-allowed" : ""}`}
             >
-              ▾
-            </span>
-          </button>
-          {activeRoute && <div className="text-xs text-[var(--text-tertiary)]">Backend controls routing for locked flows; this display reflects the active route.</div>}
-        </div>
+              <div>
+                <div className="text-sm font-medium text-[var(--text-primary)]">{activeRoute ? `${activeRoute.taskType} → ${activeRoute.modelId}` : selectedModel?.name}</div>
+                <div className="text-xs text-[var(--text-tertiary)] mt-0.5">{activeRoute ? `Reason: ${activeRoute.reason}` : selectedModel?.desc}</div>
+              </div>
+              <span
+                className={`w-6 h-6 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs transition-transform duration-150 ${modelOpen ? "rotate-180" : "rotate-0"}`}
+              >
+                ▾
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* Knowledge panel (below model route preference) */}
         <div className="p-3 rounded-[var(--radius-md)] neu-card border border-[var(--border-subtle)] bg-[var(--bg-surface)]">

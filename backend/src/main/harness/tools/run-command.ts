@@ -21,7 +21,8 @@ export interface CommandResult {
  */
 export const DANGEROUS_COMMAND_PATTERNS: RegExp[] = [
   // Destructive operations
-  /\b(rm\s+-[a-z]*[rf]|rmdir|del\s+[\/a-z]*|unlink|erase)\b/i,
+  /\b(rm\s+-[a-z]*[rf]|rmdir|del\s+[\/a-z]*|erase)\b/i,
+  /(^|[;&|\s])unlink\s+/i,
   /\b(git\s+clean\s+-[a-z]*f|git\s+reset\s+--hard)\b/i,
   /\b(find\s+.*-delete)\b/i,
   /\b(format\s+[a-z]:|mkfs|fdisk|parted\b)/i,

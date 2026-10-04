@@ -173,6 +173,9 @@ export function cleanFinalSummary(text: string, hasExecutedTools: boolean): stri
     .replace(/<\/?(?:tool_call|tool_response|tool_result)[^>]*>/gi, "")
     .trim();
 
+  // Deduplicate repeating loops (e.g. repetitive generation loops)
+  cleanedToolTags = cleanedToolTags.replace(/((?:\n\s*[^\n]+){1,4})(?:\1){2,}/g, "$1");
+
   // Un-bullet and un-indent markdown table rows so renderers parse them as valid tables:
   // e.g. "  - | Equipment | ... |" -> "| Equipment | ... |"
   cleanedToolTags = cleanedToolTags

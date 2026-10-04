@@ -400,6 +400,37 @@ export function compactConversationHistory(
         };
       }
 
+      if (isOlder && Array.isArray(msg.tool_calls)) {
+        const compactedToolCalls = msg.tool_calls.map((tc) => {
+          const rawArgs = tc.arguments ?? tc.function?.arguments;
+          const argsStr = typeof rawArgs === "string" ? rawArgs : JSON.stringify(rawArgs ?? {});
+          if (argsStr.length > 800) {
+            let compactedArgs: any;
+            if (typeof rawArgs === "object" && rawArgs !== null) {
+              compactedArgs = { ...rawArgs };
+              if (typeof compactedArgs.code === "string" && compactedArgs.code.length > 500) {
+                compactedArgs.code = `${compactedArgs.code.slice(0, 200)}\n# [compacted earlier code for context budget]\n${compactedArgs.code.slice(-100)}`;
+              }
+              if (typeof compactedArgs.content === "string" && compactedArgs.content.length > 500) {
+                compactedArgs.content = `${compactedArgs.content.slice(0, 200)}\n/* [compacted earlier content for context budget] */\n${compactedArgs.content.slice(-100)}`;
+              }
+            } else {
+              compactedArgs = `${argsStr.slice(0, 300)}\n/* [compacted arguments for context budget] */\n${argsStr.slice(-100)}`;
+            }
+            return {
+              ...tc,
+              ...(tc.function ? { function: { ...tc.function, arguments: compactedArgs } } : {}),
+              arguments: compactedArgs,
+            };
+          }
+          return tc;
+        });
+        return {
+          ...msg,
+          tool_calls: compactedToolCalls,
+        };
+      }
+
       return msg;
     }
 
@@ -468,7 +499,7 @@ export function enforceContextBudget(
   budgetPlan: ContextBudgetPlan;
 } {
   const safetyMargin = options?.safetyMargin ?? 256;
-  const minGenerationTokens = options?.minGenerationTokens ?? 256;
+  const minGenerationTokens = options?.minGenerationTokens ?? 1536;
   const currentTurn = options?.currentTurn ?? 1;
   const toolTokens = estimateToolTokens(tools);
   const requestedGen = options?.requestedGenerationTokens;
@@ -477,8 +508,9 @@ export function enforceContextBudget(
     ? Math.min(requestedGen, Math.max(minGenerationTokens, Math.floor(contextLimit * 0.5)))
     : 1024;
 
-  // 1. Initial standard compaction (sliding window of 2 turns)
-  let compacted = compactConversationHistory(messages, currentTurn, 2);
+  // 1. Initial standard compaction (sliding window of 1 turn if currentTurn > 2, otherwise 2 turns)
+  const initialKeepTurns = currentTurn > 2 ? 1 : 2;
+  let compacted = compactConversationHistory(messages, currentTurn, initialKeepTurns);
   let messageTokens = estimateMessageTokens(compacted);
 
   // 2. If messages + toolTokens + targetGen + safetyMargin > contextLimit, compact more aggressively
@@ -498,15 +530,24 @@ export function enforceContextBudget(
       });
       messageTokens = estimateMessageTokens(compacted);
     }
+
+    // Stage 3 aggressive: ultra-compact older turns to preserve critical reasoning budget
+    if (messageTokens + toolTokens + minGenerationTokens + safetyMargin > contextLimit && currentTurn > 1) {
+      compacted = compactConversationHistory(messages, currentTurn, 0, {
+        olderAssistantBudget: 250,
+        globalSafetyLimit: 800,
+      });
+      messageTokens = estimateMessageTokens(compacted);
+    }
   }
 
-  // 3. Compute budget-aware generation allowance
+  // 3. Compute budget-aware generation allowance (guaranteeing minGenerationTokens for reasoning models)
   const remainingTokens = Math.max(minGenerationTokens, contextLimit - safetyMargin - toolTokens - messageTokens);
   let maxGenerationTokens: number | undefined = undefined;
   if (requestedGen !== undefined) {
-    maxGenerationTokens = Math.min(requestedGen, remainingTokens);
-  } else if (remainingTokens < 2048) {
-    maxGenerationTokens = remainingTokens;
+    maxGenerationTokens = Math.min(requestedGen, Math.max(minGenerationTokens, remainingTokens));
+  } else {
+    maxGenerationTokens = Math.max(minGenerationTokens, remainingTokens);
   }
 
   return {

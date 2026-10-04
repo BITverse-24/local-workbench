@@ -90,6 +90,8 @@ export const startRunSchema = z
     temperature: z.number().min(0).max(2).optional(),
     groundingEnabled: z.boolean().optional(),
     preferredRoute: z.string().optional(),
+    selectedModel: z.string().optional(),
+    mode: z.enum(["chat", "agent"]).optional(),
   })
   .strict()
   .refine(

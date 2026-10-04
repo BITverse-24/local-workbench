@@ -59,7 +59,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("uses a persisted contract and native result retrieval through the active V2 loop with one classification", async () => {
+  it("uses a persisted contract and native result retrieval through the active V2 loop without classification", async () => {
     tempDir = mkdtempSync(path.join(process.cwd(), ".tmp-v2-memory-"));
     process.env.WORKBENCH_DATA_ROOT = path.join(tempDir, "data"); process.env.WORKBENCH_AGENT_V2 = "true";
     initDb(path.join(tempDir, "workbench.sqlite"));
@@ -89,7 +89,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     const manager = new RunManager(gateway, (e) => events.push(e));
     const { runId } = await manager.start({ userText: "Explain the source facts in chat; do not create deliverables." });
     await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true), { timeout: 3000 });
-    expect(classifications).toBe(1);
+    expect(classifications).toBe(0);
     expect(turns).toBe(3);
     expect(resultId).toMatch(/^[0-9a-f-]{36}$/);
     expect(getRunContract(runId)?.deliverables).toEqual([]);

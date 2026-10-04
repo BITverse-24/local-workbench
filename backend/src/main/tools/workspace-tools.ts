@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import * as fs from "node:fs";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseStructuredData } from "../gateway/structured-data.js";
@@ -378,6 +379,14 @@ export const writeFileTool: AgentTool = {
         message: "write_file writes UTF-8 text and cannot create or revise a Word, Excel or PDF document. Use generate_deliverable with the document type, filename and complete revised content; it compiles a valid document." };
     }
 
+    if (/^test[_-]|_test\.[a-z0-9]+$/i.test(path.basename(relPath)) && !context.policyGuard?.isAuthorized(context.runId, "write_file", { path: relPath })) {
+      throw {
+        code: "invalid_arguments",
+        retryable: true,
+        message: `Do not write test helper file "${relPath}". Run tests inline with run_command using python_code or command.`,
+      };
+    }
+
     if (context.policyGuard && context.policyGuard.isEnforcingExplicit(context.runId)) {
       const isAuth = context.policyGuard.isAuthorized(context.runId, "write_file", { path: relPath });
       if (!isAuth) {
@@ -417,6 +426,14 @@ export const writeFileTool: AgentTool = {
           sizeBytes: Buffer.byteLength(content, "utf8"),
           createdAt: new Date().toISOString(),
         });
+      } catch {}
+    }
+
+    if (relPath.endsWith(".py") && relPath.includes("-")) {
+      try {
+        const alias = relPath.replace(/-/g, "_");
+        const fullAlias = path.resolve(context.workspaceRoot, alias);
+        fs.writeFileSync(fullAlias, content, "utf8");
       } catch {}
     }
 
@@ -539,10 +556,22 @@ if spec.get("success_marker"):
   if (typeof args.python_code !== "string" || !args.python_code.trim()) return args;
   // A quoted heredoc preserves Python/CSV quotes and literal backslashes. Choose
   // a delimiter absent from the supplied body, never interpreting it as shell.
+  const hyphenShim = `import sys, os, importlib.util
+from importlib.abc import MetaPathFinder
+class _WorkbenchHyphenFinder(MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        alt = fullname.replace('_', '-') + '.py'
+        if os.path.exists(alt):
+            return importlib.util.spec_from_file_location(fullname, alt)
+        return None
+if not any(isinstance(f, _WorkbenchHyphenFinder) for f in sys.meta_path):
+    sys.meta_path.insert(0, _WorkbenchHyphenFinder())
+`;
+  const wrappedCode = `${hyphenShim}\n${args.python_code}`;
   let delimiter = "WORKBENCH_PYTHON";
-  const lines = args.python_code.split(/\r?\n/);
+  const lines = wrappedCode.split(/\r?\n/);
   while (lines.includes(delimiter)) delimiter += "_";
-  return { ...args, command: `python3 -B - <<'${delimiter}'\n${args.python_code}\n${delimiter}` };
+  return { ...args, command: `python3 -B - <<'${delimiter}'\n${wrappedCode}\n${delimiter}` };
 }
 
 export const runCommandTool: AgentTool = {
@@ -584,6 +613,23 @@ export const runCommandTool: AgentTool = {
         throw new PermissionError(`Operation not authorized: run_command ${command}`);
       }
     }
+
+    try {
+      const entries = fs.readdirSync(context.workspaceRoot);
+      for (const entry of entries) {
+        if (entry.endsWith(".py") && entry.includes("-")) {
+          const alias = entry.replace(/-/g, "_");
+          const target = path.join(context.workspaceRoot, alias);
+          if (!fs.existsSync(target)) {
+            try {
+              fs.symlinkSync(entry, target);
+            } catch {
+              fs.copyFileSync(path.join(context.workspaceRoot, entry), target);
+            }
+          }
+        }
+      }
+    } catch {}
 
     const res = context.policyGuard
       ? await context.policyGuard.withMutationLock("workspace:run_command", () =>

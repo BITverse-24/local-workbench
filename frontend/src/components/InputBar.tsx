@@ -16,6 +16,8 @@ type Props = {
   disabled?: boolean;
   groundingEnabled?: boolean;
   setGroundingEnabled?: (v: boolean | ((p: boolean) => boolean)) => void;
+  mode?: "chat" | "agent";
+  onToggleMode?: () => void;
 };
 
 
@@ -58,7 +60,7 @@ function FileTypeIcon({ file }: { file: File }) {
   return <span className="w-7 h-7 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] grid place-items-center shrink-0 text-[9px] font-mono text-[var(--text-secondary)]">{label.slice(0, 4)}</span>;
 }
 
-export default function InputBar({ input, setInput, onSend, attachedFiles = [], onAttachFiles, onRemoveFile, disabled, groundingEnabled = false, setGroundingEnabled }: Props) {
+export default function InputBar({ input, setInput, onSend, attachedFiles = [], onAttachFiles, onRemoveFile, disabled, groundingEnabled = false, setGroundingEnabled, mode = "chat", onToggleMode }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -235,6 +237,37 @@ export default function InputBar({ input, setInput, onSend, attachedFiles = [], 
               </svg>
               <span className="hidden sm:inline">Grounding</span>
               <span className={`w-1.5 h-1.5 rounded-full ${groundingEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--text-tertiary)]'}`} />
+            </button>
+          )}
+
+          {/* Execution Mode toggle button (Chat / Agent) */}
+          {onToggleMode && (
+            <button
+              type="button"
+              onClick={onToggleMode}
+              className={`h-10 px-3.5 rounded-[var(--radius-sm)] inline-flex items-center gap-2 text-xs sm:text-[13px] font-medium shrink-0 transition-all ${
+                mode === 'agent'
+                  ? 'bg-[var(--accent-muted)] text-[var(--accent)] border border-[var(--accent)]/40 hover:bg-[var(--accent-muted)]'
+                  : 'neu-button opacity-70 hover:opacity-100 text-[var(--text-secondary)]'
+              }`}
+              title={
+                mode === 'agent'
+                  ? 'Agent mode active: Workspace modifications & command execution enabled (subject to approvals). Click to switch to Chat mode.'
+                  : 'Chat mode active: Reasoning & document analysis (read-only; workspace mutation disabled). Click to switch to Agent mode.'
+              }
+              aria-label={mode === 'agent' ? 'Switch to Chat mode' : 'Switch to Agent mode'}
+            >
+              {mode === 'agent' ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--accent)]">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-70">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+              )}
+              <span className="hidden sm:inline">{mode === 'agent' ? 'Agent' : 'Chat'}</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${mode === 'agent' ? 'bg-[var(--accent)]' : 'bg-emerald-400'}`} />
             </button>
           )}
 

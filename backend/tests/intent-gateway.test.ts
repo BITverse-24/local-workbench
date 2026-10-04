@@ -30,7 +30,7 @@ describe("Production intent classifier request and failure boundaries", () => {
       expect(payload.reasoning_effort).toBe("none");
       expect(payload.response_format.type).toBe("json_schema");
       expect(payload.response_format.json_schema.schema.properties.expectedDeliverables.items.properties.type.enum).toContain("file");
-      expect(timeoutMs).toBe(15000);
+      expect(timeoutMs).toBe(60000);
       expect(payload.max_tokens).toBe(768);
       return { status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify(artifactIntent), reasoning_content: "" }, finish_reason: "stop" }] }) };
     }) };
@@ -76,7 +76,7 @@ describe("Production intent classifier request and failure boundaries", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
     const pending = resolveSemanticIntent({ userPrompt: "Fix this code." }, new ModelGateway(undefined, registry));
-    await vi.advanceTimersByTimeAsync(15000);
+    await vi.advanceTimersByTimeAsync(60000);
     const intent = await pending;
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(intent.status).toBe("failed");

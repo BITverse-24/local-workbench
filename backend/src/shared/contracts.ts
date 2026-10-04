@@ -68,7 +68,57 @@ export interface AIError { kind: "ai-error"; code: AIErrorCode; message: string;
 export interface ValidationFailure { kind: "validation-failure"; code: "wrong-type" | "missing-field" | "invalid-value" | "extra-field"; message: string; path: string; expected: string; received?: string; requestId?: string; }
 export type AIWorkflowError = AIError | ValidationFailure;
 export type AIResult<T> = { ok: true; value: T } | { ok: false; error: AIWorkflowError };
-export type ToolName = "read_file" | "draft_note" | "draft_code" | "execute_python" | "generate_xlsx" | "retrieve_sop" | "retrieve_knowledge" | "inspect_drawing";
+export type ToolName =
+  | "read_file"
+  | "draft_note"
+  | "draft_code"
+  | "execute_python"
+  | "generate_xlsx"
+  | "retrieve_sop"
+  | "retrieve_knowledge"
+  | "inspect_drawing"
+  | "list_dir"
+  | "search"
+  | "write_file"
+  | "delete_file"
+  | "run_command"
+  | "extract_document"
+  | "generate_deliverable"
+  | "retrieve_result"
+  | "request_capability"
+  | (string & {});
+
+export type ExecutionMode = "chat" | "agent";
+
+export type CapabilityGroup =
+  | "source_access"
+  | "document_processing"
+  | "result_retrieval"
+  | "structured_computation"
+  | "artifact_generation"
+  | "workspace_mutation"
+  | "system_execution";
+
+export interface ExecutionEnvelope {
+  schemaVersion: 1;
+  runId: string;
+  mode: ExecutionMode;
+  modelId: ModelId;
+  hasWorkspace: boolean;
+  workspaceRoot?: string;
+  attachments: AttachmentReference[];
+  hasVisualAttachments: boolean;
+  hasKnowledgeBaseDocs: boolean;
+  hasRetrievableResults: boolean;
+  outputPreference?: OutputMode;
+  permittedCapabilities: CapabilityGroup[];
+  activeCapabilities: CapabilityGroup[];
+  contextLimit: number;
+  authorizationState: {
+    planConfirmed: boolean;
+    authorizedOperations: string[];
+  };
+}
 
 export type IntentResolutionStatus = "resolved" | "ambiguous" | "failed";
 
@@ -216,7 +266,8 @@ export type RunEvent =
   | { type: "assistant_message"; runId: string; messageId: string; text: string; modelId: ModelId }
   | { type: "error"; runId: string; code: string; message: string; retryable?: boolean }
   | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] }
-  | { type: "delegated_model_invocation"; runId: string; parentCallId?: string; modelId: ModelId | string; taskType: TaskType; purpose?: string; isRetry?: boolean; latencyMs: number; promptTokens: number; outputTokens: number; totalTokens: number };
+  | { type: "delegated_model_invocation"; runId: string; parentCallId?: string; modelId: ModelId | string; taskType: TaskType; purpose?: string; isRetry?: boolean; latencyMs: number; promptTokens: number; outputTokens: number; totalTokens: number }
+  | { type: "capability_expanded"; runId: string; capability: CapabilityGroup; permitted: boolean; reason?: string };
 export interface RunSummary { runId: string; chatId: string; state: RunState; createdAt: string; completedAt: string | null; }
 export interface ModelHealth { modelId: ModelId | string; port?: number; available: boolean; checkedAt: string; latencyMs?: number; message?: string; }
 

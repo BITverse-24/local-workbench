@@ -148,7 +148,8 @@ type RunEvent =
   | { type: "assistant_message_reset"; runId: string; messageId: string }
   | { type: "assistant_message"; runId: string; messageId: string; text: string; modelId: string }
   | { type: "error"; runId: string; code: string; message: string; retryable?: boolean }
-  | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] };
+  | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] }
+  | { type: "capability_expanded"; runId: string; capability: string; permitted: boolean; reason?: string };
 
 
 interface WorkspaceInfo {
@@ -193,7 +194,7 @@ interface WorkbenchBridge {
   renameChat: (chatId: string, title: string) => Promise<void>;
   getSetting: (key: string) => Promise<{ value: unknown }>;
   setSetting: (key: string, value: unknown) => Promise<void>;
-  startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string }) => Promise<{ runId: string }>;
+  startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string; selectedModel?: string; mode?: "chat" | "agent" }) => Promise<{ runId: string }>;
   registerAttachment: (input: {
     chatId?: string;
     filename: string;

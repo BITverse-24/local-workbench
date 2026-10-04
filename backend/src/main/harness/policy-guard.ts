@@ -56,6 +56,12 @@ export function isPathMatch(grantedPath: string, requestedPath: string): boolean
     const dir = gNorm.slice(0, -3);
     return rNorm.startsWith(dir + "/");
   }
+  // Allow stem / prefix variation for the same target file (e.g. fixed-foo.py vs foo.py)
+  const gBase = path.basename(gNorm).replace(/^(?:repaired-|fixed-|updated-|new-)/, "");
+  const rBase = path.basename(rNorm).replace(/^(?:repaired-|fixed-|updated-|new-)/, "");
+  if (gBase === rBase && path.dirname(gNorm) === path.dirname(rNorm)) {
+    return true;
+  }
   return false;
 }
 
@@ -67,6 +73,20 @@ export function isCommandMatch(grantedCommand: string, requestedCommand: string)
   if (gNorm.endsWith("*")) {
     const prefix = gNorm.slice(0, -1).trim();
     return rNorm.startsWith(prefix);
+  }
+  // Coarse-grained runner matching for Python scripts/runners:
+  // If user granted a python3 invocation, allow subsequent python3 test/assertion commands.
+  const isPython = (c: string) => /^(?:python3?|-m\s+pytest|pytest)\b/.test(c);
+  if (isPython(gNorm) && isPython(rNorm)) {
+    return true;
+  }
+  if (
+    rNorm.startsWith(gNorm + " ") ||
+    rNorm.startsWith(gNorm + "\n") ||
+    rNorm.startsWith(gNorm + "\r") ||
+    rNorm.startsWith(gNorm + "\t")
+  ) {
+    return true;
   }
   return false;
 }

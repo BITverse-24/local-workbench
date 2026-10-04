@@ -125,6 +125,7 @@ const nativeTransport: GatewayTransport = {
       const decoder = new TextDecoder("utf-8");
       let buffer = "";
       let accumulatedText = "";
+      let accumulatedReasoning = "";
       const accumulatedToolCalls: Array<{
         id: string;
         type: string;
@@ -159,6 +160,9 @@ const nativeTransport: GatewayTransport = {
                   }
                   const delta = choice.delta;
                   if (delta) {
+                    if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) {
+                      accumulatedReasoning += delta.reasoning_content;
+                    }
                     if (typeof delta.content === "string" && delta.content.length > 0) {
                       accumulatedText += delta.content;
                       onChunk(delta.content);
@@ -202,8 +206,13 @@ const nativeTransport: GatewayTransport = {
 
       const messageObj: Record<string, any> = {
         role: "assistant",
-        content: accumulatedText.length > 0 ? accumulatedText : (accumulatedToolCalls.length > 0 ? null : ""),
+        content: accumulatedText.length > 0
+          ? accumulatedText
+          : (accumulatedReasoning.length > 0 && accumulatedToolCalls.length === 0 ? accumulatedReasoning : (accumulatedToolCalls.length > 0 ? null : "")),
       };
+      if (accumulatedReasoning.length > 0) {
+        messageObj.reasoning_content = accumulatedReasoning;
+      }
       if (accumulatedToolCalls.length > 0) {
         messageObj.tool_calls = accumulatedToolCalls.filter(Boolean);
       }
@@ -686,7 +695,22 @@ export class ModelGateway implements ModelClient {
       }
     }
 
-    return this.dbRegistry.get(modelId);
+    const dbModel = this.dbRegistry.get(modelId);
+    if (dbModel && dbModel.enabled) {
+      return dbModel;
+    }
+
+    // Single-LLM fallback: If exactly one enabled model endpoint exists in the registry,
+    // all inference tasks route to that single model.
+    const allEnabled = Array.from(this.dbRegistry.values()).filter((e) => e.enabled);
+    if (allEnabled.length > 0) {
+      const distinctEndpoints = new Set(allEnabled.map((e) => `${e.baseUrl}/${e.model}`));
+      if (distinctEndpoints.size === 1) {
+        return allEnabled[0];
+      }
+    }
+
+    return undefined;
   }
 
   private rebuildEndpointPool(): void {
@@ -1164,8 +1188,10 @@ export class ModelGateway implements ModelClient {
         usage?: unknown;
       };
       const choiceMsg = envTyped.choices?.[0]?.message;
-      extractedContent = choiceMsg?.content;
       const reasoning = choiceMsg?.reasoning ?? choiceMsg?.reasoning_content;
+      extractedContent = (typeof choiceMsg?.content === "string" && choiceMsg.content.trim())
+        ? choiceMsg.content
+        : (request.purpose === "intent_classification" ? choiceMsg?.content : (reasoning ?? choiceMsg?.content));
       const finishReason = (envTyped.choices?.[0] as { finish_reason?: string })?.finish_reason ?? choiceMsg?.finish_reason;
       const usage = envTyped["usage" as keyof typeof envTyped];
       persistGatewayTrace(request.runId, request.requestId, {
@@ -1455,7 +1481,7 @@ export class ModelGateway implements ModelClient {
     const knownSupportsTools = this.toolParamCapabilities.get(endpointKey) ?? true;
     const effectiveTimeout = Math.max(options?.timeoutMs ?? 0, model.requestTimeoutMs ?? 0, 60000);
     const requestedMaxTokens = options?.maxTokens ?? model.maxOutputTokens ?? 4096;
-    const effectiveMaxTokens = isLocal ? Math.min(requestedMaxTokens, 2048) : requestedMaxTokens;
+    const effectiveMaxTokens = isLocal ? Math.min(requestedMaxTokens, 4096) : requestedMaxTokens;
     const effectiveTemperature = options?.temperature ?? 0.2;
 
     const runId = options?.runId ?? "run-agent-loop";
@@ -1469,6 +1495,7 @@ export class ModelGateway implements ModelClient {
         messages: nativeMessages,
         temperature: effectiveTemperature,
         max_tokens: effectiveMaxTokens,
+        presence_penalty: 0.1,
       };
       if (tools.length > 0) {
         payload.tools = tools;
@@ -1548,7 +1575,9 @@ export class ModelGateway implements ModelClient {
             }
           }
 
-          let content = msg?.content ? String(msg.content) : null;
+          let content = (typeof msg?.content === "string" && msg.content.trim())
+            ? String(msg.content)
+            : (msg?.reasoning_content ? String(msg.reasoning_content) : (msg?.content ? String(msg.content) : null));
           if (parsedCalls.length === 0 && content) {
             const embedded = extractEmbeddedToolCalls(content);
             if (embedded.toolCalls.length > 0) {

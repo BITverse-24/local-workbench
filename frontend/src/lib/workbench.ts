@@ -145,6 +145,8 @@ export async function startRun(input: {
   temperature?: number;
   groundingEnabled?: boolean;
   preferredRoute?: string;
+  selectedModel?: string;
+  mode?: "chat" | "agent";
 }): Promise<{ runId: string }> {
   return bridge().startRun(input);
 }

@@ -7,6 +7,7 @@
   "author": "Sovereign Workbench Team",
   "main": "electron/dist-electron/main.cjs",
   "scripts": {
+    "demo": "node scripts/test-all-flows.cjs",
     "dev": "node scripts/dev.cjs",
     "dev:frontend": "vite --config frontend/vite.config.ts",
     "dev:electron": "node scripts/dev.cjs --skip-frontend",
@@ -18,6 +19,7 @@
     "package:dir": "npm run build && electron-builder --config electron/electron-builder.json5 --dir",
     "typecheck": "tsc --noEmit -p backend/tsconfig.json && tsc --noEmit -p electron/tsconfig.json && tsc --noEmit -p frontend/tsconfig.json",
     "test": "node scripts/test.cjs",
+    "benchmark:phase2": "node scripts/benchmark-phase2.cjs",
     "typecheck:behavioral": "tsc --noEmit -p tests/tsconfig.json",
     "build:behavioral": "node scripts/build-behavioral.cjs",
     "behavioral": "node scripts/behavioral.cjs",

@@ -337,6 +337,14 @@ export class ToolDispatcher {
           if (typeof call.arguments.raw === "string") {
             throw { code: "invalid_arguments", message: "Invalid or malformed tool arguments. Resend a complete JSON object for this tool. For workspace Python tests use run_command with command and python_code; python_module checks additionally require python_function, raw input lines and a matching independent python_reference_pipeline. For attached scripts use execute_python with code and input_files. No operation was executed.", retryable: true };
           }
+          if (context.envelope?.mode === "chat") {
+            if (call.name === "write_file" || call.name === "delete_file") {
+              throw new PermissionError("Workspace mutation is prohibited in Chat mode. Switch to Agent mode to enable workspace edits.");
+            }
+            if (call.name === "run_command") {
+              throw new PermissionError("Command execution is prohibited in Chat mode. Switch to Agent mode to execute commands.");
+            }
+          }
           if (context.resultStore && (call.name === "write_file" || call.name === "delete_file")) {
             const target = resolveSafe(context.workspaceRoot, extractPathArg(call.arguments));
             if (context.resultStore.isStoragePath(target)) throw new PermissionError("Durable result payloads are immutable; create a new result instead");

@@ -771,10 +771,12 @@ async def log_ip(request: Request, call_next):
     });
 
     expect(result.completed).toBe(true);
-    // Turn 1: undefined maxTokens (full budget)
-    expect(maxTokensPerTurn[0]).toBeUndefined();
+    // Context budgeting always supplies an explicit generation budget (bounded by the full 4096 allowance)
+    expect(maxTokensPerTurn[0]).toBeGreaterThan(0);
+    expect(maxTokensPerTurn[0]).toBeLessThanOrEqual(4096);
     // Turn 2: should NOT be capped to 350 because search is read-only!
-    expect(maxTokensPerTurn[1]).toBeUndefined();
+    expect(maxTokensPerTurn[1]).toBeGreaterThan(350);
+    expect(maxTokensPerTurn[1]).toBeLessThanOrEqual(4096);
     // Turn 3: capped to 4096 because write_file mutated disk on turn 2
     expect(maxTokensPerTurn[2]).toBe(4096);
     // Code block was intercepted as write_file tool call and written to disk

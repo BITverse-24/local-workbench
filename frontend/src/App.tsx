@@ -65,6 +65,24 @@ export default function App() {
   const [healthLoading, setHealthLoading] = useState(false);
   const [groundingEnabled, setGroundingEnabled] = useState(false);
   const [, setGroundingStatus] = useState<{ status: "retrieving" | "injected" | "skipped"; chunkCount?: number } | null>(null);
+  const [executionMode, setExecutionMode] = useState<"chat" | "agent">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("workbench:execution_mode");
+      if (saved === "chat" || saved === "agent") return saved;
+    }
+    return "chat";
+  });
+
+  const handleToggleMode = () => {
+    setExecutionMode((prev) => {
+      const next = prev === "chat" ? "agent" : "chat";
+      if (typeof window !== "undefined") {
+        localStorage.setItem("workbench:execution_mode", next);
+      }
+      return next;
+    });
+  };
+
   const activeRunRef = useRef<string | null>(null);
   activeRunRef.current = activeRunId;
   const runEventsRef = useRef<RunEvent[]>([]);
@@ -83,8 +101,12 @@ export default function App() {
 
   useEffect(() => {
     if (availableModels.length > 0) {
+      const savedModelId = typeof window !== "undefined" ? localStorage.getItem("workbench_selected_model") : null;
       setSelectedModel((prev) => {
-        const match = availableModels.find((m) => m.id === prev.id || m.role === prev.role);
+        if (availableModels.length === 1) {
+          return availableModels[0];
+        }
+        const match = availableModels.find((m) => m.id === (savedModelId || prev?.id) || m.name === prev?.name);
         return match ?? availableModels[0];
       });
     }
@@ -728,7 +750,9 @@ export default function App() {
             chatId: cid,
             temperature,
             groundingEnabled,
-            preferredRoute: selectedModel.role || selectedModel.id,
+            preferredRoute: selectedModel?.id,
+            selectedModel: selectedModel?.id,
+            mode: executionMode,
           });
           setActiveRunId(runId);
           activeRunRef.current = runId;
@@ -898,6 +922,8 @@ export default function App() {
             disabled={isRunning}
             groundingEnabled={groundingEnabled}
             setGroundingEnabled={setGroundingEnabled}
+            mode={executionMode}
+            onToggleMode={handleToggleMode}
           />
         </ChatPanel>
 
@@ -919,7 +945,7 @@ export default function App() {
         />
       </div>
 
-      <ModelDropdown open={modelOpen} pos={dropdownPos} models={availableModels} selected={selectedModel} onSelect={(m) => { setSelectedModel(m); setModelOpen(false); }} onClose={() => setModelOpen(false)} />
+      <ModelDropdown open={modelOpen} pos={dropdownPos} models={availableModels} selected={selectedModel} onSelect={(m) => { setSelectedModel(m); try { localStorage.setItem("workbench_selected_model", m.id); } catch {} setModelOpen(false); }} onClose={() => setModelOpen(false)} />
 
       <UploadModal open={upload.show} dragOver={upload.dragOver} setDragOver={upload.setDragOver} files={upload.files} setFiles={upload.setFiles} onClose={() => upload.setShow(false)} onConfirm={handleUploadConfirm} />
 
