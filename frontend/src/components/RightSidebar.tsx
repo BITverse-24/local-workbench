@@ -18,6 +18,7 @@ type Props = {
   onRefreshHealth?: () => void;
   runEvents?: RunEvent[];
   runId?: string | null;
+  verificationReport?: RunVerificationReport | null;
 };
 
 export default function RightSidebar({
@@ -35,6 +36,7 @@ export default function RightSidebar({
   onRefreshHealth,
   runEvents,
   runId,
+  verificationReport,
 }: Props) {
   const isRunning = runState != null && !["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(runState);
   return (
@@ -65,6 +67,22 @@ export default function RightSidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {verificationReport && (
+          <section className="space-y-2 p-3 rounded-[var(--radius-md)] neu-card" aria-label="Run verification">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-[var(--text-secondary)]">Outcome verification</span>
+              <span className="text-xs capitalize text-[var(--text-primary)]">{verificationReport.status.replace(/_/g, " ")}</span>
+            </div>
+            {verificationReport.checks.filter((item) => item.status === "failed" || item.status === "unverified").slice(0, 5).map((item) => (
+              <div key={item.criterionId} className="text-xs text-[var(--text-secondary)]">
+                <div><span className="capitalize">{item.status}</span>: {item.requirement}</div>
+                <div className="text-[var(--text-tertiary)]">{item.reason}</div>
+                {item.evidence.length > 0 && <div className="text-[var(--text-tertiary)] font-mono">Evidence: {item.evidence.map((ref) => `${ref.kind}:${ref.id}`).join(", ")}</div>}
+              </div>
+            ))}
+            {!verificationReport.checks.some((item) => item.status === "failed" || item.status === "unverified") && <div className="text-xs text-[var(--text-tertiary)]">All supported checks passed.</div>}
+          </section>
+        )}
         {/* Service health (top of right sidebar, above model route preference) */}
         <div className="space-y-2 p-3 rounded-[var(--radius-md)] neu-card">
           <div className="flex items-center justify-between">

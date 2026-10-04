@@ -23,7 +23,9 @@ import {
   startRunSchema,
   confirmActionSchema,
   cancelRunSchema,
+  resumeRunSchema,
   getArtifactSchema,
+  getVerificationReportSchema,
   getRunHistorySchema,
   registerAttachmentSchema,
   registerWorkspaceSchema,
@@ -125,9 +127,11 @@ export function registerChatHandlers(ipcMain: MinimalIpcMain): void {
 
 export function registerRunHandlers(ipcMain: MinimalIpcMain, manager: RunManager): void {
   ipcMain.handle(IPC_RUN.START_RUN, (_event, input) => manager.start(startRunSchema.parse(input)));
+  ipcMain.handle(IPC_RUN.RESUME_RUN, (_event, input) => { const parsed = resumeRunSchema.parse(input); return manager.resume(parsed.runId, parsed.largerGenerationAllowance); });
   ipcMain.handle(IPC_RUN.CONFIRM, (_event, input) => manager.confirm(confirmActionSchema.parse(input)));
   ipcMain.handle(IPC_RUN.CANCEL, (_event, input) => manager.cancel(cancelRunSchema.parse(input).runId));
   ipcMain.handle(IPC_RUN.GET_ARTIFACT, (_event, input) => { const parsed = getArtifactSchema.parse(input); return manager.artifact(parsed.runId, parsed.artifactId); });
+  ipcMain.handle(IPC_RUN.GET_VERIFICATION_REPORT, (_event, input) => manager.getVerificationReport(getVerificationReportSchema.parse(input).runId));
   ipcMain.handle(IPC_RUN.GET_HISTORY, (_event, input) => manager.history(getRunHistorySchema.parse(input ?? {}).limit));
   ipcMain.handle(IPC_RUN.REGISTER_ATTACHMENT, (_event, input) => manager.registerAttachment(registerAttachmentSchema.parse(input)));
   ipcMain.handle(IPC_RUN.GET_HEALTH, () => manager.health());
@@ -171,5 +175,3 @@ export function registerWorkspaceHandlers(ipcMain: MinimalIpcMain, harness: Harn
 
 export { registerKnowledgeBaseHandlers } from "./kb-handlers.js";
 export { registerOnboardingHandlers, restoreSavedModelConfig } from "./onboarding-handlers.js";
-
-

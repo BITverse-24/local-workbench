@@ -1,6 +1,6 @@
 import path from "node:path";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { WorkspaceManager } from "./workspace-manager.js";
 import { resolveSafe, PermissionError } from "./path-guard.js";
 import { MutationPolicyGuard } from "./policy-guard.js";
@@ -308,6 +308,7 @@ export class HarnessManager {
       filename,
       relativePath: storedRel,
       sizeBytes: size,
+      sha256: createHash("sha256").update(content).digest("hex"),
       createdAt: new Date().toISOString(),
     };
 
@@ -315,7 +316,7 @@ export class HarnessManager {
     try {
       getDb()
         .prepare(
-          "INSERT INTO artifacts(artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO artifacts(artifact_id, run_id, kind, filename, relative_path, size_bytes, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .run(
           artifact.artifactId,
@@ -324,6 +325,7 @@ export class HarnessManager {
           artifact.filename,
           artifact.relativePath,
           artifact.sizeBytes,
+          artifact.sha256,
           artifact.createdAt,
         );
       logArtifactReady(artifact);

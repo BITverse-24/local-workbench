@@ -251,7 +251,21 @@ It uses the actual ModelGateway/native retrieval/AgentLoop and isolated fixture 
 - A persisted result does not resume an interrupted agent, preserve a future task graph or assign work items. Cross-run retrieval is intentionally unsupported.
 - No live local model retrieval could be verified because neither server was reachable.
 
-## 11. Ready for a future stateful controller
+## 11. P1-D evidence-based verification
+
+`backend/src/main/run/verification.ts` creates the latest typed `RunVerificationReport` for each actionable, non-Chat `RunContract`. SQLite stores the versioned report in `run_verification_reports`. The report stores criteria, status (`passed`, `failed`, `unverified`, or `not_applicable`), method, short reason, timestamp, mandatory flag, and IDs for artifacts, results, or execution attempts. It does not copy result payloads.
+
+Newly registered artifacts store a SHA-256 digest in `artifacts.sha256`. The digest is computed from the file bytes. Verification checks the current file path, size, digest, and supported structure. Old artifacts have no digest. Their integrity is `unverified`; a matching path and size do not count as cryptographic verification. Intermediate results use the existing ResultStore SHA-256 manifest and checksum check.
+
+Structural checks cover JSON parsing, CSV quote structure, UTF-8 text, PDF header/end markers, and DOCX/XLSX ZIP package entries. These checks do not prove content correctness. Files above 64 MiB receive a digest check but a structural result of `unverified`. Unknown and legacy formats are `not_applicable` where no parser is supported.
+
+The AgentLoop's `evaluateRunContractCompletion` remains authoritative for contract acceptance. The verifier records its accepted result at the successful AgentLoop terminal boundary. The shared RunManager completion path also checks deterministic mandatory failures. A failed mandatory file, format, or recorded operation check changes an attempted success to `partial`. An unverified or unsupported check does not block completion. It remains visible in the report. Free-text constraints are recorded as unverified and are not treated as machine-checkable acceptance tests.
+
+The manager refreshes reports after artifact registration and command/Python execution, before terminal completion, and before explicit resumption. Changed mandatory failures or unknowns can enter AgentLoop context once per changed status/reason. The renderer shows the report in the right sidebar and exposes it through `workbench:getVerificationReport`. Chat-only runs skip report creation and add no inference call.
+
+SHA-256 checks detect file changes relative to the stored digest. They do not prove that the database or digest was not altered. Structural checks do not grade semantic correctness. There is no LLM judge, automatic repair loop, or semantic acceptance verifier.
+
+## 12. Ready for a future stateful controller
 
 The subsequent controller can consume a persisted, versioned run objective/requirements document, deterministic completion evidence, durable typed result IDs, producer references, provenance/lineage, integrity-checked payloads and bounded retrieval independent of conversation retention. These are implemented execution data boundaries, exercised through production modules.
 

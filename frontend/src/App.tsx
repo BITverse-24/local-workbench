@@ -59,6 +59,7 @@ export default function App() {
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingAction | null>(null);
   const [confirmationBusy, setConfirmationBusy] = useState(false);
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
+  const [verificationReport, setVerificationReport] = useState<RunVerificationReport | null>(null);
   const [, setRunArtifacts] = useState<ArtifactRef[]>([]);
   const [runError, setRunError] = useState<{ code: string; message: string } | null>(null);
   const [serviceHealth, setServiceHealth] = useState<ModelHealth[] | null>(null);
@@ -91,6 +92,15 @@ export default function App() {
   activeRouteRef.current = activeRoute;
   const runStartTimeRef = useRef<number | null>(null);
   const isRunning = runState !== null && !["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(runState);
+
+  useEffect(() => {
+    let active = true;
+    setVerificationReport(null);
+    if (activeRunId && wb.isWorkbenchAvailable()) {
+      void wb.getVerificationReport({ runId: activeRunId }).then((report) => { if (active) setVerificationReport(report ?? null); }).catch(() => { if (active) setVerificationReport(null); });
+    }
+    return () => { active = false; };
+  }, [activeRunId]);
 
   // Onboarding state
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
@@ -215,6 +225,9 @@ export default function App() {
           });
         }
         switch (event.type) {
+          case "verification_report":
+            setVerificationReport(event.report);
+            break;
           case "run_state":
             setRunState(event.state);
             if (event.state === "completed" || event.state === "partial" || event.state === "failed" || event.state === "cancelled" || event.state === "limit_exceeded") {
@@ -941,6 +954,7 @@ export default function App() {
           onRefreshHealth={refreshHealth}
           runEvents={runEvents}
           runId={activeRunId}
+          verificationReport={verificationReport}
         />
       </div>
 

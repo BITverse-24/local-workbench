@@ -29,6 +29,7 @@ import {
 } from "./ipc/handlers.js";
 import type { IpcRegistrar } from "./ipc/handlers.js";
 import { RunManager } from "./run/manager.js";
+import { reconcileInterruptedExecutions } from "./run/execution-ledger.js";
 import type { ModelGateway } from "./gateway/model-gateway.js";
 import type { RunEvent } from "../shared/contracts.js";
 import { HarnessManager, type WorkspaceEvent } from "./harness/harness-manager.js";
@@ -90,6 +91,7 @@ export function initBackend(
     configurePersistence({ dataDir: config.dataDir, schemaPath: config.schemaPath });
   }
   initDb();
+  reconcileInterruptedExecutions();
   registerChatHandlers(ipcMain);
   const manager = new RunManager(gateway, emit);
   registerRunHandlers(ipcMain, manager);
@@ -125,5 +127,4 @@ export function initBackend(
   (manager as any).harness = harness;
   return manager as BackendInstance;
 }
-
 

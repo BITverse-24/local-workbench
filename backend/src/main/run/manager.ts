@@ -20,6 +20,7 @@ import type {
   RunState,
   ExecutionEnvelope,
   ExecutionMode,
+  RunContract,
   VisionModelRequest,
   VisionModelResponse,
   VisionResult,
@@ -70,9 +71,10 @@ import { resolveModelSelection } from "../gateway/model-selection.js";
 import { resolveSemanticIntent, extractReferencedFiles, type ValidatedSemanticIntent } from "../router/contextual-router.js";
 import type { ExpectedDeliverableSpec } from "../../shared/contracts.js";
 import { AgentLoop } from "../agent/agent-loop.js";
-import { normalizeRunContract, persistRunContract, intentFromContract } from "./contract.js";
-import { initializeExecutionLedger, updateExecutionLedgerState } from "./execution-ledger.js";
+import { normalizeRunContract, persistRunContract, intentFromContract, getRunContract } from "./contract.js";
+import { configureExecutionLedger, getExecutionLedger, initializeExecutionLedger, prepareExecutionResume, reopenPartialRun, reconcileInterruptedExecutions, updateExecutionLedgerState } from "./execution-ledger.js";
 import { RunResultStore } from "./result-store.js";
+import { getVerificationReport, verificationFeedback, verifyRunEvidence } from "./verification.js";
 import { executePython } from "../tools/python.js";
 import { generateDocx, generateXlsx } from "../tools/artifacts.js";
 import { sanitizePythonSource } from "../validators/responses.js";
@@ -348,6 +350,63 @@ export class RunManager {
     }
   }
 
+  /** Explicitly resume a durable partial run. This never reclassifies its authority. */
+  async resume(runId: string, largerGenerationAllowance = false): Promise<{ runId: string }> {
+    const contract = getRunContract(runId);
+    if (!contract) throw new Error("Run has no persisted RunContract and cannot resume.");
+    const currentLedger = getExecutionLedger(runId);
+    const saved = currentLedger?.executionContext;
+    if (!saved) throw new Error("Run has no persisted execution context and cannot resume safely.");
+    const selection = resolveModelSelection({ explicitSelection: saved.modelId, gateway: this.gateway });
+    if (!selection.ok || selection.modelId !== contract.routing.driverModel || selection.modelId !== saved.modelId) {
+      throw new Error("The original model is unavailable. Resumption cannot change model selection.");
+    }
+    const activeRoot = this.harness?.isWorkspaceActive() ? this.harness.requireActiveWorkspace().root : undefined;
+    if ((saved.workspaceRoot ?? undefined) !== activeRoot) throw new Error("The original workspace is not active. Restore it before resuming.");
+    const { ledger, useLargerAllowance } = prepareExecutionResume(runId, largerGenerationAllowance);
+    this.publishVerificationReport(runId);
+    const row = getDb().prepare("SELECT chat_id as chatId FROM runs WHERE id=?").get(runId) as { chatId: string } | undefined;
+    if (!row) throw new Error("Run not found.");
+    const attachments = getDb().prepare(`SELECT a.attachment_id as attachmentId,a.run_id as runId,a.chat_id as chatId,a.filename,a.media_type as mediaType,a.size_bytes as sizeBytes,a.relative_path as relativePath
+      FROM attachments a JOIN run_attachments ra ON ra.attachment_id=a.attachment_id WHERE ra.run_id=?`).all(runId) as AttachmentRow[];
+    for (const attachment of attachments) if (!existsSync(absoluteDataPath(attachment.relativePath))) throw new Error(`Original attachment is missing: ${attachment.filename}`);
+    reopenPartialRun(runId);
+    this.runSelectedModels.set(runId, saved.modelId);
+    this.runModes.set(runId, saved.mode);
+    this.runGroundingEnabled.set(runId, saved.groundingEnabled);
+    this.policyGuard.setProtectedPaths(runId, contract.constraints.protectedPaths);
+    if (contract.constraints.restrictMutationsToTargets) this.policyGuard.setMutationTargetRestriction(runId, true, contract.workspace.operations.map((op) => op.targetPath).filter((p): p is string => Boolean(p)));
+    const completed = ledger.operationAttempts.filter((attempt) => attempt.status === "completed");
+    const verifiedArtifacts: string[] = [];
+    for (const attempt of completed) for (const ref of attempt.artifactRefs) {
+      const row = getDb().prepare("SELECT relative_path as relativePath,size_bytes as sizeBytes FROM artifacts WHERE artifact_id=? AND run_id=?").get(ref.artifactId, runId) as { relativePath: string; sizeBytes: number } | undefined;
+      if (!row) continue;
+      const file = absoluteDataPath(row.relativePath);
+      try { if (existsSync(file) && statSync(file).isFile() && statSync(file).size === row.sizeBytes) verifiedArtifacts.push(ref.filename); } catch {}
+    }
+    const verifiedWritten: string[] = [];
+    const verifiedDeleted: string[] = [];
+    const evidenceRoot = saved.workspaceRoot ?? resolveRunPath(runId, "intermediate", "intermediate");
+    for (const attempt of completed) {
+      if (!attempt.targetPath || !["write_file", "delete_file"].includes(attempt.tool)) continue;
+      try {
+        const target = resolveSafe(evidenceRoot, attempt.targetPath);
+        if (attempt.tool === "write_file" && existsSync(target) && statSync(target).isFile()) verifiedWritten.push(attempt.targetPath);
+        if (attempt.tool === "delete_file" && !existsSync(target)) verifiedDeleted.push(attempt.targetPath);
+      } catch {}
+    }
+    const resumeEvidence = {
+      writtenPaths: verifiedWritten,
+      deletedPaths: verifiedDeleted,
+      artifactFilenames: verifiedArtifacts,
+      commandExecuted: completed.some((attempt) => attempt.tool === "run_command" || attempt.tool === "execute_python"),
+      hasExecutedDiskMutations: completed.some((attempt) => attempt.mutating),
+    };
+    setTimeout(() => void this.execute(runId, "Continue the original objective. Do not repeat completed operations. Recheck artifacts before claiming completion.", attachments,
+      { contract, extraTokens: useLargerAllowance ? 1024 : 0, resumeEvidence }).catch((error) => this.fail(runId, error)), 0);
+    return { runId };
+  }
+
   setHarness(harness: HarnessManager): void {
     this.harness = harness;
     (harness as any).policyGuard = this.policyGuard;
@@ -602,7 +661,7 @@ export class RunManager {
   artifact(runId: string, artifactId: string) {
     let row = getDb()
       .prepare(
-        "SELECT artifact_id as artifactId, run_id as runId, kind, filename, relative_path as relativePath, size_bytes as sizeBytes, created_at as createdAt FROM artifacts WHERE artifact_id=? AND run_id=?",
+        "SELECT artifact_id as artifactId, run_id as runId, kind, filename, relative_path as relativePath, size_bytes as sizeBytes, sha256, created_at as createdAt FROM artifacts WHERE artifact_id=? AND run_id=?",
       )
       .get(artifactId, runId) as
       | {
@@ -612,6 +671,7 @@ export class RunManager {
           filename: string;
           relativePath: string;
           sizeBytes: number;
+          sha256?: string | null;
           createdAt: string;
         }
       | undefined;
@@ -620,7 +680,7 @@ export class RunManager {
       // Fallback 1: Query by artifactId only
       row = getDb()
         .prepare(
-          "SELECT artifact_id as artifactId, run_id as runId, kind, filename, relative_path as relativePath, size_bytes as sizeBytes, created_at as createdAt FROM artifacts WHERE artifact_id=?",
+          "SELECT artifact_id as artifactId, run_id as runId, kind, filename, relative_path as relativePath, size_bytes as sizeBytes, sha256, created_at as createdAt FROM artifacts WHERE artifact_id=?",
         )
         .get(artifactId) as any;
     }
@@ -929,6 +989,7 @@ export class RunManager {
     runId: string,
     text: string,
     attachmentOrList?: AttachmentRow | AttachmentRow[],
+    resume?: { contract: RunContract; extraTokens: number; resumeEvidence: { writtenPaths: string[]; deletedPaths: string[]; artifactFilenames: string[]; commandExecuted: boolean; hasExecutedDiskMutations: boolean } },
   ): Promise<void> {
     markRunStart(runId);
     const attachments: AttachmentRow[] = Array.isArray(attachmentOrList)
@@ -939,7 +1000,7 @@ export class RunManager {
     const attachment = attachments[0];
     const isWorkspaceActive = this.harness?.isWorkspaceActive() ?? false;
     const chatId = this.chatIdForRunIfPresent(runId);
-    const history = chatId ? this.getRecentChatHistory(chatId, text) : [];
+    const history = !resume && chatId ? this.getRecentChatHistory(chatId, text) : [];
     const chatArtifacts = chatId ? this.getChatArtifacts(chatId) : [];
 
     // Feature switch: Enabled by default unless explicitly disabled, or when running legacy test suites
@@ -951,7 +1012,7 @@ export class RunManager {
       // ── Unified Agent Loop (Sovereign Workbench v2) ────────────────────────
       // 1. Configuration-driven model selection & validation
       const modelSelection = resolveModelSelection({
-        explicitSelection: this.runSelectedModels.get(runId),
+        explicitSelection: resume?.contract.routing.driverModel ?? this.runSelectedModels.get(runId),
         gateway: this.gateway,
       });
 
@@ -988,7 +1049,10 @@ export class RunManager {
 
       let resolvedIntent: ValidatedSemanticIntent;
 
-      if (isMutationRequested) {
+      if (resume) {
+        if (driverModelId !== resume.contract.routing.driverModel) throw new Error("The original model selection is unavailable.");
+        resolvedIntent = intentFromContract(resume.contract);
+      } else if (isMutationRequested) {
         // [Safety Exception]: Narrow semantic interpretation to extract target files,
         // protected paths, negative constraints, and workspace operations for PolicyGuard.
         // The driver model is strictly pinned to the resolved execution model.
@@ -1060,9 +1124,9 @@ export class RunManager {
       }
 
       // Persist the interpretation before any execution.
-      const runContract = persistRunContract(normalizeRunContract(runId, resolvedIntent));
+      const runContract = resume?.contract ?? persistRunContract(normalizeRunContract(runId, resolvedIntent));
       const executionLedger = runContract.routing.actionable && !runContract.response.chatOnly
-        ? initializeExecutionLedger(runContract)
+        ? (initializeExecutionLedger(runContract), getExecutionLedger(runId))
         : undefined;
       const semanticIntent = intentFromContract(runContract);
       if (resolvedIntent.status === "failed") {
@@ -1103,12 +1167,16 @@ export class RunManager {
         hasRetrievableResults: resultStore.listResults().length > 0,
       };
 
-      const explicitMode = this.runModes.get(runId);
+      const explicitMode = resume ? getExecutionLedger(runId)?.executionContext?.mode : this.runModes.get(runId);
       const executionMode: ExecutionMode =
         explicitMode !== undefined
           ? explicitMode
           : (isMutationRequested || semanticIntent.workspaceMutationRequested ? "agent" : "chat");
       this.runModes.set(runId, executionMode);
+
+      if (!resume && executionLedger) configureExecutionLedger(runId, { modelId: driverModelId, mode: executionMode,
+        workspaceRoot: isWorkspaceActive && this.harness ? this.harness.requireActiveWorkspace().root : undefined,
+        groundingEnabled: this.runGroundingEnabled.get(runId) === true });
 
       const executionEnvelope = buildExecutionEnvelope({
         runId,
@@ -1167,6 +1235,8 @@ export class RunManager {
         grounding: activeGrounding as any,
         indexedKnowledgeSources: hasKnowledgeBaseDocs
           ? this.ragService?.listDocuments().map((doc) => ({ filename: path.basename(doc.source_path), docId: doc.doc_id })) : undefined,
+        verificationFeedback: () => verificationFeedback(getVerificationReport(runId)),
+        refreshVerificationReport: () => this.publishVerificationReport(runId),
         envelope: executionEnvelope,
         emitRunEvent: (event: any) => {
           if (event.type === "artifact_ready" && event.artifact) {
@@ -1177,7 +1247,20 @@ export class RunManager {
       };
 
       let attachedFilesSection = "";
-      if (attachments.length > 0) {
+      if (resume && attachments.length > 0 && !useMountedWorkspace) {
+        const inputDir = resolveRunPath(runId, "input", "input");
+        const intermediateDir = resolveRunPath(runId, "intermediate", "intermediate");
+        mkdirSync(intermediateDir, { recursive: true });
+        for (const file of existsSync(inputDir) ? readdirSync(inputDir) : []) {
+          if (!file.startsWith(".")) {
+            const source = path.join(inputDir, file);
+            const cleanName = file.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, "");
+            const destination = path.join(intermediateDir, cleanName);
+            if (!existsSync(destination) && statSync(source).isFile()) copyFileSync(source, destination);
+          }
+        }
+      }
+      if (!resume && attachments.length > 0) {
         const inputDir = resolveRunPath(runId, "input", "input");
         const dirFiles = existsSync(inputDir) ? readdirSync(inputDir) : [];
 
@@ -1310,6 +1393,8 @@ ${referencedFilesSection}`;
           policyGuard: this.policyGuard,
           recentChatHistory: history,
           maxTurns: 100,
+          firstTurnExtraGenerationTokens: resume?.extraTokens,
+          resumeEvidence: resume?.resumeEvidence,
           isCancelled: () => getState(runId) === "cancelled",
           onPlanConfirmationRequired: async (planText, mutatingCalls) => {
             return new Promise<boolean>((resolve) => {
@@ -1355,7 +1440,7 @@ ${referencedFilesSection}`;
 
         switch (outcome) {
           case "completed":
-            this.complete(runId);
+            this.complete(runId, true);
             break;
           case "partial":
             this.partial(runId);
@@ -3547,7 +3632,15 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
     this.state(runId, "awaiting_confirmation");
     this.emit({ type: "confirmation_required", runId, action });
   }
-  private complete(runId: string) {
+  private complete(runId: string, contractEvaluatorPassed = false) {
+    const report = verifyRunEvidence(runId, { contractEvaluatorPassed });
+    if (report) {
+      this.emit({ type: "verification_report", runId, report });
+      if (report.checks.some((item) => item.mandatory && item.status === "failed")) {
+        this.partial(runId);
+        return;
+      }
+    }
     finalizeRunTelemetry(runId, "completed");
     this.policyGuard.revokeRunScopes(runId);
     this.runTemperatures.delete(runId);
@@ -3588,14 +3681,21 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
     filename: string;
     relativePath: string;
     sizeBytes: number;
+    sha256?: string | null;
     createdAt: string;
   }) {
     logArtifactReady(artifact);
     getDb()
       .prepare(
-        "INSERT INTO artifacts(artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO artifacts(artifact_id, run_id, kind, filename, relative_path, size_bytes, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(artifact.artifactId, artifact.runId, artifact.kind, artifact.filename, artifact.relativePath, artifact.sizeBytes, artifact.createdAt);
+      .run(artifact.artifactId, artifact.runId, artifact.kind, artifact.filename, artifact.relativePath, artifact.sizeBytes, artifact.sha256 ?? null, artifact.createdAt);
+    this.publishVerificationReport(artifact.runId);
+  }
+  getVerificationReport(runId: string) { return getVerificationReport(runId); }
+  private publishVerificationReport(runId: string): void {
+    const report = verifyRunEvidence(runId);
+    if (report) this.emit({ type: "verification_report", runId, report });
   }
   private getRunAttachmentFilenames(runId: string): string[] {
     try {

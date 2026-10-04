@@ -207,7 +207,7 @@ describe("Phase DB — SQLite working", () => {
         created_at TEXT NOT NULL
       );
       INSERT INTO runs VALUES ('r1', 'c1', '2026-01-01');
-      INSERT INTO artifacts VALUES ('a1', 'r1', 'csv', 'test.csv', 'runs/r1/test.csv', 10, '2026-01-01');
+      INSERT INTO artifacts(artifact_id,run_id,kind,filename,relative_path,size_bytes,created_at) VALUES ('a1', 'r1', 'csv', 'test.csv', 'runs/r1/test.csv', 10, '2026-01-01');
     `);
     oldDb.close();
 

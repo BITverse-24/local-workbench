@@ -97,6 +97,8 @@ function migrateArtifactsSchema(db: Db): void {
     | { sql: string }
     | undefined;
   if (!row?.sql) return;
+  const columns = db.prepare("PRAGMA table_info(artifacts)").all() as Array<{ name: string }>;
+  const hasSha256 = columns.some((column) => column.name === "sha256");
   if (!row.sql.includes("'txt'") || !row.sql.includes("'md'")) {
     db.pragma("foreign_keys = OFF");
     db.exec(`
@@ -107,14 +109,17 @@ function migrateArtifactsSchema(db: Db): void {
         filename      TEXT NOT NULL,
         relative_path TEXT NOT NULL,
         size_bytes    INTEGER NOT NULL DEFAULT 0,
+        sha256        TEXT,
         created_at    TEXT NOT NULL
       );
-      INSERT INTO artifacts_new (artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at)
-        SELECT artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at FROM artifacts;
+      INSERT INTO artifacts_new (artifact_id, run_id, kind, filename, relative_path, size_bytes, sha256, created_at)
+        SELECT artifact_id, run_id, kind, filename, relative_path, size_bytes, ${hasSha256 ? "sha256" : "NULL"}, created_at FROM artifacts;
       DROP TABLE artifacts;
       ALTER TABLE artifacts_new RENAME TO artifacts;
     `);
     db.pragma("foreign_keys = ON");
+  } else if (!hasSha256) {
+    db.exec("ALTER TABLE artifacts ADD COLUMN sha256 TEXT");
   }
 }
 

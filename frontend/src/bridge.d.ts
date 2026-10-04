@@ -55,6 +55,24 @@ interface AttachmentReference {
   relativePath: string;
 }
 
+interface VerificationCheck {
+  criterionId: string;
+  requirement: string;
+  status: "passed" | "failed" | "unverified" | "not_applicable";
+  method: "sha256" | "result_store_checksum" | "format_parser" | "filesystem" | "execution_record" | "agent_loop_completion";
+  evidence: Array<{ kind: "result" | "artifact" | "execution"; id: string }>;
+  reason: string;
+  verifiedAt: string;
+  mandatory: boolean;
+}
+interface RunVerificationReport {
+  schemaVersion: 1;
+  runId: string;
+  status: "passed" | "failed" | "unverified" | "not_applicable";
+  checks: VerificationCheck[];
+  updatedAt: string;
+}
+
 interface ArtifactRef {
   artifactId: string;
   runId: string;
@@ -62,6 +80,7 @@ interface ArtifactRef {
   filename: string;
   relativePath: string;
   sizeBytes: number;
+  sha256?: string;
   createdAt: string;
   content?: string;
   isBinary?: boolean;
@@ -136,6 +155,7 @@ interface RAGStats {
 
 type RunEvent =
   | { type: "run_state"; runId: string; state: RunState }
+  | { type: "verification_report"; runId: string; report: RunVerificationReport }
   | { type: "routing"; runId: string; taskType: "vision" | "draft" | "code"; modelId: string; reason: string }
   | { type: "plan_step"; runId: string; index: number; text: string }
   | { type: "agent_thinking"; runId: string; text: string; turn?: number }
@@ -195,6 +215,7 @@ interface WorkbenchBridge {
   getSetting: (key: string) => Promise<{ value: unknown }>;
   setSetting: (key: string, value: unknown) => Promise<void>;
   startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string; selectedModel?: string; mode?: "chat" | "agent" }) => Promise<{ runId: string }>;
+  resumeRun: (input: { runId: string; largerGenerationAllowance?: boolean }) => Promise<{ runId: string }>;
   registerAttachment: (input: {
     chatId?: string;
     filename: string;
@@ -206,6 +227,7 @@ interface WorkbenchBridge {
   cancelRun: (input: { runId: string }) => Promise<void>;
   getRunHistory: (input?: { limit?: number }) => Promise<RunSummary[]>;
   getArtifact: (input: { runId: string; artifactId: string }) => Promise<ArtifactRef>;
+  getVerificationReport: (input: { runId: string }) => Promise<RunVerificationReport | undefined>;
   openArtifact: (input: { runId: string; artifactId: string }) => Promise<{ opened: true; filename: string }>;
   saveArtifact: (input: { runId: string; artifactId: string }) => Promise<{ saved: boolean; filename?: string }>;
   copyArtifact: (input: { runId: string; artifactId: string }) => Promise<{ copied: boolean; mode: "text" | "file"; filename: string }>;

@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
   filename      TEXT NOT NULL,             -- e.g. approval-note-E201.docx
   relative_path TEXT NOT NULL,             -- runs/<runId>/output/…
   size_bytes    INTEGER NOT NULL DEFAULT 0,
+  sha256        TEXT,
   created_at    TEXT NOT NULL
 );
 
@@ -185,6 +186,12 @@ CREATE TABLE IF NOT EXISTS run_execution_ledgers (
   run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
   schema_version INTEGER NOT NULL CHECK (schema_version = 1),
   ledger_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS run_verification_reports (
+  run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+  schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+  report_json TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS intermediate_results (

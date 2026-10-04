@@ -71,6 +71,8 @@ export interface ToolExecutionContext {
   runContract?: RunContract;
   resultStore?: RunResultStore;
   executionLedger?: RunExecutionLedger;
+  verificationFeedback?: () => { key: string; text: string } | undefined;
+  refreshVerificationReport?: () => void;
   currentCallId?: string;
   envelope?: ExecutionEnvelope;
   activeCapabilities?: Set<CapabilityGroup>;

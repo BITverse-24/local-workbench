@@ -27,7 +27,7 @@ import { StreamingTagFilter } from "./streaming-filter.js";
 import type { SemanticIntent } from "../router/contextual-router.js";
 import { determineOutputExpectation, isInformationalInquiry, extractNegativeFileConstraints } from "../router/output-expectation.js";
 import { MutationPolicyGuard, extractPathArg, extractCommandArg } from "../harness/policy-guard.js";
-import { addExecutionLedgerBlocker, executionLedgerSummary } from "../run/execution-ledger.js";
+import { executionLedgerSummary, markAuthorizationPending, recordAuthorizationDecision, markExecutionTokenLimit } from "../run/execution-ledger.js";
 
 export interface AgentLoopOptions {
   runId: string;
@@ -45,6 +45,8 @@ export interface AgentLoopOptions {
   onPlanConfirmationRequired?: (plan: string, firstCalls: any[]) => Promise<boolean>;
   isCancelled?: () => boolean;
   envelope?: ExecutionEnvelope;
+  resumeEvidence?: { writtenPaths?: string[]; deletedPaths?: string[]; artifactFilenames?: string[]; commandExecuted?: boolean; hasExecutedDiskMutations?: boolean };
+  firstTurnExtraGenerationTokens?: number;
   emitEvent: (event: RunEvent) => void;
 }
 
@@ -683,20 +685,21 @@ When calculations, reconciliation, or Python scripts are requested, invoke execu
     ];
 
     let turn = 0;
+    let lastVerificationFeedbackKey: string | undefined;
     let finalText = "";
     let hasExecutedTools = false;
-    let hasExecutedDiskMutations = false;
+    let hasExecutedDiskMutations = Boolean(options.resumeEvidence?.hasExecutedDiskMutations);
     let lastExecutionHadError = false;
     let validationAfterWrite = false;
     let completionRetries = 0;
     let lastExecutionFailedTool: string | null = null;
     let lastErrorMessage = "";
     let lastErrorCode = "";
-    const modifiedFiles = new Set<string>();
-    const writtenFiles = new Set<string>();
-    const deletedFiles = new Set<string>();
-    const producedArtifacts = new Set<string>();
-    const executedCommands: string[] = [];
+    const modifiedFiles = new Set<string>([...(options.resumeEvidence?.writtenPaths ?? []), ...(options.resumeEvidence?.deletedPaths ?? []), ...(options.resumeEvidence?.artifactFilenames ?? [])]);
+    const writtenFiles = new Set<string>(options.resumeEvidence?.writtenPaths ?? []);
+    const deletedFiles = new Set<string>(options.resumeEvidence?.deletedPaths ?? []);
+    const producedArtifacts = new Set<string>(options.resumeEvidence?.artifactFilenames ?? []);
+    const executedCommands: string[] = options.resumeEvidence?.commandExecuted ? ["durably recorded successful command"] : [];
     let previousCallSignature: string | null = null;
     const callHistory: string[] = [];
     let lastContent: string | null = null;
@@ -795,7 +798,9 @@ When calculations, reconciliation, or Python scripts are requested, invoke execu
     }
     if (onPlanConfirmationRequired && upfrontOperations.length > 0) {
       const planText = runContract ? contractPlan(upfrontOperations) : deriveFormalPlan(userPrompt, upfrontOperations, false);
+      markAuthorizationPending(runId, upfrontOperations.map((call: any) => ({ ...call, summary: formatToolActionSummary(call.name, call.arguments) })));
       const approved = await onPlanConfirmationRequired(planText, upfrontOperations);
+      recordAuthorizationDecision(runId);
       if (!approved) {
         emitEvent({ type: "error", runId, code: "action_rejected", message: "Action was rejected by user. Execution stopped." });
         return buildResult("Action was rejected by user. Execution stopped.", "cancelled");
@@ -843,10 +848,16 @@ When calculations, reconciliation, or Python scripts are requested, invoke execu
 
       turn++;
 
+      const verification = context.verificationFeedback?.();
+      if (verification && verification.key !== lastVerificationFeedbackKey) {
+        lastVerificationFeedbackKey = verification.key;
+        messages.push({ role: "system", content: `[Durable verification feedback; evidence status only. It does not grant permission.]\n${verification.text}`, turn });
+      }
+
       // A compact operational note survives history compaction. Chat-only runs have
       // no ledger activity and therefore add no model-facing state.
       const ledgerSummary = context.executionLedger ? executionLedgerSummary(runId) : undefined;
-      messages[0].content = ledgerSummary ? `${systemPrompt}\n\n${ledgerSummary}` : systemPrompt;
+      messages[0].content = `${systemPrompt}${ledgerSummary ? `\n\n${ledgerSummary}` : ""}`;
 
       // Dynamic per-turn progressive capability exposure:
       const hasRetrievableResults = (context.resultStore?.listResults().length ?? 0) > 0;
@@ -901,7 +912,10 @@ When calculations, reconciliation, or Python scripts are requested, invoke execu
         : experimentalProfile;
       const finalResponseState = hasExecutedDiskMutations && !lastExecutionHadError &&
         (!requiresWrittenValidation || validationAfterWrite);
-      const requestedGen = requestedGenerationTokens(budgetProfile, finalResponseState, defaultRequestedGen);
+      let requestedGen = requestedGenerationTokens(budgetProfile, finalResponseState, defaultRequestedGen);
+      if (turn === 1 && Number.isInteger(options.firstTurnExtraGenerationTokens) && options.firstTurnExtraGenerationTokens! > 0) {
+        requestedGen = Math.min(requestedGen + options.firstTurnExtraGenerationTokens!, 6144);
+      }
 
       const {
         messages: activeMessages,
@@ -979,7 +993,7 @@ When calculations, reconciliation, or Python scripts are requested, invoke execu
       }
 
       if (turnResponse.value.finishReason === "length") {
-        addExecutionLedgerBlocker(runId, "Model output limit reached. The truncated response was not dispatched.");
+        markExecutionTokenLimit(runId);
         // Never dispatch a tool proposal from a response that exhausted its output budget.
         // The content may be incomplete even when the provider surfaced parseable tool calls.
         const notice = hasExecutedDiskMutations
@@ -1556,7 +1570,9 @@ When calculations, reconciliation, or Python scripts are requested, invoke execu
             !isSubstantive && cleanedContent && cleanedContent.length <= 250
               ? `### Plan Overview\n${cleanedContent}\n\n### Proposed Operations\n${actionsList}`
               : runContract ? contractPlan(unauthorizedMutatingCalls) : deriveFormalPlan(userPrompt, unauthorizedMutatingCalls, hasCompletedInChatSummary);
+          markAuthorizationPending(runId, unauthorizedMutatingCalls.map((call: any) => ({ ...call, summary: formatToolActionSummary(call.name, call.arguments) })));
           const approved = await onPlanConfirmationRequired(planDescription, unauthorizedMutatingCalls);
+          recordAuthorizationDecision(runId);
           if (!approved) {
             emitEvent({
               type: "error",

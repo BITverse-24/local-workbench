@@ -124,6 +124,20 @@ export class RunResultStore {
     };
   }
 
+  verifyIntegrity(resultId: string): { valid: boolean; reason: string } {
+    try {
+      const record = this.getResult(resultId);
+      const target = this.payloadPath(resultId, record.storage.encoding);
+      const stat = statSync(target);
+      if (!stat.isFile() || stat.size !== record.storage.sizeBytes || stat.size > RESULT_PAYLOAD_MAX_BYTES) return { valid: false, reason: "Stored result is missing or its size does not match the manifest." };
+      const digest = createHash("sha256").update(readFileSync(target)).digest("hex");
+      if (digest !== record.storage.sha256) return { valid: false, reason: "Stored result SHA-256 does not match the manifest." };
+      return { valid: true, reason: "Stored result SHA-256 matches the manifest." };
+    } catch (error) {
+      return { valid: false, reason: error instanceof Error ? error.message.slice(0, 240) : "Stored result could not be verified." };
+    }
+  }
+
   listResults(options: { limit?: number; offset?: number } = {}): IntermediateResultRecord[] {
     const limit = z.number().int().min(1).max(50).parse(options.limit ?? 10);
     const offset = z.number().int().nonnegative().parse(options.offset ?? 0);

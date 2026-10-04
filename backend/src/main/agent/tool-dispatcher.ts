@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { AgentToolCall, IntermediateResultInput, SourceReference } from "../../shared/contracts.js";
 import { compactToolObservation } from "./context-manager.js";
-import { recordExecutionToolOutcome } from "../run/execution-ledger.js";
+import { recordExecutionToolOutcome, recordExecutionToolStarted } from "../run/execution-ledger.js";
 import { resolveSafe, PermissionError } from "../harness/path-guard.js";
 import { extractPathArg } from "../tools/workspace-tools.js";
 import type {
@@ -351,6 +351,7 @@ export class ToolDispatcher {
             const target = resolveSafe(context.workspaceRoot, extractPathArg(call.arguments));
             if (context.resultStore.isStoragePath(target)) throw new PermissionError("Durable result payloads are immutable; create a new result instead");
           }
+          recordExecutionToolStarted({ runId: context.runId, callId: call.id, tool: call.name, args: call.arguments, summary: callSummary });
           const rawResult = await tool.execute(call.arguments, { ...context, currentCallId: call.id });
           const durationMs = Date.now() - t0;
 
@@ -561,6 +562,7 @@ export class ToolDispatcher {
           recordExecutionToolOutcome({ runId: context.runId, callId: call.id, tool: call.name, args: call.arguments, summary: normalizedResult.summary,
             ok: normalizedResult.ok, error: normalizedResult.ok ? undefined : normalizedResult.error.message,
             resultId: normalizedResult.resultRef?.resultId, artifacts: normalizedResult.artifacts });
+          if (call.name === "run_command" || call.name === "execute_python") context.refreshVerificationReport?.();
 
           return {
             id: call.id,

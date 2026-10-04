@@ -231,7 +231,26 @@ export type RunState =
   | "cancelled"
   | "limit_exceeded";
 export interface PendingAction { actionId: string; runId: string; kind: "generate_docx" | "execute_python" | "generate_xlsx" | "plan_approval"; prompt: string; createdAt: string; expiresAt: string; preview?: string; }
-export interface ArtifactRef { artifactId: string; runId: string; kind: ArtifactKind; filename: string; relativePath: string; sizeBytes: number; createdAt: string; content?: string; isBinary?: boolean; verified?: boolean; verificationDetails?: Record<string, unknown>; }
+export interface ArtifactRef { artifactId: string; runId: string; kind: ArtifactKind; filename: string; relativePath: string; sizeBytes: number; sha256?: string; createdAt: string; content?: string; isBinary?: boolean; verified?: boolean; verificationDetails?: Record<string, unknown>; }
+export type VerificationStatus = "passed" | "failed" | "unverified" | "not_applicable";
+export interface VerificationEvidenceRef { kind: "result" | "artifact" | "execution"; id: string; }
+export interface VerificationCheck {
+  criterionId: string;
+  requirement: string;
+  status: VerificationStatus;
+  method: "sha256" | "result_store_checksum" | "format_parser" | "filesystem" | "execution_record" | "agent_loop_completion";
+  evidence: VerificationEvidenceRef[];
+  reason: string;
+  verifiedAt: string;
+  mandatory: boolean;
+}
+export interface RunVerificationReport {
+  schemaVersion: 1;
+  runId: string;
+  status: VerificationStatus;
+  checks: VerificationCheck[];
+  updatedAt: string;
+}
 export interface GroundingChunk {
   chunkId: string;
   docId: string;
@@ -255,6 +274,7 @@ export interface CompactionMetadata {
 
 export type RunEvent =
   | { type: "run_state"; runId: string; state: RunState }
+  | { type: "verification_report"; runId: string; report: RunVerificationReport }
   | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number; providerEndpoint?: string }
   | { type: "plan_step"; runId: string; index: number; text: string }
   | { type: "agent_thinking"; runId: string; text: string; turn?: number }

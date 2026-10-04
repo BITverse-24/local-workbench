@@ -1,6 +1,6 @@
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { assertSafeRelativePath } from "../persistence/paths.js";
 import type { ArtifactRef, AttachmentReference } from "../../shared/contracts.js";
 
@@ -28,6 +28,16 @@ export function dataRoot(): string {
   if (process.env.WORKBENCH_DATA_ROOT) return process.env.WORKBENCH_DATA_ROOT;
   return path.join(process.cwd(), "data");
 }
+export function sha256File(filePath: string): string {
+  const hash = createHash("sha256");
+  const fd = openSync(filePath, "r");
+  const chunk = Buffer.allocUnsafe(64 * 1024);
+  try {
+    let bytesRead = 0;
+    while ((bytesRead = readSync(fd, chunk, 0, chunk.length, null)) > 0) hash.update(chunk.subarray(0, bytesRead));
+  } finally { closeSync(fd); }
+  return hash.digest("hex");
+}
 export function absoluteDataPath(relativePath: string): string { assertSafeRelativePath(relativePath); const root = path.resolve(dataRoot()); const target = path.resolve(root, relativePath); if (!target.startsWith(`${root}${path.sep}`)) throw new Error("data path escapes root"); return target; }
 export function runRoot(runId: string): string { if (!/^[0-9a-f-]{36}$/i.test(runId)) throw new Error("invalid run id"); return path.join(dataRoot(), "runs", runId); }
 export function createRunDirectories(runId: string): string { const root = runRoot(runId); for (const name of ["input", "intermediate", "output", "logs"]) mkdirSync(path.join(root, name), { recursive: true }); return root; }
@@ -44,11 +54,12 @@ export function writeRunFile(runId: string, area: "intermediate" | "output" | "l
 export function artifactRef(runId: string, kind: ArtifactRef["kind"], filename: string, relativePath: string): ArtifactRef {
   const abs = resolveRunPath(runId, relativePath.replace(`runs/${runId}/`, ""), "output");
   let size = 0;
+  let sha256: string | undefined;
   try {
     size = statSync(abs).size;
+    sha256 = sha256File(abs);
   } catch {
     size = 0;
   }
-  return { artifactId: randomUUID(), runId, kind, filename, relativePath, sizeBytes: size, createdAt: new Date().toISOString() };
+  return { artifactId: randomUUID(), runId, kind, filename, relativePath, sizeBytes: size, sha256, createdAt: new Date().toISOString() };
 }
-

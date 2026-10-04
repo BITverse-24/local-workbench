@@ -10,7 +10,8 @@ import { validateAndNormalizeIntent } from "../src/main/router/contextual-router
 import { normalizeRunContract, persistRunContract } from "../src/main/run/contract.js";
 import { RunResultStore } from "../src/main/run/result-store.js";
 import { compactConversationHistory, type AgentMessage } from "../src/main/agent/context-manager.js";
-import { addExecutionLedgerBlocker, getExecutionLedger, initializeExecutionLedger, recordExecutionToolOutcome, updateExecutionLedgerState, executionLedgerSummary } from "../src/main/run/execution-ledger.js";
+import { addExecutionLedgerBlocker, configureExecutionLedger, getExecutionLedger, initializeExecutionLedger, markAuthorizationPending, markExecutionTokenLimit, prepareExecutionResume, recordAuthorizationDecision, recordExecutionToolOutcome, recordExecutionToolStarted, reopenPartialRun, reconcileInterruptedExecutions, updateExecutionLedgerState, executionLedgerSummary } from "../src/main/run/execution-ledger.js";
+import { transition } from "../src/main/run/store.js";
 
 describe("P1-C1 execution ledger", () => {
   let dir: string, runId: string;
@@ -71,5 +72,48 @@ describe("P1-C1 execution ledger", () => {
     recordExecutionToolOutcome({ runId, callId: randomUUID(), tool: "run_command", args: { command: "check" }, summary: "Command failed", ok: false, error: "exit 1" });
     expect(getExecutionLedger(runId)?.completedOperations).toHaveLength(0);
     expect(getExecutionLedger(runId)?.blockers.join(" ")).toContain("exit 1");
+  });
+
+  it("reconstructs a crash as interrupted and blocks uncertain mutation replay", () => {
+    configureExecutionLedger(runId, { modelId: "code-qwen25coder", mode: "agent", workspaceRoot: dir, groundingEnabled: false });
+    recordExecutionToolStarted({ runId, callId: "mutation-1", tool: "write_file", args: { path: "parser.py" }, summary: "Write parser" });
+    expect(reconcileInterruptedExecutions()).toBe(1);
+    expect(getExecutionLedger(runId)?.operationAttempts[0].status).toBe("uncertain");
+    expect(() => prepareExecutionResume(runId)).toThrow(/uncertain mutation/i);
+  });
+
+  it("allows explicit resumption after a completed operation and preserves result references", () => {
+    configureExecutionLedger(runId, { modelId: "code-qwen25coder", mode: "agent", workspaceRoot: dir, groundingEnabled: false });
+    const result = new RunResultStore(runId, undefined, dir).registerResult({ type: "text", status: "complete", origin: "source_extracted", producer: { tool: "read_file", callId: "read-resume" }, summary: "source", payload: "body" });
+    recordExecutionToolStarted({ runId, callId: "read-resume", tool: "read_file", args: { path: "parser.py" }, summary: "Read parser" });
+    recordExecutionToolOutcome({ runId, callId: "read-resume", tool: "read_file", args: { path: "parser.py" }, summary: "Read parser", ok: true, resultId: result.resultId });
+    recordExecutionToolOutcome({ runId, callId: "write-resume", tool: "write_file", args: { path: "parser.py" }, summary: "Write parser", ok: true });
+    transition(runId, "partial");
+    updateExecutionLedgerState(runId, "partial");
+    const prepared = prepareExecutionResume(runId);
+    expect(prepared.ledger.operationAttempts[0].resultIds).toContain(result.resultId);
+    expect(prepared.ledger.operationAttempts.find((attempt) => attempt.callId === "write-resume")?.status).toBe("completed");
+    reopenPartialRun(runId);
+    expect(getExecutionLedger(runId)?.status).toBe("active");
+  });
+
+  it("records pending authorization and clears it after a decision", () => {
+    markAuthorizationPending(runId, [{ id: "pending-1", name: "write_file", arguments: { path: "parser.py" }, summary: "Write parser" }]);
+    expect(getExecutionLedger(runId)?.status).toBe("awaiting_authorization");
+    expect(getExecutionLedger(runId)?.pendingAuthorizations).toHaveLength(1);
+    recordAuthorizationDecision(runId);
+    expect(getExecutionLedger(runId)?.pendingAuthorizations).toHaveLength(0);
+    expect(getExecutionLedger(runId)?.status).toBe("active");
+  });
+
+  it("offers only one explicit larger-generation recovery after a token limit", () => {
+    markExecutionTokenLimit(runId);
+    transition(runId, "limit_exceeded");
+    updateExecutionLedgerState(runId, "limit_exceeded");
+    expect(() => prepareExecutionResume(runId)).toThrow(/eligible/i);
+    const recovery = prepareExecutionResume(runId, true);
+    expect(recovery.useLargerAllowance).toBe(true);
+    expect(recovery.ledger.tokenLimitRecoveryCount).toBe(1);
+    expect(() => prepareExecutionResume(runId, true)).toThrow(/eligible|available/i);
   });
 });
