@@ -36,6 +36,7 @@ import {
   logVisionFindings,
 } from "../logger.js";
 import { countTokens } from "../agent/context-manager.js";
+import { parseProviderUsage, recordInference, resolveReasoningControl, type InferencePurpose } from "./telemetry.js";
 
 export interface DelegatedInvocationTelemetry {
   runId: string;
@@ -65,8 +66,9 @@ function persistGatewayTrace(runId: string, requestId: string, entry: Record<str
     const root = runRoot(runId);
     const logsDir = path.join(root, "logs");
     mkdirSync(logsDir, { recursive: true });
-    const payload = { timestamp: new Date().toISOString(), requestId, runId, ...entry };
-    // Full JSON per-request file — never truncated, contains everything the model returned.
+    const safeEntry = redactTraceContent(entry) as Record<string, unknown>;
+    const payload = { timestamp: new Date().toISOString(), requestId, runId, ...safeEntry };
+    // Keep structured diagnostics, but never persist full prompts, documents or model outputs.
     const perRequestPath = path.join(logsDir, `model-${(entry["taskType"] as string) ?? "unknown"}-${requestId}.json`);
     try {
       writeFileSync(perRequestPath, JSON.stringify(payload, null, 2), { flag: "w" });
@@ -80,6 +82,19 @@ function persistGatewayTrace(runId: string, requestId: string, entry: Record<str
   } catch (e) {
     console.warn(`[model-gateway] failed to persist trace for ${requestId}:`, e instanceof Error ? e.message : String(e));
   }
+}
+
+function redactTraceContent(value: unknown, key = ""): unknown {
+  const sensitive = /^(?:bodyPreview|rawText|content|reasoning|extractedContent|parsedJson|result|envelope|systemPromptPreview|userPromptPreview|messages|toolCalls)$/i;
+  if (sensitive.test(key)) {
+    const chars = typeof value === "string" ? value.length : value == null ? 0 : JSON.stringify(value).length;
+    return `[omitted; ${chars} chars]`;
+  }
+  if (Array.isArray(value)) return value.map((item) => redactTraceContent(item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, redactTraceContent(v, k)]));
+  }
+  return value;
 }
 
 export interface GatewayTransport {
@@ -354,7 +369,7 @@ export function formatMessagesForFallback(
       const toolIdentifier = m.toolName || m.tool_call_id || "tool";
       return {
         role: "user",
-        content: `[Tool Result for ${toolIdentifier}]:\n${typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "")}`,
+        content: `[Observed result from ${toolIdentifier}]:\n${typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "")}`,
       };
     }
 
@@ -995,18 +1010,24 @@ export class ModelGateway implements ModelClient {
     let envelope: unknown = null;
     let extractedContent: unknown = null;
     let parsedJson: unknown = null;
+    let inferenceStartedAt = Date.now();
+    let inferenceTtftMs: number | null = null;
     try {
       // The counter is for non-local egress evidence. Ollama and LAN model
       // servers remain local; configured cloud endpoints count as external.
       this.externalRequestCount += isLocal ? 0 : 1;
-      const t0 = Date.now();
+      const t0 = inferenceStartedAt = Date.now();
+      const onInferenceChunk = (delta: string) => {
+        if (inferenceTtftMs === null && delta.length > 0) inferenceTtftMs = Date.now() - t0;
+        request.onChunk?.(delta);
+      };
       let response: { status: number; text(): Promise<string> };
       if (request.onChunk && this.transport.streamRequest) {
         response = await this.transport.streamRequest(
           `${model.baseUrl}/chat/completions`,
           { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body },
           effectiveTimeout,
-          request.onChunk,
+          onInferenceChunk,
         );
       } else {
         response = await this.transport.request(
@@ -1281,7 +1302,19 @@ export class ModelGateway implements ModelClient {
         }
       }
 
-      persistGatewayTrace(request.runId, request.requestId, { phase: "normalized", taskType: request.taskType, latencyMs, finishReason, usage, result: normalized.result, resultChars: JSON.stringify(normalized.result).length, envelope, rawText, extractedContent, parsedJson });
+      const normalizedChars = JSON.stringify(normalized.result).length;
+      recordInference({
+        requestId: request.requestId, runId: request.runId, startedAt: new Date(inferenceStartedAt).toISOString(),
+        purpose: request.purpose === "intent_classification" ? "classification" : request.parentToolCallId ? "delegated" : "working_turn",
+        modelId: request.modelId, providerModel: model.model, streamed: Boolean(request.onChunk && this.transport.streamRequest),
+        messageCount: (request.history?.length ?? 0) + 2, requestBodyChars: body.length,
+        toolSchema: { count: 0, serializedChars: 0, estimatedTokens: 0, estimated: true },
+        reasoningControl: { mode: "default", params: {} }, ttftMs: inferenceTtftMs, durationMs: latencyMs,
+        status: response.status, finishReason: finishReason ?? null, usage: parseProviderUsage(usage),
+        outputChars: { content: normalizedChars, reasoning: typeof reasoning === "string" ? reasoning.length : 0, toolArguments: 0 },
+        toolCallNames: [], maxTokens,
+      });
+      persistGatewayTrace(request.runId, request.requestId, { phase: "normalized", taskType: request.taskType, latencyMs, finishReason, usage, resultChars: normalizedChars, bodyChars: body.length });
 
       if (request.parentToolCallId) {
         const promptTokens = (usage as any)?.prompt_tokens ?? (usage as any)?.input_tokens ?? 0;
@@ -1453,6 +1486,7 @@ export class ModelGateway implements ModelClient {
       maxTokens?: number;
       timeoutMs?: number;
       onChunk?: (delta: string) => void;
+      purpose?: InferencePurpose;
     },
   ): Promise<AIResult<AgentTurnResponse>> {
     const model = this.resolveNextEndpoint(modelId);
@@ -1497,17 +1531,26 @@ export class ModelGateway implements ModelClient {
         max_tokens: effectiveMaxTokens,
         presence_penalty: 0.1,
       };
+      const reasoningControl = resolveReasoningControl();
+      Object.assign(payload, reasoningControl.params);
       if (tools.length > 0) {
         payload.tools = tools;
         payload.tool_choice = "auto";
       }
       if (options?.onChunk && this.transport.streamRequest) {
         payload.stream = true;
+        // LM Studio emits provider token usage in the final SSE frame only when requested.
+        payload.stream_options = { include_usage: true };
       }
 
       try {
         const body = JSON.stringify(payload);
         const t0 = Date.now();
+        let ttftMs: number | null = null;
+        const onStreamChunk = (delta: string) => {
+          if (ttftMs === null && delta.length > 0) ttftMs = Date.now() - t0;
+          options?.onChunk?.(delta);
+        };
         let response: { status: number; text(): Promise<string> };
 
         if (options?.onChunk && this.transport.streamRequest) {
@@ -1519,7 +1562,7 @@ export class ModelGateway implements ModelClient {
               body,
             },
             effectiveTimeout,
-            options.onChunk,
+            onStreamChunk,
           );
         } else {
           response = await this.transport.request(
@@ -1587,6 +1630,17 @@ export class ModelGateway implements ModelClient {
           }
 
           if (options?.runId) {
+            const toolChars = parsedCalls.reduce((n, c) => n + JSON.stringify(c.arguments).length, 0);
+            recordInference({
+              requestId, runId: options.runId, startedAt: new Date(t0).toISOString(),
+              purpose: options.purpose ?? "working_turn", modelId, providerModel: model.model,
+              streamed: Boolean(payload.stream), messageCount: nativeMessages.length, requestBodyChars: body.length,
+              toolSchema: { count: tools.length, serializedChars: JSON.stringify(tools).length, estimatedTokens: Math.ceil(JSON.stringify(tools).length / 4), estimated: true },
+              reasoningControl, ttftMs, durationMs, status: response.status,
+              finishReason: choice?.finish_reason ?? null, usage: parseProviderUsage(envelope.usage),
+              outputChars: { content: typeof msg?.content === "string" ? msg.content.length : 0, reasoning: String(msg?.reasoning_content ?? "").length, toolArguments: toolChars },
+              toolCallNames: parsedCalls.map((c) => c.name), maxTokens: effectiveMaxTokens,
+            });
             persistGatewayTrace(options.runId, requestId, {
               phase: "chat_turn_response",
               modelId,
@@ -1605,6 +1659,7 @@ export class ModelGateway implements ModelClient {
             value: {
               content,
               tool_calls: parsedCalls.length > 0 ? parsedCalls : null,
+              finishReason: choice?.finish_reason ?? msg?.finish_reason ?? null,
               usage: {
                 inputTokens: envelope.usage?.prompt_tokens,
                 outputTokens: envelope.usage?.completion_tokens,
@@ -1660,6 +1715,7 @@ export class ModelGateway implements ModelClient {
         temperature: effectiveTemperature,
         max_tokens: effectiveMaxTokens,
         response_format: isLocal ? { type: "json_object" } : undefined,
+        ...resolveReasoningControl().params,
       });
 
       if (options?.runId) {
@@ -1749,6 +1805,18 @@ export class ModelGateway implements ModelClient {
         }
 
         if (options?.runId) {
+          const fallbackUsage = parseProviderUsage(envelope.usage);
+          const toolChars = toolCalls.reduce((n, c) => n + JSON.stringify(c.arguments).length, 0);
+          recordInference({
+            requestId, runId: options.runId, startedAt: new Date(t0).toISOString(),
+            purpose: options.purpose ?? "working_turn", modelId, providerModel: model.model,
+            streamed: false, messageCount: fallbackMessages.length, requestBodyChars: fallbackBody.length,
+            toolSchema: { count: tools.length, serializedChars: JSON.stringify(tools).length, estimatedTokens: Math.ceil(JSON.stringify(tools).length / 4), estimated: true },
+            reasoningControl: resolveReasoningControl(), ttftMs: null, durationMs, status: response.status,
+            finishReason: choice?.finish_reason ?? null, usage: fallbackUsage,
+            outputChars: { content: finalContent?.length ?? 0, reasoning: 0, toolArguments: toolChars },
+            toolCallNames: toolCalls.map((c) => c.name), maxTokens: effectiveMaxTokens,
+          });
           persistGatewayTrace(options.runId, requestId, {
             phase: "chat_turn_response",
             modelId,
@@ -1767,6 +1835,7 @@ export class ModelGateway implements ModelClient {
           value: {
             content: finalContent,
             tool_calls: toolCalls.length > 0 ? toolCalls : null,
+            finishReason: choice?.finish_reason ?? null,
             usage: {
               inputTokens: envelope.usage?.prompt_tokens,
               outputTokens: envelope.usage?.completion_tokens,

@@ -9,7 +9,7 @@ export function mediaType(name: string): string {
   const extension = path.extname(name).toLowerCase();
   return ({ ".pdf": "application/pdf", ".csv": "text/csv", ".py": "text/x-python", ".json": "application/json", ".md": "text/markdown", ".txt": "text/plain", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml" } as Record<string, string>)[extension] ?? "text/plain";
 }
-export async function sendUserMessage(ipc: FakeIpcRegistrar, chatId: string, text: string, root: string, options: { files?: string[]; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string } = {}): Promise<{ runId: string }> {
+export async function sendUserMessage(ipc: FakeIpcRegistrar, chatId: string, text: string, root: string, options: { files?: string[]; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string; generationBudgetProfile?: "default" | "demo_fast" } = {}): Promise<{ runId: string }> {
   if (!text.trim() && !options.files?.length) throw new Error("Empty message");
   if ((options.files?.length ?? 0) > 10) throw new Error("Maximum 10 attachments per run supported");
   const tokens: string[] = [];
@@ -22,5 +22,5 @@ export async function sendUserMessage(ipc: FakeIpcRegistrar, chatId: string, tex
     attachmentRun ??= result.runId;
   }
   await ipc.invoke("workbench:sendMessage", { chatId, role: "user", content: text, attachmentIds: tokens.length ? tokens : undefined });
-  return ipc.invoke("workbench:startRun", { chatId, runId: attachmentRun ?? randomUUID(), userText: text, attachmentToken: tokens[0], attachmentTokens: tokens, temperature: options.temperature, groundingEnabled: options.groundingEnabled, preferredRoute: options.preferredRoute });
+  return ipc.invoke("workbench:startRun", { chatId, runId: attachmentRun ?? randomUUID(), userText: text, attachmentToken: tokens[0], attachmentTokens: tokens, temperature: options.temperature, groundingEnabled: options.groundingEnabled, preferredRoute: options.preferredRoute, generationBudgetProfile: options.generationBudgetProfile });
 }

@@ -44,7 +44,8 @@ async function runFlowB() {
     files: [
       "broken-vendor-log-parser.py",
       "vendor-maintenance-log.csv"
-    ]
+    ],
+    ...(process.env.FLOW_GENERATION_BUDGET_PROFILE === "demo_fast" ? { generationBudgetProfile: "demo_fast" } : {})
   });
 
   const runId = sendResult.runId;

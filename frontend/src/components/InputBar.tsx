@@ -18,6 +18,8 @@ type Props = {
   setGroundingEnabled?: (v: boolean | ((p: boolean) => boolean)) => void;
   mode?: "chat" | "agent";
   onToggleMode?: () => void;
+  generationBudgetProfile?: "default" | "demo_fast";
+  onGenerationBudgetProfileChange?: (profile: "default" | "demo_fast") => void;
 };
 
 
@@ -60,7 +62,7 @@ function FileTypeIcon({ file }: { file: File }) {
   return <span className="w-7 h-7 rounded-[var(--radius-sm)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] grid place-items-center shrink-0 text-[9px] font-mono text-[var(--text-secondary)]">{label.slice(0, 4)}</span>;
 }
 
-export default function InputBar({ input, setInput, onSend, attachedFiles = [], onAttachFiles, onRemoveFile, disabled, groundingEnabled = false, setGroundingEnabled, mode = "chat", onToggleMode }: Props) {
+export default function InputBar({ input, setInput, onSend, attachedFiles = [], onAttachFiles, onRemoveFile, disabled, groundingEnabled = false, setGroundingEnabled, mode = "chat", onToggleMode, generationBudgetProfile = "default", onGenerationBudgetProfileChange }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -269,6 +271,21 @@ export default function InputBar({ input, setInput, onSend, attachedFiles = [], 
               <span className="hidden sm:inline">{mode === 'agent' ? 'Agent' : 'Chat'}</span>
               <span className={`w-1.5 h-1.5 rounded-full ${mode === 'agent' ? 'bg-[var(--accent)]' : 'bg-emerald-400'}`} />
             </button>
+          )}
+
+          {onGenerationBudgetProfileChange && (
+            <label className="h-10 flex items-center gap-2 px-2.5 rounded-[var(--radius-sm)] neu-button text-xs sm:text-[13px] text-[var(--text-secondary)] shrink-0" title="Choose the generation budget for this run. Demo/Fast uses 1,024 tokens before validation and 768 tokens after validation.">
+              <span className="hidden md:inline">Budget</span>
+              <select
+                aria-label="Generation budget profile"
+                value={generationBudgetProfile}
+                onChange={(event) => onGenerationBudgetProfileChange(event.target.value === "demo_fast" ? "demo_fast" : "default")}
+                className="max-w-[90px] bg-transparent text-[var(--text-primary)] outline-none"
+              >
+                <option value="default">General</option>
+                <option value="demo_fast">Demo/Fast</option>
+              </select>
+            </label>
           )}
 
           <textarea

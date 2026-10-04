@@ -44,6 +44,7 @@ async function runFlowC() {
     files: [
       "pump-skid-P204.svg"
     ],
+    ...(process.env.FLOW_GENERATION_BUDGET_PROFILE === "demo_fast" ? { generationBudgetProfile: "demo_fast" } : {}),
     groundingEnabled: true
   });
 

@@ -113,6 +113,19 @@ describe("ModelGateway.chatWithTools", () => {
     expect(result.value.tool_calls).toBeNull();
   });
 
+  it("preserves provider finish_reason for the agent loop", async () => {
+    const gateway = new ModelGateway({
+      async request() {
+        return { status: 200, async text() {
+          return JSON.stringify({ choices: [{ message: { role: "assistant", content: "partial" }, finish_reason: "length" }] });
+        } };
+      },
+    });
+    const result = await gateway.chatWithTools("draft-qwen3", [{ role: "user", content: "Answer" }], []);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.finishReason).toBe("length");
+  });
+
   it("falls back to schema-in-prompt when provider rejects native tools with 400", async () => {
     let callCount = 0;
     const mockTransport = {

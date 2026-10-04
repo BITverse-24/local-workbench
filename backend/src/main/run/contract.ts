@@ -27,7 +27,7 @@ export const RunContractSchema = z.object({
   routing: z.object({ intentType: z.enum(["code_modification", "file_inspection", "command_execution", "document_drafting", "pure_chat", "general_qa"]), taskType: z.enum(["code", "draft", "vision"]), driverModel: z.enum(["code-qwen25coder", "draft-qwen3", "vision-qwen25vl"]), actionable: z.boolean() }),
   response: z.object({ required: z.boolean(), chatOnly: z.boolean() }),
   workspace: z.object({ requested: z.boolean(), operations: z.array(z.object({ id: z.string(), operation: z.enum(["mutate", "write", "delete", "execute"]), targetPath: pathSchema.optional() })).max(200) }),
-  deliverables: z.array(z.object({ id: z.string(), filename: pathSchema.optional(), type: z.enum(["docx", "xlsx", "csv", "pdf", "md", "json", "file"]), description: z.string().max(1000).optional() })).max(200),
+  deliverables: z.array(z.object({ id: z.string(), filename: pathSchema.optional(), filenameRequired: z.boolean().default(false), type: z.enum(["docx", "xlsx", "csv", "pdf", "md", "json", "file"]), description: z.string().max(1000).optional() })).max(200),
   constraints: z.object({ protectedPaths: z.array(pathSchema).max(200), restrictMutationsToTargets: z.boolean(), userConstraints: z.array(z.string().max(500)).max(50) }),
   acceptance: z.object({ validateWrittenCode: z.boolean(), validatedPythonDeliverables: z.array(pathSchema), successMarker: SuccessMarkerSchema }),
 });
@@ -71,7 +71,7 @@ export function normalizeRunContract(runId: string, intent: SemanticIntent): Run
       // Every workspace resource, including formatted documents, is distinct from an export.
       if (filename && (protectedTarget(filename, protectedPaths) || operations.some((op) => op.targetPath === filename))) continue;
       if (deliverables.some((existing) => filename && existing.filename === filename)) continue;
-      deliverables.push({ id: `deliverable-${deliverables.length + 1}`, filename, type: d.type, description: d.description });
+      deliverables.push({ id: `deliverable-${deliverables.length + 1}`, filename, filenameRequired: Boolean(d.filenameRequired), type: d.type, description: d.description });
     }
   }
   return RunContractSchema.parse({
@@ -127,6 +127,7 @@ export function matchesContractDeliverable(contract: RunContract, filename: stri
     if (!d.filename) return d.type === "file" || ext === d.type;
     const dStem = path.basename(d.filename, path.extname(d.filename)).toLowerCase();
     if (normalized === d.filename) return true;
+    if (d.filenameRequired) return false;
     if (stem === dStem || stem.startsWith(dStem) || dStem.startsWith(stem)) return true;
     if (contract.deliverables.length === 1) return true;
     return false;
@@ -168,6 +169,7 @@ export function evaluateRunContractCompletion(contract: RunContract, evidence: C
     const match = [...remaining].find((p) => {
       if (expected.filename) {
         if (p === expected.filename) return true;
+        if (expected.filenameRequired) return false;
         const pExt = path.extname(p).replace(/^\./, "").toLowerCase();
         const expExt = path.extname(expected.filename).replace(/^\./, "").toLowerCase();
         if (pExt !== expExt && expected.type && pExt !== expected.type) return false;

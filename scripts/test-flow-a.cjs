@@ -47,6 +47,7 @@ async function runFlowA() {
       "inspection-report-E201-annotated.pdf",
       "inspection-report-E202-followup.pdf"
     ],
+    ...(process.env.FLOW_GENERATION_BUDGET_PROFILE === "demo_fast" ? { generationBudgetProfile: "demo_fast" } : {}),
     groundingEnabled: true
   });
 

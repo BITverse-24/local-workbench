@@ -124,6 +124,8 @@ export type IntentResolutionStatus = "resolved" | "ambiguous" | "failed";
 
 export interface ExpectedDeliverableSpec {
   filename?: string;
+  /** True only when the user or an authoritative contract specified this exact name. */
+  filenameRequired?: boolean;
   type: "docx" | "xlsx" | "csv" | "pdf" | "md" | "json" | "file";
   description?: string;
 }
@@ -408,6 +410,8 @@ export interface AgentToolCall {
 export interface AgentTurnResponse {
   content: string | null;
   tool_calls: AgentToolCall[] | null;
+  /** Provider termination reason; `length` means output may be incomplete and is never dispatchable. */
+  finishReason?: string | null;
   usage?: {
     inputTokens?: number;
     outputTokens?: number;

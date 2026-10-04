@@ -221,7 +221,7 @@ class FlowRunner {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const terminal = this.events.find(
-        (e) => e.runId === runId && e.type === "run_state" && ["completed", "failed", "cancelled", "limit_exceeded"].includes(e.state)
+        (e) => e.runId === runId && e.type === "run_state" && ["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(e.state)
       );
       if (terminal) return terminal.state;
       await new Promise((r) => setTimeout(r, 200));

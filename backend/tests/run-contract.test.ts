@@ -6,7 +6,7 @@ import { createChat } from "../src/main/persistence/chats.js";
 import { initDb, closeDb, getDb } from "../src/main/persistence/db.js";
 import { createRun } from "../src/main/run/store.js";
 import { validateAndNormalizeIntent } from "../src/main/router/contextual-router.js";
-import { normalizeRunContract, persistRunContract, getRunContract, outputExpectationFromContract, evaluateRunContractCompletion, type CompletionEvidence } from "../src/main/run/contract.js";
+import { normalizeRunContract, persistRunContract, getRunContract, outputExpectationFromContract, evaluateRunContractCompletion, matchesContractDeliverable, type CompletionEvidence } from "../src/main/run/contract.js";
 import { MutationPolicyGuard } from "../src/main/harness/policy-guard.js";
 
 describe("P1 canonical run contract", () => {
@@ -43,6 +43,23 @@ describe("P1 canonical run contract", () => {
     expect(result.missingMutations).toEqual(["parser.py"]);
     expect(result.missingDeliverables).toEqual(["reconciliation workbook"]);
     expect(result.outcome).toBe("partial");
+  });
+  it("accepts a verified deliverable with a generated name when no exact filename was requested", () => {
+    const contract = normalizeRunContract(runId, intent({ intentType: "document_drafting", workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [{ type: "docx", description: "Requested Word document" }] }));
+    expect(contract.deliverables[0].filename).toBeUndefined();
+    expect(evaluateRunContractCompletion(contract, evidence({ artifacts: new Set(["inspection-summary.docx"]) })).outcome).toBe("completed");
+    expect(evaluateRunContractCompletion(contract, evidence({ artifacts: new Set(["inspection-summary.xlsx"]) })).outcome).toBe("partial");
+  });
+  it("requires the exact explicitly requested filename while permitting separate outputs", () => {
+    const explicit = normalizeRunContract(runId, intent({ intentType: "document_drafting", workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [{ filename: "approval.docx", filenameRequired: true, type: "docx" }] }));
+    expect(matchesContractDeliverable(explicit, "approval-final.docx", "docx")).toBe(false);
+    expect(matchesContractDeliverable(explicit, "approval.docx", "docx")).toBe(true);
+    expect(evaluateRunContractCompletion(explicit, evidence({ artifacts: new Set(["approval-final.docx"]) })).missingDeliverables).toEqual(["approval.docx"]);
+    expect(evaluateRunContractCompletion(explicit, evidence({ artifacts: new Set(["approval.docx"]) })).outcome).toBe("completed");
+    const multiple = normalizeRunContract(runId, intent({ intentType: "document_drafting", workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [{ type: "docx" }, { type: "xlsx" }] }));
+    expect(matchesContractDeliverable(multiple, "note.docx", "docx")).toBe(true);
+    expect(evaluateRunContractCompletion(multiple, evidence({ artifacts: new Set(["note.docx", "table.xlsx"]) })).outcome).toBe("completed");
+    expect(evaluateRunContractCompletion(multiple, evidence({ artifacts: new Set(["note.docx"]) })).missingDeliverables).toHaveLength(1);
   });
   it("matches exact workspace paths and distinguishes writes, deletes and successful commands", () => {
     const contract = normalizeRunContract(runId, intent({ targetFiles: ["src/parser.py"], workspaceOperations: [{ operation: "delete", targetPath: "src/parser.py" }, { operation: "execute" }] }));

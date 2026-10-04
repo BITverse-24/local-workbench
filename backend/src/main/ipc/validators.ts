@@ -92,6 +92,7 @@ export const startRunSchema = z
     preferredRoute: z.string().optional(),
     selectedModel: z.string().optional(),
     mode: z.enum(["chat", "agent"]).optional(),
+    generationBudgetProfile: z.enum(["default", "demo_fast"]).optional(),
   })
   .strict()
   .refine(
@@ -173,4 +174,3 @@ export type KbIngestDocInput = z.infer<typeof kbIngestDocSchema>;
 export type KbDeleteDocInput = z.infer<typeof kbDeleteDocSchema>;
 export type KbReindexInput = z.infer<typeof kbReindexSchema>;
 export type KbQueryInput = z.infer<typeof kbQuerySchema>;
-

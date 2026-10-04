@@ -199,6 +199,115 @@ describe("Agent Loop Engine & Context Manager", () => {
     expect(confirmationTriggered).toBe(false);
   });
 
+  it("keeps a length-terminated response before any tool call incomplete", async () => {
+    let writes = 0;
+    const writeTool: AgentTool = {
+      name: "write_file",
+      definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } },
+      async execute() { writes++; return { output: "saved", summary: "saved" }; },
+    };
+    const result = await new AgentLoop().run({
+      runId: "truncated-before-tool", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py.", systemPrompt: "repair",
+      semanticIntent: { intentType: "code_modification", isActionable: true, workspaceMutationRequested: true, targetFiles: ["module.py"] },
+      tools: [writeTool], context: { runId: "truncated-before-tool", workspaceRoot: ".", gateway: {
+        async chatWithTools() { return { ok: true, value: { content: "Incomplete draft", tool_calls: null, finishReason: "length" } }; },
+      } as any }, onPlanConfirmationRequired: async () => true, emitEvent() {},
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.completed).toBe(false);
+    expect(result.finalText).toContain("output limit");
+    expect(writes).toBe(0);
+  });
+
+  it("applies the explicit Demo/Fast profile through the existing context budget", async () => {
+    const budgets: number[] = [];
+    const result = await new AgentLoop().run({
+      runId: "demo-fast-profile", driverModelId: "code-qwen25coder", userPrompt: "Summarize this code.", systemPrompt: "helpful",
+      tools: [], generationBudgetProfile: "demo_fast",
+      context: { runId: "demo-fast-profile", workspaceRoot: ".", gateway: {
+        async chatWithTools(_modelId: string, _messages: any, _tools: any, options: any) {
+          budgets.push(options.maxTokens);
+          return { ok: true, value: { content: "Summary.", tool_calls: null, finishReason: "stop" } };
+        },
+      } as any }, emitEvent() {},
+    });
+    expect(result.completed).toBe(true);
+    expect(budgets).toEqual([1024]);
+  });
+
+  it("never dispatches a tool call returned with finish_reason length", async () => {
+    let writes = 0;
+    const writeTool: AgentTool = {
+      name: "write_file",
+      definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } },
+      async execute() { writes++; return { output: "saved", summary: "saved" }; },
+    };
+    const result = await new AgentLoop().run({
+      runId: "truncated-tool-call", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py.", systemPrompt: "repair",
+      semanticIntent: { intentType: "code_modification", isActionable: true, workspaceMutationRequested: true, targetFiles: ["module.py"] },
+      tools: [writeTool], context: { runId: "truncated-tool-call", workspaceRoot: ".", gateway: {
+        async chatWithTools() { return { ok: true, value: { content: null, finishReason: "length", tool_calls: [{ id: "truncated-write", name: "write_file", arguments: { path: "module.py", content: "partial" } }] } }; },
+      } as any }, onPlanConfirmationRequired: async () => true, emitEvent() {},
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.completed).toBe(false);
+    expect(result.finalText).toContain("No proposed action");
+    expect(writes).toBe(0);
+  });
+
+  it("keeps a mutation run incomplete when its final response is length-terminated", async () => {
+    let writes = 0;
+    let call = 0;
+    const writeTool: AgentTool = {
+      name: "write_file",
+      definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } },
+      async execute() { writes++; return { output: "saved", summary: "saved" }; },
+    };
+    const result = await new AgentLoop().run({
+      runId: "truncated-final", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py.", systemPrompt: "repair",
+      semanticIntent: { intentType: "code_modification", isActionable: true, workspaceMutationRequested: true, targetFiles: ["module.py"] },
+      tools: [writeTool], context: { runId: "truncated-final", workspaceRoot: ".", gateway: {
+        async chatWithTools() {
+          call++;
+          return call === 1
+            ? { ok: true, value: { content: null, tool_calls: [{ id: "write", name: "write_file", arguments: { path: "module.py", content: "complete source" } }], finishReason: "tool_calls" } }
+            : { ok: true, value: { content: "I fixed and verified", tool_calls: null, finishReason: "length" } };
+        },
+      } as any }, onPlanConfirmationRequired: async () => true, emitEvent() {},
+    });
+    expect(writes).toBe(1);
+    expect(result.outcome).toBe("partial");
+    expect(result.completed).toBe(false);
+    expect(result.finalText).toContain("Earlier operations remain recorded");
+  });
+
+  it("replaces pending validation feedback and removes it after validation succeeds", async () => {
+    const calls = [
+      { id: "write-1", name: "write_file", arguments: { path: "module.py", content: "source one" } },
+      { id: "write-2", name: "write_file", arguments: { path: "module.py", content: "source two" } },
+      { id: "validate", name: "run_command", arguments: { command: "python3 -B -c 'assert True'" } },
+    ];
+    const pendingCounts: number[] = [];
+    let turn = 0;
+    const tools: AgentTool[] = [
+      { name: "write_file", definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } }, async execute() { return { output: JSON.stringify({ written: "module.py", diff: "updated" }), summary: "saved" }; } },
+      { name: "run_command", definition: { type: "function", function: { name: "run_command", description: "run", parameters: { type: "object", properties: {} } } }, async execute() { return { output: JSON.stringify({ exitCode: 0, stdout: "CHECK_OK" }), summary: "validated" }; } },
+    ];
+    const result = await new AgentLoop().run({
+      runId: "feedback-dedup", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py, validate it and print CHECK_OK only if validation passes.", systemPrompt: "repair",
+      semanticIntent: { intentType: "code_modification", isActionable: true, workspaceMutationRequested: true, targetFiles: ["module.py"] },
+      tools, context: { runId: "feedback-dedup", workspaceRoot: ".", gateway: {
+        async chatWithTools(_model: unknown, messages: AgentMessage[]) {
+          pendingCounts.push(messages.filter((message) => message.role === "user" && message.content?.startsWith("[SYSTEM FEEDBACK: Validation pending]")).length);
+          const call = calls[turn++];
+          return { ok: true, value: call ? { content: null, tool_calls: [call], finishReason: "tool_calls" } : { content: "Validated.", tool_calls: null, finishReason: "stop" } };
+        },
+      } as any }, onPlanConfirmationRequired: async () => true, emitEvent() {},
+    });
+    expect(result.outcome).toBe("completed");
+    expect(pendingCounts).toEqual([0, 1, 1, 0]);
+  });
+
   it("intercepts markdown code blocks as write_file tool calls when model outputs files as chat", async () => {
     const loop = new AgentLoop();
     let writtenFiles: Array<{ path: string; content: string }> = [];

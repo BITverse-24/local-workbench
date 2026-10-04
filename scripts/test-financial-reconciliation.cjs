@@ -40,7 +40,8 @@ async function runFinancialReconciliation() {
     files: [
       "q3_internal_financial_summary.md",
       "q3_external_audit_report.md"
-    ]
+    ],
+    ...(process.env.FLOW_GENERATION_BUDGET_PROFILE === "demo_fast" ? { generationBudgetProfile: "demo_fast" } : {})
   });
 
   const runId = sendResult.runId;

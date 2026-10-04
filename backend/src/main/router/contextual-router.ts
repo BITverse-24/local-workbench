@@ -15,6 +15,7 @@ import { SuccessMarkerSchema } from "../run/contract.js";
 
 export const RawExpectedDeliverableSchema = z.object({
   filename: z.string().optional(),
+  filenameRequired: z.boolean().optional(),
   type: z.enum(["docx", "xlsx", "csv", "pdf", "md", "json", "file"]).default("file"),
   description: z.string().optional(),
 });
@@ -108,8 +109,8 @@ export const SEMANTIC_INTENT_RESPONSE_SCHEMA = {
       protectedPaths: { type: "array", items: { type: "string" } },
       expectedDeliverables: { type: "array", items: {
         type: "object", additionalProperties: false,
-        properties: { filename: { type: "string" }, type: { type: "string", enum: ["docx", "xlsx", "csv", "pdf", "md", "json", "file"] }, description: { type: "string", maxLength: 80 } },
-        required: ["filename", "type"],
+        properties: { filename: { type: "string" }, filenameRequired: { type: "boolean" }, type: { type: "string", enum: ["docx", "xlsx", "csv", "pdf", "md", "json", "file"] }, description: { type: "string", maxLength: 80 } },
+        required: ["type"],
       } },
       ambiguityDetails: { type: ["string", "null"], description: "null for a complete request; a specific unresolved question otherwise" },
       responseRequired: { type: "boolean" },
@@ -234,6 +235,7 @@ export function validateAndNormalizeIntent(
 
     expectedDeliverables.push({
       filename: rawFn,
+      ...(rawFn && (d.filenameRequired || context.userPrompt.toLowerCase().includes(rawFn.toLowerCase())) ? { filenameRequired: true } : {}),
       type: d.type,
       description: d.description || rawFn,
     });
@@ -255,10 +257,9 @@ export function validateAndNormalizeIntent(
     if (expectedDeliverables.length === 0) {
       const isDocx = /\b(?:approval\s+note|formal\s+note|word\s+doc(?:x)?)\b/i.test(context.userPrompt);
       const isCorrectiveNote = /\bcorrective\s+action\b/i.test(context.userPrompt);
-      const filename = isDocx ? "approval-note.docx" : isCorrectiveNote ? "corrective-action-note.md" : "report.md";
       expectedDeliverables.push({
-        filename,
-        type: "file",
+        filename: undefined,
+        type: isDocx ? "docx" : "md",
         description: `Drafted ${isDocx ? "approval note document" : isCorrectiveNote ? "corrective action note" : "report"}`,
       });
     }

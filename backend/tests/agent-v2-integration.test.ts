@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { RunManager } from "../src/main/run/manager.js";
+import { RunManager, shouldResolveMutationIntent } from "../src/main/run/manager.js";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { initDb, closeDb } from "../src/main/persistence/db.js";
 import type { RunEvent } from "../src/shared/contracts.js";
@@ -15,6 +15,13 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     delete process.env.WORKBENCH_DATA_ROOT;
     delete process.env.WORKBENCH_AGENT_V2;
     if (tempDir) rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("keeps informational keyword matches out of standalone mutation interpretation while retaining conditional edit requests", () => {
+    expect(shouldResolveMutationIntent("How do I fix parser.py?", true)).toBe(false);
+    expect(shouldResolveMutationIntent("Explain how to edit a JSON file safely.", true)).toBe(false);
+    expect(shouldResolveMutationIntent("Please fix parser.py and leave config.json untouched.", true)).toBe(true);
+    expect(shouldResolveMutationIntent("If the check fails, then update parser.py.", true)).toBe(true);
   });
 
   it("executes unified agent loop when WORKBENCH_AGENT_V2 is active", async () => {
