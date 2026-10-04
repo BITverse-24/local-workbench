@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { ModelConfigRow, ModelId, ModelRegistryEntry } from "../../shared/contracts.js";
 import { getSetting } from "../persistence/settings-store.js";
 
-const entry = z.object({ id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
+const entry = z.object({ id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1).optional(), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
 const config = z.object({ $comment: z.string().optional(), models: z.array(entry).min(1) }).strict();
 
 
@@ -51,7 +51,7 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
     const host = sanitizeHost(row.host);
     const port = row.port || 11434;
     return {
-      id: index === 0 ? "primary-model" : `model-${index + 1}`, taskTypes: ["vision", "draft", "code"], runtime: "ollama",
+      id: index === 0 ? "primary-model" : `model-${index + 1}`, runtime: "ollama",
       baseUrl: `http://${host}:${port}/v1`, model: row.modelName,
       capabilities: ["text", "image-input", "structured-output", "code-generation"],
       requestTimeoutMs: 300000, healthPath: "/models", enabled: true,
@@ -113,6 +113,8 @@ export function loadRegistry(filePath?: string): Map<ModelId, ModelRegistryEntry
 
 export function resolveModel(registry: Map<ModelId, ModelRegistryEntry>, modelId: ModelId, taskType?: string): ModelRegistryEntry {
   const model = registry.get(modelId);
-  if (!model || !model.enabled || (taskType && !model.taskTypes.includes(taskType as never))) throw new Error(`model unavailable: ${modelId}`);
+  // Task type records request semantics. It does not route to a specialist endpoint.
+  void taskType;
+  if (!model || !model.enabled) throw new Error(`model unavailable: ${modelId}`);
   return model;
 }

@@ -5,10 +5,11 @@ import {
   resolveModelSelection,
 } from "../src/main/gateway/model-selection.js";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
+import { resolveModel } from "../src/main/gateway/registry.js";
 import { RunManager } from "../src/main/run/manager.js";
 import { initDb, closeDb } from "../src/main/persistence/db.js";
 import { getRunContract } from "../src/main/run/contract.js";
-import type { ModelConfigRow, RunEvent } from "../src/shared/contracts.js";
+import type { ModelConfigRow, ModelRegistryEntry, RunEvent } from "../src/shared/contracts.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import path from "node:path";
 
@@ -23,6 +24,21 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       rmSync(tempDir, { recursive: true, force: true });
       tempDir = "";
     }
+  });
+
+  it("does not use task categories to gate access to the configured model endpoint", () => {
+    const model: ModelRegistryEntry = {
+      id: "primary-model",
+      taskTypes: ["code"],
+      runtime: "ollama",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      model: "general-model",
+      capabilities: ["text"],
+      requestTimeoutMs: 1000,
+      healthPath: "/models",
+      enabled: true,
+    };
+    expect(resolveModel(new Map([[model.id, model]]), model.id, "vision")).toBe(model);
   });
 
   describe("resolveModelSelection contract logic", () => {

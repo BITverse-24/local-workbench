@@ -84,6 +84,25 @@ export interface ValidatedSemanticIntent {
 
 export type SemanticIntent = ValidatedSemanticIntent;
 
+/** Resolve the output filename for a clear repair request on an attached Python source. */
+export function inferAttachedPythonRepairFilename(
+  userPrompt: string,
+  attachments: Array<Pick<AttachmentReference, "filename">> = [],
+): string | undefined {
+  const source = attachments.find((attachment) => /\.py$/i.test(attachment.filename))?.filename;
+  if (!source || /^\s*(?:how|why|what|when|where)\b/i.test(userPrompt)) return undefined;
+  if (/\b(?:workspace|repository|repo|project|working\s+tree)\b/i.test(userPrompt)) return undefined;
+  if (!/\b(?:fix|repair|debug|patch|correct)\b/i.test(userPrompt)) return undefined;
+
+  const explicitOutput = userPrompt.match(/\b(?:save|name|call|return|provide|export)\b.{0,60}?\b(?:as|named|name)\s+["'`]?([\w.-]+\.py)\b/i)?.[1];
+  if (explicitOutput) return path.basename(explicitOutput);
+
+  const basename = path.basename(source);
+  if (/^(?:broken|buggy)-/i.test(basename)) return basename.replace(/^(?:broken|buggy)-/i, "fixed-");
+  if (/^(?:fixed|repaired)-/i.test(basename)) return basename;
+  return `repaired-${basename}`;
+}
+
 export interface SemanticRouterInput {
   userPrompt: string;
   runId?: string;

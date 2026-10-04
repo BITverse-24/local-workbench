@@ -22,7 +22,7 @@ function iconFor(e: RunEvent): string {
 function labelFor(e: RunEvent): string {
   switch (e.type) {
     case "run_state": return `state: ${e.state}`;
-    case "routing": return `${e.taskType} → ${e.modelId} (${e.reason})`;
+    case "routing": return `Model selected: ${e.modelId} (${e.reason})`;
     case "plan_step": return e.text;
     case "agent_thinking": return (e as any).text ? String((e as any).text).slice(0, 140) : "Thinking...";
     case "tool_call": return `${e.tool}: ${e.summary}`;

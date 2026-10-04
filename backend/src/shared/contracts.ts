@@ -3,7 +3,7 @@ export type ModelRuntime = "mlx-lm" | "llama-server" | "ollama";
 /** One configured inference model drives all semantic task types. */
 export type ModelId = string;
 export type ModelCapability = "text" | "image-input" | "structured-output" | "code-generation";
-export interface ModelRegistryEntry { id: ModelId; taskTypes: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; maxOutputTokens?: number; contextLength?: number; }
+export interface ModelRegistryEntry { id: ModelId; /** Legacy config compatibility only; task semantics no longer select model endpoints. */ taskTypes?: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; maxOutputTokens?: number; contextLength?: number; }
 export interface AttachmentReference { attachmentId: string; filename: string; mediaType: string; sizeBytes: number; relativePath: string; selectedPages?: number[]; }
 export interface InputFileReference { attachmentId: string; filename: string; mediaType: string; columns?: string[]; rowCount?: number; }
 export type OutputMode = "chat" | "artifact" | "chat_and_artifact";

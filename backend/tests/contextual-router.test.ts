@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { resolveSemanticIntent, extractReferencedFiles } from "../src/main/router/contextual-router.js";
+import { resolveSemanticIntent, extractReferencedFiles, inferAttachedPythonRepairFilename } from "../src/main/router/contextual-router.js";
 
 describe("Contextual Semantic Intent & Routing Engine", () => {
+  it("derives a repaired Python artifact only for an attached-source repair request", () => {
+    const attachments = [{ filename: "broken-vendor-log-parser.py" }];
+    expect(inferAttachedPythonRepairFilename("The attached script is breaking. Please fix the issue.", attachments)).toBe("fixed-vendor-log-parser.py");
+    expect(inferAttachedPythonRepairFilename("Repair the attached script and save it as parser-fixed.py.", attachments)).toBe("parser-fixed.py");
+    expect(inferAttachedPythonRepairFilename("How do I fix this parser?", attachments)).toBeUndefined();
+    expect(inferAttachedPythonRepairFilename("Fix the CSV", [{ filename: "data.csv" }])).toBeUndefined();
+  });
+
   it("fails explicitly without a gateway instead of guessing a code route", async () => {
     const intent = await resolveSemanticIntent({ userPrompt: "Fix reader.py in this workspace", hasWorkspace: true, workspaceFiles: ["reader.py"] });
     expect(intent.status).toBe("failed");

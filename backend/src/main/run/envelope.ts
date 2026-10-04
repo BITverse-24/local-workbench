@@ -119,7 +119,7 @@ export function buildExecutionEnvelope(params: BuildEnvelopeParams): ExecutionEn
 
   // 5. Structured computation: active if prompt implies calculation/script execution on datasets/attachments
   const computationExplicit =
-    /\b(?:python|script|execute|calculate|compute|analyze\s+data|run\s+analysis|pandas|numpy|reconcil)\b/i.test(text) &&
+    (params.pythonSourceRepair || /\b(?:python|script|execute|calculate|compute|analyze\s+data|run\s+analysis|pandas|numpy|reconcil)\b/i.test(text)) &&
     (attachments.length > 0 || params.hasWorkspace || Boolean(params.workspaceRoot));
   if (computationExplicit) {
     active.add("structured_computation");

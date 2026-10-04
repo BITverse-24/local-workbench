@@ -3,7 +3,6 @@
   "models": [
     {
       "id": "primary-model",
-      "taskTypes": ["vision", "draft", "code"],
       "runtime": "ollama",
       "baseUrl": "http://127.0.0.1:11434/v1",
       "model": "qwen3.5:9b",

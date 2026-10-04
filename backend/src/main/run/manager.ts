@@ -68,7 +68,7 @@ import { routeTask } from "../router/deterministic-router.js";
 import { classifyIntent, type IntentDecision } from "../router/intent-classifier.js";
 import { composeTools, constrainToolsToIntent } from "../router/tool-compositor.js";
 import { resolveModelSelection } from "../gateway/model-selection.js";
-import { resolveSemanticIntent, extractReferencedFiles, type ValidatedSemanticIntent } from "../router/contextual-router.js";
+import { resolveSemanticIntent, extractReferencedFiles, inferAttachedPythonRepairFilename, type ValidatedSemanticIntent } from "../router/contextual-router.js";
 import type { ExpectedDeliverableSpec } from "../../shared/contracts.js";
 import { AgentLoop } from "../agent/agent-loop.js";
 import { normalizeRunContract, persistRunContract, intentFromContract, getRunContract } from "./contract.js";
@@ -1040,12 +1040,13 @@ export class RunManager {
       const workspaceFiles = isWorkspaceActive && this.harness
         ? this.harness.getDirectoryTree().filter((e) => e.type === "file").map((e) => e.name)
         : [];
+      const attachedPythonRepairFilename = inferAttachedPythonRepairFilename(text, attachments);
 
       // Determine whether semantic interpretation is required for mutation safety,
       // or whether the execution envelope can be directly constructed from application state.
       // Pure chat and read-only inspection (with or without attachments/workspace)
       // bypass the universal classification overhead completely.
-      const isMutationRequested = shouldResolveMutationIntent(text, isWorkspaceActive);
+      const isMutationRequested = shouldResolveMutationIntent(text, isWorkspaceActive) && !attachedPythonRepairFilename;
 
       let resolvedIntent: ValidatedSemanticIntent;
 
@@ -1092,11 +1093,16 @@ export class RunManager {
           if (isExcel) add("xlsx", "Requested spreadsheet");
           if (!isDocx && !isExcel && isDrafting) add("file", "Requested document");
         }
+        if (attachedPythonRepairFilename) {
+          expectedDeliverables.push({ filename: attachedPythonRepairFilename, type: "file", description: "Corrected attached Python source" });
+        }
 
         const isSearchingOrReading = /\b(?:search|find|grep|look\s+(?:for|at)|inspect|read|cat|view|examine|file|files|syntax|code|facts?|source)\b/i.test(text);
         const isSimpleChat = !isWorkspaceActive && attachments.length === 0 && expectedDeliverables.length === 0 && !isSearchingOrReading;
 
-        const intentType = isSimpleChat
+        const intentType = attachedPythonRepairFilename
+          ? "code_modification"
+          : isSimpleChat
           ? "pure_chat"
           : (expectedDeliverables.length > 0
             ? "document_drafting"

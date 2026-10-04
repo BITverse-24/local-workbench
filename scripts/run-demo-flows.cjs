@@ -170,7 +170,7 @@ class FlowRunner {
 
   logEvent(e) {
     if (e.type === "routing") {
-      console.log(`🧭 [${this.flowName}] Route Selected: ${e.taskType} -> ${e.modelId} (Reason: ${e.reason})`);
+      console.log(`🧭 [${this.flowName}] Model Selected: ${e.modelId} (Reason: ${e.reason})`);
     } else if (e.type === "agent_thinking") {
       console.log(`💭 [${this.flowName}] Scratchpad (Turn ${e.turn}): ${e.text.slice(0, 180).replace(/\n/g, " ")}...`);
     } else if (e.type === "tool_call") {
