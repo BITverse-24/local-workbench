@@ -171,5 +171,22 @@ describe("Execution Envelope Specification", () => {
 
       expect(docxEnvelope.activeCapabilities).toContain("artifact_generation");
     });
+
+    it("keeps Python source repair on execute_python without document generation capability", () => {
+      const envelope = buildExecutionEnvelope({
+        runId: "run-python-repair",
+        mode: "agent",
+        modelId: "primary-model",
+        hasWorkspace: false,
+        attachments: [{ attachmentId: "source", filename: "broken-parser.py", mediaType: "text/x-python", sizeBytes: 1, relativePath: "input/broken-parser.py" }],
+        userPrompt: "Repair the attached Python script and return a repaired .py file.",
+        deliverableRequested: true,
+        pythonSourceRepair: true,
+      });
+
+      expect(envelope.activeCapabilities).toContain("structured_computation");
+      expect(envelope.activeCapabilities).not.toContain("artifact_generation");
+      expect(envelope.permittedCapabilities).not.toContain("artifact_generation");
+    });
   });
 });

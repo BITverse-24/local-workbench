@@ -47,7 +47,7 @@ export async function generatePlan(
   const base = requestBase(
     runId,
     "draft",
-    "draft-qwen3",
+    "primary-model",
     "chat-result",
     PLANNER_PROMPT,
     prompt,
@@ -59,7 +59,7 @@ export async function generatePlan(
   const request: ChatModelRequest = {
     ...base,
     taskType: "draft",
-    modelId: "draft-qwen3",
+    modelId: "primary-model",
     responseFormat: "chat-result",
   };
 

@@ -102,7 +102,7 @@ function findMatchingModel(
   models: ModelRegistryEntry[],
 ): ModelRegistryEntry | undefined {
   const norm = selection.toLowerCase().trim();
-  // 1. Exact ID match (e.g. "code-qwen25coder", "draft-qwen3", "vision-qwen25vl")
+  // 1. Exact primary model ID.
   const byId = models.find((m) => m.id.toLowerCase() === norm);
   if (byId) return byId;
 
@@ -110,18 +110,7 @@ function findMatchingModel(
   const byModel = models.find((m) => m.model.toLowerCase() === norm);
   if (byModel) return byModel;
 
-  // 3. Role aliases
-  if (norm === "coding" || norm === "code") {
-    return models.find((m) => m.id === "code-qwen25coder" || m.taskTypes.includes("code"));
-  }
-  if (norm === "draft" || norm === "drafting" || norm === "chat") {
-    return models.find((m) => m.id === "draft-qwen3" || m.taskTypes.includes("draft"));
-  }
-  if (norm === "vision" || norm === "image") {
-    return models.find((m) => m.id === "vision-qwen25vl" || m.taskTypes.includes("vision"));
-  }
-
-  // 4. Substring / partial match
+  // 3. Substring / partial match by configured model name only.
   return models.find(
     (m) =>
       m.id.toLowerCase().includes(norm) ||
@@ -132,23 +121,17 @@ function findMatchingModel(
 }
 
 function findPrimaryModel(models: ModelRegistryEntry[]): ModelRegistryEntry {
-  const draft = models.find((m) => m.id === "draft-qwen3" || m.taskTypes.includes("draft"));
-  if (draft && draft.enabled !== false) return draft;
-  return models[0];
+  return models.find((m) => m.enabled && m.id === "primary-model") ?? models[0];
 }
 
 /**
  * Resolves the execution model according to the Sovereign Workbench Phase 1 specification:
- * - Single-LLM configuration: automatically uses the single configured model for all tasks.
- * - Multi-LLM configuration: uses explicit user selection if provided, or configured primary model.
- * - Removed / unavailable model: returns error without silent substitution.
+ * - Task semantics do not select a model. Users may select among configured models.
  */
 export function resolveModelSelection(
   options: ResolveModelSelectionOptions,
 ): ModelSelectionResult {
   const usableModels = getUsableConfiguredModels(options.gateway, options.configuredModels);
-  const modelCount = countUsableModels(options.gateway, options.configuredModels);
-
   if (usableModels.length === 0) {
     return {
       ok: false,
@@ -157,39 +140,15 @@ export function resolveModelSelection(
     };
   }
 
-  // 1. Single-LLM configuration
-  if (modelCount <= 1) {
-    const single = usableModels[0];
-    return {
-      ok: true,
-      modelId: single.id,
-      modelEntry: single,
-      isSingleModel: true,
-      reason: "single configured model",
-    };
+  if (usableModels.length === 1) {
+    return { ok: true, modelId: usableModels[0].id, modelEntry: usableModels[0], isSingleModel: true, reason: "single configured model" };
   }
-
-  // 2. Multi-LLM configuration with explicit user selection
   const explicit = options.explicitSelection?.trim();
   if (explicit) {
     const match = findMatchingModel(explicit, usableModels);
-    if (match && match.enabled !== false) {
-      return {
-        ok: true,
-        modelId: match.id,
-        modelEntry: match,
-        isSingleModel: false,
-        reason: "explicit user selection",
-      };
-    }
-    return {
-      ok: false,
-      code: "model_unavailable",
-      error: `Selected model "${explicit}" is unavailable or not configured in active model registry.`,
-    };
+    if (match?.enabled) return { ok: true, modelId: match.id, modelEntry: match, isSingleModel: false, reason: "explicit user selection" };
+    return { ok: false, code: "model_unavailable", error: `Selected model "${explicit}" is unavailable or not configured in active model registry.` };
   }
-
-  // 3. Multi-LLM configuration without explicit selection -> default to primary model
   const primary = findPrimaryModel(usableModels);
   return {
     ok: true,

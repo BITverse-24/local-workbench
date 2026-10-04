@@ -17,7 +17,7 @@ const attachment = { attachmentId: "source", filename: "broken-reader.py", media
 const prompt = "This is crashing on our input files. Fix it and make sure it actually works.";
 const code = 'def read(path):\n    with open(path) as handle:\n        return handle.read().strip()\n';
 const attachedRepairIntent = {
-  intentType: "code_modification", primaryGoal: "Repair attached source", driverModel: "code-qwen25coder", taskType: "code",
+  intentType: "code_modification", primaryGoal: "Repair attached source", driverModel: "primary-model", taskType: "code",
   isActionable: true, chatResponseOnly: false, workspaceMutationRequested: false, targetFiles: [], protectedPaths: [],
   restrictMutationsToTargets: false,
   expectedDeliverables: [{ filename: "fixed-reader.py", type: "file", description: "Corrected attached source" }],
@@ -44,18 +44,18 @@ describe("Attached code repair scope and validation", () => {
   it("uses semantic classification for a clear attached repair", async () => {
     const intent = await resolveSemanticIntent({ userPrompt: prompt, attachments: [attachment], hasWorkspace: true, workspaceFiles: ["notes.md"] }, { execute: classifyAttachedRepair } as any);
     expect(classifyAttachedRepair).toHaveBeenCalledTimes(1);
-    expect(intent.driverModel).toBe("code-qwen25coder");
+    expect(intent.driverModel).toBe("primary-model");
     expect(intent.workspaceMutationRequested).toBe(false);
     expect(intent.targetFiles).toEqual([]);
     expect(intent.expectedDeliverables).toEqual([{ type: "file", filename: "fixed-reader.py", description: "Corrected attached source" }]);
   });
 
   it("preserves the classifier's workspace and artifact decisions", () => {
-    const raw = { intentType: "code_modification", primaryGoal: "Repair source", driverModel: "code-qwen25coder", taskType: "code", workspaceMutationRequested: true, isActionable: true, targetFiles: [attachment.filename] };
+    const raw = { intentType: "code_modification", primaryGoal: "Repair source", driverModel: "primary-model", taskType: "code", workspaceMutationRequested: true, isActionable: true, targetFiles: [attachment.filename] };
     const context = { hasWorkspace: true, workspaceFiles: ["reader.py"], attachments: [attachment], userPrompt: prompt };
-    expect(validateAndNormalizeIntent(raw, context).workspaceMutationRequested).toBe(true);
+    expect(validateAndNormalizeIntent(raw, context).workspaceMutationRequested).toBe(false);
     expect(validateAndNormalizeIntent(raw, { ...context, userPrompt: "Fix the attached source and write it into the workspace." }).workspaceMutationRequested).toBe(true);
-    expect(validateAndNormalizeIntent(raw, { ...context, userPrompt: "Fix reader.py using the attached source." }).workspaceMutationRequested).toBe(true);
+    expect(validateAndNormalizeIntent(raw, { ...context, userPrompt: "Fix reader.py using the attached source." }).workspaceMutationRequested).toBe(false);
   });
 
   it("uses semantic classification for constraints and keeps attachment repair isolated", async () => {
@@ -73,6 +73,9 @@ describe("Attached code repair scope and validation", () => {
     expect(names).not.toContain("delete_file");
     expect(names).not.toContain("run_command");
     expect(names).not.toContain("generate_text");
+    const pythonTool = constrainToolsToIntent(composeTools({ hasWorkspace: true, hasAttachments: true, hasKnowledgeBaseDocs: false }, intent.driverModel), intent)
+      .find((tool) => tool.name === "execute_python")!;
+    expect(pythonTool.definition.function.parameters.properties).not.toHaveProperty("validation_code");
   });
 
   it("executes assertions against the exact repaired source and exports only the source", async () => {
@@ -88,17 +91,47 @@ describe("Attached code repair scope and validation", () => {
     expect(existsSync(resolveRunPath(runId, "output/fixed_reader.py", "output"))).toBe(false);
   });
 
-  it("rejects helper scripts and missing validation before executing or exporting a repair", async () => {
-    const execute = vi.fn(async () => ({ output: "unexpected", summary: "unexpected" }));
+  it("preserves Python subscription assignments and argv indexing for ordinary execution", async () => {
+    const runId = randomUUID();
+    createRunDirectories(runId);
+    const source = [
+      "import sys",
+      "counts = {'malformed': 0}",
+      "counts['malformed'] += 1",
+      "print(counts['malformed'], sys.argv[1] if len(sys.argv) > 1 else 'no-input')",
+    ].join("\n") + "\n";
+    const result = await executePythonTool.execute({ filename: "task.py", code: source }, { runId, workspaceRoot: tempDir, gateway: {} as any });
+    expect(result.ok).not.toBe(false);
+    expect(JSON.parse(result.output).stdout).toContain("1 no-input");
+    expect(readFileSync(resolveRunPath(runId, "intermediate/task.py", "intermediate"), "utf8")).toBe(source);
+  });
+
+  it("allows direct execution without invented assertions and rejects helper scripts", async () => {
+    const execute = vi.fn(async (_args: Record<string, unknown>) => ({ ok: true, output: "executed", summary: "execution accepted" }));
     const intent = validateAndNormalizeIntent(attachedRepairIntent, { hasWorkspace: true, workspaceFiles: [], userPrompt: prompt });
     const tool = constrainToolsToIntent([{ ...executePythonTool, execute }], intent)[0];
-    expect(tool.definition.function.parameters.required).toEqual(["code", "filename", "validation_code"]);
+    expect(tool.definition.function.parameters.required).toEqual(["code", "filename"]);
     const context = { runId: "unused", workspaceRoot: tempDir, gateway: {} as any };
-    const missing = await tool.execute({ filename: "fixed-reader.py", code }, context);
+    const direct = await tool.execute({ filename: "fixed-reader.py", code }, context);
     const helper = await tool.execute({ filename: "validate.py", code: "print('passed')", validation_code: "assert True" }, context);
-    expect(missing.ok).toBe(false);
+    expect(direct.ok).toBe(true);
     expect(helper.ok).toBe(false);
-    expect(execute).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0]).not.toHaveProperty("validation_code");
+  });
+
+  it("treats successful execution on the supplied inputs as execution evidence", async () => {
+    const runId = randomUUID();
+    createRunDirectories(runId);
+    writeFileSync(resolveRunPath(runId, "input/source.txt", "input"), "actual input\n");
+    const result = await executePythonTool.execute({ filename: "fixed-reader.py", code, input_files: ["source.txt"] }, {
+      runId, workspaceRoot: resolveRunPath(runId, "intermediate", "intermediate"), gateway: {} as any,
+      runContract: { deliverables: [{ type: "file", filename: "fixed-reader.py" }] } as any,
+    });
+    expect(result.ok).not.toBe(false);
+    expect(JSON.parse(result.output).executionPassed).toBe(true);
+    expect(JSON.parse(result.output).validationAssertionsPassed).toBe(false);
+    expect(result.artifacts?.map((artifact) => artifact.filename)).toEqual(["fixed-reader.py"]);
   });
 
   it("returns real assertion failures without publishing a successful repaired artifact", async () => {

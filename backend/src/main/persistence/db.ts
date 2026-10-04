@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 export const SCHEMA_VERSION = "2";
 
 export const SETTING_DEFAULTS: Record<string, unknown> = {
-  selectedModel: "draft-qwen3",
+  selectedModel: "primary-model",
   temperature: 0.2,
   theme: "dark",
   sovereigntyVisible: true,

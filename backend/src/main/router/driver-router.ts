@@ -46,7 +46,7 @@ export function pickDriverModel(
   if (isDraftingDoc) {
     return {
       taskType: "draft",
-      modelId: "draft-qwen3",
+      modelId: "primary-model",
       reason: "document synthesis and drafting workload",
     };
   }
@@ -55,7 +55,7 @@ export function pickDriverModel(
   if (!hasWorkspace && isImageOrDoc && !hasCodeAttachment) {
     return {
       taskType: "vision",
-      modelId: "vision-qwen25vl",
+      modelId: "primary-model",
       reason: "visual document inspection",
     };
   }
@@ -65,13 +65,13 @@ export function pickDriverModel(
     if (isDraftingDoc) {
       return {
         taskType: "draft",
-        modelId: "draft-qwen3",
+        modelId: "primary-model",
         reason: "workspace document drafting and compliance",
       };
     }
     return {
       taskType: "code",
-      modelId: "code-qwen25coder",
+      modelId: "primary-model",
       reason: "workspace code engineering and file operations",
     };
   }
@@ -80,7 +80,7 @@ export function pickDriverModel(
   if (hasCodeAttachment || hasDataAttachment) {
     return {
       taskType: "code",
-      modelId: "code-qwen25coder",
+      modelId: "primary-model",
       reason: "code repair and execution workload",
     };
   }
@@ -90,7 +90,7 @@ export function pickDriverModel(
   if (hasCodeKeywords) {
     return {
       taskType: "code",
-      modelId: "code-qwen25coder",
+      modelId: "primary-model",
       reason: "code engineering request",
     };
   }
@@ -98,7 +98,7 @@ export function pickDriverModel(
   // Default driver (reasoning & drafting generalist)
   return {
     taskType: "draft",
-    modelId: "draft-qwen3",
+    modelId: "primary-model",
     reason: "analytical reasoning and technical drafting",
   };
 }

@@ -453,7 +453,7 @@ export async function evaluateDrawingComplianceWithModel(options: {
   const base = requestBase(
     runId,
     "draft",
-    "draft-qwen3",
+    "primary-model",
     "chat-result",
     COMPLIANCE_SYSTEM_PROMPT,
     prompt,
@@ -465,7 +465,7 @@ export async function evaluateDrawingComplianceWithModel(options: {
   const request: ChatModelRequest = {
     ...base,
     taskType: "draft",
-    modelId: "draft-qwen3",
+    modelId: "primary-model",
     responseFormat: "chat-result",
   };
 

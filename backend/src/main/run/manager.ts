@@ -630,7 +630,7 @@ export class RunManager {
         await continuation();
       } catch (error) {
         if (!input.approved) {
-          this.persistAssistant(input.runId, "Action was rejected by user. Execution stopped.", "draft-qwen3");
+          this.persistAssistant(input.runId, "Action was rejected by user. Execution stopped.", "primary-model");
           this.cancel(input.runId);
           this.continuations.delete(input.actionId);
           await continuation?.();
@@ -906,8 +906,8 @@ export class RunManager {
     if (preferred) {
       const res = resolveModelSelection({ explicitSelection: preferred, gateway: this.gateway });
       if (res.ok) {
-        const taskType = res.modelId === "code-qwen25coder" ? "code" : res.modelId === "vision-qwen25vl" ? "vision" : "draft";
-        route = { taskType, modelId: res.modelId, reason: res.reason };
+        const semanticRoute = routeTask(text, attachment);
+        route = { taskType: semanticRoute.taskType, modelId: res.modelId, reason: res.reason };
       }
     }
     if (!route) {
@@ -1032,7 +1032,7 @@ export class RunManager {
       const driverModelId = modelSelection.modelId;
       const routingReason = modelSelection.reason;
       const requestId = randomUUID();
-      const taskType = driverModelId === "code-qwen25coder" ? "code" : driverModelId === "vision-qwen25vl" ? "vision" : "draft";
+      const taskType = routeTask(text, attachments).taskType;
 
       recordRouting(runId, requestId, taskType, driverModelId, routingReason);
       this.emit({ type: "routing", runId, taskType, modelId: driverModelId, reason: routingReason });
@@ -1198,6 +1198,8 @@ export class RunManager {
         mutationRequested: Boolean(semanticIntent.workspaceMutationRequested),
         commandExecutionRequested: semanticIntent.intentType === "command_execution" || Boolean(semanticIntent.validationRequested),
         deliverableRequested: Boolean(semanticIntent.expectedDeliverables?.length),
+        pythonSourceRepair: attachments.some((attachment) => /\.py$/i.test(attachment.filename)) &&
+          semanticIntent.intentType === "code_modification" && !semanticIntent.workspaceMutationRequested,
       });
 
       let tools = composeTools(
@@ -1504,7 +1506,7 @@ ${referencedFilesSection}`;
     this.state(runId, "classifying");
     
     const { generatePlan } = await import("../router/planner.js");
-    const { routeSubtask, routeTask } = await import("../router/deterministic-router.js");
+    const { routeSubtask } = await import("../router/deterministic-router.js");
     
     const plan = await generatePlan(runId, text, this.gateway, this.runTemperatures.get(runId), attachments.length > 0 ? attachments : attachment);
 
@@ -1547,7 +1549,7 @@ ${referencedFilesSection}`;
     const isWorkspaceActive = this.harness?.isWorkspaceActive() ?? false;
     const route = {
       taskType: "code" as const,
-      modelId: "code-qwen25coder" as const,
+      modelId: "primary-model" as const,
       reason: isWorkspaceActive && intent?.isNegativeWorkspaceConstraint
         ? "standalone file generation (negative workspace constraint)"
         : isWorkspaceActive
@@ -1606,7 +1608,7 @@ ${referencedFilesSection}`;
       const base = requestBase(
         runId,
         "code",
-        "code-qwen25coder",
+        "primary-model",
         "file-result",
         "You are a helpful coding assistant. Return strictly valid JSON with keys 'filename' and 'content'.",
         prompt,
@@ -1619,7 +1621,7 @@ ${referencedFilesSection}`;
         ...base,
         requestId: randomUUID(),
         taskType: "code",
-        modelId: "code-qwen25coder",
+        modelId: "primary-model",
         responseFormat: "file-result",
         task: text,
         inputFile: { attachmentId: randomUUID(), filename: "prompt", mediaType: "text/plain", rowCount: 1 },
@@ -1654,7 +1656,7 @@ ${referencedFilesSection}`;
       : isWorkspaceActive
       ? `Created file **${targetFilename}** in run artifacts.`
       : `Created file **${targetFilename}** in run artifacts.\n\n*(Tip: To write files directly to your project on disk, open a local project folder from the Left Sidebar).*`;
-    this.persistAssistant(runId, message, "code-qwen25coder");
+    this.persistAssistant(runId, message, "primary-model");
     this.complete(runId);
   }
 
@@ -1698,7 +1700,7 @@ ${referencedFilesSection}`;
       const requestId = randomUUID();
       const reason = intent?.reason ?? "engineering drawing compliance review";
       const taskType = intent?.taskType ?? "draft";
-      const modelId = intent?.modelId ?? "draft-qwen3";
+      const modelId = intent?.modelId ?? "primary-model";
       recordRouting(runId, requestId, taskType, modelId, reason);
       this.emit({
         type: "routing",
@@ -1794,19 +1796,6 @@ ${referencedFilesSection}`;
         })),
       });
 
-      // 3. Switch router to reasoning model (draft-qwen3) if not already routed
-      if (taskType !== "draft" || modelId !== "draft-qwen3") {
-        const draftRequestId = randomUUID();
-        recordRouting(runId, draftRequestId, "draft", "draft-qwen3", "evaluate drawing compliance against governing spec");
-        this.emit({
-          type: "routing",
-          runId,
-          taskType: "draft",
-          modelId: "draft-qwen3",
-          reason: "evaluate drawing compliance against governing spec",
-        });
-      }
-
       this.tool(runId, "draft_note", "Evaluating observed drawing values against governing spec and formulating corrective actions");
 
       const assessment = await evaluateDrawingComplianceWithModel({
@@ -1866,7 +1855,7 @@ ${referencedFilesSection}`;
 
       const assistantMessage = messageLines.join("\n");
 
-      this.persistAssistant(runId, assistantMessage, "draft-qwen3");
+      this.persistAssistant(runId, assistantMessage, "primary-model");
       this.complete(runId);
       return;
     }
@@ -1875,12 +1864,12 @@ ${referencedFilesSection}`;
       // ── Multi-Document Bundle & Findings Fusion ──
       const requestId = randomUUID();
       const reason = isMultiDoc ? "scanned inspection bundle" : "scanned report";
-      recordRouting(runId, requestId, "vision", "vision-qwen25vl", reason);
+      recordRouting(runId, requestId, "vision", "primary-model", reason);
       this.emit({
         type: "routing",
         runId,
         taskType: "vision",
-        modelId: "vision-qwen25vl",
+        modelId: "primary-model",
         reason,
         tier: "vision",
       });
@@ -1929,7 +1918,7 @@ ${referencedFilesSection}`;
         const base = requestBase(
           runId,
           "vision",
-          "vision-qwen25vl",
+          "primary-model",
           "vision-result",
           VISION_SYSTEM_PROMPT,
           prompt,
@@ -1942,7 +1931,7 @@ ${referencedFilesSection}`;
           ...base,
           requestId: randomUUID(),
           taskType: "vision",
-          modelId: "vision-qwen25vl",
+          modelId: "primary-model",
           responseFormat: "vision-result",
           attachment: {
             attachmentId: att.attachmentId,
@@ -2048,12 +2037,12 @@ ${referencedFilesSection}`;
       if (isDraftChainingRequested) {
         // Switch router to drafting model
         const draftRequestId = randomUUID();
-        recordRouting(runId, draftRequestId, "draft", "draft-qwen3", "compose grounded approval note");
+        recordRouting(runId, draftRequestId, "draft", "primary-model", "compose grounded approval note");
         this.emit({
           type: "routing",
           runId,
           taskType: "draft",
-          modelId: "draft-qwen3",
+          modelId: "primary-model",
           reason: "compose grounded approval note",
         });
 
@@ -2082,7 +2071,7 @@ ${referencedFilesSection}`;
         const baseDraft = requestBase(
           runId,
           "draft",
-          "draft-qwen3",
+          "primary-model",
           "chat-result",
           "You are an expert engineering assistant for industrial knowledge work. Compose a comprehensive, professional engineering approval note directly in Markdown. Ensure the draft includes the equipment header, findings summary with citations, conditional recommendation citing governing criteria, and explicit safety warnings for any unverified or missing information.",
           draftUserPrompt,
@@ -2094,7 +2083,7 @@ ${referencedFilesSection}`;
         const draftReq: ChatModelRequest = {
           ...baseDraft,
           taskType: "draft",
-          modelId: "draft-qwen3",
+          modelId: "primary-model",
           responseFormat: "chat-result",
           onChunk: (delta: string) => {
             this.emit({
@@ -2102,7 +2091,7 @@ ${referencedFilesSection}`;
               runId,
               messageId: draftMessageId,
               delta,
-              modelId: "draft-qwen3",
+              modelId: "primary-model",
             });
           },
         };
@@ -2114,7 +2103,7 @@ ${referencedFilesSection}`;
         const draftText = draftResp.value.text;
 
         this.result(runId, "draft_note", "Draft note generated and grounded against extracted findings");
-        this.persistAssistant(runId, draftText, "draft-qwen3", draftMessageId);
+        this.persistAssistant(runId, draftText, "primary-model", draftMessageId);
 
         // Dynamically derive deliverable document name based on prompt or entity detected in document
         const entityMatch =
@@ -2170,7 +2159,7 @@ ${referencedFilesSection}`;
           : "",
       ].filter(Boolean).join("\n");
 
-      this.persistAssistant(runId, summaryText, "vision-qwen25vl");
+      this.persistAssistant(runId, summaryText, "primary-model");
       this.complete(runId);
       return;
     }
@@ -2188,7 +2177,7 @@ ${referencedFilesSection}`;
 
     if (isDrawingCompliance) {
       const taskType = "draft" as const;
-      const modelId = "draft-qwen3" as const;
+      const modelId = "primary-model" as const;
       const reason = "engineering drawing compliance review";
       const requestId = randomUUID();
       recordRouting(runId, requestId, taskType, modelId, reason);
@@ -2274,7 +2263,7 @@ ${referencedFilesSection}`;
       const baseDraft = requestBase(
         runId,
         "draft",
-        "draft-qwen3",
+        "primary-model",
         "chat-result",
         draftSystemPrompt,
         draftPrompt,
@@ -2286,7 +2275,7 @@ ${referencedFilesSection}`;
       const draftReq: ChatModelRequest = {
         ...baseDraft,
         taskType: "draft",
-        modelId: "draft-qwen3",
+        modelId: "primary-model",
         responseFormat: "chat-result",
         onChunk: (delta: string) => {
           this.emit({
@@ -2294,7 +2283,7 @@ ${referencedFilesSection}`;
             runId,
             messageId: draftMessageId,
             delta,
-            modelId: "draft-qwen3",
+            modelId: "primary-model",
           });
         },
       };
@@ -2306,7 +2295,7 @@ ${referencedFilesSection}`;
       const draftText = draftResp.value.text;
 
       this.result(runId, "draft_note", "Compliance evaluation completed and findings presented");
-      this.persistAssistant(runId, draftText, "draft-qwen3", draftMessageId);
+      this.persistAssistant(runId, draftText, "primary-model", draftMessageId);
 
       // 4. Register Markdown Review Deliverable Artifact (ONLY if explicitly requested by user)
       const isDraftRequested =
@@ -2329,7 +2318,7 @@ ${referencedFilesSection}`;
     if (isSvg) {
       // General SVG vector drawing query without compliance check
       const taskType = "draft" as const;
-      const modelId = "draft-qwen3" as const;
+      const modelId = "primary-model" as const;
       const reason = `Visual / Drawing Inspection: ${attachment.filename}`;
       const requestId = randomUUID();
       recordRouting(runId, requestId, taskType, modelId, reason);
@@ -2358,7 +2347,7 @@ ${referencedFilesSection}`;
 
     const isTier1Text = pdfAnalysis && pdfAnalysis.tier === "text";
     const taskType = isTier1Text ? ("draft" as const) : ("vision" as const);
-    const modelId = isTier1Text ? ("draft-qwen3" as const) : ("vision-qwen25vl" as const);
+    const modelId = isTier1Text ? ("primary-model" as const) : ("primary-model" as const);
     const reason = isTier1Text
       ? `Fast Digital Text Stream: ${attachment.filename} (${pdfAnalysis.charCount} chars, saved ~${pdfAnalysis.estimatedTokensSaved} vision tokens)`
       : `Visual / Drawing Inspection: ${attachment.filename} (${pdfAnalysis?.reason ?? "image format"})`;
@@ -2444,7 +2433,7 @@ ${referencedFilesSection}`;
     const base = requestBase(
       runId,
       "vision",
-      "vision-qwen25vl",
+      "primary-model",
       "vision-result",
       VISION_SYSTEM_PROMPT,
       enrichedUserPrompt,
@@ -2457,7 +2446,7 @@ ${referencedFilesSection}`;
       ...base,
       requestId,
       taskType: "vision",
-      modelId: "vision-qwen25vl",
+      modelId: "primary-model",
       responseFormat: "vision-result",
       attachment: {
         attachmentId: attachment.attachmentId,
@@ -2545,7 +2534,7 @@ ${referencedFilesSection}`;
     }
 
     // Default: Present findings directly to the user
-    this.persistAssistant(runId, visionResultText, "vision-qwen25vl");
+    this.persistAssistant(runId, visionResultText, "primary-model");
     this.complete(runId);
   }
 
@@ -2585,11 +2574,11 @@ ${referencedFilesSection}`;
     const systemPrompt =
       "You are a helpful assistant for engineering and industrial knowledge work. Provide your answer directly in clear, well-structured Markdown. If providing code or scripts, wrap them in standard markdown code blocks with language identifiers (e.g. ```python).";
     const userPrompt = groundingNote ? `${text}${groundingNote}` : text;
-    const base = requestBase(runId, "draft", "draft-qwen3", "chat-result", systemPrompt, userPrompt, 45000, 1536, temperature, history);
+    const base = requestBase(runId, "draft", "primary-model", "chat-result", systemPrompt, userPrompt, 45000, 1536, temperature, history);
     const request: ChatModelRequest = {
       ...base,
       taskType: "draft",
-      modelId: "draft-qwen3",
+      modelId: "primary-model",
       responseFormat: "chat-result",
       onChunk: (delta: string) => {
         this.emit({
@@ -2597,7 +2586,7 @@ ${referencedFilesSection}`;
           runId,
           messageId,
           delta,
-          modelId: "draft-qwen3",
+          modelId: "primary-model",
         });
       },
     };
@@ -2631,7 +2620,7 @@ ${referencedFilesSection}`;
       }
     }
 
-    this.persistAssistant(runId, chat.value.text, "draft-qwen3", messageId);
+    this.persistAssistant(runId, chat.value.text, "primary-model", messageId);
     this.complete(runId);
   }
 
@@ -2643,7 +2632,7 @@ ${referencedFilesSection}`;
 
     const route = {
       taskType: "code" as const,
-      modelId: "code-qwen25coder" as const,
+      modelId: "primary-model" as const,
       reason: "local project workspace task",
     };
 
@@ -2810,7 +2799,7 @@ ${referencedFilesSection}`;
           this.persistAssistant(
             runId,
             summaryMsg,
-            "code-qwen25coder",
+            "primary-model",
           );
           this.complete(runId);
           return;
@@ -2910,7 +2899,7 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
       const base = requestBase(
         runId,
         "code",
-        "code-qwen25coder",
+        "primary-model",
         "harness-step",
         systemPrompt,
         conversationHistory,
@@ -2924,7 +2913,7 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
         ...base,
         requestId: currentRequestId,
         taskType: "code",
-        modelId: "code-qwen25coder",
+        modelId: "primary-model",
         responseFormat: "harness-step",
         task: text,
         inputFile: {
@@ -3006,7 +2995,7 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
                   this.persistAssistant(
                     runId,
                     `Action approved and executed: \`${destructiveCmd}\`\n\n\`\`\`\n${out}\n\`\`\``,
-                    "code-qwen25coder",
+                    "primary-model",
                   );
                   this.complete(runId);
                 } catch (err: any) {
@@ -3051,7 +3040,7 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
       finalAnswer = `Completed workspace operations for: "${text.slice(0, 60)}"`;
     }
 
-    this.persistAssistant(runId, finalAnswer, "code-qwen25coder");
+    this.persistAssistant(runId, finalAnswer, "primary-model");
     this.complete(runId);
   }
 
@@ -3270,11 +3259,11 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
 
     const modelPrompt = `${text}${scriptContext}${allFilesContext}${artifactInstruction}`;
     const temperature = this.runTemperatures.get(runId);
-    const base = requestBase(runId, "code", "code-qwen25coder", "code-result", CODE_SYSTEM_PROMPT, modelPrompt, 300000, 4096, temperature);
+    const base = requestBase(runId, "code", "primary-model", "code-result", CODE_SYSTEM_PROMPT, modelPrompt, 300000, 4096, temperature);
     const request: CodeModelRequest = {
       ...base,
       taskType: "code",
-      modelId: "code-qwen25coder",
+      modelId: "primary-model",
       responseFormat: "code-result",
       task: text,
       inputFile: {
@@ -3370,11 +3359,11 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
         const conciseError = (errorLines.length > 8 ? errorLines.slice(-8).join("\n") : errorDetail.trim()).slice(0, 600);
         const sourceBlock = repairs > 1 ? `\n\nPrevious attempt source:\n\`\`\`python\n${currentCode.source}\n\`\`\`` : "";
         const repairPrompt = `${modelPrompt}\n\n[PREVIOUS SCRIPT ATTEMPT FAILED]\nThe script failed during execution with exit code ${execution.exitCode}:\n${conciseError}${sourceBlock}\n\nPlease fix the error in task.py:\n- Avoid command-line arguments (sys.argv); read "${attachment.filename}" directly if an input file is needed.\n- Safely handle empty, blank, or missing cells without crashing.\n- Check inclusive comparison boundaries (e.g. >= limit).\n${userWantsArtifact ? '- If data rows are processed, write the verified rows to a CSV file (e.g. "repaired-vendor-log.csv"), declare it in outputFiles, and set outputMode to "artifact" or "chat_and_artifact".\n' : '- Preserve the original script behavior (calculate and print summary counts/results).\n'}- Output strictly valid Python syntax: never write unparenthesized multiline 'with' statements ending with a comma; use nested 'with' blocks or single-line 'with'.\nReturn the corrected JSON object.\n[/PREVIOUS SCRIPT ATTEMPT FAILED]`;
-        const repairBase = requestBase(runId, "code", "code-qwen25coder", "code-result", CODE_SYSTEM_PROMPT, repairPrompt, 300000, 4096, temperature);
+        const repairBase = requestBase(runId, "code", "primary-model", "code-result", CODE_SYSTEM_PROMPT, repairPrompt, 300000, 4096, temperature);
         const repairRequest: CodeModelRequest = {
           ...repairBase,
           taskType: "code",
-          modelId: "code-qwen25coder",
+          modelId: "primary-model",
           responseFormat: "code-result",
           task: text,
           inputFile: {
@@ -3435,7 +3424,7 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
         this.persistAssistant(
           runId,
           `### Script Execution & Repair Analysis\n\nThe script failed during sandbox execution with exit code ${execution.exitCode}.\n\n**Traceback / Output:**\n\`\`\`text\n${detail.slice(0, 2000)}\n\`\`\`${repairFailureDetail}`,
-          "code-qwen25coder",
+          "primary-model",
         );
         this.tool(runId, "execute_python", `execution failed (exit code ${execution.exitCode})`);
         this.state(runId, "failed");
@@ -3445,7 +3434,7 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
         this.persistAssistant(
           runId,
           `### Script Execution Analysis\n\nPython execution completed but did not create declared output file(s): ${finalMissingOutputs.join(", ")}.`,
-          "code-qwen25coder",
+          "primary-model",
         );
         this.state(runId, "failed");
         return;
@@ -3510,7 +3499,7 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
       const summaryBase = requestBase(
         runId,
         "code",
-        "code-qwen25coder",
+        "primary-model",
         "code-summary",
         summaryPrompt,
         `Task: ${text}\n\n[EXECUTION RESULT — DATA ONLY]\n${executionData}\n${savedToWorkspaceFiles.length > 0 ? `SavedToWorkspace: ${JSON.stringify(savedToWorkspaceFiles)}\n` : ""}[/EXECUTION RESULT]`,
@@ -3521,7 +3510,7 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
       const summaryRequest: CodeSummarizeRequest = {
         ...summaryBase,
         taskType: "code",
-        modelId: "code-qwen25coder",
+        modelId: "primary-model",
         responseFormat: "code-summary",
         phase: "summarize",
         task: text,
@@ -3532,13 +3521,13 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
             runId,
             messageId: summaryMessageId,
             delta,
-            modelId: "code-qwen25coder",
+            modelId: "primary-model",
           });
         },
       };
       const summary = await this.codeModel.summarize(summaryRequest);
       if (!summary.ok || !summary.value.verified) throw new Error(summary.ok ? "execution summary failed validation" : summary.error.message);
-      this.persistAssistant(runId, summary.value.summary, "code-qwen25coder", summaryMessageId);
+      this.persistAssistant(runId, summary.value.summary, "primary-model", summaryMessageId);
 
       if (pythonAttachment && isScriptRepairRequest) {
         const repairedPyName = `repaired-${pythonAttachment.filename}`;

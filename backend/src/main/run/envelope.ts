@@ -26,6 +26,8 @@ export interface BuildEnvelopeParams {
   mutationRequested?: boolean;
   commandExecutionRequested?: boolean;
   deliverableRequested?: boolean;
+  /** Python source repairs export through execute_python, not the document generator. */
+  pythonSourceRepair?: boolean;
 }
 
 const CHAT_PERMITTED_CAPABILITIES: readonly CapabilityGroup[] = [
@@ -80,6 +82,10 @@ export function buildExecutionEnvelope(params: BuildEnvelopeParams): ExecutionEn
     mode === "chat"
       ? [...CHAT_PERMITTED_CAPABILITIES]
       : [...AGENT_PERMITTED_CAPABILITIES];
+  if (params.pythonSourceRepair) {
+    const artifactIndex = permittedCapabilities.indexOf("artifact_generation");
+    if (artifactIndex >= 0) permittedCapabilities.splice(artifactIndex, 1);
+  }
 
   // Derive initial active capabilities from deterministic state:
   const active = new Set<CapabilityGroup>();
@@ -101,7 +107,7 @@ export function buildExecutionEnvelope(params: BuildEnvelopeParams): ExecutionEn
 
   // 4. Deliverables: active if output preference or prompt warrants deliverable creation
   const deliverableExplicit =
-    params.deliverableRequested ||
+    (!params.pythonSourceRepair && params.deliverableRequested) ||
     params.outputPreference === "artifact" ||
     params.outputPreference === "chat_and_artifact" ||
     /\b(?:approval\s*note|clearance\s*note|compliance\s*(?:note|review)|audit\s*memo|word\s*doc(?:x)?|spreadsheet|workbook|\.?docx\b|\.?xlsx\b|\.?pdf\b|\.md\b|report\.md|deliverable)\b/i.test(

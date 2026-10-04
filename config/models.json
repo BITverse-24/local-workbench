@@ -1,37 +1,13 @@
 {
-  "$comment": "Sovereign Workbench offline local endpoints (LM Studio / qwen3.5-9b).",
+  "$comment": "Single local model for all task types.",
   "models": [
     {
-      "id": "draft-qwen3",
-      "taskTypes": ["draft"],
+      "id": "primary-model",
+      "taskTypes": ["vision", "draft", "code"],
       "runtime": "ollama",
       "baseUrl": "http://127.0.0.1:1234/v1",
       "model": "qwen/qwen3.5-9b",
-      "capabilities": ["text", "structured-output"],
-      "requestTimeoutMs": 300000,
-      "healthPath": "/models",
-      "enabled": true,
-      "maxOutputTokens": 4096
-    },
-    {
-      "id": "code-qwen25coder",
-      "taskTypes": ["code"],
-      "runtime": "ollama",
-      "baseUrl": "http://127.0.0.1:1234/v1",
-      "model": "qwen/qwen3.5-9b",
-      "capabilities": ["text", "structured-output", "code-generation"],
-      "requestTimeoutMs": 300000,
-      "healthPath": "/models",
-      "enabled": true,
-      "maxOutputTokens": 4096
-    },
-    {
-      "id": "vision-qwen25vl",
-      "taskTypes": ["vision"],
-      "runtime": "ollama",
-      "baseUrl": "http://127.0.0.1:1234/v1",
-      "model": "qwen/qwen3.5-9b",
-      "capabilities": ["text", "image-input", "structured-output"],
+      "capabilities": ["text", "image-input", "structured-output", "code-generation"],
       "requestTimeoutMs": 300000,
       "healthPath": "/models",
       "enabled": true,

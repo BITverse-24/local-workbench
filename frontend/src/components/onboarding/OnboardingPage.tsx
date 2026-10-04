@@ -28,49 +28,15 @@ export interface RoleCardState {
 
 const DEFAULT_CARDS: RoleCardState[] = [
   {
-    role: "vision",
-    title: "Vision & OCR",
-    description: "Inspection reports, engineering drawings, P&ID diagrams",
-    badge: "VISION",
+    role: "primary",
+    title: "Primary Model",
+    description: "One local model for chat, documents, vision, code, and tool use",
+    badge: "PRIMARY",
     badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
     nodes: [
       {
-        id: "vision-node-1",
-        modelName: "qwen2.5vl:3b",
-        host: "127.0.0.1",
-        port: "11434",
-        contextLength: "32768",
-        testStatus: "idle",
-      },
-    ],
-  },
-  {
-    role: "coding",
-    title: "Coding & Analysis",
-    description: "Python execution, automated script repair, CSV parsing",
-    badge: "CODE",
-    badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
-    nodes: [
-      {
-        id: "coding-node-1",
-        modelName: "qwen2.5-coder:7b",
-        host: "127.0.0.1",
-        port: "11434",
-        contextLength: "32768",
-        testStatus: "idle",
-      },
-    ],
-  },
-  {
-    role: "draft",
-    title: "Draft & Reasoning",
-    description: "Approval notes, synthesis, technical memos, chat",
-    badge: "DRAFT",
-    badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
-    nodes: [
-      {
-        id: "draft-node-1",
-        modelName: "qwen3:8b",
+        id: "primary-node-1",
+        modelName: "qwen3.5:9b",
         host: "127.0.0.1",
         port: "11434",
         contextLength: "32768",
@@ -111,7 +77,9 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
   const [cards, setCards] = useState<RoleCardState[]>(() => {
     if (initialConfig && initialConfig.length > 0) {
       return DEFAULT_CARDS.map((def) => {
-        const matching = initialConfig.filter((c) => c.role === def.role);
+        const matching = def.role === "primary"
+          ? [initialConfig.find((c) => c.role === "primary") ?? initialConfig.find((c) => c.role === "draft")].filter(Boolean) as ModelConfigRow[]
+          : initialConfig.filter((c) => c.role === def.role);
         if (matching.length > 0) {
           return {
             ...def,

@@ -17,7 +17,7 @@ const attemptSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 const executionContextSchema = z.object({
-  modelId: z.enum(["code-qwen25coder", "draft-qwen3", "vision-qwen25vl"]), mode: z.enum(["chat", "agent"]),
+  modelId: z.string().min(1), mode: z.enum(["chat", "agent"]),
   workspaceRoot: z.string().max(4096).nullable(), groundingEnabled: z.boolean(),
 });
 const pendingAuthorizationSchema = z.object({ callId: z.string(), tool: z.string(), targetPath: z.string().max(1024).optional(), summary: z.string().max(240), createdAt: z.string().datetime() });

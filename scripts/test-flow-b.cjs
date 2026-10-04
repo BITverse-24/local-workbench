@@ -34,7 +34,7 @@ async function runFlowB() {
   await runner.startWorker(configFile);
 
   // 3. Send message
-  const prompt = "This is crashing on our vendor log files. Fix it and make sure it actually works.";
+  const prompt = process.env.FLOW_B_PROMPT || "This is crashing on our vendor log files. Fix it and make sure it actually works.";
   console.log(`3. Sending prompt: "${prompt}"`);
   console.log("   Attachments: broken-vendor-log-parser.py, vendor-maintenance-log.csv");
 

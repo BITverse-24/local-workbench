@@ -24,7 +24,7 @@ export const RunContractSchema = z.object({
   schemaVersion: z.literal(1), runId: z.string().uuid(), createdAt: z.string().datetime(),
   objective: z.string().min(1).max(500),
   resolution: z.object({ status: z.enum(["resolved", "ambiguous", "failed"]), ambiguity: z.string().max(1000).optional() }),
-  routing: z.object({ intentType: z.enum(["code_modification", "file_inspection", "command_execution", "document_drafting", "pure_chat", "general_qa"]), taskType: z.enum(["code", "draft", "vision"]), driverModel: z.enum(["code-qwen25coder", "draft-qwen3", "vision-qwen25vl"]), actionable: z.boolean() }),
+  routing: z.object({ intentType: z.enum(["code_modification", "file_inspection", "command_execution", "document_drafting", "pure_chat", "general_qa"]), taskType: z.enum(["code", "draft", "vision"]), driverModel: z.string().min(1), actionable: z.boolean() }),
   response: z.object({ required: z.boolean(), chatOnly: z.boolean() }),
   workspace: z.object({ requested: z.boolean(), operations: z.array(z.object({ id: z.string(), operation: z.enum(["mutate", "write", "delete", "execute"]), targetPath: pathSchema.optional() })).max(200) }),
   deliverables: z.array(z.object({ id: z.string(), filename: pathSchema.optional(), filenameRequired: z.boolean().default(false), type: z.enum(["docx", "xlsx", "csv", "pdf", "md", "json", "file"]), description: z.string().max(1000).optional() })).max(200),
@@ -102,7 +102,10 @@ export function getRunContract(runId: string): RunContract | undefined {
   const row = prepareCached(getDb(), "SELECT schema_version,contract_json FROM run_contracts WHERE run_id=?").get(runId) as { schema_version: number; contract_json: string } | undefined;
   if (!row) return undefined;
   if (row.schema_version !== 1) throw new Error(`Unsupported run contract schema version: ${row.schema_version}`);
-  const contract = RunContractSchema.parse(JSON.parse(row.contract_json));
+  const stored = JSON.parse(row.contract_json);
+  // Read older role-routed contracts under the single-model architecture.
+  if (["code-qwen25coder", "draft-qwen3", "vision-qwen25vl"].includes(stored?.routing?.driverModel)) stored.routing.driverModel = "primary-model";
+  const contract = RunContractSchema.parse(stored);
   if (contract.runId !== runId) throw new Error("Run contract identity mismatch");
   return contract;
 }

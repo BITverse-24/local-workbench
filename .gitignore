@@ -23,3 +23,6 @@ wiki/
 # Behavioral framework: credentials, disposable workers, raw evidence and candidates
 tests/.runtime/
 tests/profiles/*.local.json
+
+.audit
+.*

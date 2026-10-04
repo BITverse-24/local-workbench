@@ -1,6 +1,7 @@
 export type TaskType = "vision" | "draft" | "code";
 export type ModelRuntime = "mlx-lm" | "llama-server" | "ollama";
-export type ModelId = "vision-qwen25vl" | "draft-qwen3" | "code-qwen25coder";
+/** One configured inference model drives all semantic task types. */
+export type ModelId = string;
 export type ModelCapability = "text" | "image-input" | "structured-output" | "code-generation";
 export interface ModelRegistryEntry { id: ModelId; taskTypes: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; maxOutputTokens?: number; contextLength?: number; }
 export interface AttachmentReference { attachmentId: string; filename: string; mediaType: string; sizeBytes: number; relativePath: string; selectedPages?: number[]; }
@@ -40,11 +41,11 @@ export interface ModelRequestBase {
   parentToolCallId?: string;
   isRetry?: boolean;
 }
-export interface VisionModelRequest extends ModelRequestBase { taskType: "vision"; modelId: "vision-qwen25vl"; responseFormat: "vision-result"; attachment: AttachmentReference; inputMode: "typed-scan"; }
-export interface CodeModelRequest extends ModelRequestBase { taskType: "code"; modelId: "code-qwen25coder"; responseFormat: "code-result" | "file-result" | "harness-step"; task: string; inputFile: InputFileReference; allowedLanguage: "python"; executionRules: string[]; }
-export interface CodeSummarizeRequest extends ModelRequestBase { taskType: "code"; modelId: "code-qwen25coder"; responseFormat: "code-summary"; phase: "summarize"; execution: PythonExecutionResult; task: string; }
-export interface ChatModelRequest extends ModelRequestBase { taskType: "draft"; modelId: "draft-qwen3"; responseFormat: "chat-result"; }
-export interface DraftModelRequest extends ModelRequestBase { taskType: "draft"; modelId: "draft-qwen3"; responseFormat: "draft-result"; }
+export interface VisionModelRequest extends ModelRequestBase { taskType: "vision"; modelId: ModelId; responseFormat: "vision-result"; attachment: AttachmentReference; inputMode: "typed-scan"; }
+export interface CodeModelRequest extends ModelRequestBase { taskType: "code"; modelId: ModelId; responseFormat: "code-result" | "file-result" | "harness-step"; task: string; inputFile: InputFileReference; allowedLanguage: "python"; executionRules: string[]; }
+export interface CodeSummarizeRequest extends ModelRequestBase { taskType: "code"; modelId: ModelId; responseFormat: "code-summary"; phase: "summarize"; execution: PythonExecutionResult; task: string; }
+export interface ChatModelRequest extends ModelRequestBase { taskType: "draft"; modelId: ModelId; responseFormat: "chat-result"; }
+export interface DraftModelRequest extends ModelRequestBase { taskType: "draft"; modelId: ModelId; responseFormat: "draft-result"; }
 export type ModelRequest = VisionModelRequest | CodeModelRequest | CodeSummarizeRequest | ChatModelRequest | DraftModelRequest;
 export interface ModelUsage { inputTokens?: number; outputTokens?: number; durationMs?: number; }
 export interface ModelResponseBase { requestId: string; runId: string; modelId: ModelId; completedAt: string; usage?: ModelUsage; }
@@ -369,7 +370,7 @@ export type WorkspaceEvent =
   | { type: "harness_tool_result"; runId: string; tool: HarnessToolName; summary: string; detail?: string };
 
 // ── Onboarding & Model Configuration Contracts ──────────────────────────
-export type ModelRoleType = "vision" | "coding" | "draft" | "embedding";
+export type ModelRoleType = "primary" | "vision" | "coding" | "draft" | "embedding";
 
 export interface ModelConfigRow {
   role: ModelRoleType;

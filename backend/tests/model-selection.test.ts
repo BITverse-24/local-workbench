@@ -28,7 +28,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
   describe("resolveModelSelection contract logic", () => {
     const singleModels: ModelConfigRow[] = [
       {
-        role: "draft",
+        role: "primary",
         modelName: "qwen2.5:7b",
         host: "127.0.0.1",
         port: 11434,
@@ -38,21 +38,21 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
 
     const multiModels: ModelConfigRow[] = [
       {
-        role: "draft",
+        role: "primary",
         modelName: "qwen2.5:7b",
         host: "127.0.0.1",
         port: 11434,
         contextLength: 8192,
       },
       {
-        role: "coding",
+        role: "primary",
         modelName: "qwen2.5-coder:7b",
         host: "127.0.0.1",
         port: 11435,
         contextLength: 8192,
       },
       {
-        role: "vision",
+        role: "primary",
         modelName: "qwen2.5-vl:7b",
         host: "127.0.0.1",
         port: 11436,
@@ -68,13 +68,13 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       const resolved = resolveModelSelection({ configuredModels: singleModels });
       expect(resolved.ok).toBe(true);
       if (resolved.ok) {
-        expect(resolved.modelId).toBe("draft-qwen3");
+        expect(resolved.modelId).toBe("primary-model");
         expect(resolved.isSingleModel).toBe(true);
         expect(resolved.reason).toBe("single configured model");
       }
     });
 
-    it("Scenario: Multiple models configured, no explicit selection -> uses configured primary model (draft-qwen3)", () => {
+    it("Scenario: Multiple models configured, no explicit selection -> uses configured primary model (primary-model)", () => {
       const usable = getUsableConfiguredModels(undefined, multiModels);
       expect(usable.length).toBe(3);
       expect(countUsableModels(undefined, multiModels)).toBe(3);
@@ -82,35 +82,35 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       const resolved = resolveModelSelection({ configuredModels: multiModels });
       expect(resolved.ok).toBe(true);
       if (resolved.ok) {
-        expect(resolved.modelId).toBe("draft-qwen3");
+        expect(resolved.modelId).toBe("primary-model");
         expect(resolved.isSingleModel).toBe(false);
         expect(resolved.reason).toBe("configured primary model");
       }
     });
 
     it("Scenario: Multiple models configured, explicit selection -> uses selected model", () => {
-      const resolved = resolveModelSelection({ configuredModels: multiModels, explicitSelection: "code-qwen25coder" });
+      const resolved = resolveModelSelection({ configuredModels: multiModels, explicitSelection: "model-2" });
       expect(resolved.ok).toBe(true);
       if (resolved.ok) {
-        expect(resolved.modelId).toBe("code-qwen25coder");
+        expect(resolved.modelId).toBe("model-2");
         expect(resolved.isSingleModel).toBe(false);
         expect(resolved.reason).toBe("explicit user selection");
       }
     });
 
     it("Scenario: Code-related or Vision-related request does NOT override explicit user selection", () => {
-      // Regardless of modality, explicit selection of draft-qwen3 is authoritative
-      const resolvedDraft = resolveModelSelection({ configuredModels: multiModels, explicitSelection: "draft-qwen3" });
+      // Regardless of modality, explicit selection of primary-model is authoritative
+      const resolvedDraft = resolveModelSelection({ configuredModels: multiModels, explicitSelection: "primary-model" });
       expect(resolvedDraft.ok).toBe(true);
       if (resolvedDraft.ok) {
-        expect(resolvedDraft.modelId).toBe("draft-qwen3");
+        expect(resolvedDraft.modelId).toBe("primary-model");
       }
 
-      // Explicit selection of code-qwen25coder remains code-qwen25coder even for text or vision prompt
-      const resolvedCode = resolveModelSelection({ configuredModels: multiModels, explicitSelection: "code-qwen25coder" });
+      // Explicit selection of model-2 remains model-2 even for text or vision prompt
+      const resolvedCode = resolveModelSelection({ configuredModels: multiModels, explicitSelection: "model-2" });
       expect(resolvedCode.ok).toBe(true);
       if (resolvedCode.ok) {
-        expect(resolvedCode.modelId).toBe("code-qwen25coder");
+        expect(resolvedCode.modelId).toBe("model-2");
       }
     });
 
@@ -140,7 +140,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
 
       // Add a second model dynamically
       dynamicModels.push({
-        role: "coding",
+        role: "primary",
         modelName: "qwen2.5-coder:7b",
         host: "127.0.0.1",
         port: 11435,
@@ -148,10 +148,10 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       });
 
       expect(countUsableModels(undefined, dynamicModels)).toBe(2);
-      const resolved = resolveModelSelection({ configuredModels: dynamicModels, explicitSelection: "code-qwen25coder" });
+      const resolved = resolveModelSelection({ configuredModels: dynamicModels, explicitSelection: "model-2" });
       expect(resolved.ok).toBe(true);
       if (resolved.ok) {
-        expect(resolved.modelId).toBe("code-qwen25coder");
+        expect(resolved.modelId).toBe("model-2");
       }
     });
   });
@@ -174,7 +174,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
             value: {
               result: {
                 intentType: "general_qa",
-                driverModel: "draft-qwen3",
+                driverModel: "primary-model",
                 taskType: "draft",
                 primaryGoal: "General question",
                 isActionable: false,
@@ -214,7 +214,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       // Verify routing event is configuration-driven
       const routingEvent = events.find((e) => e.type === "routing");
       expect(routingEvent).toBeDefined();
-      expect(routingEvent?.modelId).toBe("draft-qwen3");
+      expect(routingEvent?.modelId).toBe("primary-model");
 
       // Verify persisted contract
       const contract = getRunContract(started.runId);
@@ -254,10 +254,10 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       } as unknown as ModelGateway;
 
       const manager = new RunManager(mockGateway, (e) => events.push(e));
-      // Explicitly select code-qwen25coder
+      // Explicitly select model-2
       const started = await manager.start({
         userText: "Explain how to write a quicksort algorithm in TypeScript",
-        selectedModel: "code-qwen25coder",
+        selectedModel: "model-2",
       });
 
       await vi.waitFor(
@@ -267,14 +267,14 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
 
       // Model selection must be authoritative throughout execution
       expect(classifications).toBe(0);
-      expect(modelUsedInChat).toBe("code-qwen25coder");
+      expect(modelUsedInChat).toBe("model-2");
 
       const routingEvent = events.find((e) => e.type === "routing");
-      expect(routingEvent?.modelId).toBe("code-qwen25coder");
+      expect(routingEvent?.modelId).toBe("model-2");
       expect(routingEvent?.taskType).toBe("code");
 
       const contract = getRunContract(started.runId);
-      expect(contract?.routing.driverModel).toBe("code-qwen25coder");
+      expect(contract?.routing.driverModel).toBe("model-2");
     });
 
     it("Scenario: Explicitly selected model becomes unavailable -> fails with error event and terminal failed state", async () => {
@@ -324,7 +324,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
             value: {
               result: {
                 intentType: "code_modification",
-                driverModel: "draft-qwen3",
+                driverModel: "primary-model",
                 taskType: "draft",
                 primaryGoal: "Modify worker.ts safely",
                 isActionable: true,
@@ -368,7 +368,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
 
       const started = await manager.start({
         userText: "Modify worker.ts to export x",
-        selectedModel: "code-qwen25coder",
+        selectedModel: "model-2",
       });
 
       await vi.waitFor(
@@ -381,7 +381,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
 
       // Verify the driver model remained strictly pinned to user's selectedModel
       const contract = getRunContract(started.runId);
-      expect(contract?.routing.driverModel).toBe("code-qwen25coder");
+      expect(contract?.routing.driverModel).toBe("model-2");
       expect(contract?.constraints.protectedPaths).toContain(".env");
       expect(contract?.workspace.operations.some((op) => op.targetPath === "worker.ts")).toBe(true);
     });

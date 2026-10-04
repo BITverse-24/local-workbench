@@ -190,9 +190,9 @@ export const extractDocumentTool: AgentTool = {
       ? "image/jpeg"
       : "application/octet-stream";
 
-    const targetModelId = (context.gateway?.registry?.has("vision-qwen25vl")
-      ? "vision-qwen25vl"
-      : context.runContract?.routing.driverModel ?? "vision-qwen25vl") as ModelId;
+    const targetModelId = (context.gateway?.registry?.has("primary-model")
+      ? "primary-model"
+      : context.runContract?.routing.driverModel ?? "primary-model") as ModelId;
 
     const base = requestBase(
       context.runId,
@@ -210,7 +210,7 @@ export const extractDocumentTool: AgentTool = {
       ...base,
       requestId: randomUUID(),
       taskType: "vision",
-      modelId: targetModelId as "vision-qwen25vl",
+      modelId: targetModelId as "primary-model",
       responseFormat: "vision-result",
       attachment: {
         attachmentId: randomUUID(),
@@ -278,9 +278,9 @@ export const generateCodeTool: AgentTool = {
     if (!spec.trim()) {
       throw new Error("generate_code requires a 'spec' or 'prompt' description of the code to generate.");
     }
-    const targetModelId = (context.gateway?.registry?.has("code-qwen25coder")
-      ? "code-qwen25coder"
-      : context.runContract?.routing.driverModel ?? "code-qwen25coder") as ModelId;
+    const targetModelId = (context.gateway?.registry?.has("primary-model")
+      ? "primary-model"
+      : context.runContract?.routing.driverModel ?? "primary-model") as ModelId;
 
     const base = requestBase(
       context.runId,
@@ -298,7 +298,7 @@ export const generateCodeTool: AgentTool = {
       ...base,
       requestId: randomUUID(),
       taskType: "code",
-      modelId: targetModelId as "code-qwen25coder",
+      modelId: targetModelId as "primary-model",
       responseFormat: "code-result",
       task: spec,
       inputFile: { attachmentId: randomUUID(), filename, mediaType: "text/x-python", rowCount: 1 },
@@ -361,9 +361,9 @@ export const generateTextTool: AgentTool = {
     if (!prompt.trim()) {
       throw new Error("generate_text requires a 'prompt' or 'instruction' for the text to draft.");
     }
-    const targetModelId = (context.gateway?.registry?.has("draft-qwen3")
-      ? "draft-qwen3"
-      : context.runContract?.routing.driverModel ?? "draft-qwen3") as ModelId;
+    const targetModelId = (context.gateway?.registry?.has("primary-model")
+      ? "primary-model"
+      : context.runContract?.routing.driverModel ?? "primary-model") as ModelId;
 
     const base = requestBase(
       context.runId,
@@ -485,28 +485,8 @@ export const executePythonTool: AgentTool = {
     }
     // 1. Sanitize malformed f-string format specifiers (e.g. :>15,>10 or :>12,>10 or :>15,0>12 or :>12,0)
     code = code.replace(/:([<>=^]?\d+)[,<>=^][^"'\n}]*(?=[}])/g, ":$1");
-    // 2. Safe dictionary lookup for arithmetic / print statements (avoids KeyError crashes on missing keys)
-    const helper = `
-def _safe_lookup(collection, key, default=0):
-    if isinstance(collection, dict):
-        if key in collection:
-            return collection[key]
-        if isinstance(key, str):
-            k_clean = key.lower().replace(" ", "").replace("_", "")
-            for existing_k, v in collection.items():
-                if isinstance(existing_k, str):
-                    ex_clean = existing_k.lower().replace(" ", "").replace("_", "")
-                    if k_clean in ex_clean or ex_clean in k_clean or ("tax" in k_clean and "tax" in ex_clean):
-                        return v
-        return default
-    try:
-        return collection[key]
-    except Exception:
-        return default
-`;
-    if (!args.validation_code && !code.includes("def _safe_lookup")) {
-      code = `${helper}\n${code.replace(/(\b[a-zA-Z_]\w*)\s*\[\s*([^\n\]]+?)\s*\](?!\s*=(?!=))/g, "_safe_lookup($1, $2)")}`;
-    }
+    // Preserve model source. Rewriting subscription expressions breaks valid
+    // Python assignments such as counts["malformed"] += 1 and argv[1].
     if (!code.trim()) {
       throw new Error("execute_python requires 'code' (or 'script') containing Python source code to execute.");
     }
@@ -623,7 +603,9 @@ def _safe_lookup(collection, key, default=0):
         }
       }
       const requestedScript = context.requestedArtifacts?.filter((item) => item.type === "file" && item.filename.endsWith(".py"));
+      const contractScripts = context.runContract?.deliverables.filter((item) => item.type === "file" && item.filename?.endsWith(".py"));
       const artifactScriptFilename = requestedScript?.length === 1 ? requestedScript[0].filename :
+        contractScripts?.length === 1 && contractScripts[0].filename ? contractScripts[0].filename :
         targetName.startsWith("repaired-") || targetName.startsWith("fixed-")
           ? targetName
           : `repaired-${targetName}`;
@@ -649,13 +631,14 @@ def _safe_lookup(collection, key, default=0):
 
     const deliveryStatus = hasDocDeliverables
       ? "Calculations completed successfully. Proceed immediately to invoke 'generate_deliverable' to generate the requested document using the computed figures."
-      : "The executed source is already exported. If validation passed, provide the final answer; do not create another export or helper script.";
+      : "The executed source is already exported and ran successfully against the supplied inputs. Report the observed output and any limits; do not create another export or helper script.";
 
     return {
       output: JSON.stringify({
         ...observation,
         artifacts: artifacts.map((artifact) => ({ filename: artifact.filename, relativePath: artifact.relativePath })),
-        validationPassed: typeof args.validation_code === "string" && Boolean(args.validation_code.trim()),
+        executionPassed: execResult.exitCode === 0 && !execResult.timedOut,
+        validationAssertionsPassed: typeof args.validation_code === "string" && Boolean(args.validation_code.trim()),
         deliveryStatus,
       }, null, 2),
       summary,

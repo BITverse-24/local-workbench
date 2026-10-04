@@ -274,7 +274,7 @@ interface WorkbenchBridge {
 }
 
 
-type ModelRoleType = "vision" | "coding" | "draft" | "embedding";
+type ModelRoleType = "primary" | "vision" | "coding" | "draft" | "embedding";
 
 interface ModelConfigRow {
   role: ModelRoleType;

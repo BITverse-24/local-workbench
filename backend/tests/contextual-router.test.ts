@@ -39,7 +39,7 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
               text: JSON.stringify({
                 intentType: "code_modification",
                 taskType: "code",
-                driverModel: "code-qwen25coder",
+                driverModel: "primary-model",
                 primaryGoal: "Refactor rate limiter to sliding window",
                 targetFiles: ["middleware/rateLimiter.js"],
                 workspaceMutationRequested: true,
@@ -61,10 +61,47 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
       mockGateway as any,
     );
 
-    expect(intent.driverModel).toBe("code-qwen25coder");
+    expect(intent.driverModel).toBe("primary-model");
     expect(intent.primaryGoal).toBe("Refactor rate limiter to sliding window");
     expect(intent.targetFiles).toEqual(["middleware/rateLimiter.js"]);
     expect(intent.isActionable).toBe(true);
+  });
+
+  it("keeps attached code repair in run output unless the user requests a workspace destination", async () => {
+    const mockGateway = {
+      async execute() {
+        return { ok: true, value: { result: {
+          intentType: "code_modification", taskType: "code", driverModel: "primary-model",
+          primaryGoal: "Repair the attached parser", targetFiles: ["broken-parser.py"],
+          workspaceMutationRequested: true, isActionable: true, validationRequested: true,
+          successMarker: "exit 0",
+          workspaceOperations: [{ operation: "mutate", targetPath: "broken-parser.py" }],
+        } } };
+      },
+    };
+    const attachment = { attachmentId: "parser", filename: "broken-parser.py", mediaType: "text/x-python", sizeBytes: 80, relativePath: "input/broken-parser.py" };
+    const standalone = await resolveSemanticIntent({
+      userPrompt: "Repair the attached Python parser and run it against the CSV.",
+      attachments: [attachment], hasWorkspace: true, workspaceFiles: ["broken-parser.py"],
+    }, mockGateway as any);
+    expect(standalone.workspaceMutationRequested).toBe(false);
+    expect(standalone.targetFiles).toEqual([]);
+    expect(standalone.workspaceOperations).toEqual([]);
+    expect(standalone.expectedDeliverables[0]?.filename).toBe("fixed-parser.py");
+    expect(standalone.successMarker).toBeUndefined();
+
+    const namedOutput = await resolveSemanticIntent({
+      userPrompt: "Repair the attached Python parser and save the corrected standalone script as vendor-log-parser.py.",
+      attachments: [attachment], hasWorkspace: true, workspaceFiles: ["broken-parser.py"],
+    }, mockGateway as any);
+    expect(namedOutput.expectedDeliverables[0]?.filename).toBe("vendor-log-parser.py");
+
+    const workspaceEdit = await resolveSemanticIntent({
+      userPrompt: "Repair the attached Python parser and write the corrected file into my workspace.",
+      attachments: [attachment], hasWorkspace: true, workspaceFiles: ["broken-parser.py"],
+    }, mockGateway as any);
+    expect(workspaceEdit.workspaceMutationRequested).toBe(true);
+    expect(workspaceEdit.targetFiles).toContain("broken-parser.py");
   });
 
   it("handles pre-parsed object results from gateway planner without throwing SyntaxError", async () => {
@@ -76,7 +113,7 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
             result: {
               intentType: "code_modification",
               taskType: "code",
-              driverModel: "code-qwen25coder",
+              driverModel: "primary-model",
               primaryGoal: "Convert JavaScript codebase to TypeScript",
               targetFiles: ["app.ts"],
               workspaceMutationRequested: true,
@@ -97,7 +134,7 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
       mockGateway as any,
     );
 
-    expect(intent.driverModel).toBe("code-qwen25coder");
+    expect(intent.driverModel).toBe("primary-model");
     expect(intent.taskType).toBe("code");
     expect(intent.isActionable).toBe(true);
     expect(intent.primaryGoal).toBe("Convert JavaScript codebase to TypeScript");
@@ -113,7 +150,7 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
               result: {
                 text: JSON.stringify({
                   status: "resolved",
-                  driverModel: "code-qwen25coder",
+                  driverModel: "primary-model",
                   taskType: "code",
                   primaryGoal: "Update notes.md while protecting other workspace files",
                   isActionable: true,
@@ -167,7 +204,7 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
               result: {
                 text: JSON.stringify({
                   status: "resolved",
-                  driverModel: "code-qwen25coder",
+                  driverModel: "primary-model",
                   taskType: "code",
                   primaryGoal: "Conflicting file modification",
                   isActionable: true,
@@ -225,7 +262,7 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
               result: {
                 text: JSON.stringify({
                   status: "resolved",
-                  driverModel: "code-qwen25coder",
+                  driverModel: "primary-model",
                   taskType: "code",
                   primaryGoal: "Refactor app.js",
                   isActionable: true,
@@ -286,4 +323,3 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
     });
   });
 });
-

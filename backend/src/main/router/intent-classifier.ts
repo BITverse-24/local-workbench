@@ -505,7 +505,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     if (priorHadWorkspaceOrFileContext || priorHadConfirmationPrompt) {
       return withGrounding({
         taskType: "code",
-        modelId: "code-qwen25coder",
+        modelId: "primary-model",
         actionTarget: "harness",
         reason: "affirmative follow-up in active workspace",
         isWorkspaceAction: true,
@@ -518,7 +518,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     if (isWorkspaceActive) {
       return withGrounding({
         taskType: "code",
-        modelId: "code-qwen25coder",
+        modelId: "primary-model",
         actionTarget: "harness",
         reason: "script/file execution follow-up in workspace",
         isWorkspaceAction: true,
@@ -528,7 +528,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     if (hasRecentArtifacts) {
       return withGrounding({
         taskType: "code",
-        modelId: "code-qwen25coder",
+        modelId: "primary-model",
         actionTarget: "data",
         reason: "standalone script execution in sandbox",
         isWorkspaceAction: false,
@@ -561,7 +561,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
   if (isMetaQuestion) {
     return withGrounding({
       taskType: "draft",
-      modelId: "draft-qwen3",
+      modelId: "primary-model",
       actionTarget: "chat",
       reason: "meta-conversational inquiry",
       isWorkspaceAction: false,
@@ -573,7 +573,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
   if (hasNegativeWorkspaceConstraint || (hasStandaloneHint && (hasFileActionVerb || hasFileContainerNoun || hasFileExtension))) {
     return withGrounding({
       taskType: "code",
-      modelId: "code-qwen25coder",
+      modelId: "primary-model",
       actionTarget: "standalone_file",
       reason: hasNegativeWorkspaceConstraint
         ? "standalone file creation (negative workspace constraint)"
@@ -613,7 +613,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     if (isDrawingComplianceReview) {
       return withGrounding({
         taskType: "draft",
-        modelId: "draft-qwen3",
+        modelId: "primary-model",
         actionTarget: "vision",
         reason: "engineering drawing compliance review",
         isWorkspaceAction: false,
@@ -625,7 +625,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     if (isDrawing) {
       return withGrounding({
         taskType: "vision",
-        modelId: "vision-qwen25vl",
+        modelId: "primary-model",
         actionTarget: "vision",
         reason: "engineering drawing interpretation",
         isWorkspaceAction: false,
@@ -636,7 +636,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
 
     return withGrounding({
       taskType: "vision",
-      modelId: "vision-qwen25vl",
+      modelId: "primary-model",
       actionTarget: "vision",
       reason: isBundle ? "scanned inspection bundle" : "scanned report",
       isWorkspaceAction: false,
@@ -662,7 +662,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
   if (isWorkspaceTargetedOp) {
     return withGrounding({
       taskType: "code",
-      modelId: "code-qwen25coder",
+      modelId: "primary-model",
       actionTarget: "harness",
       reason: "workspace file operation request",
       isWorkspaceAction: true,
@@ -688,7 +688,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
   if (!isWorkspaceFileInquiry && hasPythonAttachment && (hasCsvAttachment || /\b(fix|crash|broken|parser|error|traceback)\b/i.test(lower))) {
     return withGrounding({
       taskType: "code",
-      modelId: "code-qwen25coder",
+      modelId: "primary-model",
       actionTarget: "data",
       reason: "Python repair and verification",
       isWorkspaceAction: false,
@@ -703,7 +703,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
   ) {
     return withGrounding({
       taskType: "code",
-      modelId: "code-qwen25coder",
+      modelId: "primary-model",
       actionTarget: "data",
       reason: "CSV/code intent",
       isWorkspaceAction: false,
@@ -711,11 +711,11 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     });
   }
 
-  // Case G: Approval Note & Document Drafting Intent (routes to draft model draft-qwen3)
+  // Case G: Approval Note & Document Drafting Intent (routes to draft model primary-model)
   if (DRAFTING_INTENT_PATTERNS.test(userText)) {
     return withGrounding({
       taskType: "draft",
-      modelId: "draft-qwen3",
+      modelId: "primary-model",
       actionTarget: "chat",
       reason: "approval note drafting",
       isWorkspaceAction: false,
@@ -812,7 +812,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
   if (hasNegativeWorkspaceConstraint || (hasStandaloneHint && isFileCreationRequest)) {
     return withGrounding({
       taskType: "code",
-      modelId: "code-qwen25coder",
+      modelId: "primary-model",
       actionTarget: "standalone_file",
       reason: hasNegativeWorkspaceConstraint
         ? "standalone file creation (negative workspace constraint)"
@@ -835,7 +835,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
   if (scoreHarness > scoreChat && (isWorkspaceFileOp || hasCommandAction || hasExplorationAction || (isWorkspaceActive && scoreHarness >= 30))) {
     return withGrounding({
       taskType: "code",
-      modelId: "code-qwen25coder",
+      modelId: "primary-model",
       actionTarget: "harness",
       reason: isWorkspaceFileOp
         ? "workspace file modification"
@@ -854,7 +854,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
   // Case C: Fallback to conversational assistant
   return withGrounding({
     taskType: "draft",
-    modelId: "draft-qwen3",
+    modelId: "primary-model",
     actionTarget: "chat",
     reason: "fallback drafting",
     isWorkspaceAction: false,

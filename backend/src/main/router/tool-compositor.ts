@@ -5,8 +5,6 @@ import { workspaceTools } from "../tools/workspace-tools.js";
 import { retrieveResultTool } from "../tools/result-retrieval.js";
 import {
   extractDocumentTool,
-  generateCodeTool,
-  generateTextTool,
   retrieveKnowledgeTool,
   executePythonTool,
   generateDeliverableTool,
@@ -28,7 +26,7 @@ export interface EnvironmentState {
 /**
  * Returns all potential tools registered in Sovereign Workbench.
  */
-export function getAllAvailableTools(driverModelId: ModelId, isSingleModel = false): AgentTool[] {
+export function getAllAvailableTools(_driverModelId: ModelId, _isSingleModel = true): AgentTool[] {
   const tools: AgentTool[] = [
     requestCapabilityTool,
     ...workspaceTools,
@@ -38,15 +36,6 @@ export function getAllAvailableTools(driverModelId: ModelId, isSingleModel = fal
     retrieveKnowledgeTool,
     extractDocumentTool,
   ];
-
-  if (!isSingleModel) {
-    if (driverModelId !== "code-qwen25coder") {
-      tools.push(generateCodeTool);
-    }
-    if (driverModelId !== "draft-qwen3") {
-      tools.push(generateTextTool);
-    }
-  }
 
   return tools;
 }
@@ -122,7 +111,7 @@ export function composeToolsForEnvelope(
  * Excludes self-referential specialist tools (e.g. if the code model is driving,
  * it doesn't need generate_code; it is the code specialist).
  */
-export function composeTools(env: EnvironmentState, driverModelId: ModelId): AgentTool[] {
+export function composeTools(env: EnvironmentState, _driverModelId: ModelId): AgentTool[] {
   const tools: AgentTool[] = [];
 
   // request_capability tool
@@ -146,19 +135,6 @@ export function composeTools(env: EnvironmentState, driverModelId: ModelId): Age
   // 5. Multimodal document extraction (strictly if user attached visual documents, PDFs, or drawings)
   if (env.hasVisualAttachments ?? env.hasAttachments) {
     tools.push(extractDocumentTool);
-  }
-
-  // 6. Cross-specialist delegation tools
-  // If the driver is NOT the code model, provide code generation capability
-  if (driverModelId !== "code-qwen25coder") {
-    tools.push(generateCodeTool);
-  }
-
-  // If the driver is NOT the drafting model, provide text drafting capability.
-  // In an active workspace without document attachments, the code model must write/refactor
-  // code directly using workspace tools, NOT offload coding tasks to generate_text.
-  if (driverModelId !== "draft-qwen3" && (!env.hasWorkspace || env.hasAttachments)) {
-    tools.push(generateTextTool);
   }
 
   return tools;
@@ -268,30 +244,34 @@ export function constrainToolsToIntent(
   return tools.filter((tool) => !excluded.has(tool.name)).map((tool) => {
     if (tool.name !== "execute_python" || pythonDeliverables.length === 0) return tool;
     const parameters = tool.definition.function.parameters;
+    const { validation_code: _validationCode, ...repairProperties } = parameters.properties ?? {};
     return {
       ...tool,
       definition: {
         ...tool.definition,
         function: {
           ...tool.definition.function,
-          description: "Repair, validate and export the requested Python source in one call. code contains only the complete repaired implementation; validation_code contains separate assertions calling repaired['function'] with the real input files. A successful call already delivers the file; do not export or validate it again.",
+          description: "Repair and export the requested Python source, then execute it against the supplied input files. code contains only the complete implementation. Add validation_code only when concise assertions can be based on the real inputs and function signature. A successful call already delivers the file; do not export it again.",
           parameters: {
             ...parameters,
-            required: ["code", "filename", "validation_code"],
+            required: ["code", "filename"],
             properties: {
-              ...parameters.properties,
+              ...repairProperties,
               filename: { type: "string", enum: pythonDeliverables },
-              validation_code: { type: "string", description: "Required separate assertions against the exact repaired namespace, using repaired['function'](...). Never import a different source module. Tests remain outside the delivered source." },
             },
           },
         },
       },
       async execute(args, context) {
-        if (!pythonDeliverables.includes(String(args.filename)) || typeof args.validation_code !== "string" || !args.validation_code.trim()) {
-          const message = `Repair requires filename=${pythonDeliverables.join(" or ")}, code containing the repaired implementation, and separate validation_code asserting its behavior through repaired['function'](...). Helper scripts are not deliverables. No operation was executed.`;
+        if (!pythonDeliverables.includes(String(args.filename))) {
+          const message = `Repair requires filename=${pythonDeliverables.join(" or ")} and code containing the repaired implementation. No operation was executed.`;
           return { ok: false, output: message, summary: "Repair validation arguments required", error: { code: "invalid_arguments", retryable: true, message } };
         }
-        return tool.execute(args, context);
+        // Attached code repair is validated by executing the exact exported
+        // source with the real attached inputs. Do not let speculative model
+        // assertions turn successful execution into a false failure.
+        const { validation_code: _validationCode, ...executionArgs } = args;
+        return tool.execute(executionArgs, context);
       },
     } satisfies AgentTool;
   });
