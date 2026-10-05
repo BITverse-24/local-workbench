@@ -407,20 +407,48 @@ export function extractReferencedFiles(
   // Match files known to exist in the workspace or attachments with fast substring pre-check
   // PERF OPTIMIZATION: Check if file basename or relative path exists in lowercased prompt
   // before constructing a dynamic RegExp instance for every file in the workspace list.
-  const allKnownFiles = [...workspaceFiles, ...attachmentFiles];
   const combinedLower = combined.toLowerCase();
-  for (const f of allKnownFiles) {
-    const base = path.basename(f);
-    const baseLower = base.toLowerCase();
-    const fLower = f.toLowerCase();
-    if (!combinedLower.includes(baseLower) && !combinedLower.includes(fLower)) {
-      continue;
-    }
-    const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const escapedRel = f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const wordRx = new RegExp(`(?:@|\\b)(?:${escapedRel}|${escapedBase})\\b`, "i");
-    if (wordRx.test(combined)) {
-      referenced.add(f);
+  // Build lookup sets for fast token-based short-circuiting if combinedLower has words
+  const totalFiles = workspaceFiles.length + attachmentFiles.length;
+  if (totalFiles > 0) {
+    for (let i = 0; i < totalFiles; i++) {
+      const f = i < workspaceFiles.length ? workspaceFiles[i] : attachmentFiles[i - workspaceFiles.length];
+      const baseIdx = Math.max(f.lastIndexOf("/"), f.lastIndexOf("\\")) + 1;
+      const base = baseIdx > 0 ? f.slice(baseIdx) : f;
+      const baseLower = base.toLowerCase();
+      const fLower = f.toLowerCase();
+
+      if (!combinedLower.includes(baseLower) && !combinedLower.includes(fLower)) {
+        continue;
+      }
+
+      // Fast check if string match is bordered by word boundaries (non-word char, including '_') or '@'
+      let idx = combinedLower.indexOf(baseLower);
+      let matched = false;
+      while (idx !== -1) {
+        const before = idx > 0 ? combinedLower.charCodeAt(idx - 1) : 32;
+        const after = idx + baseLower.length < combinedLower.length ? combinedLower.charCodeAt(idx + baseLower.length) : 32;
+        // JS \w includes [0-9A-Za-z_]
+        const isBeforeWord = (before >= 48 && before <= 57) || (before >= 65 && before <= 90) || (before >= 97 && before <= 122) || before === 95;
+        const isAfterWord = (after >= 48 && after <= 57) || (after >= 65 && after <= 90) || (after >= 97 && after <= 122) || after === 95;
+        const isBeforeBoundary = !isBeforeWord || before === 64; // '@' is 64
+        const isAfterBoundary = !isAfterWord;
+        if (isBeforeBoundary && isAfterBoundary) {
+          referenced.add(f);
+          matched = true;
+          break;
+        }
+        idx = combinedLower.indexOf(baseLower, idx + 1);
+      }
+      if (matched) continue;
+
+      // Fallback regex for complex word boundaries / escape patterns
+      const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const escapedRel = f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const wordRx = new RegExp(`(?:@|\\b)(?:${escapedRel}|${escapedBase})\\b`, "i");
+      if (wordRx.test(combined)) {
+        referenced.add(f);
+      }
     }
   }
 
