@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import type { AgentToolDefinition } from "../src/shared/contracts.js";
 
+// Native protocol tests must not inherit the developer's local JSON profile.
+function nativeGateway(transport?: ConstructorParameters<typeof ModelGateway>[0]) {
+  return new ModelGateway(transport, new Map([["primary-model", {
+    id: "primary-model", runtime: "mlx-lm", baseUrl: "http://127.0.0.1:1234/v1", model: "test-model",
+    capabilities: ["text", "structured-output", "code-generation"], requestTimeoutMs: 60000,
+    healthPath: "/models", enabled: true, toolCallingFormat: "native",
+  }]]));
+}
+
 const sampleTools: AgentToolDefinition[] = [
   {
     type: "function",
@@ -52,7 +61,7 @@ describe("ModelGateway.chatWithTools", () => {
       },
     };
 
-    const gateway = new ModelGateway(mockTransport);
+    const gateway = nativeGateway(mockTransport);
     const result = await gateway.chatWithTools(
       "draft-qwen3",
       [
@@ -96,7 +105,7 @@ describe("ModelGateway.chatWithTools", () => {
       },
     };
 
-    const gateway = new ModelGateway(mockTransport);
+    const gateway = nativeGateway(mockTransport);
     const result = await gateway.chatWithTools(
       "draft-qwen3",
       [
@@ -114,7 +123,7 @@ describe("ModelGateway.chatWithTools", () => {
   });
 
   it("preserves provider finish_reason for the agent loop", async () => {
-    const gateway = new ModelGateway({
+    const gateway = nativeGateway({
       async request() {
         return { status: 200, async text() {
           return JSON.stringify({ choices: [{ message: { role: "assistant", content: "partial" }, finish_reason: "length" }] });
@@ -162,7 +171,7 @@ describe("ModelGateway.chatWithTools", () => {
       },
     };
 
-    const gateway = new ModelGateway(mockTransport);
+    const gateway = nativeGateway(mockTransport);
     const result = await gateway.chatWithTools(
       "draft-qwen3",
       [
@@ -206,7 +215,7 @@ describe("ModelGateway.chatWithTools", () => {
       },
     };
 
-    const gateway = new ModelGateway(mockTransport);
+    const gateway = nativeGateway(mockTransport);
 
     // Multi-turn messages containing agent internal fields (turn, toolName, arguments object)
     const multiTurnMessages = [
@@ -300,7 +309,7 @@ describe("ModelGateway.chatWithTools", () => {
       },
     };
 
-    const gateway = new ModelGateway(mockTransport);
+    const gateway = nativeGateway(mockTransport);
     const result = await gateway.chatWithTools(
       "code-qwen25coder",
       [{ role: "user", content: "Update rate limiter" }],
@@ -341,7 +350,7 @@ describe("ModelGateway.chatWithTools", () => {
       },
     };
 
-    const gateway = new ModelGateway(mockTransport);
+    const gateway = nativeGateway(mockTransport);
     const result = await gateway.chatWithTools(
       "code-qwen25coder",
       [{ role: "user", content: "Inspect app.js" }],
@@ -389,7 +398,7 @@ describe("ModelGateway.chatWithTools", () => {
       },
     };
 
-    const gateway = new ModelGateway(mockTransport);
+    const gateway = nativeGateway(mockTransport);
     const result = await gateway.chatWithTools(
       "draft-qwen3",
       [{ role: "user", content: "Say hello" }],
@@ -429,7 +438,7 @@ describe("ModelGateway.chatWithTools", () => {
     });
 
     // Directly test ModelGateway default nativeTransport streamRequest
-    const gateway = new ModelGateway();
+    const gateway = nativeGateway();
     // Override global fetch temporarily for this test
     const origFetch = global.fetch;
     global.fetch = async () =>

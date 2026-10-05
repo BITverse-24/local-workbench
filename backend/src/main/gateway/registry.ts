@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { ModelConfigRow, ModelId, ModelRegistryEntry } from "../../shared/contracts.js";
 import { getSetting } from "../persistence/settings-store.js";
 
-const entry = z.object({ id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1).optional(), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
+const entry = z.object({ id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1).optional(), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), toolCallingFormat: z.enum(["native", "json"]).optional(), temperature: z.number().min(0).max(2).optional(), contextLength: z.number().int().positive().max(128000).optional(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
 const config = z.object({ $comment: z.string().optional(), models: z.array(entry).min(1) }).strict();
 
 
@@ -36,6 +36,10 @@ export function sanitizeHost(host: string): string {
 }
 
 export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntry[] {
+  // Preserve endpoint-specific transport and generation settings when restoring
+  // the same selected endpoint from onboarding. Selection still comes from rows.
+  let profiles: ModelRegistryEntry[] = [];
+  try { profiles = Array.from(loadRegistry().values()); } catch { /* No file profile configured. */ }
   const eligible = rows.filter((row) => row.role !== "embedding" && row.modelName?.trim());
   // New settings use generic primary rows. Collapse old role-specific settings
   // to their former general model so legacy specialist rows do not route work.
@@ -50,12 +54,17 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
   }).map((row, index) => {
     const host = sanitizeHost(row.host);
     const port = row.port || 11434;
+    const baseUrl = `http://${host}:${port}/v1`;
+    const profile = profiles.find(candidate => candidate.model === row.modelName && candidate.baseUrl.replace(/\/$/, "") === baseUrl);
     return {
       id: index === 0 ? "primary-model" : `model-${index + 1}`, runtime: "ollama",
-      baseUrl: `http://${host}:${port}/v1`, model: row.modelName,
-      capabilities: ["text", "image-input", "structured-output", "code-generation"],
+      baseUrl, model: row.modelName,
+      capabilities: profile?.capabilities ?? ["text", "image-input", "structured-output", "code-generation"],
       requestTimeoutMs: 300000, healthPath: "/models", enabled: true,
-      maxOutputTokens: row.contextLength || 8192,
+      contextLength: row.contextLength || 8192,
+      maxOutputTokens: profile?.maxOutputTokens ?? (row.contextLength || 8192),
+      ...(profile?.toolCallingFormat ? { toolCallingFormat: profile.toolCallingFormat } : {}),
+      ...(profile?.temperature !== undefined ? { temperature: profile.temperature } : {}),
     };
   });
 }
@@ -90,7 +99,7 @@ export function loadProductionRegistryEntriesFromDb(dbModels?: ModelConfigRow[])
     return buildRegistryFromRows(rows);
   }
 
-  return Array.from(defaultLocalRegistry().values());
+  try { return Array.from(loadRegistry().values()); } catch { return Array.from(defaultLocalRegistry().values()); }
 }
 
 export function loadProductionRegistryFromDb(dbModels?: ModelConfigRow[]): Map<ModelId, ModelRegistryEntry> {

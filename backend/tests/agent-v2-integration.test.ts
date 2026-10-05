@@ -33,7 +33,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     const events: RunEvent[] = [];
 
     const mockGateway = {
-      async execute() { return { ok: true, value: { result: { intentType: "general_qa", driverModel: "draft-qwen3", taskType: "draft", primaryGoal: "Calculate thermal efficiency", isActionable: false, chatResponseOnly: true, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [] } } }; },
+      async execute() { return { ok: true, value: { result: { intentType: "general_qa", driverModel: "primary-model", taskType: "draft", primaryGoal: "Calculate thermal efficiency", isActionable: false, chatResponseOnly: true, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [] } } }; },
       async chatWithTools() {
         return {
           ok: true,
@@ -55,7 +55,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true), { timeout: 2000 });
 
     // Verify routing and thinking events
-    expect(events.some((e) => e.type === "routing" && e.modelId === "draft-qwen3")).toBe(true);
+    expect(events.some((e) => e.type === "routing" && e.modelId === "primary-model")).toBe(true);
     expect(events.some((e) => e.type === "agent_thinking")).toBe(true);
     expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
     expect(getRunContract(started.runId)?.objective).toBe("Calculate thermal efficiency");
@@ -66,7 +66,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("uses a persisted contract and native result retrieval through the active V2 loop without classification", async () => {
+  it("uses a persisted contract and native result retrieval through the active V2 loop after semantic classification", async () => {
     tempDir = mkdtempSync(path.join(process.cwd(), ".tmp-v2-memory-"));
     process.env.WORKBENCH_DATA_ROOT = path.join(tempDir, "data"); process.env.WORKBENCH_AGENT_V2 = "true";
     initDb(path.join(tempDir, "workbench.sqlite"));
@@ -96,7 +96,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     const manager = new RunManager(gateway, (e) => events.push(e));
     const { runId } = await manager.start({ userText: "Explain the source facts in chat; do not create deliverables." });
     await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true), { timeout: 3000 });
-    expect(classifications).toBe(0);
+    expect(classifications).toBe(1);
     expect(turns).toBe(3);
     expect(resultId).toMatch(/^[0-9a-f-]{36}$/);
     expect(getRunContract(runId)?.deliverables).toEqual([]);
@@ -113,7 +113,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     let callTurn = 0;
 
     const mockGateway = {
-      async execute() { return { ok: true, value: { result: { intentType: "code_modification", driverModel: "code-qwen25coder", taskType: "code", primaryGoal: "Write temp.txt", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: ["temp.txt"], expectedDeliverables: [] } } }; },
+      async execute() { return { ok: true, value: { result: { intentType: "code_modification", driverModel: "primary-model", taskType: "code", primaryGoal: "Write temp.txt", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: ["temp.txt"], expectedDeliverables: [] } } }; },
       async chatWithTools(_model: unknown, messages: any[]) {
         expect(messages[0].content).not.toContain("then validate the written implementation");
         callTurn++;
@@ -197,7 +197,7 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     let callTurn = 0;
 
     const mockGateway = {
-      async execute() { return { ok: true, value: { result: { intentType: "file_inspection", driverModel: "code-qwen25coder", taskType: "code", primaryGoal: "Search syntax errors", isActionable: false, chatResponseOnly: false, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [] } } }; },
+      async execute() { return { ok: true, value: { result: { intentType: "file_inspection", driverModel: "primary-model", taskType: "code", primaryGoal: "Search syntax errors", isActionable: false, chatResponseOnly: false, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [] } } }; },
       async chatWithTools() {
         callTurn++;
         if (callTurn === 1) {

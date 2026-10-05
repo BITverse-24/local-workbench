@@ -5,7 +5,7 @@ import path from "node:path";
 import type { AgentTool, ToolExecutionContext, ToolExecutionResult } from "./types.js";
 import { requestBase } from "../gateway/model-gateway.js";
 import { executePython } from "./python.js";
-import { generateDocx, generateXlsx, generateXlsxFromContent, verifyArtifactFile } from "./artifacts.js";
+import { generateDocx, generateXlsxFromContent, verifyArtifactFile } from "./artifacts.js";
 import { resolveRunPath, writeRunFile, artifactRef } from "../run/filesystem.js";
 import { extractContentArg, extractPathArg, findFileInRunDirectories } from "./workspace-tools.js";
 import type {
@@ -14,7 +14,6 @@ import type {
   CodeModelRequest,
   DraftModelRequest,
   ModelId,
-  PythonExecutionResult,
   VisionModelRequest,
 } from "../../shared/contracts.js";
 import { extractDocxText, extractPdfText } from "./document-reader.js";
@@ -411,7 +410,7 @@ export const retrieveKnowledgeTool: AgentTool = {
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Search query or standard identifier (e.g. 'SOP-114 tube wall thickness criteria', 'SOP-220 valve rating')." },
+          query: { type: "string", description: "Combined query for the required governing criteria." },
         },
         required: ["query"],
       },
@@ -462,14 +461,14 @@ export const executePythonTool: AgentTool = {
       parameters: {
         type: "object",
         properties: {
-          code: { type: "string", description: "The Python source code to execute." },
+          code: { type: "string", format: "multiline", description: "The complete Python source code to execute." },
           input_files: {
             type: "array",
             items: { type: "string" },
             description: "Filenames from run input directory to stage into sandbox.",
           },
           filename: { type: "string", description: "Name of the script file. Defaults to 'task.py'." },
-          validation_code: { type: "string", description: "Optional separate Python assertions, run after the repaired script succeeds. The dict 'repaired' contains the exact repaired script's functions (use repaired['function'](...)). Input files are available by filename. Derive assertions from the request and actual source data. Validation code is not included in the downloadable repaired source." },
+          validation_code: { type: "string", format: "multiline", description: "Optional separate Python assertions, run after the repaired script succeeds. The dict 'repaired' contains the exact repaired script's functions (use repaired['function'](...)). Input files are available by filename. Derive assertions from the request and actual source data. Validation code is not included in the downloadable repaired source." },
         },
         required: ["code"],
       },
@@ -477,16 +476,36 @@ export const executePythonTool: AgentTool = {
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
     let code = extractContentArg(args) || String(args.code ?? args.script ?? args.python_code ?? args.source ?? "");
-    if (code.includes("\\n") && !code.includes("\n")) {
-      code = code
-        .replace(/\\r\\n/g, "\n")
-        .replace(/\\n/g, "\n")
-        .replace(/\\t/g, "\t");
+    if (args.source_file !== undefined || args.edits !== undefined) {
+      const source = String(args.source_file ?? "");
+      if (!source || source !== path.basename(source) || !Array.isArray(args.edits) || !args.edits.length) {
+        throw { code: "invalid_arguments", retryable: true, message: "Source repair requires a run input filename and nonempty exact edits." };
+      }
+      const inputDirectory = resolveRunPath(context.runId, "input", "input");
+      const entry = readdirSync(inputDirectory).find(filename => filename === source || filename.endsWith(`-${source}`));
+      if (!entry) throw { code: "file_not_found", retryable: true, message: `Attached source not found: ${source}` };
+      code = readFileSync(resolveRunPath(context.runId, `input/${entry}`, "input"), "utf8");
+      for (const edit of args.edits) {
+        if (!edit || typeof edit.old !== "string" || !edit.old || typeof edit.new !== "string" || code.split(edit.old).length !== 2) {
+          throw { code: "invalid_arguments", retryable: true, message: "Each edit must supply old/new strings, with old matching exactly once in the source." };
+        }
+        const offset = code.indexOf(edit.old);
+        const lineStart = code.lastIndexOf("\n", offset - 1) + 1;
+        const prefix = code.slice(lineStart, offset);
+        let replacement = edit.new;
+        // Statement-sized edits use indentation relative to their source line.
+        // Preserve nested indentation while retaining the source block's prefix.
+        if (/^[ \t]*$/.test(prefix) && !/^[ \t]/.test(edit.old)) {
+          const lines = replacement.split("\n");
+          const nonempty = lines.filter((line: string) => line.trim());
+          const common = nonempty.length ? Math.min(...nonempty.map((line: string) => line.match(/^[ \t]*/)?.[0].length ?? 0)) : 0;
+          replacement = lines.map((line: string) => line.slice(common)).join(`\n${prefix}`);
+        }
+        code = code.replace(edit.old, () => replacement);
+      }
     }
-    // 1. Sanitize malformed f-string format specifiers (e.g. :>15,>10 or :>12,>10 or :>15,0>12 or :>12,0)
-    code = code.replace(/:([<>=^]?\d+)[,<>=^][^"'\n}]*(?=[}])/g, ":$1");
-    // Preserve model source. Rewriting subscription expressions breaks valid
-    // Python assignments such as counts["malformed"] += 1 and argv[1].
+    // JSON transport has already decoded strings. Keep executable source exact;
+    // a second escape decode or a speculative syntax rewrite changes behavior.
     if (!code.trim()) {
       throw new Error("execute_python requires 'code' (or 'script') containing Python source code to execute.");
     }
@@ -502,7 +521,10 @@ export const executePythonTool: AgentTool = {
       inputFiles = [path.basename(args.data_file.trim())];
     }
 
-    // Automatically stage run attachments if input_files is omitted or incomplete
+    // Explicit input_files define the command-line interface. Discover only when
+    // omitted; source attachments are not extra arguments to the repaired program.
+    const hasExplicitInputs = inputFiles.length > 0;
+    // Automatically stage run data attachments when input_files is omitted.
     const inputDir = resolveRunPath(context.runId, "input", "input");
     if (existsSync(inputDir)) {
       const entries = readdirSync(inputDir, { withFileTypes: true });
@@ -510,7 +532,7 @@ export const executePythonTool: AgentTool = {
         .filter((e: any) => e.isFile() && !e.name.startsWith("."))
         .map((e: any) => e.name.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, ""));
       for (const f of cleanFiles) {
-        if (!inputFiles.includes(f)) {
+        if (!hasExplicitInputs && !/\.(?:py|js|ts|sh)$/i.test(f) && !inputFiles.includes(f)) {
           inputFiles.push(f);
         }
       }
@@ -519,7 +541,7 @@ export const executePythonTool: AgentTool = {
     // Prioritize data files (.csv, .tsv, .json, .log, .txt, .dat, .xml, .xlsx) before code files (.py, .js, .ts)
     // so sys.argv[1] is the primary data file target for the script
     const isDataFile = (f: string) => /\.(csv|tsv|json|log|txt|dat|xml|xlsx)$/i.test(f);
-    inputFiles.sort((a, b) => {
+    if (!hasExplicitInputs) inputFiles.sort((a, b) => {
       const aData = isDataFile(a);
       const bData = isDataFile(b);
       if (aData && !bData) return -1;
@@ -674,6 +696,7 @@ export const generateDeliverableTool: AgentTool = {
           },
           content: {
             type: "string",
+            format: "multiline",
             description:
               "Complete Markdown document body, or exact source/text content for type='file'. Do not pass outlines or placeholder text.",
           },
@@ -702,6 +725,34 @@ export const generateDeliverableTool: AgentTool = {
     let type = String(effectiveArgs.type ?? effectiveArgs.kind ?? effectiveArgs.format ?? "").toLowerCase();
     let title = String(effectiveArgs.title ?? effectiveArgs.name ?? effectiveArgs.heading ?? "Deliverable");
     let content = extractContentArg(effectiveArgs) || String(effectiveArgs.content ?? effectiveArgs.body ?? effectiveArgs.text ?? effectiveArgs.markdown ?? "");
+    if (Array.isArray(effectiveArgs.report_rows)) {
+      const columns = ["source", "equipment", "measurements", "defects", "inspector_notes"];
+      const rows = effectiveArgs.report_rows;
+      if (!rows.length || rows.some(row => !row || typeof row !== "object" || columns.some(key => typeof row[key] !== "string"))) {
+        throw { code: "invalid_arguments", retryable: true, message: "report_rows requires source, equipment, measurements, defects and inspector_notes strings." };
+      }
+      const cell = (value: string) => value.replace(/\|/g, "\\|").replace(/\r?\n/g, "; ");
+      const requestedPages = context.sourceReferences?.map(reference => `${reference.filename}, page ${reference.page}`) ?? [];
+      if (requestedPages.some(source => !rows.some(row => row.source === source))) {
+        throw { code: "invalid_arguments", retryable: true, message: `The evidence report must cover every source page: ${requestedPages.join("; ")}.` };
+      }
+      content = [`# ${title}`, "", "| Equipment / source | Readings / limits | Findings / inspector notes |", "| --- | --- | --- |", ...rows.map(row => {
+        const cells = [
+          [row.equipment, row.source].filter(Boolean).join("; "), row.measurements,
+          [row.defects, row.inspector_notes ? `Inspector: ${row.inspector_notes}` : ""].filter(Boolean).join("; "),
+        ];
+        return `| ${cells.map(cell).join(" | ")} |`;
+      })].join("\n");
+      if (effectiveArgs.review_decisions !== undefined) {
+        const decisions = effectiveArgs.review_decisions;
+        const keys = ["equipment", "status", "required_actions", "citations"];
+        if (!Array.isArray(decisions) || !decisions.length || decisions.some(decision => !decision || keys.some(key => typeof decision[key] !== "string" || !decision[key].trim())) ||
+          rows.some(row => !decisions.some(decision => decision.equipment === row.equipment))) {
+          throw { code: "invalid_arguments", retryable: true, message: "review_decisions must include a nonempty status, required_actions and citations for every source equipment identifier." };
+        }
+        content += "\n\n## Clearance decisions\n" + decisions.map(decision => `- **${cell(decision.equipment)}**: ${cell(decision.status)}${/[.!?]$/.test(decision.status.trim()) ? "" : "."} ${cell(decision.required_actions)} ${cell(decision.citations)}`).join("\n");
+      }
+    }
     const rawFilename = String(effectiveArgs.filename ?? effectiveArgs.path ?? effectiveArgs.file ?? "");
     let filename = rawFilename;
 
@@ -729,8 +780,14 @@ export const generateDeliverableTool: AgentTool = {
       }
     }
 
+    if (type !== "file" && content.includes("\\n") && !content.includes("\n")) {
+      content = content.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n");
+    }
     if (!type) {
       type = filename.endsWith(".docx") ? "docx" : filename.endsWith(".xlsx") ? "xlsx" : "md";
+    }
+    if (!["docx", "xlsx", "md", "file"].includes(type)) {
+      throw { code: "invalid_arguments", retryable: true, message: `Unsupported deliverable type ${type}. Use docx, xlsx, md or file.` };
     }
     if (!filename) {
       filename = `deliverable.${type}`;
@@ -794,7 +851,7 @@ export const generateDeliverableTool: AgentTool = {
             if (r.type === "execution") {
               const slice = context.resultStore.retrieveResultSlice(r.resultId);
               if (slice.content && slice.content.length > 50) {
-                candidateFromStore = `# Financial Reconciliation Findings\n\n${slice.content}`;
+                candidateFromStore = `# Execution observations\n\n${slice.content}`;
                 break;
               }
             }
@@ -880,20 +937,8 @@ export const generateDeliverableTool: AgentTool = {
       const art = await generateDocx(context.runId, { title, body: content, sections: [] }, filename);
       artifacts.push(art);
     } else if (type === "xlsx") {
-      let art: ArtifactRef;
-      if (content && content.trim().length > 0) {
-        art = await generateXlsxFromContent(context.runId, content, filename, title);
-      } else {
-        const mockExec: PythonExecutionResult = {
-          exitCode: 0,
-          stdout: "",
-          stderr: "",
-          timedOut: false,
-          outputFiles: [],
-          durationMs: 0,
-        };
-        art = await generateXlsx(context.runId, mockExec, filename);
-      }
+      if (!content.trim()) throw new Error("Spreadsheet export requires complete source-derived content.");
+      const art = await generateXlsxFromContent(context.runId, content, filename, title);
       artifacts.push(art);
     } else {
       const intermediateDir = resolveRunPath(context.runId, "intermediate", "intermediate");
@@ -940,6 +985,7 @@ export const generateDeliverableTool: AgentTool = {
     return {
       output: `Deliverable "${filename}" (${primaryArt?.sizeBytes ?? 0} bytes) generated and verified. ${checkSummary}. Saved to disk at ${primaryArt?.relativePath || filename}. Deliverable creation is complete.`,
       summary: `Created deliverable: ${filename}`,
+      ...(["docx", "md"].includes(type) ? { data: { responseText: `${content}\n\nSaved: ${filename}.` } } : {}),
       artifacts,
       sideEffects: [`artifact:${filename}`],
     };

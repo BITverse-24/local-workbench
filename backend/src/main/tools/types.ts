@@ -70,6 +70,9 @@ export interface ToolExecutionContext {
   indexedKnowledgeSources?: Array<{ filename: string; docId: string }>;
   runContract?: RunContract;
   resultStore?: RunResultStore;
+  /** Results fully included in the current source evidence; no retrieval is needed. */
+  inlineResultIds?: Set<string>;
+  completeKnowledgeEvidence?: boolean;
   executionLedger?: RunExecutionLedger;
   verificationFeedback?: () => { key: string; text: string } | undefined;
   refreshVerificationReport?: () => void;

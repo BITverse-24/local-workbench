@@ -11,20 +11,7 @@ const ROOT = path.resolve(__dirname, "..");
 const WORKER_BUNDLE = path.join(ROOT, "tests/.runtime/build/worker.cjs");
 const SCHEMA_PATH = path.join(ROOT, "backend/src/main/persistence/schema.sql");
 
-const REGISTRY = [
-  {
-    id: "primary-model",
-    taskTypes: ["vision", "draft", "code"],
-    runtime: "ollama",
-    baseUrl: "http://127.0.0.1:1234/v1",
-    model: "qwen/qwen3.5-9b",
-    capabilities: ["text", "image-input", "structured-output", "code-generation"],
-    requestTimeoutMs: 300000,
-    healthPath: "/models",
-    enabled: true,
-    maxOutputTokens: 4096,
-  },
-];
+const REGISTRY = JSON.parse(fs.readFileSync(path.join(ROOT, "config/models.json"), "utf8")).models;
 
 const EMBEDDING = {
   baseUrl: "http://127.0.0.1:1234/v1",
@@ -179,7 +166,7 @@ class FlowRunner {
     } else if (e.type === "tool_result") {
       console.log(`✅ [${this.flowName}] Tool Result: ${e.tool} (${e.ok ? "SUCCESS" : "FAILED"})`);
     } else if (e.type === "artifact_ready") {
-      console.log(`📦 [${this.flowName}] Artifact Ready: ${e.filename} (${e.relativePath})`);
+      console.log(`📦 [${this.flowName}] Artifact Ready: ${e.artifact?.filename ?? e.filename} (${e.artifact?.relativePath ?? e.relativePath})`);
     } else if (e.type === "run_state") {
       console.log(`📍 [${this.flowName}] State: ${e.state}`);
     }

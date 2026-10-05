@@ -26,6 +26,7 @@ export interface BuildEnvelopeParams {
   mutationRequested?: boolean;
   commandExecutionRequested?: boolean;
   deliverableRequested?: boolean;
+  computationRequested?: boolean;
   /** Python source repairs export through execute_python, not the document generator. */
   pythonSourceRepair?: boolean;
 }
@@ -53,16 +54,16 @@ export function buildExecutionEnvelope(params: BuildEnvelopeParams): ExecutionEn
   const text = params.userPrompt ?? "";
 
   const mutationExplicit = Boolean(
-    params.mutationRequested ||
+    params.mutationRequested ?? (
     (params.hasWorkspace &&
       /\b(?:modify|edit|update|fix|repair|patch|refactor|change|write|delete|remove|create\s+file|save\s+to|replace)\b/i.test(text)) ||
-    /\b(?:write|modify|edit|update|patch|fix|delete|remove|create)\s+(?:to\s+|in\s+)?(?:file|[a-z0-9_.-]+\.[a-z0-9]+)\b/i.test(text),
+    /\b(?:write|modify|edit|update|patch|fix|delete|remove|create)\s+(?:to\s+|in\s+)?(?:file|[a-z0-9_.-]+\.[a-z0-9]+)\b/i.test(text)),
   );
 
   const commandExplicit = Boolean(
-    params.commandExecutionRequested ||
+    params.commandExecutionRequested ?? (
     (params.hasWorkspace &&
-      /\b(?:run|execute|test|npm|pip|build|bash|sh|pytest|vitest|compile|cargo|validat(?:e|ion)|make\s+sure|verify|verification)\b/i.test(text)),
+      /\b(?:run|execute|test|npm|pip|build|bash|sh|pytest|vitest|compile|cargo|validat(?:e|ion)|make\s+sure|verify|verification)\b/i.test(text))),
   );
 
   const mode: ExecutionMode =
@@ -106,20 +107,16 @@ export function buildExecutionEnvelope(params: BuildEnvelopeParams): ExecutionEn
   }
 
   // 4. Deliverables: active if output preference or prompt warrants deliverable creation
-  const deliverableExplicit =
-    (!params.pythonSourceRepair && params.deliverableRequested) ||
-    params.outputPreference === "artifact" ||
-    params.outputPreference === "chat_and_artifact" ||
-    /\b(?:approval\s*note|clearance\s*note|compliance\s*(?:note|review)|audit\s*memo|word\s*doc(?:x)?|spreadsheet|workbook|\.?docx\b|\.?xlsx\b|\.?pdf\b|\.md\b|report\.md|deliverable)\b/i.test(
-      text,
-    );
+  const deliverableExplicit = !params.pythonSourceRepair && (params.deliverableRequested ?? (
+    params.outputPreference === "artifact" || params.outputPreference === "chat_and_artifact" ||
+    /\b(?:approval\s*note|clearance\s*note|compliance\s*(?:note|review)|audit\s*memo|word\s*doc(?:x)?|spreadsheet|workbook|\.?docx\b|\.?xlsx\b|\.?pdf\b|\.md\b|report\.md|deliverable)\b/i.test(text)));
   if (deliverableExplicit) {
     active.add("artifact_generation");
   }
 
   // 5. Structured computation: active if prompt implies calculation/script execution on datasets/attachments
   const computationExplicit =
-    (params.pythonSourceRepair || /\b(?:python|script|execute|calculate|compute|analyze\s+data|run\s+analysis|pandas|numpy|reconcil)\b/i.test(text)) &&
+    (params.computationRequested ?? (params.pythonSourceRepair || /\b(?:python|script|execute|calculate|compute|analyze\s+data|run\s+analysis|pandas|numpy|reconcil)\b/i.test(text))) &&
     (attachments.length > 0 || params.hasWorkspace || Boolean(params.workspaceRoot));
   if (computationExplicit) {
     active.add("structured_computation");

@@ -1487,6 +1487,7 @@ export class ModelGateway implements ModelClient {
       timeoutMs?: number;
       onChunk?: (delta: string) => void;
       purpose?: InferencePurpose;
+      toolChoice?: "auto" | "required";
     },
   ): Promise<AIResult<AgentTurnResponse>> {
     const model = this.resolveNextEndpoint(modelId);
@@ -1512,7 +1513,7 @@ export class ModelGateway implements ModelClient {
       model.runtime === "llama-server";
 
     const endpointKey = `${model.baseUrl}:${model.model}`;
-    const knownSupportsTools = this.toolParamCapabilities.get(endpointKey) ?? true;
+    const knownSupportsTools = model.toolCallingFormat !== "json" && (this.toolParamCapabilities.get(endpointKey) ?? true);
     const effectiveTimeout = Math.max(options?.timeoutMs ?? 0, model.requestTimeoutMs ?? 0, 60000);
     const requestedMaxTokens = options?.maxTokens ?? model.maxOutputTokens ?? 4096;
     const effectiveMaxTokens = isLocal ? Math.min(requestedMaxTokens, 4096) : requestedMaxTokens;
@@ -1535,7 +1536,7 @@ export class ModelGateway implements ModelClient {
       Object.assign(payload, reasoningControl.params);
       if (tools.length > 0) {
         payload.tools = tools;
-        payload.tool_choice = "auto";
+        payload.tool_choice = options?.toolChoice ?? "auto";
       }
       if (options?.onChunk && this.transport.streamRequest) {
         payload.stream = true;
@@ -1700,12 +1701,21 @@ export class ModelGateway implements ModelClient {
     }
 
     // 2. Fallback Path: JSON-in-Prompt Emulation when native tools parameter is unsupported
-    const toolDescriptions = tools
+    // A line array avoids deeply escaped code/document strings on small local
+    // models. Decode it losslessly back to the canonical tool string at ingress.
+    const jsonTools = tools.map(tool => {
+      const parameters = tool.function.parameters as any;
+      const properties = Object.fromEntries(Object.entries(parameters.properties ?? {}).map(([name, value]) => {
+        const field = value as any;
+        return [name, field.format === "multiline" ? { type: "array", items: { type: "string" }, description: `${field.description} One string per line; preserve indentation. Empty lines are empty strings.` } : field];
+      }));
+      return { ...tool, function: { ...tool.function, parameters: { ...parameters, properties } } };
+    });
+    const toolDescriptions = jsonTools
       .map((t) => `- ${t.function.name}: ${t.function.description}\n  Arguments schema: ${JSON.stringify(t.function.parameters)}`)
       .join("\n\n");
 
-    const fallbackSystemPromptAddition = `\n\nAVAILABLE TOOLS:\n${toolDescriptions}\n\nTo use a tool, respond with JSON matching:\n{"content": "reasoning or response", "tool_calls": [{"name": "tool_name", "arguments": { ... }}]}\nIf no tool is needed, respond with:\n{"content": "your response", "tool_calls": null}`;
-
+    const fallbackSystemPromptAddition = `\n\nAVAILABLE TOOLS:\n${toolDescriptions}\n\nReturn JSON: {"tool_calls":[{"name": <available tool name>, "arguments": <schema fields>}], "content":""}. Emit each operation once. Multiline arguments are arrays of raw lines; preserve indentation, use empty strings for blank lines, and do not add newline escapes. ${options?.toolChoice === "required" ? "A required operation remains incomplete. Call its tool now." : "If no operation is needed, tool_calls is [] and content is your final response."}`;
     const fallbackMessages = formatMessagesForFallback(messages, fallbackSystemPromptAddition);
 
     try {
@@ -1714,7 +1724,7 @@ export class ModelGateway implements ModelClient {
         messages: fallbackMessages,
         temperature: effectiveTemperature,
         max_tokens: effectiveMaxTokens,
-        response_format: isLocal ? { type: "json_object" } : undefined,
+        response_format: isLocal ? { type: "text" } : undefined,
         ...resolveReasoningControl().params,
       });
 
@@ -1795,12 +1805,22 @@ export class ModelGateway implements ModelClient {
           }
         }
 
-        let finalContent = parsedJson?.content ? String(parsedJson.content) : (typeof rawContent === "string" ? rawContent : null);
+        let finalContent = typeof parsedJson?.content === "string" ? parsedJson.content : toolCalls.length ? null : (typeof rawContent === "string" ? rawContent : null);
         if (toolCalls.length === 0 && finalContent) {
           const embedded = extractEmbeddedToolCalls(finalContent);
           if (embedded.toolCalls.length > 0) {
             toolCalls.push(...embedded.toolCalls);
             finalContent = embedded.cleanedContent;
+          }
+        }
+        for (const call of toolCalls) {
+          const definition = tools.find(tool => tool.function.name === call.name);
+          const properties = (definition?.function.parameters as any)?.properties ?? {};
+          for (const [name, field] of Object.entries(properties)) {
+            const value = call.arguments[name];
+            if ((field as any).format === "multiline" && Array.isArray(value) && value.every(line => typeof line === "string")) {
+              call.arguments[name] = value.join("\n");
+            }
           }
         }
 

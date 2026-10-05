@@ -353,7 +353,7 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
     const routingEvt = runEvents.find((e) => e.type === "routing");
     expect(routingEvt).toBeDefined();
     expect(routingEvt?.taskType).toBe("draft");
-    expect(routingEvt?.modelId).toBe("draft-qwen3");
+    expect(routingEvt?.modelId).toBe("primary-model");
 
     // 2. Check tool execution events
     const inspectTool = runEvents.find((e) => e.type === "tool_result" && e.tool === "inspect_drawing");
@@ -393,7 +393,10 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
           capturedPrompt = typeof userMsg === "string" ? userMsg : JSON.stringify(userMsg);
 
           const complianceOutput = {
-            text: `### Drawing Compliance Evaluation\n\n| Parameter | Observed | Required | Status |\n|---|---|---|---|\n| XV-204 | Class 150 | Class 300 | NON-COMPLIANT |\n\nStatus: NOT APPROVED. Revisions required.`,
+            drawingId: "PID-P204-REV-C", approved: false, noApprovalClaim: true,
+            checks: [{ component: "XV-204", observed: "Class 150", required: "Class 300", status: "non_compliant", citation: "[SOP-220 §4.2]", reasoning: "150 is below 300." }],
+            correctiveAction: "Upgrade the valve before release.",
+            markdownNote: "Drawing is NOT APPROVED. Upgrade XV-204 per [SOP-220 §4.2].",
           };
 
           return {

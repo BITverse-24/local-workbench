@@ -29,6 +29,45 @@ export interface DocumentContentResult {
   summary: string;
 }
 
+/** Preserve the note immediately before a signed inspector/reviewer attribution. */
+export function extractAttributedDocumentNotes(text: string): Array<{ page: number; text: string }> {
+  const notes: Array<{ page: number; text: string }> = [];
+  let page = 1;
+  let previous = "";
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    const pageHeading = trimmed.match(/^--- Page (\d+) ---$/);
+    if (pageHeading) { page = Number(pageHeading[1]); previous = ""; continue; }
+    if (/^[-–—]\s+[^\n]{0,80}\b(?:inspector|reviewer|auditor|examiner)\b/i.test(trimmed) && previous) {
+      notes.push({ page, text: previous });
+    }
+    if (trimmed) previous = trimmed;
+  }
+  return notes;
+}
+
+/** Keep vertically aligned SVG labels together without assigning engineering meaning. */
+export function extractAlignedSvgLabels(raw: Buffer): string[] {
+  const labels: Array<{ x: number; fontSize: number; text: string; order: number }> = [];
+  for (const match of raw.toString("utf8").matchAll(/<text\b([^>]*)>[\s\S]*?<\/text>/gi)) {
+    const x = match[1].match(/\bx\s*=\s*["']([-+]?\d+(?:\.\d+)?)["']/i)?.[1];
+    if (x === undefined) continue;
+    const label = extractSvgText(Buffer.from(`<svg>${match[0]}</svg>`), null).trim();
+    if (!label) continue;
+    const fontSize = Number(match[1].match(/\bfont-size\s*=\s*["'](\d+(?:\.\d+)?)["']/i)?.[1] ?? 0);
+    labels.push({ x: Number(x), fontSize, text: label, order: labels.length });
+  }
+  // Drawing labels often have small left-edge offsets within the same column.
+  // Use the source's font size as alignment tolerance, with no tag/value rules.
+  const groups: typeof labels[] = [];
+  for (const label of [...labels].sort((a, b) => a.x - b.x)) {
+    const group = groups.find(column => Math.abs(column[0].x - label.x) <= Math.max(column[0].fontSize, label.fontSize));
+    if (group) group.push(label);
+    else groups.push([label]);
+  }
+  return groups.filter(column => column.length > 1).map(column => column.sort((a, b) => a.order - b.order).map(label => label.text).join(" | "));
+}
+
 async function loadPdfJs(): Promise<any> {
   try {
     const legacy: any = await import(/* @vite-ignore */ "pdfjs-dist/legacy/build/pdf.mjs");
@@ -306,7 +345,8 @@ export async function readDocumentContent(filePath: string): Promise<DocumentCon
       const raw = readFileSync(filePath);
       const svgText = extractSvgText(raw, null);
       if (svgText && svgText.trim().length > 0) {
-        const formatted = `[Document: ${base} (SVG Vector Drawing, ${svgText.length} characters)]\n\n${svgText}`;
+        const aligned = extractAlignedSvgLabels(raw);
+        const formatted = `[Document: ${base} (SVG Vector Drawing, ${svgText.length} characters)]\n\n${svgText}${aligned.length ? `\n\nVertically aligned source labels (verbatim):\n${aligned.join("\n")}` : ""}`;
         return {
           text: formatted,
           format: "svg",

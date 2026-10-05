@@ -21,6 +21,7 @@ export interface EnvironmentState {
   hasVisualAttachments?: boolean;
   hasKnowledgeBaseDocs: boolean;
   hasRetrievableResults?: boolean;
+  attachedSourceFiles?: string[];
 }
 
 /**
@@ -207,7 +208,7 @@ export function constrainToolsToIntent(
   }
 
   // 4. Avoid unnecessary specialist-tool overlap
-  if (isPureChat && !hasDeliverables) {
+  if (!hasDeliverables) {
     excluded.add("generate_deliverable");
   }
 
@@ -219,9 +220,8 @@ export function constrainToolsToIntent(
     excluded.add("generate_text");
   }
 
-  const computationRequested = /\b(?:python|calculate|compute|reconcil|pandas|numpy|script|math)\b/i.test(
-    `${intent.primaryGoal ?? ""} ${contract?.objective ?? ""}`
-  );
+  const computationRequested = intent.taskType === "code" || intent.intentType === "code_modification" ||
+    intent.intentType === "command_execution" || Boolean(intent.validationRequested);
   if ((intent.intentType === "file_inspection" || intent.intentType === "document_drafting" || chatOnly) && !computationRequested) {
     if (intent.intentType !== "command_execution" && intent.intentType !== "code_modification") {
       excluded.add("execute_python");
@@ -241,29 +241,35 @@ export function constrainToolsToIntent(
     ? (intent.expectedDeliverables ?? []).filter((file) => file.filename?.endsWith(".py")).map((file) => file.filename!)
     : [];
 
+  const strictPythonNames = (contract?.deliverables ?? intent.expectedDeliverables ?? []).filter(file => file.filenameRequired && file.filename?.endsWith(".py")).map(file => file.filename!);
   return tools.filter((tool) => !excluded.has(tool.name)).map((tool) => {
     if (tool.name !== "execute_python" || pythonDeliverables.length === 0) return tool;
     const parameters = tool.definition.function.parameters;
     const { validation_code: _validationCode, ...repairProperties } = parameters.properties ?? {};
+    const sourceFiles = !workspaceMutationRequested ? env?.attachedSourceFiles ?? [] : [];
+    const patchRepair = sourceFiles.length > 0;
+    const { code: _code, ...patchProperties } = repairProperties;
     return {
       ...tool,
       definition: {
         ...tool.definition,
         function: {
           ...tool.definition.function,
-          description: "Repair and export the requested Python source, then execute it against the supplied input files. code contains only the complete implementation. Add validation_code only when concise assertions can be based on the real inputs and function signature. A successful call already delivers the file; do not export it again.",
+          description: patchRepair ? "Apply exact text edits to the attached source, execute it on the data, and export the corrected file. Fix every documented defect; preserve unrelated code and the interface. Each old string must match once. A successful call already delivers the file." : "Repair and export the requested Python source, then execute it against the supplied input files. code contains only the complete implementation. A successful call already delivers the file; do not export it again.",
           parameters: {
             ...parameters,
-            required: ["code", "filename"],
+            required: patchRepair ? ["source_file", "edits", "filename"] : ["code", "filename"],
             properties: {
-              ...repairProperties,
-              filename: { type: "string", enum: pythonDeliverables },
+              ...(patchRepair ? patchProperties : repairProperties),
+              input_files: { type: "array", items: { type: "string" }, description: "Only runtime DATA arguments, in the original CLI order. The attached source is source_file, never an input argument." },
+              ...(patchRepair ? { source_file: { type: "string", enum: sourceFiles }, edits: { type: "array", description: "Exact old/new text replacements. For a statement, new uses indentation RELATIVE to old's line; the tool retains that line's indentation. Fix every documented defect, retain all other source text.", items: { type: "object", properties: { old: { type: "string" }, new: { type: "string" } }, required: ["old", "new"] } } } : {}),
+              filename: strictPythonNames.length ? { type: "string", enum: strictPythonNames } : { type: "string", description: `Source filename; the corrected export is ${pythonDeliverables.join(", ")}.` },
             },
           },
         },
       },
       async execute(args, context) {
-        if (!pythonDeliverables.includes(String(args.filename))) {
+        if (args.filename && !pythonDeliverables.includes(String(args.filename))) {
           const message = `Repair requires filename=${pythonDeliverables.join(" or ")} and code containing the repaired implementation. No operation was executed.`;
           return { ok: false, output: message, summary: "Repair validation arguments required", error: { code: "invalid_arguments", retryable: true, message } };
         }
@@ -271,7 +277,7 @@ export function constrainToolsToIntent(
         // source with the real attached inputs. Do not let speculative model
         // assertions turn successful execution into a false failure.
         const { validation_code: _validationCode, ...executionArgs } = args;
-        return tool.execute(executionArgs, context);
+        return tool.execute({ ...executionArgs, filename: args.filename ?? (pythonDeliverables.length === 1 ? pythonDeliverables[0] : undefined) }, context);
       },
     } satisfies AgentTool;
   });

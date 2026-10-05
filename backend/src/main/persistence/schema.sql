@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
   artifact_id   TEXT PRIMARY KEY,         -- uuid4
   run_id        TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   kind          TEXT NOT NULL CHECK (kind IN ('docx','pdf','xlsx','csv','txt','json','md')),
-  filename      TEXT NOT NULL,             -- e.g. approval-note-E201.docx
+  filename      TEXT NOT NULL,             -- request-derived output filename
   relative_path TEXT NOT NULL,             -- runs/<runId>/output/…
   size_bytes    INTEGER NOT NULL DEFAULT 0,
   sha256        TEXT,

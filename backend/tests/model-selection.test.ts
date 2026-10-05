@@ -173,7 +173,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
   });
 
   describe("RunManager Execution Lifecycles (V2)", () => {
-    it("Scenario: Simple Chat request -> No mandatory standalone task-classifier invocation", async () => {
+    it("Scenario: Simple Chat request -> semantic classification without tool work", async () => {
       tempDir = mkdtempSync(path.join(process.cwd(), ".tmp-p1-chat-"));
       process.env.WORKBENCH_DATA_ROOT = path.join(tempDir, "data");
       process.env.WORKBENCH_AGENT_V2 = "true";
@@ -224,8 +224,8 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
         { timeout: 2000 },
       );
 
-      // Verify zero classifier calls
-      expect(classifications).toBe(0);
+      // Interpret the request without keyword rules.
+      expect(classifications).toBe(1);
 
       // Verify routing event is configuration-driven
       const routingEvent = events.find((e) => e.type === "routing");
@@ -239,7 +239,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       expect(contract?.workspace.operations).toEqual([]);
     });
 
-    it("Scenario: Multi-model setup with explicit selection -> routes directly to selected model without classification", async () => {
+    it("Scenario: Multi-model setup with explicit selection -> interprets and executes with selected model", async () => {
       tempDir = mkdtempSync(path.join(process.cwd(), ".tmp-p1-explicit-"));
       process.env.WORKBENCH_DATA_ROOT = path.join(tempDir, "data");
       process.env.WORKBENCH_AGENT_V2 = "true";
@@ -250,9 +250,10 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       const events: RunEvent[] = [];
 
       const mockGateway = {
+        registry: new Map([["primary-model", { id: "primary-model", model: "first", enabled: true }], ["model-2", { id: "model-2", model: "second", enabled: true }]]),
         async execute() {
           classifications++;
-          return { ok: true, value: {} };
+          return { ok: true, value: { result: { intentType: "general_qa", taskType: "code", primaryGoal: "Explain quicksort", isActionable: false, chatResponseOnly: true, workspaceMutationRequested: false, expectedDeliverables: [] } } };
         },
         async chatWithTools(model: string) {
           modelUsedInChat = model;
@@ -282,7 +283,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       );
 
       // Model selection must be authoritative throughout execution
-      expect(classifications).toBe(0);
+      expect(classifications).toBe(1);
       expect(modelUsedInChat).toBe("model-2");
 
       const routingEvent = events.find((e) => e.type === "routing");

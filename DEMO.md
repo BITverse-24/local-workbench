@@ -1,5 +1,7 @@
 # Sovereign Workbench — SIH 2026 Demo Playbook & Script
 
+> **Current demo configuration (5 October 2026):** The CLI runs all three flows with the selected non-reasoning `qwen2.5-coder-7b-instruct-mlx` model in LM Studio. Run `npm run demo` for one trial per flow, or `npm run benchmark:demo` for six prompt variants per flow. See [verified results and timing](DEMO_LATENCY_REPORT.md). The older split-model routing examples below do not describe this configuration. The supplied inspection reports contain wall readings of 3.8–4.2 mm, a 4.6 mm minimum, and 1.8 mm pitting depth.
+
 > **Purpose of this document**: Step-by-step, click-by-click operational guide for running and demonstrating the three canonical evaluation flows (**Flow A**, **Flow B**, **Flow C**) of Sovereign Workbench for evaluators, PSU engineers, and industrial judges.
 >
 > Follow these instructions to reproduce deterministic model routing, multi-step agentic planning and repair loops, human-in-the-loop safety confirmation gates, local RAG evidence grounding, and verifiable air-gapped zero-egress operation.

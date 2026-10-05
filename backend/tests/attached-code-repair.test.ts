@@ -50,12 +50,13 @@ describe("Attached code repair scope and validation", () => {
     expect(intent.expectedDeliverables).toEqual([{ type: "file", filename: "fixed-reader.py", description: "Corrected attached source" }]);
   });
 
-  it("preserves the classifier's workspace and artifact decisions", () => {
+  it("preserves validated workspace scope without matching prompt keywords", () => {
     const raw = { intentType: "code_modification", primaryGoal: "Repair source", driverModel: "primary-model", taskType: "code", workspaceMutationRequested: true, isActionable: true, targetFiles: [attachment.filename] };
     const context = { hasWorkspace: true, workspaceFiles: ["reader.py"], attachments: [attachment], userPrompt: prompt };
-    expect(validateAndNormalizeIntent(raw, context).workspaceMutationRequested).toBe(false);
-    expect(validateAndNormalizeIntent(raw, { ...context, userPrompt: "Fix the attached source and write it into the workspace." }).workspaceMutationRequested).toBe(true);
-    expect(validateAndNormalizeIntent(raw, { ...context, userPrompt: "Fix reader.py using the attached source." }).workspaceMutationRequested).toBe(false);
+    expect(validateAndNormalizeIntent(raw, context).workspaceMutationRequested).toBe(true);
+    const standalone = { ...raw, workspaceMutationRequested: false, expectedDeliverables: [{ type: "file", filename: "fixed-reader.py" }] };
+    expect(validateAndNormalizeIntent(standalone, context).workspaceMutationRequested).toBe(false);
+    expect(validateAndNormalizeIntent(standalone, context).targetFiles).toEqual([]);
   });
 
   it("uses semantic classification for constraints and keeps attachment repair isolated", async () => {

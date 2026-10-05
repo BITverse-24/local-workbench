@@ -6,8 +6,8 @@ import type { ModelRegistryEntry } from "../src/shared/contracts.js";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { resolveSemanticIntent, validateAndNormalizeIntent } from "../src/main/router/contextual-router.js";
 
-const registry: ModelRegistryEntry[] = [{ id: "draft-qwen3", taskTypes: ["draft"], runtime: "ollama", baseUrl: "http://127.0.0.1:1234/v1", model: "fixture-reasoning-model", capabilities: ["text", "structured-output"], requestTimeoutMs: 180000, healthPath: "/models", enabled: true }];
-const artifactIntent = { intentType: "code_modification", taskType: "code", driverModel: "code-qwen25coder", primaryGoal: "Repair attached reader", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: false, targetFiles: [], protectedPaths: [], restrictMutationsToTargets: false, expectedDeliverables: [{ filename: "fixed-reader.py", type: "file" }] };
+const registry: ModelRegistryEntry[] = [{ id: "primary-model", taskTypes: ["draft"], runtime: "ollama", baseUrl: "http://127.0.0.1:1234/v1", model: "fixture-reasoning-model", capabilities: ["text", "structured-output"], requestTimeoutMs: 180000, healthPath: "/models", enabled: true }];
+const artifactIntent = { intentType: "code_modification", taskType: "code", driverModel: "primary-model", primaryGoal: "Repair attached reader", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: false, targetFiles: [], protectedPaths: [], restrictMutationsToTargets: false, expectedDeliverables: [{ filename: "fixed-reader.py", type: "file" }] };
 
 describe("Production intent classifier request and failure boundaries", () => {
   let tempDir: string;
@@ -24,12 +24,12 @@ describe("Production intent classifier request and failure boundaries", () => {
     else process.env.WORKBENCH_DATA_ROOT = previousDataRoot;
     rmSync(tempDir, { recursive: true, force: true });
   });
-  it("sends non-reasoning schema-constrained classification with its own deadline", async () => {
+  it("sends non-reasoning JSON-constrained classification with its own deadline", async () => {
     const transport = { request: vi.fn(async (_url: string, init: any, timeoutMs: number) => {
       const payload = JSON.parse(init.body);
       expect(payload.reasoning_effort).toBe("none");
       expect(payload.response_format.type).toBe("json_schema");
-      expect(payload.response_format.json_schema.schema.properties.expectedDeliverables.items.properties.type.enum).toContain("file");
+      expect(payload.response_format.json_schema.schema).toEqual({ type: "object" });
       expect(timeoutMs).toBe(60000);
       expect(payload.max_tokens).toBe(768);
       return { status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify(artifactIntent), reasoning_content: "" }, finish_reason: "stop" }] }) };

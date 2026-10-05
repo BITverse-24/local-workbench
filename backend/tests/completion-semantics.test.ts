@@ -495,7 +495,7 @@ describe("P0-02: Truthful Completion Semantics", () => {
 
       const events: RunEvent[] = [];
       const mockGateway = {
-        async execute() { return { ok: true, value: { result: { intentType: "document_drafting", driverModel: "draft-qwen3", taskType: "draft", primaryGoal: "Draft approval note", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [{ type: "docx", filename: "approval-note.docx" }] } } }; },
+        async execute() { return { ok: true, value: { result: { intentType: "document_drafting", driverModel: "primary-model", taskType: "draft", primaryGoal: "Draft approval note", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [{ type: "docx", filename: "approval-note.docx" }] } } }; },
         async chatWithTools() {
           // Model finishes without creating requested docx
           return {

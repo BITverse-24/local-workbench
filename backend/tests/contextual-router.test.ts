@@ -75,41 +75,23 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
     expect(intent.isActionable).toBe(true);
   });
 
-  it("keeps attached code repair in run output unless the user requests a workspace destination", async () => {
-    const mockGateway = {
-      async execute() {
-        return { ok: true, value: { result: {
-          intentType: "code_modification", taskType: "code", driverModel: "primary-model",
-          primaryGoal: "Repair the attached parser", targetFiles: ["broken-parser.py"],
-          workspaceMutationRequested: true, isActionable: true, validationRequested: true,
-          successMarker: "exit 0",
-          workspaceOperations: [{ operation: "mutate", targetPath: "broken-parser.py" }],
-        } } };
-      },
-    };
+  it("preserves semantic attachment destinations and explicit workspace scope", async () => {
+    const responses = [
+      { workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [{ filename: "fixed-parser.py", type: "file" }], workspaceOperations: [] },
+      { workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [{ filename: "vendor-log-parser.py", type: "file", filenameRequired: true }], workspaceOperations: [] },
+      { workspaceMutationRequested: true, targetFiles: ["broken-parser.py"], expectedDeliverables: [], workspaceOperations: [{ operation: "write", targetPath: "broken-parser.py" }] },
+    ];
+    const gateway = { async execute() { return { ok: true, value: { result: { intentType: "code_modification", taskType: "code", primaryGoal: "Repair attached parser", isActionable: true, chatResponseOnly: false, ...responses.shift() } } }; } };
     const attachment = { attachmentId: "parser", filename: "broken-parser.py", mediaType: "text/x-python", sizeBytes: 80, relativePath: "input/broken-parser.py" };
-    const standalone = await resolveSemanticIntent({
-      userPrompt: "Repair the attached Python parser and run it against the CSV.",
-      attachments: [attachment], hasWorkspace: true, workspaceFiles: ["broken-parser.py"],
-    }, mockGateway as any);
+    const input = { attachments: [attachment], hasWorkspace: true, workspaceFiles: ["broken-parser.py"] };
+    const standalone = await resolveSemanticIntent({ ...input, userPrompt: "Repair the attached parser and check the CSV." }, gateway as any);
     expect(standalone.workspaceMutationRequested).toBe(false);
-    expect(standalone.targetFiles).toEqual([]);
-    expect(standalone.workspaceOperations).toEqual([]);
-    expect(standalone.expectedDeliverables[0]?.filename).toBe("fixed-parser.py");
-    expect(standalone.successMarker).toBeUndefined();
-
-    const namedOutput = await resolveSemanticIntent({
-      userPrompt: "Repair the attached Python parser and save the corrected standalone script as vendor-log-parser.py.",
-      attachments: [attachment], hasWorkspace: true, workspaceFiles: ["broken-parser.py"],
-    }, mockGateway as any);
-    expect(namedOutput.expectedDeliverables[0]?.filename).toBe("vendor-log-parser.py");
-
-    const workspaceEdit = await resolveSemanticIntent({
-      userPrompt: "Repair the attached Python parser and write the corrected file into my workspace.",
-      attachments: [attachment], hasWorkspace: true, workspaceFiles: ["broken-parser.py"],
-    }, mockGateway as any);
-    expect(workspaceEdit.workspaceMutationRequested).toBe(true);
-    expect(workspaceEdit.targetFiles).toContain("broken-parser.py");
+    expect(standalone.expectedDeliverables[0].filename).toBe("fixed-parser.py");
+    const named = await resolveSemanticIntent({ ...input, userPrompt: "Please return the repair as vendor-log-parser.py." }, gateway as any);
+    expect(named.expectedDeliverables[0].filename).toBe("vendor-log-parser.py");
+    const workspace = await resolveSemanticIntent({ ...input, userPrompt: "Put the corrected source in my workspace." }, gateway as any);
+    expect(workspace.workspaceMutationRequested).toBe(true);
+    expect(workspace.targetFiles).toEqual(["broken-parser.py"]);
   });
 
   it("handles pre-parsed object results from gateway planner without throwing SyntaxError", async () => {
