@@ -72,7 +72,7 @@ export const REFERENTIAL_FOLLOWUP_PATTERN =
   /\b(the artifact|the artefact|the deliverable|earlier|previous artifact|just generated|which you just|generated earlier)\b/i;
 
 export const DRAFTING_INTENT_PATTERNS =
-  /\b(approval note|review note|audit memo|audit note|corrective[- ]action note|draft (?:an? )?(?:note|memo|letter|report|document|brief|summary|proposal)|write (?:an? )?(?:approval note|review note|audit memo|compliance note|memo|formal note|letter|recommendation)|nuclear reactor shutdown|maintenance shutdown|word document|\.docx|docx\b|executive summary|formal note|compliance note|clearance note|incident report|briefing note)\b/i;
+  /\b(approval note|review note|audit memo|audit note|corrective[- ]action note|draft (?:an? )?(?:note|memo|letter|report|document|brief|summary|proposal)|write (?:an? )?(?:approval note|review note|audit memo|compliance note|memo|formal note|letter|recommendation)|word document|\.docx|docx\b|executive summary|formal note|compliance note|clearance note|incident report|briefing note)\b/i;
 
 export const SOP_REFERENCE = /\bSOP[-\s]?\d+/i;
 export const GROUNDING_KEYWORDS =
@@ -601,12 +601,12 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
     );
     const isDrawing =
       hasSvgAttachment ||
-      mediaAttachments.some((a) => /\b(drawing|p&id|schematic|diagram|skid|blueprint|pump-skid)\b/i.test(a.filename ?? "")) ||
-      /\b(drawing|p&id|schematic|diagram|skid|blueprint|piping spec|piping)\b/i.test(lower);
+      mediaAttachments.some((a) => /\b(drawing|p&id|schematic|diagram|blueprint)\b/i.test(a.filename ?? "")) ||
+      /\b(drawing|p&id|schematic|diagram|blueprint)\b/i.test(lower);
 
     const isDrawingComplianceReview =
       isDrawing &&
-      /\b(against (?:the |our )?(?:piping )?spec|non[- ]compliant|compliance review|compliance finding|against (?:the |our )?standard|against (?:the |our )?sop|check.+against|piping spec)\b/i.test(
+      /\b(against .{0,30}\b(?:spec|specification|standard|sop)\b|non[- ]compliant|compliance review|compliance finding|compliance|check.{0,40}\bagainst\b)\b/i.test(
         lower,
       );
 
@@ -680,7 +680,7 @@ function computeClassifyIntent(input: ClassifyIntentInput): IntentDecision {
       hasDirectoryContext ||
       /\b(delete|deleted|deleting|remove|removed|removing|clean|cleaned|wipe|purge|workspace|directory)\b/i.test(lower));
 
-  // Case E: Python script + CSV / log repair intent (Flow B)
+  // Attached source-code repair intent
   const hasPythonAttachment = allAttachments.some(
     (a) => a.filename?.endsWith(".py") || a.mediaType === "text/x-python" || a.mediaType === "application/x-python-code",
   );

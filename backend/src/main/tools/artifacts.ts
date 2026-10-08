@@ -525,7 +525,7 @@ export interface DocxDraftInput {
   sections?: Array<{ id?: string; heading?: string; body?: string }>;
   citations?: Array<{ label?: string; supportingExcerpt?: string; inlineText?: string }>;
   metadata?: Record<string, string>;
-  findings?: Array<{ item?: string; measurement?: string; condition?: string; status?: string }>;
+  findings?: Array<{ identifier?: string; observation?: string; requirement?: string; assessment?: string; action?: string; evidence?: string; item?: string; measurement?: string; condition?: string; status?: string }>;
 }
 
 /**
@@ -1099,130 +1099,53 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
     children.push(...renderMarkdownToDocxElements(data.body));
   }
 
-  // Findings Table (if present) with explicit DXA column widths
+  // Findings table with a generic, traceable inspection structure.
   if (data.findings && data.findings.length > 0) {
     children.push(
       new Paragraph({
         heading: HeadingLevel.HEADING_2,
         spacing: { before: 240, after: 120 },
-        children: [new TextRun({ text: "Inspection Findings Summary", bold: true, size: 20 })],
+        children: [new TextRun({ text: "Findings", bold: true, size: 20 })],
       }),
     );
 
-    const findingColWidths = [2400, 2000, 3400, 1560]; // Sum = 9360 dxa
+    const findingColWidths = [1560, 1560, 1560, 1560, 1560, 1560];
+    const headers = ["Identifier", "Observation", "Requirement", "Assessment", "Action", "Evidence"];
+    const makeCell = (text: string, width: number, header = false) => new TableCell({
+      width: { size: width, type: WidthType.DXA },
+      ...(header ? { shading: { fill: "F1F5F9" } } : {}),
+      margins: { top: header ? 120 : 100, bottom: header ? 120 : 100, left: 100, right: 100 },
+      borders: {
+        top: { style: BorderStyle.SINGLE, size: 4, color: header ? "CBD5E1" : "E2E8F0" },
+        bottom: { style: BorderStyle.SINGLE, size: header ? 6 : 4, color: header ? "94A3B8" : "E2E8F0" },
+        left: { style: BorderStyle.SINGLE, size: 4, color: header ? "CBD5E1" : "E2E8F0" },
+        right: { style: BorderStyle.SINGLE, size: 4, color: header ? "CBD5E1" : "E2E8F0" },
+      },
+      children: [new Paragraph({ children: parseInlineFormatting(text || "-", 18, header) })],
+    });
     const tableHeader = new TableRow({
       tableHeader: true,
-      children: [
-        new TableCell({
-          width: { size: findingColWidths[0], type: WidthType.DXA },
-          shading: { fill: "F1F5F9" },
-          margins: { top: 120, bottom: 120, left: 150, right: 150 },
-          borders: {
-            top: { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" },
-            bottom: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
-            left: { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" },
-            right: { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" },
-          },
-          children: [new Paragraph({ children: [new TextRun({ text: "Item / Location", bold: true, size: 18 })] })],
-        }),
-        new TableCell({
-          width: { size: findingColWidths[1], type: WidthType.DXA },
-          shading: { fill: "F1F5F9" },
-          margins: { top: 120, bottom: 120, left: 150, right: 150 },
-          borders: {
-            top: { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" },
-            bottom: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
-            left: { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" },
-            right: { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" },
-          },
-          children: [new Paragraph({ children: [new TextRun({ text: "Measurement", bold: true, size: 18 })] })],
-        }),
-        new TableCell({
-          width: { size: findingColWidths[2], type: WidthType.DXA },
-          shading: { fill: "F1F5F9" },
-          margins: { top: 120, bottom: 120, left: 150, right: 150 },
-          borders: {
-            top: { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" },
-            bottom: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
-            left: { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" },
-            right: { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" },
-          },
-          children: [new Paragraph({ children: [new TextRun({ text: "Condition / Obs", bold: true, size: 18 })] })],
-        }),
-        new TableCell({
-          width: { size: findingColWidths[3], type: WidthType.DXA },
-          shading: { fill: "F1F5F9" },
-          margins: { top: 120, bottom: 120, left: 150, right: 150 },
-          borders: {
-            top: { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" },
-            bottom: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
-            left: { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" },
-            right: { style: BorderStyle.SINGLE, size: 4, color: "CBD5E1" },
-          },
-          children: [new Paragraph({ children: [new TextRun({ text: "Status", bold: true, size: 18 })] })],
-        }),
-      ],
+      children: headers.map((header, index) => makeCell(header, findingColWidths[index], true)),
+    });
+    const findingRows = data.findings.map((finding) => {
+      const values = [
+        finding.identifier ?? finding.item,
+        finding.observation ?? finding.condition ?? finding.measurement,
+        finding.requirement,
+        finding.assessment ?? finding.status,
+        finding.action,
+        finding.evidence,
+      ];
+      return new TableRow({
+        children: values.map((value, index) => makeCell(value || "-", findingColWidths[index])),
+      });
     });
 
-    const findingRows = data.findings.map(
-      (f) =>
-        new TableRow({
-          children: [
-            new TableCell({
-              width: { size: findingColWidths[0], type: WidthType.DXA },
-              margins: { top: 100, bottom: 100, left: 150, right: 150 },
-              borders: {
-                top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-                bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-                left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-                right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              },
-              children: [new Paragraph({ children: parseInlineFormatting(f.item || "-", 18) })],
-            }),
-            new TableCell({
-              width: { size: findingColWidths[1], type: WidthType.DXA },
-              margins: { top: 100, bottom: 100, left: 150, right: 150 },
-              borders: {
-                top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-                bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-                left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-                right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              },
-              children: [new Paragraph({ children: parseInlineFormatting(f.measurement || "-", 18) })],
-            }),
-            new TableCell({
-              width: { size: findingColWidths[2], type: WidthType.DXA },
-              margins: { top: 100, bottom: 100, left: 150, right: 150 },
-              borders: {
-                top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-                bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-                left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-                right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              },
-              children: [new Paragraph({ children: parseInlineFormatting(f.condition || "-", 18) })],
-            }),
-            new TableCell({
-              width: { size: findingColWidths[3], type: WidthType.DXA },
-              margins: { top: 100, bottom: 100, left: 150, right: 150 },
-              borders: {
-                top: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-                bottom: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-                left: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-                right: { style: BorderStyle.SINGLE, size: 4, color: "E2E8F0" },
-              },
-              children: [new Paragraph({ children: parseInlineFormatting(f.status || "-", 18) })],
-            }),
-          ],
-        }),
-    );
-
-    children.push(
-      new Table({
-        width: { size: 9360, type: WidthType.DXA },
-        columnWidths: findingColWidths,
-        rows: [tableHeader, ...findingRows],
-      }),
-    );
+    children.push(new Table({
+      width: { size: 9360, type: WidthType.DXA },
+      columnWidths: findingColWidths,
+      rows: [tableHeader, ...findingRows],
+    }));
     children.push(new Paragraph({ spacing: { after: 240 } }));
   }
 
@@ -1250,15 +1173,13 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
   }
 
   // Signature Block with explicit DXA column widths (2 columns: 4680, 4680 dxa)
-  const isApprovalDoc =
-    Boolean(data.metadata?.["Prepared By Title"] || data.metadata?.["Approved By Title"]) ||
-    /\b(?:approval|compliance|formal|sign-?off)\b/i.test(docTitle);
+  const isApprovalDoc = Boolean(data.metadata?.["Prepared By Title"] || data.metadata?.["Approved By Title"]);
   const bodyAlreadyHasSignoff =
     Boolean(data.body && /\b(?:sign-?off|prepared by|approved by)\b/i.test(data.body));
 
   if (isApprovalDoc && !bodyAlreadyHasSignoff) {
-    const preparedByTitle = data.metadata?.["Prepared By Title"] || "Inspection Engineer / Technical Lead";
-    const approvedByTitle = data.metadata?.["Approved By Title"] || "Competent Authority / Plant Manager";
+    const preparedByTitle = data.metadata?.["Prepared By Title"];
+    const approvedByTitle = data.metadata?.["Approved By Title"];
 
     children.push(new Paragraph({ spacing: { before: 360, after: 120 } }));
     children.push(
@@ -1278,10 +1199,12 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
                   right: { style: BorderStyle.NONE },
                 },
                 children: [
-                  new Paragraph({ children: [new TextRun({ text: "Prepared By:", bold: true, size: 18 })] }),
-                  new Paragraph({ children: [new TextRun({ text: "___________________________", size: 18 })] }),
-                  new Paragraph({ children: [new TextRun({ text: preparedByTitle, size: 18 })] }),
-                  new Paragraph({ children: [new TextRun({ text: `Date: ${currentDate}`, size: 18 })] }),
+                  ...(preparedByTitle ? [
+                    new Paragraph({ children: [new TextRun({ text: "Prepared By:", bold: true, size: 18 })] }),
+                    new Paragraph({ children: [new TextRun({ text: "___________________________", size: 18 })] }),
+                    new Paragraph({ children: [new TextRun({ text: preparedByTitle, size: 18 })] }),
+                    new Paragraph({ children: [new TextRun({ text: `Date: ${currentDate}`, size: 18 })] }),
+                  ] : []),
                 ],
               }),
               new TableCell({
@@ -1294,10 +1217,12 @@ export async function createDocxBuffer(input: DocxDraftInput | string): Promise<
                   right: { style: BorderStyle.NONE },
                 },
                 children: [
-                  new Paragraph({ children: [new TextRun({ text: "Approved By:", bold: true, size: 18 })] }),
-                  new Paragraph({ children: [new TextRun({ text: "___________________________", size: 18 })] }),
-                  new Paragraph({ children: [new TextRun({ text: approvedByTitle, size: 18 })] }),
-                  new Paragraph({ children: [new TextRun({ text: `Date: ${currentDate}`, size: 18 })] }),
+                  ...(approvedByTitle ? [
+                    new Paragraph({ children: [new TextRun({ text: "Approved By:", bold: true, size: 18 })] }),
+                    new Paragraph({ children: [new TextRun({ text: "___________________________", size: 18 })] }),
+                    new Paragraph({ children: [new TextRun({ text: approvedByTitle, size: 18 })] }),
+                    new Paragraph({ children: [new TextRun({ text: `Date: ${currentDate}`, size: 18 })] }),
+                  ] : []),
                 ],
               }),
             ],

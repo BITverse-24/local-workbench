@@ -49,20 +49,20 @@ export function getUsableConfiguredModels(
     const llmRows = rows.filter((r) => r.role !== "embedding" && r.modelName?.trim());
     if (llmRows.length > 0) {
       if (gateway && gateway.registry && gateway.registry.size > 0) {
-        const enabled = Array.from(gateway.registry.values()).filter((e) => e.enabled);
+        const enabled = Array.from(gateway.registry.values()).filter((e) => e.enabled && !e.fallbackOnly);
         if (enabled.length > 0) return enabled;
       }
-      return buildRegistryFromRows(llmRows);
+      return buildRegistryFromRows(llmRows).filter(entry => !entry.fallbackOnly);
     }
     return [];
   }
 
   if (gateway && gateway.registry && gateway.registry.size > 0) {
-    const enabled = Array.from(gateway.registry.values()).filter((e) => e.enabled);
+    const enabled = Array.from(gateway.registry.values()).filter((e) => e.enabled && !e.fallbackOnly);
     if (enabled.length > 0) return enabled;
   }
 
-  return Array.from(defaultLocalRegistry().values());
+  return Array.from(defaultLocalRegistry().values()).filter(entry => !entry.fallbackOnly);
 }
 
 /**

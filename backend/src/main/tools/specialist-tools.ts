@@ -1,12 +1,14 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { matchesContractDeliverable } from "../run/contract.js";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentTool, ToolExecutionContext, ToolExecutionResult } from "./types.js";
+import { resolveSafe } from "../harness/path-guard.js";
 import { requestBase } from "../gateway/model-gateway.js";
 import { executePython } from "./python.js";
+import { buildPythonBehaviorValidationRunner, buildPythonReturnValidationRunner } from "./python-contract.js";
 import { generateDocx, generateXlsxFromContent, verifyArtifactFile } from "./artifacts.js";
-import { resolveRunPath, writeRunFile, artifactRef } from "../run/filesystem.js";
+import { resolveRunPath, writeRunFile, artifactRef, dataRoot } from "../run/filesystem.js";
 import { extractContentArg, extractPathArg, findFileInRunDirectories } from "./workspace-tools.js";
 import type {
   ArtifactKind,
@@ -40,12 +42,12 @@ export const extractDocumentTool: AgentTool = {
     type: "function",
     function: {
       name: "extract_document",
-      description: "Extract text, measurements, handwritten annotations, and visual findings from an attached PDF, image, or engineering drawing.",
+      description: "Extract source text, tables, annotations and visual evidence from an attached document or image.",
       parameters: {
         type: "object",
         properties: {
           filename: { type: "string", description: "The filename of the attached document or image to inspect." },
-          query: { type: "string", description: "Specific extraction instruction or focus area (e.g. 'extract all tube wall thickness readings and handwritten notes')." },
+          query: { type: "string", description: "Specific extraction instruction or focus area from the user request." },
         },
         required: ["filename"],
       },
@@ -57,12 +59,12 @@ export const extractDocumentTool: AgentTool = {
     if (!cleanRawPath) {
       throw new Error(`extract_document requires a filename or path parameter. Received: ${JSON.stringify(args)}`);
     }
-    const query = String(args.query ?? args.prompt ?? args.instruction ?? args.focus ?? args.task ?? "Extract all findings, measurements, and annotations from this document.");
+    const query = String(args.query ?? args.prompt ?? args.instruction ?? args.focus ?? args.task ?? "Extract source text, tables, annotations and visual evidence from this document.");
 
     let filePath: string | null = null;
     if (context.workspaceRoot) {
       try {
-        const resolved = path.resolve(context.workspaceRoot, cleanRawPath);
+        const resolved = resolveSafe(context.workspaceRoot, cleanRawPath);
         if (existsSync(resolved)) filePath = resolved;
       } catch {}
     }
@@ -189,34 +191,40 @@ export const extractDocumentTool: AgentTool = {
       ? "image/jpeg"
       : "application/octet-stream";
 
-    const targetModelId = (context.gateway?.registry?.has("primary-model")
-      ? "primary-model"
-      : context.runContract?.routing.driverModel ?? "primary-model") as ModelId;
+    const entries = [...(context.gateway.registry?.values() ?? [])];
+    const preferred = entries.find(entry => entry.id === context.runContract?.routing.driverModel && entry.enabled && entry.capabilities.includes("image-input"));
+    const imageModel = preferred ?? entries.find(entry => entry.enabled && entry.capabilities.includes("image-input"));
+    if (!imageModel) throw new Error("Visual extraction requires an enabled model with image-input capability; none is configured.");
+    const targetModelId = imageModel.id;
 
     const base = requestBase(
       context.runId,
       "vision",
       targetModelId,
       "vision-result",
-      "You are a specialized multimodal engineering document inspector. Extract all text, tabular readings, handwritten notes, and component identifiers accurately.",
+      "Extract document text, tables, annotations and visual evidence accurately. Preserve source subjects, layout and page locations. Do not infer missing content.",
       query,
       60000,
-      4096,
-      0.1,
+      imageModel.maxOutputTokens ?? 1024,
+      imageModel.temperature ?? 0,
     );
 
+    const sourceRelativePath = path.relative(dataRoot(), filePath);
+    const attachmentPath = sourceRelativePath.startsWith("..") || path.isAbsolute(sourceRelativePath)
+      ? writeRunFile(context.runId, "intermediate", `${randomUUID()}-${filename}`, readFileSync(filePath))
+      : sourceRelativePath;
     const req: VisionModelRequest = {
       ...base,
       requestId: randomUUID(),
       taskType: "vision",
-      modelId: targetModelId as "primary-model",
+      modelId: targetModelId,
       responseFormat: "vision-result",
       attachment: {
         attachmentId: randomUUID(),
         filename,
         mediaType,
-        sizeBytes: 0,
-        relativePath: `runs/${context.runId}/input/${filename}`,
+        sizeBytes: statSync(filePath).size,
+        relativePath: attachmentPath,
       },
       inputMode: "typed-scan",
       parentToolCallId: context.currentCallId,
@@ -297,7 +305,7 @@ export const generateCodeTool: AgentTool = {
       ...base,
       requestId: randomUUID(),
       taskType: "code",
-      modelId: targetModelId as "primary-model",
+      modelId: targetModelId,
       responseFormat: "code-result",
       task: spec,
       inputFile: { attachmentId: randomUUID(), filename, mediaType: "text/x-python", rowCount: 1 },
@@ -468,34 +476,71 @@ export const executePythonTool: AgentTool = {
             description: "Filenames from run input directory to stage into sandbox.",
           },
           filename: { type: "string", description: "Name of the script file. Defaults to 'task.py'." },
-          validation_code: { type: "string", format: "multiline", description: "Optional separate Python assertions, run after the repaired script succeeds. The dict 'repaired' contains the exact repaired script's functions (use repaired['function'](...)). Input files are available by filename. Derive assertions from the request and actual source data. Validation code is not included in the downloadable repaired source." },
+          validation_code: { type: "string", format: "multiline", description: "Optional separate Python assertions, run after the repaired script succeeds. Public source functions are available by name or through repaired['function']. Invoke assertions; uncalled test definitions do not validate behavior. Input files are available by filename. Derive expectations from the request and original evidence. Checks are not included in the exported source." },
+          checks: { type: "array", description: "Structured behavior checks avoid Python quoting and import errors. Call a public source function with JSON arguments and compare its return with expected. Derive expectations independently from original source, request and input evidence.", items: { type: "object", properties: {
+            function: { type: "string" }, args: { type: "array", items: {} }, kwargs: { type: "object" }, expected: {},
+          }, required: ["function", "args", "expected"] } },
         },
         required: ["code"],
       },
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
+    let validationCode = typeof args.validation_code === "string" ? args.validation_code : "";
+    const validationChecksIgnored: string[] = [];
+    // A generated assertion is not a specification. Only checks supplied
+    // verbatim by the user or original evidence can reject an attached repair.
+    const attachedRepair = context.runContract?.routing?.intentType === "code_modification" && !context.runContract.workspace?.requested;
+    const originalEvidence = [context.originalUserRequest, context.sourceReviewEvidence].filter(Boolean).join("\n");
+    const normalizeCheck = (value: string) => value.replace(/\s+/g, " ").trim();
+    const groundedCheck = (value: string) => Boolean(value.trim()) && normalizeCheck(originalEvidence).includes(normalizeCheck(value));
+    if (attachedRepair && validationCode.trim() && !groundedCheck(validationCode)) {
+      validationChecksIgnored.push("Model-supplied validation code was not present in the original request or source. It was not executed and cannot direct a repair.");
+      validationCode = "";
+    }
+    const useStructuredChecks = args.checks !== undefined && (!attachedRepair || groundedCheck(JSON.stringify(args.checks)));
+    if (attachedRepair && args.checks !== undefined && !useStructuredChecks) {
+      validationChecksIgnored.push("Model-supplied expected values were not present in the original request or source. These checks were not executed and cannot direct a repair.");
+    }
+    if (useStructuredChecks) {
+      if (!Array.isArray(args.checks) || !args.checks.length || args.checks.some(check => !check || typeof check.function !== "string" || !Array.isArray(check.args) || !Object.prototype.hasOwnProperty.call(check, "expected") || (check.kwargs !== undefined && (!check.kwargs || typeof check.kwargs !== "object" || Array.isArray(check.kwargs))))) {
+        throw { code: "invalid_arguments", retryable: true, message: "checks must contain a function name, args array, expected value and optional kwargs object." };
+      }
+      validationCode += `\nimport json as _workbench_json\nfor _workbench_check in _workbench_json.loads(${JSON.stringify(JSON.stringify(args.checks))}):\n    _workbench_function = repaired[_workbench_check['function']]\n    _workbench_actual = _workbench_function(*_workbench_check['args'], **_workbench_check.get('kwargs', {}))\n    assert _workbench_actual == _workbench_check['expected'], repr({'function': _workbench_check['function'], 'actual': _workbench_actual, 'expected': _workbench_check['expected']})\n`;
+    }
     let code = extractContentArg(args) || String(args.code ?? args.script ?? args.python_code ?? args.source ?? "");
+    let sourceFile: string | undefined;
     if (args.source_file !== undefined || args.edits !== undefined) {
       const source = String(args.source_file ?? "");
-      if (!source || source !== path.basename(source) || !Array.isArray(args.edits) || !args.edits.length) {
-        throw { code: "invalid_arguments", retryable: true, message: "Source repair requires a run input filename and nonempty exact edits." };
+      const validationRetry = args.source_revision !== undefined && Array.isArray(args.edits) && args.edits.length === 0 && Boolean(validationCode.trim());
+      if (!source || source !== path.basename(source) || (args.edits !== undefined && (!Array.isArray(args.edits) || (!args.edits.length && !validationRetry))) || (args.edits === undefined && !code.trim())) {
+        throw { code: "invalid_arguments", retryable: true, message: "Source repair requires an attached source and code or exact edits. To retry checks without changing source, supply its returned source_revision, edits=[] and validation_code." };
       }
+      sourceFile = source;
       const inputDirectory = resolveRunPath(context.runId, "input", "input");
       const entry = readdirSync(inputDirectory).find(filename => filename === source || filename.endsWith(`-${source}`));
       if (!entry) throw { code: "file_not_found", retryable: true, message: `Attached source not found: ${source}` };
-      code = readFileSync(resolveRunPath(context.runId, `input/${entry}`, "input"), "utf8");
-      for (const edit of args.edits) {
+      if (args.edits !== undefined) code = readFileSync(resolveRunPath(context.runId, `input/${entry}`, "input"), "utf8");
+      if (args.source_revision !== undefined && args.edits !== undefined) {
+        const revision = String(args.source_revision);
+        if (!/^[a-f0-9]{64}$/.test(revision)) throw { code: "invalid_arguments", retryable: true, message: "source_revision must be a returned SHA-256 revision." };
+        const sourceKey = createHash("sha256").update(source).digest("hex");
+        const revisionPath = resolveRunPath(context.runId, `intermediate/repair-sources/${sourceKey}/${revision}.py`, "intermediate");
+        if (!existsSync(revisionPath)) throw { code: "file_not_found", retryable: true, message: "Source revision does not exist for this attachment in this run." };
+        code = readFileSync(revisionPath, "utf8");
+        if (createHash("sha256").update(code).digest("hex") !== revision) throw new Error("Repair source revision integrity failure");
+      }
+      for (const edit of (args.edits as Array<{ old: string; new: string }> | undefined) ?? []) {
         if (!edit || typeof edit.old !== "string" || !edit.old || typeof edit.new !== "string" || code.split(edit.old).length !== 2) {
-          throw { code: "invalid_arguments", retryable: true, message: "Each edit must supply old/new strings, with old matching exactly once in the source." };
+          throw { code: "invalid_arguments", retryable: true, message: "Each edit must supply old/new strings, with old matching exactly once in the selected source. Omit source_revision for the original attachment, or use the revision returned by a previous execution. Anchor insertions to an existing line; empty old is not allowed." };
         }
         const offset = code.indexOf(edit.old);
         const lineStart = code.lastIndexOf("\n", offset - 1) + 1;
         const prefix = code.slice(lineStart, offset);
         let replacement = edit.new;
-        // Statement-sized edits use indentation relative to their source line.
-        // Preserve nested indentation while retaining the source block's prefix.
-        if (/^[ \t]*$/.test(prefix) && !/^[ \t]/.test(edit.old)) {
+        // Exact replacement is the default. Relative indentation is opt-in;
+        // inferring it from source text can silently double an absolute indent.
+        if (args.edit_indentation === "relative" && /^[ \t]*$/.test(prefix) && !/^[ \t]/.test(edit.old)) {
           const lines = replacement.split("\n");
           const nonempty = lines.filter((line: string) => line.trim());
           const common = nonempty.length ? Math.min(...nonempty.map((line: string) => line.match(/^[ \t]*/)?.[0].length ?? 0)) : 0;
@@ -523,7 +568,7 @@ export const executePythonTool: AgentTool = {
 
     // Explicit input_files define the command-line interface. Discover only when
     // omitted; source attachments are not extra arguments to the repaired program.
-    const hasExplicitInputs = inputFiles.length > 0;
+    const hasExplicitInputs = args.input_files !== undefined || args.input_file !== undefined || args.data_file !== undefined;
     // Automatically stage run data attachments when input_files is omitted.
     const inputDir = resolveRunPath(context.runId, "input", "input");
     if (existsSync(inputDir)) {
@@ -563,25 +608,50 @@ export const executePythonTool: AgentTool = {
       writeFileSync(path.join(intermediateDir, underscored), code, "utf8");
     }
 
-    let execResult = await executePython(context.runId, filename, inputFiles, [], 60000, context.workspaceRoot);
-    if (execResult.exitCode === 0 && !execResult.timedOut && typeof args.validation_code === "string" && args.validation_code.trim()) {
+    // Link full-source retries to their unique attached source when the persisted
+    // operation is an attachment repair. Multiple sources require explicit identity.
+    if (!sourceFile && context.runContract?.routing?.intentType === "code_modification" && !context.runContract.workspace.requested) {
+      const sources = existsSync(inputDir) ? [...new Set(readdirSync(inputDir).filter(file => /\.py$/i.test(file)).map(file => file.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, "")))] : [];
+      if (sources.length === 1) sourceFile = sources[0].replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, "");
+    }
+    const revision = createHash("sha256").update(code).digest("hex");
+    if (sourceFile) {
+      const sourceKey = createHash("sha256").update(sourceFile).digest("hex");
+      const revisionRelative = `repair-sources/${sourceKey}/${revision}.py`;
+      const revisionPath = resolveRunPath(context.runId, `intermediate/${revisionRelative}`, "intermediate");
+      if (existsSync(revisionPath)) {
+        if (readFileSync(revisionPath, "utf8") !== code) throw new Error("Repair source revision integrity failure");
+      } else writeRunFile(context.runId, "intermediate", revisionRelative, code);
+    }
+    const repairSource = sourceFile ? { source_file: sourceFile, source_revision: revision, code,
+      nextEdit: "To edit this exact attempted source, use source_file and source_revision above with old strings from this code. Omitting source_revision selects the original attachment." } : undefined;
+    const returnValidationName = `check-returns-${randomUUID()}.py`;
+    writeRunFile(context.runId, "intermediate", returnValidationName, buildPythonReturnValidationRunner(filename));
+    let execResult = await executePython(context.runId, returnValidationName, inputFiles, [], 60000, context.workspaceRoot);
+    let failureStage = "source_execution";
+    let validationAssertionsPassed = false;
+    if (execResult.exitCode === 0 && !execResult.timedOut && validationCode.trim()) {
       const validationName = `validation-${randomUUID()}.py`;
-      const validationSource = `import pathlib, runpy\nrepaired = runpy.run_path(str(pathlib.Path(__file__).parent / ${JSON.stringify(filename)}), run_name="workbench_validation")\n${args.validation_code}\n`;
+      const validationSource = buildPythonBehaviorValidationRunner(filename, validationCode);
       writeRunFile(context.runId, "intermediate", validationName, validationSource);
       const validation = await executePython(context.runId, validationName, inputFiles, [], 60000, context.workspaceRoot);
+      failureStage = "behavior_checks";
+      validationAssertionsPassed = validation.exitCode === 0 && !validation.timedOut;
       execResult = { ...validation, stdout: `${execResult.stdout}\n${validation.stdout}`.trim(), durationMs: execResult.durationMs + validation.durationMs,
+        outputFiles: [...new Set([...execResult.outputFiles, ...validation.outputFiles])],
         capturedOutput: { stdout: `${execResult.capturedOutput?.stdout ?? execResult.stdout}\n${validation.capturedOutput?.stdout ?? validation.stdout}`.trim(), stderr: `${execResult.capturedOutput?.stderr ?? execResult.stderr}\n${validation.capturedOutput?.stderr ?? validation.stderr}`.trim(), truncated: Boolean(execResult.capturedOutput?.truncated || validation.capturedOutput?.truncated) },
       };
     }
     const summary = `Executed Python (${filename}): exit ${execResult.exitCode} in ${execResult.durationMs}ms`;
     const intermediate: ToolExecutionResult["intermediate"] = {
       type: "execution", status: execResult.exitCode === 0 && !execResult.timedOut && !execResult.capturedOutput?.truncated ? "complete" : "partial", origin: "execution",
-      payload: { ...execResult }, sources: inputFiles.map((file) => ({ filename: file, relation: "input" })),
+      payload: { ...execResult, ...(repairSource ? { repairSource } : {}), validationAssertionsPassed, validationChecksIgnored, ...(execResult.exitCode !== 0 ? { failureStage } : {}) }, sources: inputFiles.map((file) => ({ filename: file, relation: "input" })),
     };
     const { capturedOutput: _capturedOutput, ...observation } = execResult;
 
     if (execResult.exitCode !== 0 || execResult.timedOut) {
-      return { ok: false, output: JSON.stringify(observation, null, 2), summary, intermediate,
+      return { ok: false, output: JSON.stringify({ repairSource, ...observation, failureStage,
+        recovery: failureStage === "behavior_checks" ? "The source command completed. Check the assertion syntax, invocation and expected behavior against original evidence. To change only checks, use the returned source_revision, edits=[] and validation_code. Change source only when the checks establish a source defect." : "Repair the observed source failure; continue from the returned source_revision when editing this attempt." }, null, 2), summary, intermediate,
         error: { code: execResult.timedOut ? "timeout" : "validation_failure", retryable: true,
           message: execResult.stderr || `Python execution failed with exit ${execResult.exitCode}` } };
     }
@@ -660,7 +730,8 @@ export const executePythonTool: AgentTool = {
         ...observation,
         artifacts: artifacts.map((artifact) => ({ filename: artifact.filename, relativePath: artifact.relativePath })),
         executionPassed: execResult.exitCode === 0 && !execResult.timedOut,
-        validationAssertionsPassed: typeof args.validation_code === "string" && Boolean(args.validation_code.trim()),
+        validationAssertionsPassed,
+        validationChecksIgnored,
         deliveryStatus,
       }, null, 2),
       summary,
@@ -725,34 +796,6 @@ export const generateDeliverableTool: AgentTool = {
     let type = String(effectiveArgs.type ?? effectiveArgs.kind ?? effectiveArgs.format ?? "").toLowerCase();
     let title = String(effectiveArgs.title ?? effectiveArgs.name ?? effectiveArgs.heading ?? "Deliverable");
     let content = extractContentArg(effectiveArgs) || String(effectiveArgs.content ?? effectiveArgs.body ?? effectiveArgs.text ?? effectiveArgs.markdown ?? "");
-    if (Array.isArray(effectiveArgs.report_rows)) {
-      const columns = ["source", "equipment", "measurements", "defects", "inspector_notes"];
-      const rows = effectiveArgs.report_rows;
-      if (!rows.length || rows.some(row => !row || typeof row !== "object" || columns.some(key => typeof row[key] !== "string"))) {
-        throw { code: "invalid_arguments", retryable: true, message: "report_rows requires source, equipment, measurements, defects and inspector_notes strings." };
-      }
-      const cell = (value: string) => value.replace(/\|/g, "\\|").replace(/\r?\n/g, "; ");
-      const requestedPages = context.sourceReferences?.map(reference => `${reference.filename}, page ${reference.page}`) ?? [];
-      if (requestedPages.some(source => !rows.some(row => row.source === source))) {
-        throw { code: "invalid_arguments", retryable: true, message: `The evidence report must cover every source page: ${requestedPages.join("; ")}.` };
-      }
-      content = [`# ${title}`, "", "| Equipment / source | Readings / limits | Findings / inspector notes |", "| --- | --- | --- |", ...rows.map(row => {
-        const cells = [
-          [row.equipment, row.source].filter(Boolean).join("; "), row.measurements,
-          [row.defects, row.inspector_notes ? `Inspector: ${row.inspector_notes}` : ""].filter(Boolean).join("; "),
-        ];
-        return `| ${cells.map(cell).join(" | ")} |`;
-      })].join("\n");
-      if (effectiveArgs.review_decisions !== undefined) {
-        const decisions = effectiveArgs.review_decisions;
-        const keys = ["equipment", "status", "required_actions", "citations"];
-        if (!Array.isArray(decisions) || !decisions.length || decisions.some(decision => !decision || keys.some(key => typeof decision[key] !== "string" || !decision[key].trim())) ||
-          rows.some(row => !decisions.some(decision => decision.equipment === row.equipment))) {
-          throw { code: "invalid_arguments", retryable: true, message: "review_decisions must include a nonempty status, required_actions and citations for every source equipment identifier." };
-        }
-        content += "\n\n## Clearance decisions\n" + decisions.map(decision => `- **${cell(decision.equipment)}**: ${cell(decision.status)}${/[.!?]$/.test(decision.status.trim()) ? "" : "."} ${cell(decision.required_actions)} ${cell(decision.citations)}`).join("\n");
-      }
-    }
     const rawFilename = String(effectiveArgs.filename ?? effectiveArgs.path ?? effectiveArgs.file ?? "");
     let filename = rawFilename;
 

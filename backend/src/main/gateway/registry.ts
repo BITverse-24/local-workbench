@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { ModelConfigRow, ModelId, ModelRegistryEntry } from "../../shared/contracts.js";
 import { getSetting } from "../persistence/settings-store.js";
 
-const entry = z.object({ id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1).optional(), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), toolCallingFormat: z.enum(["native", "json"]).optional(), temperature: z.number().min(0).max(2).optional(), contextLength: z.number().int().positive().max(128000).optional(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
+const entry = z.object({ id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1).optional(), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), fallbackOnly: z.boolean().optional(), toolCallingFormat: z.enum(["native", "json"]).optional(), temperature: z.number().min(0).max(2).optional(), contextLength: z.number().int().positive().max(128000).optional(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
 const config = z.object({ $comment: z.string().optional(), models: z.array(entry).min(1) }).strict();
 
 
@@ -46,7 +46,7 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
   const primaryRows = eligible.filter((row) => row.role === "primary");
   const candidates = primaryRows.length ? primaryRows : [eligible.find((row) => row.role === "draft") ?? eligible[0]].filter(Boolean) as ModelConfigRow[];
   const seen = new Set<string>();
-  return candidates.filter((row) => {
+  const primaryEntries: ModelRegistryEntry[] = candidates.filter((row) => {
     const key = `${sanitizeHost(row.host)}:${row.port || 11434}/${row.modelName.toLowerCase()}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -67,6 +67,8 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
       ...(profile?.temperature !== undefined ? { temperature: profile.temperature } : {}),
     };
   });
+  const auxiliary = profiles.filter(profile => profile.fallbackOnly && !primaryEntries.some(primary => primary.id === profile.id || (primary.model === profile.model && primary.baseUrl === profile.baseUrl)));
+  return [...primaryEntries, ...auxiliary];
 }
 
 export function writeRegistryToFile(entries: ModelRegistryEntry[], filePath?: string): void {

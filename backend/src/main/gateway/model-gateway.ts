@@ -26,7 +26,7 @@ import {
 
 import { normalizeResponse, parseProviderContent, providerError } from "./normalizer.js";
 import { absoluteDataPath, createRunDirectories, runRoot } from "../run/filesystem.js";
-import { assertUploadableSize, createPlaceholderImagesFromText, extractPdfText, extractSvgText, prepareImage, renderPdfToImages } from "../run/images.js";
+import { assertUploadableSize, prepareImage, renderPdfToImages, renderSvgToImage, estimateVisionTokens } from "../run/images.js";
 import {
   logGatewayError,
   logGeneratedCode,
@@ -436,7 +436,7 @@ export function extractEmbeddedToolCalls(rawContent: string): { toolCalls: Agent
   while ((match = xmlPattern.exec(rawContent)) !== null) {
     const jsonCandidate = match[1].trim();
     try {
-      const parsed = JSON.parse(jsonCandidate);
+      const parsed = parseStructuredData(jsonCandidate) as any;
       if (parsed && typeof parsed.name === "string") {
         const args = parseToolCallArguments(parsed.arguments ?? parsed.parameters ?? {});
         toolCalls.push({
@@ -468,7 +468,7 @@ export function extractEmbeddedToolCalls(rawContent: string): { toolCalls: Agent
   const trimmed = rawContent.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
     try {
-      const parsed = JSON.parse(trimmed);
+      const parsed = parseStructuredData(trimmed) as any;
       if (parsed && typeof parsed.name === "string" && (parsed.arguments || parsed.parameters)) {
         const args = parseToolCallArguments(parsed.arguments ?? parsed.parameters ?? {});
         toolCalls.push({
@@ -480,7 +480,7 @@ export function extractEmbeddedToolCalls(rawContent: string): { toolCalls: Agent
       } else if (Array.isArray(parsed.tool_calls)) {
         for (const tc of parsed.tool_calls) {
           if (tc && typeof tc.name === "string") {
-            const args = parseToolCallArguments(tc.arguments ?? tc.parameters ?? {});
+            const args = parseToolCallArguments(tc.arguments ?? tc.parameters ?? tc.function?.arguments ?? {});
             toolCalls.push({
               id: tc.id || `call_${randomUUID().slice(0, 8)}`,
               name: tc.name,
@@ -717,7 +717,7 @@ export class ModelGateway implements ModelClient {
 
     // Single-LLM fallback: If exactly one enabled model endpoint exists in the registry,
     // all inference tasks route to that single model.
-    const allEnabled = Array.from(this.dbRegistry.values()).filter((e) => e.enabled);
+    const allEnabled = Array.from(this.dbRegistry.values()).filter((e) => e.enabled && !e.fallbackOnly);
     if (allEnabled.length > 0) {
       const distinctEndpoints = new Set(allEnabled.map((e) => `${e.baseUrl}/${e.model}`));
       if (distinctEndpoints.size === 1) {
@@ -787,6 +787,9 @@ export class ModelGateway implements ModelClient {
 
     const maybeVision = request as unknown as { taskType: string; attachment?: { mediaType: string; relativePath: string; filename?: string; selectedPages?: number[] } };
     const isVision = maybeVision.taskType === "vision" && !!maybeVision.attachment;
+    if (isVision && !model.capabilities.includes("image-input")) {
+      return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "Visual extraction requires an image-input capable model.", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
+    }
     // PDFs are now parsed into per-page compressed JPEGs (1024px max edge, JPEG 80)
     // and sent as multiple image_url parts to keep total tokens <4096.
     // 2 pages at 1024px = ~3072 image tokens + ~524 prompt = ~3596 < 4096.
@@ -798,20 +801,9 @@ export class ModelGateway implements ModelClient {
           const att = maybeVision.attachment!;
           const raw = await readFile(absoluteDataPath(att.relativePath));
           if (att.mediaType === "image/svg+xml" || att.filename?.toLowerCase().endsWith(".svg")) {
-            const svgText = extractSvgText(raw);
-            const placeholderImages = await createPlaceholderImagesFromText(svgText || "SVG Vector Drawing");
-            const prepared = placeholderImages[0];
+            const prepared = await renderSvgToImage(raw);
             assertUploadableSize(prepared.finalBytes);
-            this.lastVisionUpload = {
-              originalBytes: raw.length,
-              finalBytes: prepared.finalBytes,
-              resized: true,
-              mediaType: prepared.mediaType,
-            };
-            if (svgText && svgText.trim().length > 0) {
-              const enrichedPrompt = `${(request as { userPrompt: string }).userPrompt}\n\n[SVG Vector Drawing Text Content]\n${svgText.slice(0, 4000)}`;
-              (request as { userPrompt: string }).userPrompt = enrichedPrompt;
-            }
+            this.lastVisionUpload = { originalBytes: raw.length, finalBytes: prepared.finalBytes, resized: true, mediaType: prepared.mediaType };
             return [
               {
                 type: "image_url",
@@ -857,51 +849,9 @@ export class ModelGateway implements ModelClient {
               };
               return parts;
             }
-            // Fallback: PDF -> image(s) -> compress -> vision (agreed). No file upload.
-            // If pdfjs/canvas not available, render PDF text as synthetic compressed JPEG(s).
-            const pdfText = extractPdfText(raw);
-            if (pdfText.trim().length > 20) {
-              const { createPlaceholderImagesFromText } = await import("../run/images.js");
-              const placeholders = await createPlaceholderImagesFromText(pdfText);
-              if (placeholders.length) {
-                const parts = [];
-                let totalBytes = 0;
-                for (const p of placeholders) {
-                  assertUploadableSize(p.finalBytes);
-                  totalBytes += p.finalBytes;
-                  parts.push({
-                    type: "image_url",
-                    image_url: { url: `data:${p.mediaType};base64,${p.buffer.toString("base64")}` },
-                  });
-                }
-                this.lastVisionUpload = {
-                  originalBytes: raw.length,
-                  finalBytes: totalBytes,
-                  resized: true,
-                  mediaType: "image/jpeg",
-                };
-                // Keep text in prompt as well - vision model sees both image + text
-                const enrichedPrompt = `${(request as { userPrompt: string }).userPrompt}\n\n[PDF rendered locally as compressed image(s) - ${placeholders.length} page(s)]\n${pdfText.slice(0, 2000)}`;
-                (request as { userPrompt: string }).userPrompt = enrichedPrompt;
-                return parts;
-              }
-              // Last resort: text-only enrichment with tiny placeholder to keep image_url type
-              this.lastVisionUpload = {
-                originalBytes: raw.length,
-                finalBytes: Buffer.byteLength(pdfText, "utf8"),
-                resized: false,
-                mediaType: "text/plain",
-              };
-              const enrichedPrompt = `${(request as { userPrompt: string }).userPrompt}\n\n[PDF text extracted - rendered as image fallback]\n${pdfText.slice(0, 6000)}`;
-              (request as { userPrompt: string }).userPrompt = enrichedPrompt;
-              // 1x1 white JPEG placeholder (avoids file $0.50, keeps vision image_url)
-              const placeholder = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAA8A/9k=";
-              return [{ type: "image_url", image_url: { url: placeholder } }];
-            }
+            throw new Error("PDF visual extraction failed: no source pages could be rendered.");
           }
-          // Fallback: PDF as file part when pdfjs/canvas not available and text extraction failed (e.g. scanned image PDF)
-          const dataUrl = `data:${att.mediaType};base64,${raw.toString("base64")}`;
-          return [{ type: "file", file: { filename: att.filename ?? "document.pdf", file_data: dataUrl } }];
+          throw new Error(`Visual extraction does not support ${att.mediaType}.`);
         })()
       : null;
     const userContent = isVision
@@ -947,7 +897,11 @@ export class ModelGateway implements ModelClient {
     const contextLimit = model.contextLength ?? 8192;
     const safetyMargin = 256;
     const requestedMaxTokens = request.maxTokens ?? model.maxOutputTokens ?? (isFreeText ? 1536 : 2048);
-    const estimatedInputTokens = countTokens(JSON.stringify(messagesPayload));
+    // Base64 encodes image transport bytes, not text tokens. Reserve image tokens
+    // separately at the local renderer's bounded resolution.
+    const textMessages = isVision ? messagesPayload.map(message => ({ ...message, content: Array.isArray(message.content)
+      ? message.content.filter(part => part.type === "text") : message.content })) : messagesPayload;
+    const estimatedInputTokens = countTokens(JSON.stringify(textMessages)) + (isVision ? (visionParts?.length ?? 0) * estimateVisionTokens(1024, 1024) : 0);
     const maxAllowedTokens = Math.max(128, contextLimit - estimatedInputTokens - safetyMargin);
     const maxTokens = Math.min(requestedMaxTokens, maxAllowedTokens);
     const defaultTemperature = (isLocal && (request.taskType === "code" || request.taskType === "vision")) ? 0.0 : 0.2;
@@ -1097,82 +1051,8 @@ export class ModelGateway implements ModelClient {
         }
       }
 
-      // 2. If provider rejects multimodal/image input (e.g. text-only model in LM Studio/Ollama assigned to vision task, or missing vision projector)
-      if (response.status === 400 && isVision && /image|vision|multimodal|expected a string|content.*type|unsupported.*media|mmproj/i.test(rawText)) {
-        logGatewayError(request, "provider rejected image/multimodal input, retrying with text-only prompt", rawText.slice(0, 200));
-        const textOnlyMessages = messagesPayload.map((m) => {
-          if (Array.isArray(m.content)) {
-            const textParts = m.content
-              .filter((p: any) => p.type === "text" && typeof p.text === "string")
-              .map((p: any) => p.text);
-            return {
-              role: m.role,
-              content: textParts.join("\n\n") || `[Attachment: ${maybeVision.attachment?.filename ?? "document"}] Please inspect the document content and answer the user query.`,
-            };
-          }
-          return m;
-        });
-
-        const activeFormat = (response.status === 400 && /response_format|json/i.test(rawText)) ? undefined : responseFormatPayload;
-        const textOnlyPayload: Record<string, any> = {
-          model: model.model,
-          messages: textOnlyMessages,
-          temperature: effectiveTemperature,
-          max_tokens: maxTokens,
-        };
-        if (activeFormat !== undefined) {
-          textOnlyPayload.response_format = activeFormat;
-        }
-
-        const textOnlyResponse = await this.transport.request(
-          `${model.baseUrl}/chat/completions`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
-            body: JSON.stringify(textOnlyPayload),
-          },
-          effectiveTimeout
-        );
-        response = textOnlyResponse;
-        try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
-
-        // If the text-only attempt also encounters a response_format rejection:
-        if (response.status === 400 && /response_format|json_schema|json_object|type.*must be/i.test(rawText)) {
-          if (/must be 'json_schema'|json_schema.*text|text.*json_schema/i.test(rawText) && jsonSchemaPayload && activeFormat?.type !== "json_schema") {
-            textOnlyPayload.response_format = jsonSchemaPayload;
-          } else {
-            textOnlyPayload.response_format = { type: "text" };
-          }
-          logGatewayError(request, `text-only retry rejected response_format, retrying with ${textOnlyPayload.response_format?.type ?? "plain"}`, rawText.slice(0, 200));
-          const textFormatResponse = await this.transport.request(
-            `${model.baseUrl}/chat/completions`,
-            {
-              method: "POST",
-              headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
-              body: JSON.stringify(textOnlyPayload),
-            },
-            effectiveTimeout
-          );
-          response = textFormatResponse;
-          try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
-
-          if (response.status === 400 && /response_format|json_schema|json_object|type.*must be/i.test(rawText)) {
-            delete textOnlyPayload.response_format;
-            logGatewayError(request, "text-only retry without response_format", rawText.slice(0, 200));
-            const plainResponse = await this.transport.request(
-              `${model.baseUrl}/chat/completions`,
-              {
-                method: "POST",
-                headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
-                body: JSON.stringify(textOnlyPayload),
-              },
-              effectiveTimeout
-            );
-            response = plainResponse;
-            try { rawText = await response.text(); } catch { rawText = "<unreadable body>"; }
-          }
-        }
-      }
+      // Image rejection is a real failure. Never retry visual inspection without
+      // the source image; text alone cannot supply the missing observations.
 
       logModelResponse({
         taskType: request.taskType,
@@ -1487,6 +1367,7 @@ export class ModelGateway implements ModelClient {
       timeoutMs?: number;
       onChunk?: (delta: string) => void;
       purpose?: InferencePurpose;
+      responseSchema?: { name: string; schema: Record<string, unknown> };
       toolChoice?: "auto" | "required";
     },
   ): Promise<AIResult<AgentTurnResponse>> {
@@ -1532,6 +1413,7 @@ export class ModelGateway implements ModelClient {
         max_tokens: effectiveMaxTokens,
         presence_penalty: 0.1,
       };
+      if (options?.responseSchema && tools.length === 0) payload.response_format = { type: "json_schema", json_schema: options.responseSchema };
       const reasoningControl = resolveReasoningControl();
       Object.assign(payload, reasoningControl.params);
       if (tools.length > 0) {
@@ -1703,14 +1585,14 @@ export class ModelGateway implements ModelClient {
     // 2. Fallback Path: JSON-in-Prompt Emulation when native tools parameter is unsupported
     // A line array avoids deeply escaped code/document strings on small local
     // models. Decode it losslessly back to the canonical tool string at ingress.
-    const jsonTools = tools.map(tool => {
-      const parameters = tool.function.parameters as any;
-      const properties = Object.fromEntries(Object.entries(parameters.properties ?? {}).map(([name, value]) => {
-        const field = value as any;
-        return [name, field.format === "multiline" ? { type: "array", items: { type: "string" }, description: `${field.description} One string per line; preserve indentation. Empty lines are empty strings.` } : field];
-      }));
-      return { ...tool, function: { ...tool.function, parameters: { ...parameters, properties } } };
-    });
+    const transportSchema = (field: any): any => {
+      if (field.format === "multiline") return { type: "array", items: { type: "string" }, description: `${field.description} One raw string per line; retain indentation. Blank lines are empty strings.` };
+      return { ...field,
+        ...(field.properties ? { properties: Object.fromEntries(Object.entries(field.properties).map(([key, value]) => [key, transportSchema(value)])) } : {}),
+        ...(field.items ? { items: transportSchema(field.items) } : {}),
+      };
+    };
+    const jsonTools = tools.map(tool => ({ ...tool, function: { ...tool.function, parameters: transportSchema(tool.function.parameters) } }));
     const toolDescriptions = jsonTools
       .map((t) => `- ${t.function.name}: ${t.function.description}\n  Arguments schema: ${JSON.stringify(t.function.parameters)}`)
       .join("\n\n");
@@ -1784,7 +1666,7 @@ export class ModelGateway implements ModelClient {
         if (typeof rawContent === "string") {
           try {
             const stripped = rawContent.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-            parsedJson = JSON.parse(stripped);
+            parsedJson = parseStructuredData(stripped);
           } catch {
             parsedJson = { content: rawContent, tool_calls: null };
           }
@@ -1799,7 +1681,7 @@ export class ModelGateway implements ModelClient {
               toolCalls.push({
                 id: tc.id || randomUUID(),
                 name: callName,
-                arguments: parseToolCallArguments(tc.arguments ?? tc.parameters ?? {}),
+                arguments: parseToolCallArguments(tc.arguments ?? tc.parameters ?? tc.function?.arguments ?? {}),
               });
             }
           }
@@ -1813,15 +1695,15 @@ export class ModelGateway implements ModelClient {
             finalContent = embedded.cleanedContent;
           }
         }
+        const decodeMultiline = (value: any, schema: any): any => {
+          if (schema?.format === "multiline" && Array.isArray(value) && value.every(line => typeof line === "string")) return value.join("\n");
+          if (Array.isArray(value)) return value.map(item => decodeMultiline(item, schema?.items));
+          if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decodeMultiline(item, schema?.properties?.[key])]));
+          return value;
+        };
         for (const call of toolCalls) {
           const definition = tools.find(tool => tool.function.name === call.name);
-          const properties = (definition?.function.parameters as any)?.properties ?? {};
-          for (const [name, field] of Object.entries(properties)) {
-            const value = call.arguments[name];
-            if ((field as any).format === "multiline" && Array.isArray(value) && value.every(line => typeof line === "string")) {
-              call.arguments[name] = value.join("\n");
-            }
-          }
+          call.arguments = decodeMultiline(call.arguments, definition?.function.parameters);
         }
 
         if (options?.runId) {

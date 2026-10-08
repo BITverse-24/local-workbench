@@ -282,7 +282,7 @@ export async function extractPdfText(filePathOrBuffer: string | Buffer): Promise
     .map((p) => `--- Page ${p.pageNumber} ---\n${p.text}`);
 
   const combinedText = pageSections.join("\n\n");
-  const hasText = totalChars >= 20;
+  const hasText = totalChars >= 20 && pages.every(page => page.text.trim().length > 0);
 
   return {
     text: combinedText,

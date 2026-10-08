@@ -43,7 +43,6 @@ export interface ComplianceAssessment {
   approved: boolean;
   checks: ComplianceCheck[];
   correctiveAction: string;
-  noApprovalClaim: boolean;
   markdownNote: string;
 }
 
@@ -106,7 +105,7 @@ export function extractDrawingAttributes(input: {
         title = line;
       }
 
-      // Service line (e.g. Hydrocarbon service)
+      // Extract service descriptions only when they appear in the source.
       const serviceMatch = line.match(/\b([A-Za-z\s]+ service)\b/i);
       if (serviceMatch) {
         service = serviceMatch[1].trim();
@@ -118,72 +117,61 @@ export function extractDrawingAttributes(input: {
       }
     }
 
-    // Extract valve components and ratings
-    const valveTagMatch = textLines.find((l) => /\b([A-Z]{1,4}-\d{2,4})\b/.test(l) && !/P-\d+|PID-/.test(l));
-    const valveTag = valveTagMatch ? valveTagMatch.match(/\b([A-Z]{1,4}-\d{2,4})\b/)![1] : undefined;
-
-    const classMatch = textLines.find((l) => /\b(?:CLASS|Class)\s*(\d+)\b/i.test(l));
-    const valveRating = classMatch ? classMatch.match(/\b(?:CLASS|Class)\s*(\d+)\b/i)![0] : undefined;
-
-    if (valveTag || valveRating) {
-      const tag = valveTag ?? "Unlabelled valve";
-      const rating = valveRating ?? "not stated";
-      const numMatch = rating.match(/\d+/);
+    // Extract only labels and values that appear in the source text.
+    const identifierPattern = /\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+\b/g;
+    const identifiers = new Set<string>();
+    for (const line of textLines) {
+      for (const match of line.matchAll(identifierPattern)) {
+        const identifier = match[0];
+        if (identifier !== drawingId) identifiers.add(identifier);
+      }
+    }
+    for (const tag of identifiers) {
       observedComponents.push({
         tag,
-        componentType: "isolation valve",
-        attributeName: "valve rating",
-        observedValue: rating,
-        numericValue: numMatch ? parseInt(numMatch[0], 10) : undefined,
-        unit: "class",
-        location: "discharge line",
-        fullDescription: `${tag} ${rating}`,
+        componentType: "labeled item",
+        attributeName: "identifier",
+        observedValue: tag,
+        fullDescription: tag,
       });
     }
 
-    // Extract discharge line diameter
-    const dischargeMatch = textLines.find((l) => /\b(?:DN\s*(\d+)|\b(\d+)\s*inch|\b(\d+)").*discharge/i.test(l)) ||
-      textLines.find((l) => /\bDN80\b/i.test(l));
-    if (dischargeMatch) {
-      const dn = dischargeMatch.match(/DN\s*(\d+)/i) ? dischargeMatch.match(/DN\s*(\d+)/i)![0] : "DN80";
-      const num = dn.match(/\d+/) ? parseInt(dn.match(/\d+/)![0], 10) : 80;
-      observedComponents.push({
-        componentType: "discharge line",
-        attributeName: "nominal diameter",
-        observedValue: `${dn} discharge line`,
-        numericValue: num,
-        unit: "DN",
-        location: "discharge line",
-        fullDescription: `${dn} discharge line`,
-      });
+    const classLineIndex = textLines.findIndex((line) => /\bclass\s*\d+\b/i.test(line));
+    if (classLineIndex >= 0) {
+      const rating = textLines[classLineIndex].match(/\bclass\s*\d+\b/i)?.[0];
+      if (rating) {
+        const adjacentLines = textLines.slice(Math.max(0, classLineIndex - 1), classLineIndex + 2).join(" ");
+        const tag = adjacentLines.match(identifierPattern)?.[0];
+        const location = adjacentLines.match(/\b(?:at|on|near|along)\s+([^,;]+)/i)?.[1]?.trim();
+        observedComponents.push({
+          tag,
+          componentType: "component",
+          attributeName: "rating",
+          observedValue: rating,
+          numericValue: Number(rating.match(/\d+/)?.[0]),
+          unit: "class",
+          location,
+          fullDescription: `${tag ? `${tag} ` : ""}${rating}${location ? ` (${location})` : ""}`,
+        });
+      }
     }
 
-    // Extract suction line diameter if present
-    const suctionMatch = textLines.find((l) => /\b(?:DN\s*(\d+)|\b(\d+)\s*inch|\b(\d+)").*suction/i.test(l));
-    if (suctionMatch) {
-      const dn = suctionMatch.match(/DN\s*(\d+)/i) ? suctionMatch.match(/DN\s*(\d+)/i)![0] : "DN100";
-      const num = dn.match(/\d+/) ? parseInt(dn.match(/\d+/)![0], 10) : 100;
+    const sizePattern = /\bDN\s*\d+\b|\b\d+(?:\.\d+)?\s*(?:inch(?:es)?|\")/i;
+    for (const line of textLines.filter((item) => sizePattern.test(item))) {
+      const size = line.match(sizePattern)?.[0]?.trim();
+      if (!size) continue;
+      const number = size.match(/\d+(?:\.\d+)?/)?.[0];
+      const location = line.match(/\b(?:suction|discharge|inlet|outlet)\b/i)?.[0];
+      const tag = line.match(identifierPattern)?.[0];
       observedComponents.push({
-        componentType: "suction line",
-        attributeName: "nominal diameter",
-        observedValue: `${dn} suction line`,
-        numericValue: num,
-        unit: "DN",
-        location: "suction line",
-        fullDescription: `${dn} suction line`,
-      });
-    }
-
-    // Extract pump tag
-    const pumpMatch = textLines.find((l) => /\b(P-\d{2,4})\b/.test(l));
-    if (pumpMatch) {
-      const pTag = pumpMatch.match(/\b(P-\d{2,4})\b/)![1];
-      observedComponents.push({
-        tag: pTag,
-        componentType: "pump skid",
-        attributeName: "equipment tag",
-        observedValue: pTag,
-        fullDescription: `Pump ${pTag}`,
+        tag,
+        componentType: "dimension",
+        attributeName: "nominal size",
+        observedValue: line,
+        numericValue: number ? Number(number) : undefined,
+        unit: /^DN/i.test(size) ? "DN" : "inch",
+        location,
+        fullDescription: line,
       });
     }
   }
@@ -367,19 +355,9 @@ export async function retrieveGoverningSpecChunks(
 
 // ── Model-Driven Dynamic Compliance Reasoning ───────────────────────────────
 
-const COMPLIANCE_SYSTEM_PROMPT = `You are an expert industrial compliance and design review engineer.
-You evaluate observed engineering drawing component attributes dynamically against governing specification requirements retrieved from the knowledge base.
+const COMPLIANCE_SYSTEM_PROMPT = `Review supplied source evidence against relevant criteria retrieved from the user's sources or knowledge base.
 
-Rules:
-1. Dynamically evaluate each observed component attribute against the retrieved governing specification.
-2. DO NOT assume compliance. Compare numbers and ratings dynamically:
-   - Check valve rating against required minimum rating.
-   - Check line diameter against required minimum nominal diameter.
-3. Determine compliance status for each item: "compliant" or "non_compliant".
-4. Quote the exact governing document ID and section citation from the retrieved criteria.
-5. Provide precise, quantitative engineering reasoning explaining the mismatch or compliance.
-6. Formulate actionable corrective actions for all non-compliant items before release.
-7. Drawings with any non-compliant components are NOT approved and must be revised and rechecked.
+Keep observations separate from requirements. Preserve exact source identifiers and associate each fact with its source. Assess only items that the evidence and criteria allow you to assess. Cite the exact document and section for each requirement. Give actions only when supported by the request and evidence. Mark missing or uncertain evidence clearly. Do not invent limits, outcomes, approval decisions, or completed actions.
 
 Output strictly valid JSON matching this schema:
 {
@@ -390,13 +368,13 @@ Output strictly valid JSON matching this schema:
       "component": string,
       "observed": string,
       "required": string,
-      "status": "compliant" | "non_compliant",
+      "status": "compliant" | "non_compliant" | "unverified",
       "citation": string,
-      "reasoning": string
+      "reasoning": string,
+      "correctiveAction": string
     }
   ],
   "correctiveAction": string,
-  "noApprovalClaim": true,
   "markdownNote": string
 }`;
 
@@ -430,16 +408,18 @@ export async function evaluateDrawingComplianceWithModel(options: {
     .join("\n\n---\n\n");
 
   const prompt = [
-    `## Engineering Drawing: ${drawing.drawingId} (${drawing.title})`,
+    `## Source: ${drawing.drawingId} (${drawing.title})`,
     drawing.service ? `Service: ${drawing.service}` : "",
     "",
-    "### Observed Component Attributes from Drawing:",
+    "### Observed Attributes:",
     observedBlock || "- No structured components extracted.",
+    "### Extracted Source Labels and Text:",
+    drawing.rawText || "- No text was extracted.",
     "",
     `### Governing Specification Excerpts (${docId}):`,
     specBlock || "- No specific specification excerpts retrieved.",
     "",
-    "Please dynamically evaluate each observed attribute against the spec requirements, determine pass/fail compliance status, cite exact sections, formulate corrective actions, and produce the reviewer corrective-action note.",
+    "Assess each relevant observation against the available requirements. Preserve exact identifiers. Use an unverified status when the evidence does not support a conclusion. Return the requested structure without adding unrelated findings.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -472,15 +452,12 @@ export async function evaluateDrawingComplianceWithModel(options: {
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]) as ComplianceAssessment;
-        if (parsed.checks && Array.isArray(parsed.checks)) {
+        if (parsed.checks && Array.isArray(parsed.checks) && typeof parsed.approved === "boolean") {
           return {
             drawingId: parsed.drawingId || drawing.drawingId,
-            approved: false, // Drawings with non-compliant findings cannot be approved
+            approved: parsed.approved,
             checks: parsed.checks,
-            correctiveAction:
-              parsed.correctiveAction ||
-              "Revise non-compliant components per governing specification before sign-off.",
-            noApprovalClaim: true,
+            correctiveAction: parsed.correctiveAction || "",
             markdownNote: parsed.markdownNote || createCorrectiveActionMarkdown(drawing.drawingId, parsed.checks),
           };
         }
@@ -497,42 +474,27 @@ export function createCorrectiveActionMarkdown(
   const nonCompliant = checks.filter((c) => c.status === "non_compliant");
 
   const lines = [
-    `# Design Review — Corrective Action Note`,
+    `# Grounded Assessment — ${drawingId}`,
     "",
-    `Drawing \`${drawingId}\` is **not ready for sign-off** (DRAWING NOT APPROVED).`,
-    "",
-    "### Compliance Assessment Findings:",
-    "",
+    "| Identifier | Observation | Requirement | Assessment | Action | Evidence |",
+    "|---|---|---|---|---|---|",
   ];
 
   if (checks.length > 0) {
-    checks.forEach((c, idx) => {
-      const icon = c.status === "compliant" ? "✔ [PASS]" : "✖ [FAIL - NON-COMPLIANT]";
-      lines.push(`${idx + 1}. **${c.component}**: ${icon}`);
-      lines.push(`   - **Observed**: ${c.observed}`);
-      lines.push(`   - **Requirement**: ${c.required} (${c.citation})`);
-      lines.push(`   - **Reasoning**: ${c.reasoning}`);
-      if (c.correctiveAction) {
-        lines.push(`   - **Corrective Action**: ${c.correctiveAction}`);
-      }
-      lines.push("");
+    checks.forEach((c) => {
+      lines.push(`| ${c.component} | ${c.observed} | ${c.required} | ${c.status} | ${c.correctiveAction ?? ""} | ${c.citation}${c.reasoning ? ` — ${c.reasoning}` : ""} |`);
     });
   }
 
   if (nonCompliant.length > 0) {
-    lines.push("### Required Corrective Actions:");
-    lines.push("");
     nonCompliant.forEach((c, idx) => {
       if (c.correctiveAction) {
         lines.push(`${idx + 1}. ${c.correctiveAction}`);
       }
     });
-    lines.push("");
   }
 
-  lines.push(
-    "**Disclaimer**: This note is a technical review finding, NOT an approval or release authorization. A new drawing revision must be submitted, revised, and rechecked before sign-off.",
-  );
+  lines.push("This is an evidence-based review. Follow the applicable approval process for decisions outside this assessment.");
 
   return lines.join("\n");
 }

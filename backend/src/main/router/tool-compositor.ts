@@ -22,6 +22,8 @@ export interface EnvironmentState {
   hasKnowledgeBaseDocs: boolean;
   hasRetrievableResults?: boolean;
   attachedSourceFiles?: string[];
+  attachedSourceBytes?: Record<string, number>;
+  maxOutputTokens?: number;
 }
 
 /**
@@ -245,39 +247,44 @@ export function constrainToolsToIntent(
   return tools.filter((tool) => !excluded.has(tool.name)).map((tool) => {
     if (tool.name !== "execute_python" || pythonDeliverables.length === 0) return tool;
     const parameters = tool.definition.function.parameters;
-    const { validation_code: _validationCode, ...repairProperties } = parameters.properties ?? {};
+    const repairProperties = parameters.properties ?? {};
     const sourceFiles = !workspaceMutationRequested ? env?.attachedSourceFiles ?? [] : [];
     const patchRepair = sourceFiles.length > 0;
-    const { code: _code, ...patchProperties } = repairProperties;
+    // A full source avoids block-edit ambiguity when it fits the configured
+    // generation budget with room for transport and independent checks.
+    const sourceBytes = sourceFiles.length === 1 ? env?.attachedSourceBytes?.[sourceFiles[0]] : undefined;
+    const fullSourceFits = sourceBytes !== undefined && env?.maxOutputTokens !== undefined &&
+      Math.ceil(sourceBytes / 3) <= Math.floor(env.maxOutputTokens / 2);
     return {
       ...tool,
       definition: {
         ...tool.definition,
         function: {
           ...tool.definition.function,
-          description: patchRepair ? "Apply exact text edits to the attached source, execute it on the data, and export the corrected file. Fix every documented defect; preserve unrelated code and the interface. Each old string must match once. A successful call already delivers the file." : "Repair and export the requested Python source, then execute it against the supplied input files. code contains only the complete implementation. A successful call already delivers the file; do not export it again.",
+          description: fullSourceFits ? "The complete attached source fits the generation budget. Supply code containing the entire corrected implementation, filename and input_files. Preserve the interface and unrelated behavior. Provide independent checks from original evidence. Execute and export this exact source. A successful call already delivers the file." : patchRepair ? "Supply complete corrected code OR exact source_file/edits, execute it on the data, and export the corrected file. Fix every documented defect; preserve unrelated code and the interface. Each old string must match once in the selected source. Default source is the original attachment; to continue a failed attempt use its returned source_revision. Anchor insertions to an existing line. A successful call already delivers the file." : "Repair and export the requested Python source, then execute it against the supplied input files. code contains only the complete implementation. A successful call already delivers the file; do not export it again.",
           parameters: {
             ...parameters,
-            required: patchRepair ? ["source_file", "edits", "filename"] : ["code", "filename"],
+            required: patchRepair && !fullSourceFits ? ["filename"] : ["code", "filename"],
             properties: {
-              ...(patchRepair ? patchProperties : repairProperties),
+              ...repairProperties,
               input_files: { type: "array", items: { type: "string" }, description: "Only runtime DATA arguments, in the original CLI order. The attached source is source_file, never an input argument." },
-              ...(patchRepair ? { source_file: { type: "string", enum: sourceFiles }, edits: { type: "array", description: "Exact old/new text replacements. For a statement, new uses indentation RELATIVE to old's line; the tool retains that line's indentation. Fix every documented defect, retain all other source text.", items: { type: "object", properties: { old: { type: "string" }, new: { type: "string" } }, required: ["old", "new"] } } } : {}),
+              ...(patchRepair && !fullSourceFits ? { source_file: { type: "string", enum: sourceFiles }, source_revision: { type: "string", description: "Optional SHA-256 revision returned by a prior execution. Omit for the original attachment. old strings must match that selected version. To retry only validation, supply this revision, edits=[] and new validation_code." }, edit_indentation: { type: "string", enum: ["exact", "relative"], description: "Default exact preserves replacement whitespace. Choose relative explicitly for replacements indented relative to old's source line." }, edits: { type: "array", description: "Exact old/new replacements; no indentation is inferred or changed. Include leading whitespace in old and full absolute indentation in new for block edits. Fix source-supported defects and retain unrelated source text.", items: { type: "object", properties: { old: { type: "string" }, new: { type: "string", format: "multiline", description: "Exact replacement source lines, including their complete indentation." } }, required: ["old", "new"] } } } : {}),
               filename: strictPythonNames.length ? { type: "string", enum: strictPythonNames } : { type: "string", description: `Source filename; the corrected export is ${pythonDeliverables.join(", ")}.` },
             },
           },
         },
       },
       async execute(args, context) {
-        if (args.filename && !pythonDeliverables.includes(String(args.filename))) {
+        if (fullSourceFits && (typeof args.code !== "string" || !args.code.trim())) {
+          const message = "The complete source fits the generation budget. Supply code containing the entire corrected implementation; no operation was executed.";
+          return { ok: false, output: message, summary: "Complete source required", error: { code: "invalid_arguments", retryable: true, message } };
+        }
+        if (args.filename && strictPythonNames.length && !strictPythonNames.includes(String(args.filename))) {
           const message = `Repair requires filename=${pythonDeliverables.join(" or ")} and code containing the repaired implementation. No operation was executed.`;
           return { ok: false, output: message, summary: "Repair validation arguments required", error: { code: "invalid_arguments", retryable: true, message } };
         }
-        // Attached code repair is validated by executing the exact exported
-        // source with the real attached inputs. Do not let speculative model
-        // assertions turn successful execution into a false failure.
-        const { validation_code: _validationCode, ...executionArgs } = args;
-        return tool.execute({ ...executionArgs, filename: args.filename ?? (pythonDeliverables.length === 1 ? pythonDeliverables[0] : undefined) }, context);
+        // Execute the exact source and any separately supplied assertions.
+        return tool.execute({ ...args, ...(patchRepair && args.source_file === undefined && sourceFiles.length === 1 ? { source_file: sourceFiles[0] } : {}), filename: args.filename ?? (pythonDeliverables.length === 1 ? pythonDeliverables[0] : undefined) }, context);
       },
     } satisfies AgentTool;
   });

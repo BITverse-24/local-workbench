@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -125,11 +125,16 @@ function stageInputs(runId: string, inputFiles: string[], aliases: InputAlias[] 
   return { inputDir, intermediateDir, outputDir, stagedInputs };
 }
 
-function outputFiles(outputDir: string, stagedInputs: string[]): string[] {
+function outputSnapshot(outputDir: string): Map<string, string> {
+  return new Map(readdirSync(outputDir, { withFileTypes: true }).filter(entry => entry.isFile()).map(entry => {
+    const stat = statSync(path.join(outputDir, entry.name), { bigint: true });
+    return [entry.name, `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`];
+  }));
+}
+
+function outputFiles(outputDir: string, stagedInputs: string[], before: Map<string, string>): string[] {
   const inputNames = new Set(stagedInputs.flatMap((name) => name.endsWith(".py") && name.includes("-") ? [name, name.replace(/-/g, "_")] : [name]));
-  return readdirSync(outputDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name !== ".DS_Store" && !inputNames.has(entry.name))
-    .map((entry) => entry.name);
+  return [...outputSnapshot(outputDir)].filter(([name, signature]) => name !== ".DS_Store" && !inputNames.has(name) && before.get(name) !== signature).map(([name]) => name);
 }
 
 export async function executePython(
@@ -142,6 +147,7 @@ export async function executePython(
 ): Promise<PythonExecutionResult> {
   const started = Date.now();
   const staged = stageInputs(runId, inputFiles, aliases, workspaceRoot);
+  const before = outputSnapshot(staged.outputDir);
   const targetScript =
     source && existsSync(path.join(staged.intermediateDir, source))
       ? path.join(staged.intermediateDir, source)
@@ -193,14 +199,14 @@ export async function executePython(
     throw new Error(`No supported Python sandbox is available on ${process.platform}`);
   }
 
-  const pythonPath = [staged.outputDir, staged.intermediateDir, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter);
+  const pythonPath = [staged.intermediateDir, staged.outputDir, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter);
   const execEnv = { ...process.env, PYTHONPATH: pythonPath, PYTHONDONTWRITEBYTECODE: "1" };
 
   try {
     const result = await exec(command, args, { cwd: staged.outputDir, env: execEnv, timeout: timeoutMs, maxBuffer: 16384 });
-    return { exitCode: 0, stdout: result.stdout.slice(0, 8000), stderr: result.stderr.slice(0, 8000), capturedOutput: { stdout: result.stdout, stderr: result.stderr, truncated: false }, timedOut: false, outputFiles: outputFiles(staged.outputDir, staged.stagedInputs), durationMs: Date.now() - started };
+    return { exitCode: 0, stdout: result.stdout.slice(0, 8000), stderr: result.stderr.slice(0, 8000), capturedOutput: { stdout: result.stdout, stderr: result.stderr, truncated: false }, timedOut: false, outputFiles: outputFiles(staged.outputDir, staged.stagedInputs, before), durationMs: Date.now() - started };
   } catch (error) {
     const e = error as { code?: number | string; stdout?: string; stderr?: string; killed?: boolean };
-    return { exitCode: typeof e.code === "number" ? e.code : 1, stdout: (e.stdout ?? "").slice(0, 8000), stderr: (e.stderr ?? String(error)).slice(0, 8000), capturedOutput: { stdout: e.stdout ?? "", stderr: e.stderr ?? String(error), truncated: e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" }, timedOut: Boolean(e.killed), outputFiles: outputFiles(staged.outputDir, staged.stagedInputs), durationMs: Date.now() - started };
+    return { exitCode: typeof e.code === "number" ? e.code : 1, stdout: (e.stdout ?? "").slice(0, 8000), stderr: (e.stderr ?? String(error)).slice(0, 8000), capturedOutput: { stdout: e.stdout ?? "", stderr: e.stderr ?? String(error), truncated: e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" }, timedOut: Boolean(e.killed), outputFiles: outputFiles(staged.outputDir, staged.stagedInputs, before), durationMs: Date.now() - started };
   }
 }

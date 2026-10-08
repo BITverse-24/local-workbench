@@ -73,6 +73,10 @@ export interface ToolExecutionContext {
   /** Results fully included in the current source evidence; no retrieval is needed. */
   inlineResultIds?: Set<string>;
   completeKnowledgeEvidence?: boolean;
+  /** Original source/criterion evidence for review before publication. */
+  sourceReviewEvidence?: string;
+  /** Original user text, kept separate from model-generated requirements. */
+  originalUserRequest?: string;
   executionLedger?: RunExecutionLedger;
   verificationFeedback?: () => { key: string; text: string } | undefined;
   refreshVerificationReport?: () => void;

@@ -62,7 +62,7 @@ async function loadPdfJs(): Promise<any> {
   return await importOptional<any>("pdfjs-dist");
 }
 
-async function loadCanvas(): Promise<{ createCanvas?: (w: number, h: number) => any } | undefined> {
+async function loadCanvas(): Promise<{ createCanvas?: (w: number, h: number) => any; loadImage?: (input: Buffer) => Promise<any> } | undefined> {
   const canvasMod = await importOptional<any>("canvas");
   return canvasMod?.createCanvas ? canvasMod : canvasMod?.default;
 }
@@ -138,7 +138,18 @@ export async function renderPdfToImages(pdfBuffer: Buffer, pageNumbers?: number[
       const canvasMod = await loadCanvas();
       const createCanvas = canvasMod?.createCanvas;
       if (createCanvas) {
-        const doc = await pdfjs.getDocument({ data: new Uint8Array(pdfBuffer) }).promise;
+        const renderCanvas = createCanvas;
+        // PDF.js must use the same canvas implementation for intermediate image
+        // decoding and the destination. Mixing native canvas backends fails on scans.
+        class LocalCanvasFactory {
+          create(width: number, height: number) {
+            const canvas = renderCanvas(width, height);
+            return { canvas, context: canvas.getContext("2d") };
+          }
+          reset(target: any, width: number, height: number) { target.canvas.width = width; target.canvas.height = height; }
+          destroy(target: any) { target.canvas.width = 0; target.canvas.height = 0; target.canvas = null; target.context = null; }
+        }
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(pdfBuffer), CanvasFactory: LocalCanvasFactory }).promise;
         const targetPages = pageNumbers && pageNumbers.length > 0
           ? pageNumbers.filter((p) => p >= 1 && p <= doc.numPages)
           : Array.from({ length: Math.min(doc.numPages, MAX_PDF_PAGES) }, (_, i) => i + 1);
@@ -159,12 +170,24 @@ export async function renderPdfToImages(pdfBuffer: Buffer, pageNumbers?: number[
         if (images.length) return images;
       }
     }
-  } catch {
-    // pdfjs/canvas not available - fall through to heuristic
+  } catch (error) {
+    console.warn("PDF source rendering failed:", error instanceof Error ? error.message : String(error));
   }
 
   void pageCount;
   return [];
+}
+
+/** Rasterize the actual SVG, including geometry and embedded images. */
+export async function renderSvgToImage(raw: Buffer): Promise<PreparedImage> {
+  const canvasModule = await loadCanvas();
+  if (!canvasModule?.createCanvas || !canvasModule.loadImage) throw new Error("SVG visual extraction requires a local image renderer.");
+  const image = await canvasModule.loadImage(raw);
+  const scale = Math.min(1, MAX_EDGE_PX / Math.max(image.width, image.height, 1));
+  const canvas = canvasModule.createCanvas(Math.max(1, Math.round(image.width * scale)), Math.max(1, Math.round(image.height * scale)));
+  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+  const buffer = canvas.toBuffer("image/jpeg", { quality: JPEG_QUALITY / 100 });
+  return { buffer, mediaType: "image/jpeg", resized: true, originalBytes: raw.length, finalBytes: buffer.length };
 }
 
 export function extractPdfText(pdfBuffer: Buffer): string {
@@ -303,7 +326,7 @@ export interface PdfInspectionResult {
 }
 
 const VISUAL_INTENT_PATTERN =
-  /\b(drawing|drawings|diagram|diagrams|p&id|pid|schematic|schematics|blueprint|blueprints|cad|layout|skid|handwritten|handwriting|signature|stamp|stamps|photo|photograph|annotation|annotations|visual|pump skid)\b/i;
+  /\b(drawing|drawings|diagram|diagrams|p&id|pid|schematic|schematics|blueprint|blueprints|cad|layout|handwritten|handwriting|signature|stamp|stamps|photo|photograph|annotation|annotations|visual)\b/i;
 
 /**
  * Inspects a PDF buffer in <10ms to decide whether it can be efficiently processed
@@ -394,7 +417,7 @@ export async function rankPagesByVisualDensity(
   const promptTokens = (userPrompt.toLowerCase().match(/\b[a-z0-9_\-]{2,}\b/g) ?? []).filter(
     (w) => !["the", "and", "for", "with", "this", "that", "from", "check", "inspect", "show", "what", "where", "please"].includes(w),
   );
-  const drawingMarkers = ["p&id", "dwg", "drawing", "schematic", "scale", "diagram", "rev", "title", "layout", "piping", "valve", "pump"];
+  const drawingMarkers = ["p&id", "dwg", "drawing", "schematic", "scale", "diagram", "rev", "title", "layout", "dimension", "component"];
 
   try {
     const pdfjs = await loadPdfJs();
@@ -578,4 +601,3 @@ export async function rankPagesByVisualDensity(
     estimatedTokensSaved: savedTokens,
   };
 }
-
