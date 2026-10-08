@@ -24,7 +24,8 @@ function iconFor(e: RunEvent): string {
     case "plan_step": return "▣";
     case "agent_thinking": return "💭";
     case "tool_call": return "▶";
-    case "tool_result": return "✓";
+    case "tool_result": return (e as any).ok === false ? "✕" : "✓";
+    case "context_compaction": return "✂";
     case "confirmation_required": return "◉";
     case "artifact_ready": return "⬢";
     case "assistant_message": return "✎";
@@ -37,11 +38,12 @@ function iconFor(e: RunEvent): string {
 function labelFor(e: RunEvent): string {
   switch (e.type) {
     case "run_state": return `state: ${e.state}`;
-    case "routing": return `${e.taskType} → ${e.modelId} (${e.reason})`;
+    case "routing": return `Model selected: ${e.modelId} (${e.reason})`;
     case "plan_step": return e.text;
     case "agent_thinking": return (e as any).text ? String((e as any).text).slice(0, 140) : "Thinking...";
     case "tool_call": return `${e.tool}: ${e.summary}`;
     case "tool_result": return `${e.tool}: ${e.summary}`;
+    case "context_compaction": return `Compacted ${(e as any).metadata?.toolName || "observation"} (${(e as any).metadata?.retainedChars}/${(e as any).metadata?.originalChars} chars)`;
     case "confirmation_required": return `${e.action.prompt} [${e.action.kind}]`;
     case "artifact_ready": return `${e.artifact.filename} (${e.artifact.kind})`;
     case "assistant_message": return e.text.slice(0, 120);

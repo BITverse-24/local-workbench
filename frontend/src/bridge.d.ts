@@ -22,6 +22,19 @@ interface PersistedMessage {
   attachments?: AttachmentReference[];
 }
 
+interface OutputExpectation {
+  chatResponse: boolean;
+  expectedFiles: string[];
+  workspaceMutationRequested: boolean;
+}
+
+type AgentOutcome =
+  | "completed"
+  | "partial"
+  | "failed"
+  | "cancelled"
+  | "limit_exceeded";
+
 type RunState =
   | "created"
   | "classifying"
@@ -29,8 +42,10 @@ type RunState =
   | "acting"
   | "awaiting_confirmation"
   | "completed"
+  | "partial"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "limit_exceeded";
 
 interface AttachmentReference {
   attachmentId: string;
@@ -40,6 +55,24 @@ interface AttachmentReference {
   relativePath: string;
 }
 
+interface VerificationCheck {
+  criterionId: string;
+  requirement: string;
+  status: "passed" | "failed" | "unverified" | "not_applicable";
+  method: "sha256" | "result_store_checksum" | "format_parser" | "filesystem" | "execution_record" | "agent_loop_completion";
+  evidence: Array<{ kind: "result" | "artifact" | "execution"; id: string }>;
+  reason: string;
+  verifiedAt: string;
+  mandatory: boolean;
+}
+interface RunVerificationReport {
+  schemaVersion: 1;
+  runId: string;
+  status: "passed" | "failed" | "unverified" | "not_applicable";
+  checks: VerificationCheck[];
+  updatedAt: string;
+}
+
 interface ArtifactRef {
   artifactId: string;
   runId: string;
@@ -47,9 +80,12 @@ interface ArtifactRef {
   filename: string;
   relativePath: string;
   sizeBytes: number;
+  sha256?: string;
   createdAt: string;
   content?: string;
   isBinary?: boolean;
+  verified?: boolean;
+  verificationDetails?: Record<string, unknown>;
 }
 
 interface PendingAction {
@@ -119,18 +155,21 @@ interface RAGStats {
 
 type RunEvent =
   | { type: "run_state"; runId: string; state: RunState }
+  | { type: "verification_report"; runId: string; report: RunVerificationReport }
   | { type: "routing"; runId: string; taskType: "vision" | "draft" | "code"; modelId: string; reason: string }
   | { type: "plan_step"; runId: string; index: number; text: string }
   | { type: "agent_thinking"; runId: string; text: string; turn?: number }
   | { type: "tool_call"; runId: string; tool: string; summary: string; callId?: string; args?: Record<string, unknown> }
-  | { type: "tool_result"; runId: string; tool: string; summary: string; callId?: string; output?: string; durationMs?: number }
+  | { type: "tool_result"; runId: string; tool: string; summary: string; callId?: string; output?: string; durationMs?: number; ok?: boolean; error?: { code: string; message: string; retryable: boolean; details?: unknown } }
+  | { type: "context_compaction"; runId: string; metadata: { truncated: boolean; originalChars: number; retainedChars: number; toolName?: string; source?: string; omittedChars?: number; omittedLines?: number; reason?: string } }
   | { type: "confirmation_required"; runId: string; action: PendingAction }
   | { type: "artifact_ready"; runId: string; artifact: ArtifactRef }
   | { type: "assistant_message_chunk"; runId: string; messageId: string; delta: string; modelId: string }
   | { type: "assistant_message_reset"; runId: string; messageId: string }
   | { type: "assistant_message"; runId: string; messageId: string; text: string; modelId: string }
   | { type: "error"; runId: string; code: string; message: string; retryable?: boolean }
-  | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] };
+  | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] }
+  | { type: "capability_expanded"; runId: string; capability: string; permitted: boolean; reason?: string };
 
 
 interface WorkspaceInfo {
@@ -175,7 +214,8 @@ interface WorkbenchBridge {
   renameChat: (chatId: string, title: string) => Promise<void>;
   getSetting: (key: string) => Promise<{ value: unknown }>;
   setSetting: (key: string, value: unknown) => Promise<void>;
-  startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string }) => Promise<{ runId: string }>;
+  startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string; selectedModel?: string; mode?: "chat" | "agent" }) => Promise<{ runId: string }>;
+  resumeRun: (input: { runId: string; largerGenerationAllowance?: boolean }) => Promise<{ runId: string }>;
   registerAttachment: (input: {
     chatId?: string;
     filename: string;
@@ -187,6 +227,7 @@ interface WorkbenchBridge {
   cancelRun: (input: { runId: string }) => Promise<void>;
   getRunHistory: (input?: { limit?: number }) => Promise<RunSummary[]>;
   getArtifact: (input: { runId: string; artifactId: string }) => Promise<ArtifactRef>;
+  getVerificationReport: (input: { runId: string }) => Promise<RunVerificationReport | undefined>;
   openArtifact: (input: { runId: string; artifactId: string }) => Promise<{ opened: true; filename: string }>;
   saveArtifact: (input: { runId: string; artifactId: string }) => Promise<{ saved: boolean; filename?: string }>;
   copyArtifact: (input: { runId: string; artifactId: string }) => Promise<{ copied: boolean; mode: "text" | "file"; filename: string }>;
@@ -233,7 +274,7 @@ interface WorkbenchBridge {
 }
 
 
-type ModelRoleType = "vision" | "coding" | "draft" | "plan" | "embedding";
+type ModelRoleType = "primary" | "vision" | "coding" | "draft" | "embedding";
 
 interface ModelConfigRow {
   role: ModelRoleType;

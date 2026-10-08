@@ -90,6 +90,8 @@ export const startRunSchema = z
     temperature: z.number().min(0).max(2).optional(),
     groundingEnabled: z.boolean().optional(),
     preferredRoute: z.string().optional(),
+    selectedModel: z.string().optional(),
+    mode: z.enum(["chat", "agent"]).optional(),
   })
   .strict()
   .refine(
@@ -101,7 +103,9 @@ export const startRunSchema = z
   );
 export const confirmActionSchema = z.object({ runId: z.string().uuid(), actionId: z.string().uuid(), approved: z.boolean() }).strict();
 export const cancelRunSchema = z.object({ runId: z.string().uuid() }).strict();
+export const resumeRunSchema = z.object({ runId: z.string().uuid(), largerGenerationAllowance: z.boolean().optional() }).strict();
 export const getArtifactSchema = z.object({ runId: z.string().uuid(), artifactId: z.string().uuid() }).strict();
+export const getVerificationReportSchema = z.object({ runId: z.string().uuid() }).strict();
 export const getRunHistorySchema = z.object({ limit: z.number().int().min(1).max(200).optional() }).strict();
 export const registerAttachmentSchema = z.object({ chatId: z.string().uuid().optional(), filename: z.string().min(1).max(255), mediaType: z.string().min(1).max(100), sizeBytes: z.number().int().nonnegative(), base64OrBuffer: z.union([z.string(), z.instanceof(Buffer)]) }).strict();
 export const openArtifactSchema = getArtifactSchema;
@@ -171,4 +175,3 @@ export type KbIngestDocInput = z.infer<typeof kbIngestDocSchema>;
 export type KbDeleteDocInput = z.infer<typeof kbDeleteDocSchema>;
 export type KbReindexInput = z.infer<typeof kbReindexSchema>;
 export type KbQueryInput = z.infer<typeof kbQuerySchema>;
-

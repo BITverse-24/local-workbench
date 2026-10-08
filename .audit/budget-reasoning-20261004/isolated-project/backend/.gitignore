@@ -1,0 +1,12 @@
+*.env
+!.env.example
+# Phase DB — SQLite runtime artifacts (DB.1)
+data/
+*.db
+*.db-wal
+*.db-shm
+data/*.db*
+data/workbench.db*
+# build / deps (Phase DB)
+dist/
+node_modules/

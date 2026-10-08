@@ -1,0 +1,8 @@
+{
+  "flow": "flow_b",
+  "monitor": "independent-lan-monitor",
+  "allowedHosts": ["vision-lan", "draft-lan", "code-lan", "app-lan", "monitor-lan"],
+  "externalRequests": 0,
+  "blockedAttempt": {"host": "pypi.org", "result": "blocked", "recorded": true},
+  "assertion": "Code generation, repair iterations, and sandbox execution stayed local with network access denied."
+}

@@ -49,6 +49,22 @@ beforeEach(() => {
   process.env.WORKBENCH_DATA_ROOT = path.join(dir, "data");
 });
 
+it("ignores sparse native tool-call slots while preserving the actual call", async () => {
+  const gateway = new ModelGateway({
+    async request() {
+      return { status: 200, async text() { return JSON.stringify({ choices: [{ message: {
+        content: null,
+        tool_calls: [null, { id: "write", function: { name: "write_file", arguments: JSON.stringify({ path: "module.py", content: "value = 1\n" }) } }],
+      } }] }); } };
+    },
+  }, visionRegistry());
+  const response = await gateway.chatWithTools("vision-qwen25vl", [{ role: "user", content: "Write the module." }], []);
+  expect(response.ok).toBe(true);
+  if (response.ok) expect(response.value.tool_calls).toEqual([
+    { id: "write", name: "write_file", arguments: { path: "module.py", content: "value = 1\n" } },
+  ]);
+});
+
 afterEach(() => {
   delete process.env.WORKBENCH_DATA_ROOT;
   if (dir) rmSync(dir, { recursive: true, force: true });
@@ -201,7 +217,6 @@ describe("model gateway health checks", () => {
       ["vision-qwen25vl", baseEntry("vision-qwen25vl", "http://127.0.0.1:1234/v1")],
       ["code-qwen25coder", baseEntry("code-qwen25coder", "http://127.0.0.1:1234/v1")],
       ["draft-qwen3", baseEntry("draft-qwen3", "http://127.0.0.1:1234/v1")],
-      ["plan-qwen3-8b", baseEntry("plan-qwen3-8b" as any, "http://127.0.0.1:1234/v1")],
       ["embedding", baseEntry("draft-qwen3", "http://127.0.0.1:11434/v1")],
     ];
 
@@ -216,7 +231,7 @@ describe("model gateway health checks", () => {
     );
 
     const distinct = await gateway.healthDistinct();
-    // 4 roles on port 1234 deduplicate to 1 probe + 1 role on port 11434 = 2 distinct probes
+    // 3 roles on port 1234 deduplicate to 1 probe + 1 role on port 11434 = 2 distinct probes
     expect(distinct).toHaveLength(2);
     expect(probeCount).toBe(2);
 

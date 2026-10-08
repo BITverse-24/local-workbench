@@ -1,0 +1,111 @@
+{
+  "workflow": "financial",
+  "profile": "A4",
+  "caps": [
+    4096,
+    4096
+  ],
+  "exitCode": 0,
+  "accepted": true,
+  "wallMs": 337218,
+  "flowWallSeconds": 336.6,
+  "outcome": "completed",
+  "acceptance": {
+    "passed": 8,
+    "failed": 0,
+    "total": 8
+  },
+  "calls": {
+    "working": 4,
+    "classification": 0,
+    "delegated": 0,
+    "total": 4
+  },
+  "tokens": {
+    "input": 21411,
+    "completion": 6142,
+    "reasoning": 1205,
+    "nonReasoning": 4937
+  },
+  "lengthStopCount": 0,
+  "toolSequence": [
+    "read_file",
+    "read_file",
+    "execute_python",
+    "generate_deliverable"
+  ],
+  "toolExecutionDurationMs": 153,
+  "failedTools": [],
+  "repeatedTools": [
+    "read_file"
+  ],
+  "perCall": [
+    {
+      "purpose": "working_1",
+      "durationMs": 7370,
+      "ttftMs": 690,
+      "finishReason": "tool_calls",
+      "inputTokens": 3880,
+      "completionTokens": 135,
+      "reasoningTokens": 72,
+      "maxTokens": 4096,
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "argumentsChars": 43
+        },
+        {
+          "name": "read_file",
+          "argumentsChars": 38
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_2",
+      "durationMs": 133404,
+      "ttftMs": 6889,
+      "finishReason": "tool_calls",
+      "inputTokens": 5447,
+      "completionTokens": 2427,
+      "reasoningTokens": 1073,
+      "maxTokens": 3507,
+      "toolCalls": [
+        {
+          "name": "execute_python",
+          "argumentsChars": 4150
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_3",
+      "durationMs": 141636,
+      "ttftMs": 2850,
+      "finishReason": "tool_calls",
+      "inputTokens": 5880,
+      "completionTokens": 2603,
+      "reasoningTokens": 39,
+      "maxTokens": 3138,
+      "toolCalls": [
+        {
+          "name": "generate_deliverable",
+          "argumentsChars": 7343
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_4",
+      "durationMs": 53891,
+      "ttftMs": 3021,
+      "finishReason": "stop",
+      "inputTokens": 6204,
+      "completionTokens": 977,
+      "reasoningTokens": 21,
+      "maxTokens": 2874,
+      "toolCalls": [],
+      "cacheUsage": null
+    }
+  ]
+}

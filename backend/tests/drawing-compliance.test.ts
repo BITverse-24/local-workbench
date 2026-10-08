@@ -326,7 +326,7 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
 
     const { runId } = await manager.start({
       chatId,
-      userText: "Check this against our piping spec / standard / SOP and tell me if anything is non-compliant",
+      userText: "Check this against our piping spec / standard / SOP and draft a corrective action note if anything is non-compliant",
       attachmentToken: attachment.attachmentId,
     });
 
@@ -353,7 +353,7 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
     const routingEvt = runEvents.find((e) => e.type === "routing");
     expect(routingEvt).toBeDefined();
     expect(routingEvt?.taskType).toBe("draft");
-    expect(routingEvt?.modelId).toBe("draft-qwen3");
+    expect(routingEvt?.modelId).toBe("primary-model");
 
     // 2. Check tool execution events
     const inspectTool = runEvents.find((e) => e.type === "tool_result" && e.tool === "inspect_drawing");
@@ -381,5 +381,100 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
     expect(outputContent).toContain("DRAWING NOT APPROVED");
     expect(outputContent).toContain("[SOP-220 §4.2]");
     expect(outputContent).toContain("[SOP-220 §4.3]");
+  });
+
+  it("does not generate deliverable artifact when user only asks for in-chat compliance check", async () => {
+    let capturedPrompt = "";
+    const gateway = new ModelGateway(
+      {
+        async request(_url, init) {
+          const body = JSON.parse(init.body || "{}");
+          const userMsg = body.messages?.[body.messages.length - 1]?.content ?? "";
+          capturedPrompt = typeof userMsg === "string" ? userMsg : JSON.stringify(userMsg);
+
+          const complianceOutput = {
+            drawingId: "PID-P204-REV-C", approved: false, noApprovalClaim: true,
+            checks: [{ component: "XV-204", observed: "Class 150", required: "Class 300", status: "non_compliant", citation: "[SOP-220 §4.2]", reasoning: "150 is below 300." }],
+            correctiveAction: "Upgrade the valve before release.",
+            markdownNote: "Drawing is NOT APPROVED. Upgrade XV-204 per [SOP-220 §4.2].",
+          };
+
+          return {
+            status: 200,
+            async text() {
+              return JSON.stringify({
+                id: "chatcmpl-mock",
+                choices: [{ message: { content: JSON.stringify(complianceOutput) } }],
+              });
+            },
+          };
+        },
+      },
+      new Map([
+        [
+          "draft-qwen3",
+          {
+            id: "draft-qwen3",
+            taskTypes: ["draft"],
+            runtime: "llama-server",
+            baseUrl: "http://localhost:8000/v1",
+            model: "draft-model",
+            capabilities: ["text", "structured-output"],
+            requestTimeoutMs: 10000,
+            healthPath: "/models",
+            enabled: true,
+          },
+        ],
+      ] as any),
+    );
+
+    const runEvents: RunEvent[] = [];
+    const manager = new RunManager(gateway, (evt) => runEvents.push(evt));
+    manager.setRAGService(ragService);
+    manager.setGrounding(new RAGGroundingProvider(ragService));
+
+    const chatId = createChat("Drawing In-Chat Only Check");
+    const svgPath = path.resolve(__dirname, "../../demo/flow_c/pump-skid-P204.svg");
+    const svgBuffer = readFileSync(svgPath);
+    const { attachment } = manager.registerAttachment({
+      chatId,
+      filename: "pump-skid-P204.svg",
+      mediaType: "image/svg+xml",
+      sizeBytes: svgBuffer.length,
+      base64OrBuffer: svgBuffer,
+    });
+
+    const { runId } = await manager.start({
+      chatId,
+      userText: "Check this against our piping spec and tell me if anything's non-compliant",
+      attachmentToken: attachment.attachmentId,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const start = Date.now();
+      const interval = setInterval(() => {
+        const err = runEvents.find((e) => e.type === "error");
+        if (err) {
+          clearInterval(interval);
+          reject(new Error(`Run failed: ${(err as any).message}`));
+        }
+        if (Date.now() - start > 5000) {
+          clearInterval(interval);
+          reject(new Error("Timed out"));
+        }
+        if (runEvents.some((e) => e.type === "run_state" && e.state === "completed")) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 50);
+    });
+
+    // Verify routing and tool events occurred
+    expect(runEvents.some((e) => e.type === "tool_result" && e.tool === "inspect_drawing")).toBe(true);
+    expect(runEvents.some((e) => e.type === "tool_result" && e.tool === "retrieve_sop")).toBe(true);
+
+    // Verify NO artifact_ready was emitted because user didn't ask for a report or deliverable
+    const artifactEvt = runEvents.find((e) => e.type === "artifact_ready");
+    expect(artifactEvt).toBeUndefined();
   });
 });

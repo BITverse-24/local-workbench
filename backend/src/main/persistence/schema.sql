@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS runs (
   chat_id         TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
   state           TEXT NOT NULL DEFAULT 'created'
                   CHECK (state IN ('created','classifying','planning','acting',
-                                   'awaiting_confirmation','completed','failed','cancelled')),
+                                   'awaiting_confirmation','completed','partial','failed','cancelled','limit_exceeded')),
   user_text_summary TEXT NOT NULL DEFAULT '',  -- bounded ≤ 500 chars, not full prompt
   attachment_id   TEXT REFERENCES attachments(attachment_id),
   iteration_count INTEGER NOT NULL DEFAULT 0,  -- cap 8
@@ -141,9 +141,10 @@ CREATE TABLE IF NOT EXISTS artifacts (
   artifact_id   TEXT PRIMARY KEY,         -- uuid4
   run_id        TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   kind          TEXT NOT NULL CHECK (kind IN ('docx','pdf','xlsx','csv','txt','json','md')),
-  filename      TEXT NOT NULL,             -- e.g. approval-note-E201.docx
+  filename      TEXT NOT NULL,             -- request-derived output filename
   relative_path TEXT NOT NULL,             -- runs/<runId>/output/…
   size_bytes    INTEGER NOT NULL DEFAULT 0,
+  sha256        TEXT,
   created_at    TEXT NOT NULL
 );
 
@@ -171,4 +172,44 @@ CREATE TABLE IF NOT EXISTS kv_meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
--- ('schema_version','1')
+-- ('schema_version','2')
+
+-- P1 foundation: immutable normalized contracts and intermediate-result manifests.
+CREATE TABLE IF NOT EXISTS run_contracts (
+  run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+  schema_version INTEGER NOT NULL,
+  contract_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+-- P1-C1: compact operational state. Large observations remain in intermediate_results.
+CREATE TABLE IF NOT EXISTS run_execution_ledgers (
+  run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+  schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+  ledger_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS run_verification_reports (
+  run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+  schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+  report_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS intermediate_results (
+  result_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  schema_version INTEGER NOT NULL,
+  result_type TEXT NOT NULL CHECK (result_type IN ('text','document','table','structured','execution')),
+  status TEXT NOT NULL CHECK (status IN ('complete','partial')),
+  origin TEXT NOT NULL CHECK (origin IN ('source_extracted','model_derived','execution')),
+  relative_path TEXT NOT NULL UNIQUE,
+  encoding TEXT NOT NULL CHECK (encoding IN ('utf8','json')),
+  size_bytes INTEGER NOT NULL,
+  sha256 TEXT NOT NULL,
+  producer_tool TEXT NOT NULL,
+  producer_call_id TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  structured_schema_json TEXT,
+  sources_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_intermediate_results_run ON intermediate_results(run_id, created_at, result_id);

@@ -32,8 +32,8 @@ describe("Agent Loop Engine & Context Manager", () => {
     let order: string[] = [];
 
     const toolA: AgentTool = {
-      name: "tool_a",
-      definition: { type: "function", function: { name: "tool_a", description: "a", parameters: { type: "object", properties: {} } } },
+      name: "read_file",
+      definition: { type: "function", function: { name: "read_file", description: "a", parameters: { type: "object", properties: {} } } },
       async execute() {
         await new Promise((r) => setTimeout(r, 20));
         order.push("a");
@@ -42,8 +42,8 @@ describe("Agent Loop Engine & Context Manager", () => {
     };
 
     const toolB: AgentTool = {
-      name: "tool_b",
-      definition: { type: "function", function: { name: "tool_b", description: "b", parameters: { type: "object", properties: {} } } },
+      name: "search",
+      definition: { type: "function", function: { name: "search", description: "b", parameters: { type: "object", properties: {} } } },
       async execute() {
         await new Promise((r) => setTimeout(r, 10));
         order.push("b");
@@ -54,8 +54,8 @@ describe("Agent Loop Engine & Context Manager", () => {
     const dispatcher = new ToolDispatcher([toolA, toolB]);
     const results = await dispatcher.dispatchConcurrent(
       [
-        { id: "1", name: "tool_a", arguments: {} },
-        { id: "2", name: "tool_b", arguments: {} },
+        { id: "1", name: "read_file", arguments: {} },
+        { id: "2", name: "search", arguments: {} },
       ],
       { runId: "test", workspaceRoot: ".", gateway: {} as any },
     );
@@ -67,12 +67,110 @@ describe("Agent Loop Engine & Context Manager", () => {
     expect(results[1].result.output).toBe("result_b");
   });
 
+  it("waits for reads and writes before running validation in the same batch", async () => {
+    let written = false;
+    const order: string[] = [];
+    const makeTool = (name: string, execute: AgentTool["execute"]): AgentTool => ({
+      name, definition: { type: "function", function: { name, description: name, parameters: { type: "object", properties: {} } } }, execute,
+    });
+    const dispatcher = new ToolDispatcher([
+      makeTool("read_file", async () => { await new Promise((r) => setTimeout(r, 15)); order.push("read"); return { output: "old", summary: "read" }; }),
+      makeTool("write_file", async () => { await new Promise((r) => setTimeout(r, 15)); written = true; order.push("write"); return { output: "saved", summary: "saved" }; }),
+      makeTool("run_command", async () => { expect(written).toBe(true); order.push("validate"); return { output: '{"exitCode":0,"stdout":"verified"}', summary: "verified" }; }),
+    ]);
+    const result = await dispatcher.dispatchConcurrent([
+      { id: "read", name: "read_file", arguments: { path: "module.py" } },
+      { id: "write", name: "write_file", arguments: { path: "module.py", content: "source" } },
+      { id: "test", name: "run_command", arguments: { command: "python3 -B -c 'import module'" } },
+    ], { runId: "test", workspaceRoot: ".", gateway: {} as any });
+    expect(result.every((r) => r.result.ok)).toBe(true);
+    expect(order).toEqual(["read", "write", "validate"]);
+  });
+
+  it("never executes a malformed executable tool argument", async () => {
+    let invoked = false;
+    const dispatcher = new ToolDispatcher([{
+      name: "write_file", definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } },
+      async execute() { invoked = true; return { output: "saved", summary: "saved" }; },
+    }]);
+    const [result] = await dispatcher.dispatchConcurrent([{ id: "bad", name: "write_file", arguments: { raw: '{"content":"truncated' } }], { runId: "test", workspaceRoot: ".", gateway: {} as any });
+    expect(invoked).toBe(false);
+    expect(result.result.ok).toBe(false);
+    if (!result.result.ok) expect(result.result.error.code).toBe("invalid_arguments");
+  });
+
+  it("continues past an empty module launch until written-code assertions produce the requested marker", async () => {
+    const calls = [
+      { name: "write_file", arguments: { path: "module.py", content: "def calculate(): return 5" } },
+      { name: "run_command", arguments: { command: "python3 -B module.py" } },
+      null,
+      { name: "run_command", arguments: { command: "python3 -B -c 'import module; assert module.calculate() == 5; print(\"CHECK_OK\")'" } },
+      null,
+    ];
+    let index = 0;
+    let sawFeedback = false;
+    const gateway = { async chatWithTools(_model: any, messages: any[]) {
+      sawFeedback ||= messages.some((message: any) => String(message.content).includes("Running a module without invoking"));
+      const call = calls[index++];
+      return { ok: true, value: { content: "Validation complete", tool_calls: call ? [{ id: String(index), ...call }] : null } };
+    } };
+    const tools: AgentTool[] = [
+      { name: "write_file", definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } }, async execute() { return { summary: "saved", output: "saved" }; } },
+      { name: "run_command", definition: { type: "function", function: { name: "run_command", description: "run", parameters: { type: "object", properties: {} } } }, async execute(args) { return { summary: "ran", output: JSON.stringify({ exitCode: 0, stdout: String(args.command).includes("assert") ? "CHECK_OK" : "" }) }; } },
+    ];
+    const result = await new AgentLoop().run({ runId: "validation", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py, validate the written code and print CHECK_OK only if it passes.", systemPrompt: "repair", semanticIntent: { intentType: "code_modification", workspaceMutationRequested: true, targetFiles: ["module.py"] }, tools, context: { runId: "validation", workspaceRoot: ".", gateway: gateway as any }, emitEvent() {} });
+    expect(sawFeedback).toBe(true);
+    expect(index).toBe(5);
+    expect(result.outcome).toBe("completed");
+  });
+
+  it("records actual extracted page references before dependent deliverable generation", async () => {
+    const context = { runId: "sources", workspaceRoot: ".", gateway: {} as any, sourceReferences: [] as Array<{ filename: string; page: number }> };
+    const tools: AgentTool[] = [
+      { name: "extract_document", definition: { type: "function", function: { name: "extract_document", description: "extract", parameters: { type: "object", properties: {} } } }, async execute() { return { output: JSON.stringify({ pageReferences: [{ page: 2 }, { page: 2 }, { page: 0 }] }), summary: "extracted" }; } },
+      { name: "generate_deliverable", definition: { type: "function", function: { name: "generate_deliverable", description: "compile", parameters: { type: "object", properties: {} } } }, async execute(_args, current) { expect(current.sourceReferences).toEqual([{ filename: "source.pdf", page: 2 }]); return { output: "compiled", summary: "compiled" }; } },
+    ];
+    const result = await new ToolDispatcher(tools).dispatchConcurrent([{ id: "extract", name: "extract_document", arguments: { filename: "source.pdf" } }, { id: "compile", name: "generate_deliverable", arguments: {} }], context);
+    expect(result.every((item) => item.result.ok)).toBe(true);
+  });
+
+  it("allows a bounded correction after repeated validation syntax errors", async () => {
+    const broken = { id: "bad", name: "run_command", arguments: { command: "python3 -B", python_code: "assert (" } };
+    const turns = [
+      { content: null, tool_calls: [{ id: "write", name: "write_file", arguments: { path: "module.py", content: "value = 1" } }] },
+      { content: null, tool_calls: [broken] },
+      { content: null, tool_calls: [broken] },
+      { content: null, tool_calls: [{ id: "fixed", name: "run_command", arguments: { command: "python3 -B", python_code: "import module\nassert module.value == 1\nprint('CHECK_OK')" } }] },
+      { content: "Verified.", tool_calls: null },
+    ];
+    let index = 0, executions = 0, sawCorrection = false;
+    const gateway = { async chatWithTools(_model: unknown, messages: AgentMessage[], _tools: unknown, options: { onChunk?: unknown }) {
+      expect(typeof options.onChunk).toBe("function");
+      sawCorrection ||= messages.some((message) => message.content?.includes("The actual error was: SyntaxError"));
+      return { ok: true, value: turns[index++] };
+    } };
+    const tools: AgentTool[] = [
+      { name: "write_file", definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } }, async execute() { return { output: "saved", summary: "saved" }; } },
+      { name: "run_command", definition: { type: "function", function: { name: "run_command", description: "execute", parameters: { type: "object", properties: {} } } }, async execute(args) {
+        executions++;
+        if (args.python_code === "assert (") throw { code: "sandbox_failure", message: "SyntaxError: '(' was never closed", retryable: true };
+        return { output: JSON.stringify({ exitCode: 0, stdout: "CHECK_OK\n" }), summary: "passed" };
+      } },
+    ];
+    const result = await new AgentLoop().run({ runId: "retry", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py and validate it. Print CHECK_OK only on success.", systemPrompt: "repair", semanticIntent: { intentType: "code_modification", workspaceMutationRequested: true, targetFiles: ["module.py"] }, tools, context: { runId: "retry", workspaceRoot: ".", gateway: gateway as any }, emitEvent() {} });
+    expect(result.outcome).toBe("completed");
+    expect(sawCorrection).toBe(true);
+    expect(executions).toBe(2);
+  });
+
   it("terminates pure chat on turn 1 without triggering confirmation", async () => {
     const loop = new AgentLoop();
     let confirmationTriggered = false;
+    let modelCalls = 0;
 
     const mockGateway = {
       async chatWithTools() {
+        modelCalls++;
         return {
           ok: true,
           value: {
@@ -99,8 +197,157 @@ describe("Agent Loop Engine & Context Manager", () => {
 
     expect(result.completed).toBe(true);
     expect(result.turns).toBe(1);
+    expect(modelCalls).toBe(1);
     expect(result.finalText).toBe("A heat exchanger transfers heat safely.");
     expect(confirmationTriggered).toBe(false);
+  });
+
+  it("keeps a length-terminated response before any tool call incomplete", async () => {
+    let writes = 0;
+    const writeTool: AgentTool = {
+      name: "write_file",
+      definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } },
+      async execute() { writes++; return { output: "saved", summary: "saved" }; },
+    };
+    const result = await new AgentLoop().run({
+      runId: "truncated-before-tool", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py.", systemPrompt: "repair",
+      semanticIntent: { intentType: "code_modification", isActionable: true, workspaceMutationRequested: true, targetFiles: ["module.py"] },
+      tools: [writeTool], context: { runId: "truncated-before-tool", workspaceRoot: ".", gateway: {
+        async chatWithTools() { return { ok: true, value: { content: "Incomplete draft", tool_calls: null, finishReason: "length" } }; },
+      } as any }, onPlanConfirmationRequired: async () => true, emitEvent() {},
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.completed).toBe(false);
+    expect(result.finalText).toContain("output limit");
+    expect(writes).toBe(0);
+  });
+
+  it("applies the explicit Demo/Fast profile through the existing context budget", async () => {
+    const budgets: number[] = [];
+    const previousProfile = process.env.SW_AGENT_GENERATION_PROFILE;
+    process.env.SW_AGENT_GENERATION_PROFILE = "demo_fast";
+    try {
+      const result = await new AgentLoop().run({
+        runId: "demo-fast-profile", driverModelId: "code-qwen25coder", userPrompt: "Summarize this code.", systemPrompt: "helpful",
+        tools: [],
+        context: { runId: "demo-fast-profile", workspaceRoot: ".", gateway: {
+          async chatWithTools(_modelId: string, _messages: any, _tools: any, options: any) {
+            budgets.push(options.maxTokens);
+            return { ok: true, value: { content: "Summary.", tool_calls: null, finishReason: "stop" } };
+          },
+        } as any }, emitEvent() {},
+      });
+      expect(result.completed).toBe(true);
+      expect(budgets).toEqual([2048]);
+    } finally {
+      if (previousProfile === undefined) delete process.env.SW_AGENT_GENERATION_PROFILE;
+      else process.env.SW_AGENT_GENERATION_PROFILE = previousProfile;
+    }
+  });
+
+  it("uses the Demo/Fast post-validation cap after a successful workspace write", async () => {
+    const budgets: number[] = [];
+    const previousProfile = process.env.SW_AGENT_GENERATION_PROFILE;
+    process.env.SW_AGENT_GENERATION_PROFILE = "demo_fast";
+    const writeTool: AgentTool = {
+      name: "write_file",
+      definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: { path: { type: "string" } } } } },
+      async execute() { return { output: "saved", summary: "saved" }; },
+    };
+    try {
+      let calls = 0;
+      const result = await new AgentLoop().run({
+        runId: "demo-fast-post-validation", driverModelId: "code-qwen25coder", userPrompt: "Write parser.py.", systemPrompt: "repair",
+        semanticIntent: { intentType: "code_modification", isActionable: true, workspaceMutationRequested: true, targetFiles: ["parser.py"] },
+        tools: [writeTool], context: { runId: "demo-fast-post-validation", workspaceRoot: ".", gateway: {
+          async chatWithTools(_modelId: string, _messages: any, _tools: any, options: any) {
+            budgets.push(options.maxTokens);
+            calls++;
+            return { ok: true, value: calls === 1
+              ? { content: null, finishReason: "tool_calls", tool_calls: [{ id: "write-1", name: "write_file", arguments: { path: "parser.py", content: "value = 1" } }] }
+              : { content: "Written.", finishReason: "stop", tool_calls: null } };
+          },
+        } as any }, onPlanConfirmationRequired: async () => true, emitEvent() {},
+      });
+      expect(result.completed).toBe(true);
+      expect(budgets).toEqual([2048, 1280]);
+    } finally {
+      if (previousProfile === undefined) delete process.env.SW_AGENT_GENERATION_PROFILE;
+      else process.env.SW_AGENT_GENERATION_PROFILE = previousProfile;
+    }
+  });
+
+  it("never dispatches a tool call returned with finish_reason length", async () => {
+    let writes = 0;
+    const writeTool: AgentTool = {
+      name: "write_file",
+      definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } },
+      async execute() { writes++; return { output: "saved", summary: "saved" }; },
+    };
+    const result = await new AgentLoop().run({
+      runId: "truncated-tool-call", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py.", systemPrompt: "repair",
+      semanticIntent: { intentType: "code_modification", isActionable: true, workspaceMutationRequested: true, targetFiles: ["module.py"] },
+      tools: [writeTool], context: { runId: "truncated-tool-call", workspaceRoot: ".", gateway: {
+        async chatWithTools() { return { ok: true, value: { content: null, finishReason: "length", tool_calls: [{ id: "truncated-write", name: "write_file", arguments: { path: "module.py", content: "partial" } }] } }; },
+      } as any }, onPlanConfirmationRequired: async () => true, emitEvent() {},
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.completed).toBe(false);
+    expect(result.finalText).toContain("No proposed action");
+    expect(writes).toBe(0);
+  });
+
+  it("keeps a mutation run incomplete when its final response is length-terminated", async () => {
+    let writes = 0;
+    let call = 0;
+    const writeTool: AgentTool = {
+      name: "write_file",
+      definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } },
+      async execute() { writes++; return { output: "saved", summary: "saved" }; },
+    };
+    const result = await new AgentLoop().run({
+      runId: "truncated-final", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py.", systemPrompt: "repair",
+      semanticIntent: { intentType: "code_modification", isActionable: true, workspaceMutationRequested: true, targetFiles: ["module.py"] },
+      tools: [writeTool], context: { runId: "truncated-final", workspaceRoot: ".", gateway: {
+        async chatWithTools() {
+          call++;
+          return call === 1
+            ? { ok: true, value: { content: null, tool_calls: [{ id: "write", name: "write_file", arguments: { path: "module.py", content: "complete source" } }], finishReason: "tool_calls" } }
+            : { ok: true, value: { content: "I fixed and verified", tool_calls: null, finishReason: "length" } };
+        },
+      } as any }, onPlanConfirmationRequired: async () => true, emitEvent() {},
+    });
+    expect(writes).toBe(1);
+    expect(result.outcome).toBe("partial");
+    expect(result.completed).toBe(false);
+    expect(result.finalText).toContain("Earlier operations remain recorded");
+  });
+
+  it("replaces pending validation feedback and removes it after validation succeeds", async () => {
+    const calls = [
+      { id: "write-1", name: "write_file", arguments: { path: "module.py", content: "source one" } },
+      { id: "write-2", name: "write_file", arguments: { path: "module.py", content: "source two" } },
+      { id: "validate", name: "run_command", arguments: { command: "python3 -B -c 'assert True'" } },
+    ];
+    const pendingCounts: number[] = [];
+    let turn = 0;
+    const tools: AgentTool[] = [
+      { name: "write_file", definition: { type: "function", function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } } }, async execute() { return { output: JSON.stringify({ written: "module.py", diff: "updated" }), summary: "saved" }; } },
+      { name: "run_command", definition: { type: "function", function: { name: "run_command", description: "run", parameters: { type: "object", properties: {} } } }, async execute() { return { output: JSON.stringify({ exitCode: 0, stdout: "CHECK_OK" }), summary: "validated" }; } },
+    ];
+    const result = await new AgentLoop().run({
+      runId: "feedback-dedup", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py, validate it and print CHECK_OK only if validation passes.", systemPrompt: "repair",
+      semanticIntent: { intentType: "code_modification", isActionable: true, workspaceMutationRequested: true, targetFiles: ["module.py"] },
+      tools, context: { runId: "feedback-dedup", workspaceRoot: ".", gateway: {
+        async chatWithTools(_model: unknown, messages: AgentMessage[]) {
+          pendingCounts.push(messages.filter((message) => message.role === "user" && message.content?.startsWith("[SYSTEM FEEDBACK: Validation pending]")).length);
+          const call = calls[turn++];
+          return { ok: true, value: call ? { content: null, tool_calls: [call], finishReason: "tool_calls" } : { content: "Validated.", tool_calls: null, finishReason: "stop" } };
+        },
+      } as any }, onPlanConfirmationRequired: async () => true, emitEvent() {},
+    });
+    expect(result.outcome).toBe("completed");
+    expect(pendingCounts).toEqual([0, 1, 1, 0]);
   });
 
   it("intercepts markdown code blocks as write_file tool calls when model outputs files as chat", async () => {
@@ -244,6 +491,70 @@ module.exports = app;
     const nudgeMsg = receivedMessagesOnTurn2.find((m) => typeof m.content === "string" && m.content.includes("[SYSTEM FEEDBACK]"));
     expect(nudgeMsg).toBeDefined();
     expect(result.completed).toBe(true);
+  });
+
+  it("does not nudge or reset chat when user asks for a code snippet without workspace file targets", async () => {
+    const loop = new AgentLoop();
+    let callTurn = 0;
+    const emittedEvents: any[] = [];
+
+    const mockWriteFileTool: AgentTool = {
+      name: "write_file",
+      definition: {
+        type: "function",
+        function: {
+          name: "write_file",
+          description: "write",
+          parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } } },
+        },
+      },
+      async execute(args) {
+        return { output: `Saved ${args.path}`, summary: "Saved" };
+      },
+    };
+
+    const snippetText = `Here is a FastAPI snippet that logs incoming IP addresses:
+\`\`\`python
+from fastapi import FastAPI, Request
+app = FastAPI()
+@app.middleware("http")
+async def log_ip(request: Request, call_next):
+    print(f"IP: {request.client.host}")
+    return await call_next(request)
+\`\`\``;
+
+    const mockGateway = {
+      async chatWithTools() {
+        callTurn++;
+        return {
+          ok: true,
+          value: {
+            content: snippetText,
+            tool_calls: null,
+          },
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-snippet",
+      driverModelId: "code-qwen25coder",
+      userPrompt: "Write a fastapi snippet which logs all incoming requests' IP address",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockWriteFileTool],
+      context: { runId: "test-snippet", workspaceRoot: "", gateway: mockGateway as any },
+      emitEvent: (e) => emittedEvents.push(e),
+    });
+
+    expect(callTurn).toBe(1);
+    expect(result.completed).toBe(true);
+    expect(result.finalText).toContain("from fastapi import FastAPI");
+    // Verify assistant_message_reset was NOT emitted
+    const resetEvent = emittedEvents.find((e) => e.type === "assistant_message_reset");
+    expect(resetEvent).toBeUndefined();
+    // Verify agent_thinking was emitted for telemetry
+    const thinkingEvent = emittedEvents.find((e) => e.type === "agent_thinking");
+    expect(thinkingEvent).toBeDefined();
   });
 
   it("detects and terminates tool call loops when identical tool calls repeat", async () => {
@@ -611,10 +922,12 @@ module.exports = app;
     });
 
     expect(result.completed).toBe(true);
-    // Turn 1: undefined maxTokens (full budget)
-    expect(maxTokensPerTurn[0]).toBeUndefined();
+    // Context budgeting always supplies an explicit generation budget (bounded by the full 4096 allowance)
+    expect(maxTokensPerTurn[0]).toBeGreaterThan(0);
+    expect(maxTokensPerTurn[0]).toBeLessThanOrEqual(4096);
     // Turn 2: should NOT be capped to 350 because search is read-only!
-    expect(maxTokensPerTurn[1]).toBeUndefined();
+    expect(maxTokensPerTurn[1]).toBeGreaterThan(350);
+    expect(maxTokensPerTurn[1]).toBeLessThanOrEqual(4096);
     // Turn 3: capped to 4096 because write_file mutated disk on turn 2
     expect(maxTokensPerTurn[2]).toBe(4096);
     // Code block was intercepted as write_file tool call and written to disk
@@ -664,9 +977,68 @@ module.exports = app;
 
     expect(callCount).toBe(2);
     expect(result.completed).toBe(false);
-    expect(result.finalText).toContain("Execution stopped: The model repeatedly encountered errors");
+    expect(result.finalText).toContain("Execution stopped: The model repeatedly encountered errors invoking `write_file`");
     const errorEvent = emittedEvents.find((e) => e.type === "error" && e.code === "tool_loop_detected");
     expect(errorEvent).toBeDefined();
+  });
+
+  it("reports the specific failed tool in tool_loop_detected when multiple tools are invoked concurrently", async () => {
+    const loop = new AgentLoop();
+    let callCount = 0;
+    const emittedEvents: any[] = [];
+
+    const mockWriteSuccess: AgentTool = {
+      name: "write_file",
+      definition: {
+        type: "function",
+        function: { name: "write_file", description: "write", parameters: { type: "object", properties: {} } },
+      },
+      async execute() {
+        return { output: JSON.stringify({ written: true }), summary: "Wrote file" };
+      },
+    };
+
+    const mockPythonFail: AgentTool = {
+      name: "execute_python",
+      definition: {
+        type: "function",
+        function: { name: "execute_python", description: "exec", parameters: { type: "object", properties: {} } },
+      },
+      async execute() {
+        return { output: JSON.stringify({ exitCode: 1, stderr: "SyntaxError: unexpected token" }), summary: "Exit 1" };
+      },
+    };
+
+    const mockGateway = {
+      async chatWithTools() {
+        callCount++;
+        return {
+          ok: true,
+          value: {
+            content: "Fixing script.",
+            tool_calls: [
+              { id: `c1_${callCount}`, name: "write_file", arguments: { path: "script.py", content: "x = 1" } },
+              { id: `c2_${callCount}`, name: "execute_python", arguments: { code: "import script" } },
+            ],
+          },
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-multi-tool-loop",
+      driverModelId: "code-qwen25coder",
+      userPrompt: "Fix python script",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockWriteSuccess, mockPythonFail],
+      context: { runId: "test-multi-tool-loop", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: (e) => emittedEvents.push(e),
+    });
+
+    expect(callCount).toBe(2);
+    expect(result.completed).toBe(false);
+    expect(result.finalText).toContain("invoking `execute_python`");
+    expect(result.finalText).toContain("SyntaxError: unexpected token");
   });
 
   it("suppresses assistant_message_chunk during intermediate tool-calling turns and emits only clean summary on final turn", async () => {
@@ -769,7 +1141,7 @@ module.exports = app;
     expect(thinking.some((t) => t.turn === 2 && t.text.includes("The script crashed"))).toBe(true);
   });
 
-  it("auto-generates deliverable when model drafts approval note without explicit tool call on turn 2", async () => {
+  it("does not auto-manufacture deliverable via regex when model drafts note without tool call on turn 2, marking outcome as partial", async () => {
     const loop = new AgentLoop();
     let turnCount = 0;
     const generatedDeliverables: any[] = [];
@@ -883,20 +1255,80 @@ module.exports = app;
       emitEvent: (e) => emittedEvents.push(e),
     });
 
-    expect(result.completed).toBe(true);
-    // Deliverable tool must have been executed automatically!
-    expect(generatedDeliverables.length).toBe(1);
-    expect(generatedDeliverables[0].filename).toBe("approval-note.docx");
-    expect(generatedDeliverables[0].title).toBe("Technical Inspection Approval Note");
-    expect(generatedDeliverables[0].content).toContain("Heat Exchanger E-201");
+    // P0-05 / P0-02 Truthful completion: Model stopped without invoking generate_deliverable,
+    // so no deliverable was manufactured via regex fallback, and outcome is partial!
+    expect(result.completed).toBe(false);
+    expect(result.outcome).toBe("partial");
+    expect(generatedDeliverables.length).toBe(0);
 
-    // Artifact ready event must have been emitted!
+    // No artifact ready event should have been emitted
     const artEvent = emittedEvents.find((e) => e.type === "artifact_ready");
-    expect(artEvent).toBeDefined();
-    expect(artEvent.artifact.filename).toBe("approval-note.docx");
+    expect(artEvent).toBeUndefined();
 
-    // Final text must notify user about the generated file!
-    expect(result.finalText).toContain("approval-note.docx");
+    // Missing deliverable is recorded truthfully
+    expect(result.deliverables?.missing).toContain("Word document / Approval note (.docx)");
+    expect(result.finalText).toContain("Execution partially completed");
+  });
+
+  it("does not auto-generate deliverable when user only asked for an in-chat drawing compliance review", async () => {
+    const loop = new AgentLoop();
+    const generatedDeliverables: any[] = [];
+    const emittedEvents: any[] = [];
+
+    const mockDeliverableTool: AgentTool = {
+      name: "generate_deliverable",
+      definition: {
+        type: "function",
+        function: {
+          name: "generate_deliverable",
+          description: "Generate deliverable",
+          parameters: { type: "object", properties: { filename: { type: "string" } } },
+        },
+      },
+      execute: async (args) => {
+        generatedDeliverables.push(args);
+        return { output: "OK", summary: "OK" };
+      },
+    };
+
+    const mockGateway = {
+      chatWithTools: async () => {
+        return {
+          ok: true as const,
+          value: {
+            content: `### Engineering Summary:\n- **Equipment ID**: P-204 Pump Skid\n| Equipment | Component | Measured Value | Allowable Limit | Status |\n| P-204 Pump Skid | Discharge Line | DN80 | DN100 or larger | Non-Compliant |\n\n### Technical Evaluation:\nDischarge line diameter DN80 is non-compliant with SOP-220.`,
+            tool_calls: [],
+          },
+        };
+      },
+    };
+
+    const result = await loop.run({
+      runId: "test-in-chat-review",
+      driverModelId: "vision-qwen25vl",
+      userPrompt: "Review the pump skid drawing and check if it follows our piping spec SOP-220",
+      systemPrompt: "You are Sovereign Workbench.",
+      tools: [mockDeliverableTool],
+      semanticIntent: {
+        driverModel: "vision-qwen25vl",
+        taskType: "vision",
+        primaryGoal: "Inspect and review pump skid drawing against SOP-220",
+        isActionable: false,
+        targetFiles: [],
+        intentType: "file_inspection",
+        reason: "Visual drawing review in chat",
+      },
+      context: { runId: "test-in-chat-review", workspaceRoot: ".", gateway: mockGateway as any },
+      emitEvent: (e) => emittedEvents.push(e),
+    });
+
+    expect(result.completed).toBe(true);
+    // Deliverable MUST NOT be auto-generated when user only requested in-chat review!
+    expect(generatedDeliverables.length).toBe(0);
+    const artEvent = emittedEvents.find((e) => e.type === "artifact_ready");
+    expect(artEvent).toBeUndefined();
+    expect(result.finalText).toContain("P-204 Pump Skid");
+    expect(result.finalText).not.toContain("approval-note.docx");
   });
 
   it("nudges model on turn 1 when model returns a brief placeholder without invoking generate_deliverable", async () => {
@@ -1041,6 +1473,18 @@ module.exports = app;
     expect(extracted).toContain("Rows 12-15 measured 3.8-4.2 mm.");
     expect(extracted).not.toContain("### Draft Approval Note for Plant Manager");
     expect(extracted).not.toContain("Classification: OFFICIAL");
+  });
+
+  it("extractInChatFindings ignores code repair and tool execution chatter", () => {
+    const rawContent = `Sure, I can help you fix the Python script to work with the attached CSV file. Let's go through the issues.
+### Issues Identified:
+1. Bug 1: Missing temperature field crashes run.
+2. Bug 2: Temperature upper limit.
+### Steps to Execute:
+1. Write code via write_file.
+2. Execute script via execute_python.`;
+    const extracted = extractInChatFindings(rawContent);
+    expect(extracted).toBe("");
   });
 
   it("preserves turn-1 in-chat key findings when turn-2 returns deliverable confirmation", async () => {
@@ -1342,5 +1786,3 @@ module.exports = app;
     expect(upfrontPlan).toContain("2. **Document Generation**");
   });
 });
-
-

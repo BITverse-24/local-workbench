@@ -145,40 +145,54 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
 
 function renderCellContent(text: string, keyPrefix: string): React.ReactNode {
   const trimmed = text.trim();
-  const upper = trimmed.toUpperCase();
-  if (["APPROVED", "COMPLIANT", "PASS", "PASSED"].includes(upper)) {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-medium bg-[var(--status-success)]/15 text-[var(--status-success)] border border-[var(--status-success)]/30">{trimmed}</span>;
+  const stripped = trimmed.replace(/^[*_`\s]+|[*_`\s]+$/g, "").trim();
+  const upper = stripped.toUpperCase();
+  if (["APPROVED", "COMPLIANT", "PASS", "PASSED", "CLEARANCE"].includes(upper)) {
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold bg-[var(--status-success)]/15 text-[var(--status-success)] border border-[var(--status-success)]/30">{stripped}</span>;
   }
-  if (["NOT APPROVED", "REJECTED", "NON-COMPLIANT", "FAIL", "FAILED"].includes(upper)) {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-medium bg-[var(--status-error)]/15 text-[var(--status-error)] border border-[var(--status-error)]/30">{trimmed}</span>;
+  if (["NOT APPROVED", "REJECTED", "NON-COMPLIANT", "FAIL", "FAILED", "REJECTION PENDING REPAIRS"].includes(upper)) {
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold bg-[var(--status-error)]/15 text-[var(--status-error)] border border-[var(--status-error)]/30">{stripped}</span>;
   }
-  if (["UNKNOWN", "FLAGGED", "WARNING", "RECHECK", "REVISIONS REQUIRED"].some((k) => upper.includes(k))) {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-medium bg-[var(--status-warning)]/15 text-[var(--status-warning)] border border-[var(--status-warning)]/30">{trimmed}</span>;
+  if (["UNKNOWN", "FLAGGED", "WARNING", "RECHECK", "REVISIONS REQUIRED", "PENDING REPAIR", "CONDITIONAL CLEARANCE", "BELOW"].some((k) => upper.includes(k))) {
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold bg-[var(--status-warning)]/15 text-[var(--status-warning)] border border-[var(--status-warning)]/30">{stripped}</span>;
   }
   return renderInline(trimmed, keyPrefix);
 }
 
 function parseMarkdownTable(raw: string): { headers: string[]; rows: string[][] } | null {
-  const lines = raw.trim().split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const normalized = raw.replace(/(?:^|\n)\s*[-*+]\s+(\|.+?)(?=\r?\n|$)/g, "\n$1");
+  const lines = normalized.trim().split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) return null;
-  const isTableRow = (l: string) => l.startsWith("|") && l.endsWith("|") && l.includes("|");
-  if (!lines.every(isTableRow)) return null;
 
-  const sepIdx = lines.findIndex((l) => /^\|(\s*:?-+:?\s*\|)+$/.test(l));
+  const isTableSep = (l: string) => {
+    const clean = l.trim().replace(/^[-*+]\s+/, "");
+    return /^\s*\|?\s*[-:]+[-| :]*\|?\s*$/.test(clean) && /[-:]{2,}/.test(clean);
+  };
+  const isTableRow = (l: string) => {
+    const clean = l.trim().replace(/^[-*+]\s+/, "");
+    return clean.includes("|") && !/^(?:#{1,6}\s|>|```|---|\*\*\*)/.test(clean);
+  };
+
+  const sepIdx = lines.findIndex(isTableSep);
   if (sepIdx <= 0) return null;
 
   const parseRow = (row: string) =>
     row
-      .slice(1, -1)
+      .trim()
+      .replace(/^[-*+]\s+/, "")
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
       .split("|")
       .map((c) => c.trim());
 
-  const headers = parseRow(lines[0]);
+  const headers = parseRow(lines[sepIdx - 1]);
   const rows: string[][] = [];
   for (let i = sepIdx + 1; i < lines.length; i++) {
-    rows.push(parseRow(lines[i]));
+    if (isTableRow(lines[i]) && !isTableSep(lines[i])) {
+      rows.push(parseRow(lines[i]));
+    }
   }
-  return { headers, rows };
+  return rows.length > 0 ? { headers, rows } : null;
 }
 
 function InteractiveMarkdown({ text }: { text: string }) {
@@ -195,17 +209,24 @@ function InteractiveMarkdown({ text }: { text: string }) {
   }, []);
 
   if (!text) return null;
+  const cleanText = text
+    .replace(/\[\/?(?:TOOL_RESULT|END_TOOL_RESULT|ENDTOOLRESULT|TOOL_CALL|END_TOOL_CALL|ENDTOOLCALL)\]/gi, "")
+    .replace(/<\/?(?:tool_call|tool_response|tool_result)[^>]*>/gi, "")
+    .replace(/```(?:json)?\s*\{[\s\S]*?"exitCode"\s*:\s*\d+[\s\S]*?\}\s*```/gi, "")
+    .replace(/\{[\s\S]*?"exitCode"\s*:\s*\d+[\s\S]*?\}/gi, "")
+    .trim();
+  if (!cleanText) return null;
   const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
   const segments: Array<{ type: "text" | "code"; content: string; lang?: string }> = [];
   let lastIdx = 0;
   let match: RegExpExecArray | null;
-  while ((match = codeBlockRegex.exec(text)) !== null) {
-    if (match.index > lastIdx) segments.push({ type: "text", content: text.slice(lastIdx, match.index) });
+  while ((match = codeBlockRegex.exec(cleanText)) !== null) {
+    if (match.index > lastIdx) segments.push({ type: "text", content: cleanText.slice(lastIdx, match.index) });
     segments.push({ type: "code", content: match[2], lang: match[1] });
     lastIdx = codeBlockRegex.lastIndex;
   }
-  if (lastIdx < text.length) segments.push({ type: "text", content: text.slice(lastIdx) });
-  if (segments.length === 0) segments.push({ type: "text", content: text });
+  if (lastIdx < cleanText.length) segments.push({ type: "text", content: cleanText.slice(lastIdx) });
+  if (segments.length === 0) segments.push({ type: "text", content: cleanText });
 
   return (
     <div className="max-h-96 overflow-y-auto p-4 text-xs leading-relaxed space-y-3 font-sans">
@@ -230,7 +251,12 @@ function InteractiveMarkdown({ text }: { text: string }) {
           );
         }
 
-        const blocks = seg.content.split(/\n{2,}/);
+        const normalizedContent = seg.content
+          .replace(/(?:^|\n)\s*[-*+]\s+(\|.+?)(?=\r?\n|$)/g, "\n$1")
+          .replace(/([^\n|])\n(\s*\|[^\n]+\|\r?\n\s*\|?[-:\s|]+\|)/g, "$1\n\n$2")
+          .replace(/^(#{1,6}\s+[^\n]+)\n(?![\r\n])/gm, "$1\n\n")
+          .replace(/(\|[^\n]+\|)\n(?![\r\n|])/g, "$1\n\n");
+        const blocks = normalizedContent.split(/\n{2,}/);
         return blocks.map((block, bi) => {
           const trimmed = block.trim();
           if (!trimmed) return null;

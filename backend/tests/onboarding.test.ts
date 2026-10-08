@@ -122,27 +122,16 @@ describe("Onboarding Architecture & IPC Handlers", () => {
 
     it("converts rows into valid ModelRegistryEntry array", () => {
       const entries = buildRegistryFromRows(rows);
-      expect(entries.length).toBeGreaterThanOrEqual(3);
+      expect(entries).toHaveLength(1);
+      const primary = entries[0];
+      expect(primary.id).toBe("primary-model");
+      expect(primary.taskTypes).toEqual(["vision", "draft", "code"]);
+      expect(primary.baseUrl).toBe("http://127.0.0.1:8000/v1");
+      expect(primary.model).toBe("qwen3:8b");
 
-      const vision = entries.find((e) => e.id === "vision-qwen25vl");
-      expect(vision).toBeDefined();
-      expect(vision?.baseUrl).toBe("http://192.168.1.42:11434/v1");
-      expect(vision?.model).toBe("qwen2.5-vl:7b");
-
-      const coding = entries.find((e) => e.id === "code-qwen25coder");
-      expect(coding).toBeDefined();
-      expect(coding?.baseUrl).toBe("http://192.168.1.42:11434/v1");
-      expect(coding?.model).toBe("qwen2.5-coder:32b");
-
-      const draft = entries.find((e) => e.id === "draft-qwen3");
-      expect(draft).toBeDefined();
-      expect(draft?.baseUrl).toBe("http://127.0.0.1:8000/v1");
-      expect(draft?.model).toBe("qwen3:8b");
-
-      // Auto-fallback for plan to draft
-      const plan = entries.find((e) => e.id === "plan-qwen3-8b");
-      expect(plan).toBeDefined();
-      expect(plan?.model).toBe("qwen3:8b");
+      // Verify no legacy plan model is synthesized
+      const plan = entries.find((e: any) => e.id === "plan-qwen3-8b");
+      expect(plan).toBeUndefined();
     });
   });
 
@@ -196,17 +185,13 @@ describe("Onboarding Architecture & IPC Handlers", () => {
       expect(status.completed).toBe(true);
       expect(status.configuredModels).toHaveLength(4);
 
-      // Verify ModelGateway in memory has updated endpoints live
+      // Old role-based model settings migrate to the former general endpoint.
       const gateway = manager.getGateway();
-      const visionEntry = gateway.registry.get("vision-qwen25vl");
-      expect(visionEntry).toBeDefined();
-      expect(visionEntry?.baseUrl).toBe("http://10.0.0.5:9000/v1");
-      expect(visionEntry?.model).toBe("custom-vision-model");
-
-      const codeEntry = gateway.registry.get("code-qwen25coder");
-      expect(codeEntry).toBeDefined();
-      expect(codeEntry?.baseUrl).toBe("http://10.0.0.6:9001/v1");
-      expect(codeEntry?.model).toBe("custom-coder-model");
+      expect(gateway.registry.size).toBe(1);
+      const primary = gateway.registry.get("primary-model");
+      expect(primary).toBeDefined();
+      expect(primary?.baseUrl).toBe("http://10.0.0.7:9002/v1");
+      expect(primary?.model).toBe("custom-draft-model");
 
       // Verify RAGService received the new embedding config
       const embConfig = ragService.getEmbeddingConfig();
@@ -306,4 +291,3 @@ describe("Onboarding Architecture & IPC Handlers", () => {
     });
   });
 });
-

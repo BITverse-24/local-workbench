@@ -129,7 +129,7 @@ agent/
 │   └── mock-responses/            # Fixture responses for offline testing
 │
 ├── config/                        # Runtime configurations
-│   ├── models.json                # Active model registry (vision, draft, code, plan)
+│   ├── models.json                # Active model registry (vision, draft, code)
 │   └── models.ollama.example.json # Example configuration for local Ollama endpoints
 │
 ├── data/                          # Runtime data (gitignored / persistent)
@@ -202,6 +202,14 @@ data/
 8. Loop repeats (up to maxTurns) until model provides final text answer
 9. RunManager persists assistant message to SQLite and transitions to 'completed'
 ```
+
+### 5.1.1 P1 Persistent Execution Data
+
+- The active V2 path normalizes the existing semantic interpretation into a versioned `RunContract` and persists it before execution (`backend/src/main/run/contract.ts`). Model/output routing and completion consume that same contract; it does not grant mutation permissions.
+- `backend/src/main/run/result-store.ts` stores immutable typed payloads at `runs/<runId>/intermediate/results/` with manifests in SQLite. `ToolDispatcher` registers full file reads, document extractions and Python observations before successful result publication.
+- `backend/src/main/tools/result-retrieval.ts` exposes bounded `retrieve_result` discovery, inspection and slices. Context compaction preserves stable result IDs and retrieval instructions; payloads remain available after messages are discarded and SQLite is reopened.
+- Workspace edits and final deliverables have separate expectations/evidence. Existing authorization, `resolveSafe`, P0 budgets and artifact verification remain authoritative.
+- Detailed contracts, lifecycle, tests and limitations: [backend/P1_FOUNDATION.md](backend/P1_FOUNDATION.md).
 
 ### 5.2 Workspace Harness Loop (`HarnessManager`)
 ```

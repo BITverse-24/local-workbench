@@ -26,6 +26,8 @@ export class CodeModel {
     const retry = await this.client.complete({
       ...request,
       requestId: randomUUID(),
+      parentToolCallId: request.parentToolCallId,
+      isRetry: true,
       userPrompt: `${request.userPrompt}\n\n[VALIDATION FEEDBACK]\nThe previous draft was rejected: ${result.error.message}. Return a corrected JSON object. Do not import sys or use command-line arguments. Use the supplied logical input filename directly. Outputs may be empty for print-only analysis; otherwise declare every output file.\n[/VALIDATION FEEDBACK]`,
     });
     if (!retry.ok) return retry;
@@ -42,6 +44,8 @@ export class CodeModel {
     const retry = await this.client.complete({
       ...request,
       requestId: randomUUID(),
+      parentToolCallId: request.parentToolCallId,
+      isRetry: true,
       userPrompt: `${request.userPrompt}\n\n[VALIDATION FEEDBACK]\nThe previous summary was rejected: ${result.error.message}. Return your execution summary directly.\n[/VALIDATION FEEDBACK]`,
     });
     if (!retry.ok) return retry;

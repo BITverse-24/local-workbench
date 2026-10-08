@@ -1,0 +1,69 @@
+================================================================================
+⚡ STARTING FLOW A: Scanned Inspection Reports -> Approval Note (.docx)
+================================================================================
+1. Staging demo fixtures...
+2. Starting CLI worker...
+[Flow A:stderr] [log] [rag:embedding] Dispatching embedBatch (5 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+[Flow A] Worker ready! Model registry active.
+3. Sending prompt: "Read these inspection reports, pull out the key findings, and draft an approval note for the plant manager."
+   Attachments: inspection-report-E201-annotated.pdf, inspection-report-E202-followup.pdf
+   Grounding: true (SOP-114 indexed)
+   Run started with ID: b896f993-c889-471e-94bd-ec6adf216fa2
+4. Awaiting run completion...
+🧭 [Flow A] Route Selected: draft -> draft-qwen3 (Reason: single configured model)
+[Flow A:stderr] [log] [run:b896f993] ➜ planning
+📍 [Flow A] State: planning
+[Flow A:stderr] [log] [run:b896f993] ➜ acting
+📍 [Flow A] State: acting
+[Flow A:stderr] [log] [run:b896f993] ➜ awaiting_confirmation
+📍 [Flow A] State: awaiting_confirmation
+
+🔔 [Flow A] Confirmation Required #1:
+   Action: plan_approval
+   Preview: ### Objective
+Read these inspection reports, pull out the key findings, and draft an approval 
+
+### Proposed Operations
+• **generate_deliverable**: Ge...
+   --> Auto-approving confirmation gate...
+[Flow A:stderr] [log] [run:b896f993] ➜ acting
+📍 [Flow A] State: acting
+💭 [Flow A] Scratchpad (Turn 1): The user wants me to read the attached inspection reports and draft an approval note for the plant manager. I have two PDF attachments: 1. 4716ce59-6a61-417f-ae9b-6c4c952426cc-insp...
+🛠️ [Flow A] Tool Call: extract_document({"filename":"4716ce59-6a61-417f-ae9b-6c4c952426cc-inspection-report-E201-annotated.pdf","query":"extract all inspection ...)
+🛠️ [Flow A] Tool Call: extract_document({"filename":"2c6dcf4a-211c-481c-974d-38eb2510586b-inspection-report-E202-followup.pdf","query":"extract all inspection f...)
+🛠️ [Flow A] Tool Call: retrieve_knowledge({"query":"pressure equipment inspection criteria tube wall thickness minimum allowable limits"})
+[Flow A:stderr] [log] [rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+✅ [Flow A] Tool Result: extract_document (SUCCESS)
+✅ [Flow A] Tool Result: extract_document (SUCCESS)
+✅ [Flow A] Tool Result: retrieve_knowledge (SUCCESS)
+💭 [Flow A] Scratchpad (Turn 2): I now have the key findings from both inspection reports and the relevant SOP criteria. Let me summarize what I've found:  **E-201 Heat Exchanger (IR-E201-2026-08-20):** - Tube wal...
+🛠️ [Flow A] Tool Call: generate_deliverable({"type":"docx","title":"Approval Note - Pressure Equipment Inspection","filename":"approval-note-pressure-equipment.docx...)
+✅ [Flow A] Tool Result: generate_deliverable (SUCCESS)
+[Flow A:stderr] [log] ┌── [Artifact Ready: DOCX] ────────────────────────────────────
+│ File:     approval-note-pressure-equipment.docx (10.8 KB)
+│ Location: runs/b896f993-c889-471e-94bd-ec6adf216fa2/output/approval-note-pressure-equipment.docx
+└──────────────────────────────────────────────────────────
+📦 [Flow A] Artifact Ready: undefined (undefined)
+💭 [Flow A] Scratchpad (Turn 3):   ## Summary for Plant Manager  I've generated the approval note document (`approval-note-pressure-equipment.docx`). Here are the key findings:  ### **E-201 Heat Exchanger (IR-E201...
+[Flow A:stderr] [log] [run:b896f993] ➜ completed
+📍 [Flow A] State: completed
+
+🏁 Run reached terminal state: completed in 201.8s
+📍 [Flow A] State: cancelled
+
+================================================================================
+🔍 STRICT EVALUATION REPORT FOR FLOW A
+================================================================================
+✅ PASS: Run Outcome is 'completed' (actual: completed)
+✅ PASS: Modal Confirmations <= 1 (actual: 1)
+✅ PASS: Assistant message produced (length: 1572 chars)
+✅ PASS: Identified Tube Wall Thickness measurement (2.1 mm) 
+✅ PASS: Identified Pitting anomaly 
+✅ PASS: Identified Handwritten Inspector Note (Weld Joint 4B) 
+✅ PASS: Cited Governing Standard (SOP-114) 
+✅ PASS: Refused unconditional approval / Flagged safety requirement 
+✅ PASS: Valid .docx Deliverable on Disk (file: approval-note-pressure-equipment.docx, size: 11064 bytes)
+--------------------------------------------------------------------------------
+Flow A Summary: 🎉 ALL CHECKS PASSED (100%)
+================================================================================
+

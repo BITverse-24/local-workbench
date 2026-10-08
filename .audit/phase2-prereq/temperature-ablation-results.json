@@ -1,0 +1,146 @@
+[
+  {
+    "index": 1,
+    "temperature": 0.2,
+    "model": "qwen/qwen3.5-9b",
+    "status": 200,
+    "durationMs": 41548,
+    "finishReason": "tool_calls",
+    "usage": {
+      "prompt_tokens": 2798,
+      "completion_tokens": 736,
+      "total_tokens": 3534,
+      "completion_tokens_details": {
+        "reasoning_tokens": 386
+      }
+    },
+    "reasoningChars": 1370,
+    "contentChars": 282,
+    "toolCalls": [
+      {
+        "name": "write_file",
+        "argumentsChars": 947
+      }
+    ]
+  },
+  {
+    "index": 2,
+    "temperature": 0,
+    "model": "qwen/qwen3.5-9b",
+    "status": 200,
+    "durationMs": 36519,
+    "finishReason": "tool_calls",
+    "usage": {
+      "prompt_tokens": 2798,
+      "completion_tokens": 698,
+      "total_tokens": 3496,
+      "completion_tokens_details": {
+        "reasoning_tokens": 641
+      }
+    },
+    "reasoningChars": 2155,
+    "contentChars": 113,
+    "toolCalls": [
+      {
+        "name": "read_file",
+        "argumentsChars": 38
+      }
+    ]
+  },
+  {
+    "index": 3,
+    "temperature": 0,
+    "model": "qwen/qwen3.5-9b",
+    "status": 200,
+    "durationMs": 36166,
+    "finishReason": "tool_calls",
+    "usage": {
+      "prompt_tokens": 2798,
+      "completion_tokens": 698,
+      "total_tokens": 3496,
+      "completion_tokens_details": {
+        "reasoning_tokens": 641
+      }
+    },
+    "reasoningChars": 2155,
+    "contentChars": 113,
+    "toolCalls": [
+      {
+        "name": "read_file",
+        "argumentsChars": 38
+      }
+    ]
+  },
+  {
+    "index": 4,
+    "temperature": 0.2,
+    "model": "qwen/qwen3.5-9b",
+    "status": 200,
+    "durationMs": 33919,
+    "finishReason": "tool_calls",
+    "usage": {
+      "prompt_tokens": 2798,
+      "completion_tokens": 634,
+      "total_tokens": 3432,
+      "completion_tokens_details": {
+        "reasoning_tokens": 577
+      }
+    },
+    "reasoningChars": 1814,
+    "contentChars": 116,
+    "toolCalls": [
+      {
+        "name": "read_file",
+        "argumentsChars": 38
+      }
+    ]
+  },
+  {
+    "index": 5,
+    "temperature": 0.2,
+    "model": "qwen/qwen3.5-9b",
+    "status": 200,
+    "durationMs": 54273,
+    "finishReason": "length",
+    "usage": {
+      "prompt_tokens": 2798,
+      "completion_tokens": 1023,
+      "total_tokens": 3821,
+      "completion_tokens_details": {
+        "reasoning_tokens": 690
+      }
+    },
+    "reasoningChars": 2351,
+    "contentChars": 281,
+    "toolCalls": [
+      {
+        "name": "write_file",
+        "argumentsChars": 0
+      }
+    ]
+  },
+  {
+    "index": 6,
+    "temperature": 0,
+    "model": "qwen/qwen3.5-9b",
+    "status": 200,
+    "durationMs": 35892,
+    "finishReason": "tool_calls",
+    "usage": {
+      "prompt_tokens": 2798,
+      "completion_tokens": 698,
+      "total_tokens": 3496,
+      "completion_tokens_details": {
+        "reasoning_tokens": 641
+      }
+    },
+    "reasoningChars": 2155,
+    "contentChars": 113,
+    "toolCalls": [
+      {
+        "name": "read_file",
+        "argumentsChars": 38
+      }
+    ]
+  }
+]

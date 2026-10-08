@@ -25,6 +25,12 @@ export function resolveSafe(workspaceRoot: string, requestedPath: string): strin
     throw new PermissionError("null byte in path");
   }
 
+  // Reject backup recovery trail access (HARNESS.md / P0-06 §D)
+  const segments = requestedPath.split(/[/\\]+/);
+  if (segments.some((s) => s === ".harness_backups" || s === ".backups")) {
+    throw new PermissionError(`access to backup recovery trail forbidden: ${requestedPath}`);
+  }
+
   // Reject absolute paths immediately
   if (path.isAbsolute(requestedPath)) {
     throw new PermissionError(`absolute path rejected: ${requestedPath}`);
@@ -82,6 +88,18 @@ export function resolveSafe(workspaceRoot: string, requestedPath: string): strin
     !canonicalTarget.startsWith(canonicalRoot + path.sep)
   ) {
     throw new PermissionError(`path escapes workspace root: ${requestedPath}`);
+  }
+
+  // Ensure canonical target does not resolve into backup directories (e.g. via symlinks)
+  const backupDir = path.join(canonicalRoot, ".harness_backups");
+  const altBackupDir = path.join(canonicalRoot, ".backups");
+  if (
+    canonicalTarget === backupDir ||
+    canonicalTarget.startsWith(backupDir + path.sep) ||
+    canonicalTarget === altBackupDir ||
+    canonicalTarget.startsWith(altBackupDir + path.sep)
+  ) {
+    throw new PermissionError(`access to backup recovery trail forbidden: ${requestedPath}`);
   }
 
   return canonicalTarget;

@@ -1,5 +1,9 @@
 # Backend Database — SQLite Schema Plan (`backend/DATABASE.md`)
 
+> P1 runtime update: database schema version 2 adds `run_contracts`, `run_execution_ledgers`, `run_verification_reports` and `intermediate_results`. Artifact rows include an additive nullable `sha256` column. Existing artifacts migrate with a null digest and are reported as unverified for integrity.
+> The canonical DDL is `src/main/persistence/schema.sql`; see [P1_FOUNDATION.md](P1_FOUNDATION.md)
+> for record contracts, durability boundaries, migration behavior and payload storage limits.
+
 > Writable scope: `backend/` per `AGENTS.md:1`.
 > Implements persistence layer from `backend/BACKEND_PLANS.md:339` (§7.3), `backend/TASKS.md:118` (Phase 6),
 > contracts `ai/contracts.ts:1`, handoff `BACKEND_HANDOFF.md:469`, arch `docs/architecture/components-and-contracts.md:137`.
@@ -170,6 +174,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
   filename      TEXT NOT NULL,             -- e.g. approval-note-E201.docx
   relative_path TEXT NOT NULL,             -- runs/<runId>/output/…
   size_bytes    INTEGER NOT NULL DEFAULT 0,
+  sha256        TEXT,
   created_at    TEXT NOT NULL
 );
 

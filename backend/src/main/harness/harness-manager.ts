@@ -1,8 +1,9 @@
 import path from "node:path";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { WorkspaceManager } from "./workspace-manager.js";
-import { resolveSafe } from "./path-guard.js";
+import { resolveSafe, PermissionError } from "./path-guard.js";
+import { MutationPolicyGuard } from "./policy-guard.js";
 import { listDir, type DirEntry } from "./tools/list-dir.js";
 import { readFile } from "./tools/read-file.js";
 import { search, type SearchMatch } from "./tools/search.js";
@@ -48,11 +49,15 @@ function inferKind(filename: string): ArtifactKind {
 export class HarnessManager {
   private readonly workspace = new WorkspaceManager();
   private readonly createdArtifactsByRun = new Map<string, ArtifactRef>();
+  public readonly policyGuard: MutationPolicyGuard;
 
   constructor(
     private readonly emitWorkspace: (event: WorkspaceEvent) => void = () => undefined,
     private readonly emitRun: ((event: RunEvent) => void) | undefined = undefined,
-  ) {}
+    policyGuard?: MutationPolicyGuard,
+  ) {
+    this.policyGuard = policyGuard ?? new MutationPolicyGuard();
+  }
 
   registerWorkspace(dirPath: string): WorkspaceInfo {
     const info = this.workspace.register(dirPath);
@@ -83,6 +88,10 @@ export class HarnessManager {
 
   isWorkspaceActive(): boolean {
     return this.currentWorkspace() !== null;
+  }
+
+  getActiveWorkspace(): WorkspaceInfo | null {
+    return this.currentWorkspace();
   }
 
   requireActiveWorkspace(): WorkspaceInfo {
@@ -159,19 +168,48 @@ export class HarnessManager {
       }
 
       case "write_file": {
-        const writeRes = writeFile(ws.root, call.args.path, call.args.content);
+        const targetPath = call.args.path;
+        if (this.policyGuard.isEnforcingExplicit(runId)) {
+          const isAuth = this.policyGuard.isAuthorized(runId, "write_file", { path: targetPath });
+          if (!isAuth) {
+            throw new PermissionError(`Operation not authorized: write_file ${targetPath}`);
+          }
+        }
+        const lockKey = `file:${targetPath}`;
+        const writeRes = await this.policyGuard.withMutationLock(lockKey, () =>
+          writeFile(ws.root, call.args.path, call.args.content),
+        );
         result = { tool: "write_file", result: writeRes };
         break;
       }
 
       case "delete_file": {
-        const delRes = deleteFile(ws.root, call.args.path);
+        const targetPath = call.args.path;
+        if (this.policyGuard.isEnforcingExplicit(runId)) {
+          const isAuth = this.policyGuard.isAuthorized(runId, "delete_file", { path: targetPath });
+          if (!isAuth) {
+            throw new PermissionError(`Operation not authorized: delete_file ${targetPath}`);
+          }
+        }
+        const lockKey = `file:${targetPath}`;
+        const delRes = await this.policyGuard.withMutationLock(lockKey, () =>
+          deleteFile(ws.root, call.args.path),
+        );
         result = { tool: "delete_file", result: delRes };
         break;
       }
 
       case "run_command": {
-        const cmdRes = await runCommand(ws.root, call.args.command);
+        const command = call.args.command;
+        if (this.policyGuard.isEnforcingExplicit(runId)) {
+          const isAuth = this.policyGuard.isAuthorized(runId, "run_command", { command });
+          if (!isAuth) {
+            throw new PermissionError(`Operation not authorized: run_command ${command}`);
+          }
+        }
+        const cmdRes = await this.policyGuard.withMutationLock("workspace:run_command", () =>
+          runCommand(ws.root, call.args.command),
+        );
         result = { tool: "run_command", result: cmdRes };
         break;
       }
@@ -270,6 +308,7 @@ export class HarnessManager {
       filename,
       relativePath: storedRel,
       sizeBytes: size,
+      sha256: createHash("sha256").update(content).digest("hex"),
       createdAt: new Date().toISOString(),
     };
 
@@ -277,7 +316,7 @@ export class HarnessManager {
     try {
       getDb()
         .prepare(
-          "INSERT INTO artifacts(artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO artifacts(artifact_id, run_id, kind, filename, relative_path, size_bytes, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .run(
           artifact.artifactId,
@@ -286,6 +325,7 @@ export class HarnessManager {
           artifact.filename,
           artifact.relativePath,
           artifact.sizeBytes,
+          artifact.sha256,
           artifact.createdAt,
         );
       logArtifactReady(artifact);

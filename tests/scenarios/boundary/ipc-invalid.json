@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "id": "boundary-invalid-ipc",
+  "family": "approval-flow",
+  "complexity": "simple",
+  "campaignType": "boundary",
+  "description": "Reject malformed IPC and confirmations for nonexistent runs without workspace effects.",
+  "objective": {
+    "request": "Exercise invalid IPC inputs separately from end-user behavioral testing.",
+    "intendedOutcome": "Every invalid call is rejected and the protected file is unchanged."
+  },
+  "setup": { "workspace": [{ "path": "protected.txt", "content": "Do not change this file.\n" }] },
+  "constraints": { "permittedWrites": [] },
+  "actions": [
+    { "type": "ipc", "channel": "workbench:startRun", "args": {}, "expectError": true },
+    { "type": "ipc", "channel": "workbench:cancelRun", "args": { "runId": "invalid-uuid" }, "expectError": true },
+    { "type": "ipc", "channel": "workbench:confirmAction", "args": { "runId": "11111111-2222-4333-8444-555555555555", "actionId": "99999999-8888-4777-8666-555555555555", "approved": true }, "expectError": true }
+  ],
+  "checks": [{ "id": "protected-file", "type": "workspace", "path": "protected.txt", "expect": "unchanged" }]
+}

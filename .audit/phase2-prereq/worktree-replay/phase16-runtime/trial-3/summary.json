@@ -1,0 +1,46 @@
+{
+  "profile": "phase16-runtime",
+  "trial": 3,
+  "exitCode": 1,
+  "passed": false,
+  "wallSeconds": 110,
+  "terminalState": "partial",
+  "strictPasses": 2,
+  "strictFailures": 5,
+  "workingCalls": 2,
+  "completionTokens": 1780,
+  "reasoningTokens": 1431,
+  "promptTokens": 6272,
+  "lengthStops": 1,
+  "toolSequence": [
+    "read_file",
+    "write_file"
+  ],
+  "capabilityDiscoveryCalls": 0,
+  "perCall": [
+    {
+      "purpose": "working_1",
+      "latencyMs": 40055,
+      "finishReason": "tool_calls",
+      "promptTokens": 2798,
+      "completionTokens": 757,
+      "reasoningTokens": 711,
+      "maxTokens": 1024,
+      "tools": [
+        "read_file"
+      ]
+    },
+    {
+      "purpose": "working_2",
+      "latencyMs": 59750,
+      "finishReason": "length",
+      "promptTokens": 3474,
+      "completionTokens": 1023,
+      "reasoningTokens": 720,
+      "maxTokens": 1024,
+      "tools": [
+        "write_file"
+      ]
+    }
+  ]
+}

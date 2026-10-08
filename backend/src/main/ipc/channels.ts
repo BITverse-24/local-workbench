@@ -12,9 +12,11 @@ export const IPC_CHAT = {
 
 export const IPC_RUN = {
   START_RUN: "workbench:startRun",
+  RESUME_RUN: "workbench:resumeRun",
   CONFIRM: "workbench:confirmAction",
   CANCEL: "workbench:cancelRun",
   GET_ARTIFACT: "workbench:getArtifact",
+  GET_VERIFICATION_REPORT: "workbench:getVerificationReport",
   GET_HISTORY: "workbench:getRunHistory",
   REGISTER_ATTACHMENT: "workbench:registerAttachment",
   GET_HEALTH: "workbench:getHealth",
@@ -67,5 +69,3 @@ export const IPC_ONBOARDING = {
 export type OnboardingChannel = (typeof IPC_ONBOARDING)[keyof typeof IPC_ONBOARDING];
 
 export const ONBOARDING_CHANNELS: readonly string[] = Object.values(IPC_ONBOARDING);
-
-

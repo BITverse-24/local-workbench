@@ -124,6 +124,18 @@ describe("Multi-Attachment Support & Persistence", () => {
     rmSync(tempRoot, { recursive: true, force: true });
   });
 
+  it("retains the full executed attachment group despite newer registration-only runs", () => {
+    const chatId = createChat("Compare reports");
+    const first = manager.registerAttachment({ chatId, filename: "first.txt", mediaType: "text/plain", sizeBytes: 12, base64OrBuffer: Buffer.from("first source") });
+    const second = manager.registerAttachment({ chatId, filename: "second.txt", mediaType: "text/plain", sizeBytes: 13, base64OrBuffer: Buffer.from("second source") });
+    const db = getDb();
+    db.prepare("INSERT INTO run_attachments(run_id, attachment_id) VALUES (?, ?)").run(first.runId, second.attachment.attachmentId);
+    db.prepare("UPDATE runs SET state='completed', completed_at=? WHERE id=?").run(new Date().toISOString(), first.runId);
+    db.prepare("UPDATE runs SET created_at=? WHERE id=?").run("2099-01-01T00:00:00.000Z", second.runId);
+    const retained = (manager as any).latestAttachments(chatId);
+    expect(retained.map((file: any) => file.filename).sort()).toEqual(["first.txt", "second.txt"]);
+  });
+
   it("validates startRunSchema with attachmentTokens array", () => {
     const validSingle = startRunSchema.safeParse({
       userText: "inspect report",
@@ -145,6 +157,10 @@ describe("Multi-Attachment Support & Persistence", () => {
       userText: "",
     });
     expect(invalidEmpty.success).toBe(false);
+  });
+
+  it("rejects unsupported run fields; generation profiles are selected outside run payloads", () => {
+    expect(startRunSchema.safeParse({ userText: "test", generationBudgetProfile: "demo_fast" }).success).toBe(false);
   });
 
   it("persists multiple attachments in run_attachments join table", async () => {
@@ -196,7 +212,7 @@ describe("Multi-Attachment Support & Persistence", () => {
     );
   });
 
-  it("executes Flow A multi-document inspection with routing, SOP-114 evaluation, and DOCX confirmation", async () => {
+  it("executes multi-document inspection without retrieving criteria when grounding is disabled", async () => {
     const chatId = createChat("Flow A chat");
     const buf1 = Buffer.from("Heat Exchanger E-201 Report ID: IR-E201-2026-08-20 RECHECK WELD JOINT 4B - field inspector");
     const buf2 = Buffer.from("Heat Exchanger E-201 Followup Report Maximum pitting depth: 1.8 mm");
@@ -240,10 +256,8 @@ describe("Multi-Attachment Support & Persistence", () => {
     expect(visionRoute).toBeDefined();
     expect((visionRoute as any).reason).toBe("scanned inspection bundle");
 
-    // Verify criteria check tool result was emitted
-    const criteriaTool = runEvents.find((e) => e.type === "tool_result" && e.tool === "retrieve_sop");
-    expect(criteriaTool).toBeDefined();
-    expect((criteriaTool as any).summary).toContain("SOP-114 §3.2");
+    // Grounding is opt-in. The run must not claim or emit criteria retrieval when disabled.
+    expect(runEvents.some((e) => e.type === "tool_result" && e.tool === "retrieve_sop")).toBe(false);
 
     // Verify router transitioned to draft model
     const draftRoute = runEvents.find((e) => e.type === "routing" && e.taskType === "draft");
@@ -387,4 +401,3 @@ describe("Multi-Attachment Support & Persistence", () => {
     expect(turn2Artifacts).toContain("repaired-vendor-log.csv");
   });
 });
-

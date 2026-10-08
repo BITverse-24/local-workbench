@@ -59,12 +59,30 @@ export default function App() {
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingAction | null>(null);
   const [confirmationBusy, setConfirmationBusy] = useState(false);
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
+  const [verificationReport, setVerificationReport] = useState<RunVerificationReport | null>(null);
   const [, setRunArtifacts] = useState<ArtifactRef[]>([]);
   const [runError, setRunError] = useState<{ code: string; message: string } | null>(null);
   const [serviceHealth, setServiceHealth] = useState<ModelHealth[] | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
   const [groundingEnabled, setGroundingEnabled] = useState(false);
   const [, setGroundingStatus] = useState<{ status: "retrieving" | "injected" | "skipped"; chunkCount?: number } | null>(null);
+  const [executionMode, setExecutionMode] = useState<"chat" | "agent">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("workbench:execution_mode");
+      if (saved === "chat" || saved === "agent") return saved;
+    }
+    return "chat";
+  });
+  const handleToggleMode = () => {
+    setExecutionMode((prev) => {
+      const next = prev === "chat" ? "agent" : "chat";
+      if (typeof window !== "undefined") {
+        localStorage.setItem("workbench:execution_mode", next);
+      }
+      return next;
+    });
+  };
+
   const activeRunRef = useRef<string | null>(null);
   activeRunRef.current = activeRunId;
   const runEventsRef = useRef<RunEvent[]>([]);
@@ -73,7 +91,16 @@ export default function App() {
   const activeRouteRef = useRef<{ taskType: string; modelId: string; reason: string } | null>(null);
   activeRouteRef.current = activeRoute;
   const runStartTimeRef = useRef<number | null>(null);
-  const isRunning = runState !== null && !["completed", "failed", "cancelled"].includes(runState);
+  const isRunning = runState !== null && !["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(runState);
+
+  useEffect(() => {
+    let active = true;
+    setVerificationReport(null);
+    if (activeRunId && wb.isWorkbenchAvailable()) {
+      void wb.getVerificationReport({ runId: activeRunId }).then((report) => { if (active) setVerificationReport(report ?? null); }).catch(() => { if (active) setVerificationReport(null); });
+    }
+    return () => { active = false; };
+  }, [activeRunId]);
 
   // Onboarding state
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
@@ -83,8 +110,12 @@ export default function App() {
 
   useEffect(() => {
     if (availableModels.length > 0) {
+      const savedModelId = typeof window !== "undefined" ? localStorage.getItem("workbench_selected_model") : null;
       setSelectedModel((prev) => {
-        const match = availableModels.find((m) => m.id === prev.id || m.role === prev.role);
+        if (availableModels.length === 1) {
+          return availableModels[0];
+        }
+        const match = availableModels.find((m) => m.id === (savedModelId || prev?.id) || m.name === prev?.name);
         return match ?? availableModels[0];
       });
     }
@@ -194,9 +225,12 @@ export default function App() {
           });
         }
         switch (event.type) {
+          case "verification_report":
+            setVerificationReport(event.report);
+            break;
           case "run_state":
             setRunState(event.state);
-            if (event.state === "completed" || event.state === "failed" || event.state === "cancelled") {
+            if (event.state === "completed" || event.state === "partial" || event.state === "failed" || event.state === "cancelled" || event.state === "limit_exceeded") {
               setPendingConfirmation(null);
               const currentEvents = [...runEventsRef.current];
               if (currentEvents.length > 0) {
@@ -207,6 +241,7 @@ export default function App() {
                     updated[lastIdx] = {
                       ...updated[lastIdx]!,
                       execution: {
+                        state: event.state,
                         modelId: activeRouteRef.current?.modelId,
                         taskType: activeRouteRef.current?.taskType,
                         reason: activeRouteRef.current?.reason,
@@ -727,7 +762,9 @@ export default function App() {
             chatId: cid,
             temperature,
             groundingEnabled,
-            preferredRoute: selectedModel.role || selectedModel.id,
+            preferredRoute: selectedModel?.id,
+            selectedModel: selectedModel?.id,
+            mode: executionMode,
           });
           setActiveRunId(runId);
           activeRunRef.current = runId;
@@ -897,6 +934,8 @@ export default function App() {
             disabled={isRunning}
             groundingEnabled={groundingEnabled}
             setGroundingEnabled={setGroundingEnabled}
+            mode={executionMode}
+            onToggleMode={handleToggleMode}
           />
         </ChatPanel>
 
@@ -915,10 +954,11 @@ export default function App() {
           onRefreshHealth={refreshHealth}
           runEvents={runEvents}
           runId={activeRunId}
+          verificationReport={verificationReport}
         />
       </div>
 
-      <ModelDropdown open={modelOpen} pos={dropdownPos} models={availableModels} selected={selectedModel} onSelect={(m) => { setSelectedModel(m); setModelOpen(false); }} onClose={() => setModelOpen(false)} />
+      <ModelDropdown open={modelOpen} pos={dropdownPos} models={availableModels} selected={selectedModel} onSelect={(m) => { setSelectedModel(m); try { localStorage.setItem("workbench_selected_model", m.id); } catch {} setModelOpen(false); }} onClose={() => setModelOpen(false)} />
 
       <UploadModal open={upload.show} dragOver={upload.dragOver} setDragOver={upload.setDragOver} files={upload.files} setFiles={upload.setFiles} onClose={() => upload.setShow(false)} onConfirm={handleUploadConfirm} />
 

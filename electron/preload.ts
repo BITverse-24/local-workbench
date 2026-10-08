@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("workbench", {
   // run protocol
   startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean }) =>
     ipcRenderer.invoke("workbench:startRun", input),
+  resumeRun: (input: { runId: string; largerGenerationAllowance?: boolean }) => ipcRenderer.invoke("workbench:resumeRun", input),
   registerAttachment: (input: {
     chatId?: string;
     filename: string;
@@ -49,6 +50,7 @@ contextBridge.exposeInMainWorld("workbench", {
     ipcRenderer.invoke("workbench:getRunHistory", input ?? {}),
   getArtifact: (input: { runId: string; artifactId: string }) =>
     ipcRenderer.invoke("workbench:getArtifact", input),
+  getVerificationReport: (input: { runId: string }) => ipcRenderer.invoke("workbench:getVerificationReport", input),
   openArtifact: (input: { runId: string; artifactId: string }) =>
     ipcRenderer.invoke("workbench:openArtifact", input),
   saveArtifact: (input: { runId: string; artifactId: string }) =>

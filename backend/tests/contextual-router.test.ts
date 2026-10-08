@@ -1,26 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { resolveSemanticIntent, extractReferencedFiles } from "../src/main/router/contextual-router.js";
-import type { AttachmentReference } from "../src/shared/contracts.js";
+import { resolveSemanticIntent, extractReferencedFiles, inferAttachedPythonRepairFilename } from "../src/main/router/contextual-router.js";
 
 describe("Contextual Semantic Intent & Routing Engine", () => {
-  it("short-circuits pure visual document inspection when image/PDF is attached without workspace", async () => {
-    const pdfAttachment: AttachmentReference = {
-      attachmentId: "att_1",
-      filename: "inspection_report.pdf",
-      mediaType: "application/pdf",
-      sizeBytes: 1024,
-      relativePath: "runs/1/input/inspection_report.pdf",
-    };
+  it("derives a repaired Python artifact only for an attached-source repair request", () => {
+    const attachments = [{ filename: "broken-vendor-log-parser.py" }];
+    expect(inferAttachedPythonRepairFilename("The attached script is breaking. Please fix the issue.", attachments)).toBe("fixed-vendor-log-parser.py");
+    expect(inferAttachedPythonRepairFilename("Repair the attached script and save it as parser-fixed.py.", attachments)).toBe("parser-fixed.py");
+    expect(inferAttachedPythonRepairFilename("How do I fix this parser?", attachments)).toBeUndefined();
+    expect(inferAttachedPythonRepairFilename("Fix the CSV", [{ filename: "data.csv" }])).toBeUndefined();
+  });
 
-    const intent = await resolveSemanticIntent({
-      userPrompt: "Extract findings from this inspection document",
-      attachments: [pdfAttachment],
-      hasWorkspace: false,
-    });
-
-    expect(intent.driverModel).toBe("vision-qwen25vl");
-    expect(intent.taskType).toBe("vision");
-    expect(intent.intentType).toBe("file_inspection");
+  it("fails explicitly without a gateway instead of guessing a code route", async () => {
+    const intent = await resolveSemanticIntent({ userPrompt: "Fix reader.py in this workspace", hasWorkspace: true, workspaceFiles: ["reader.py"] });
+    expect(intent.status).toBe("failed");
+    expect(intent.isActionable).toBe(false);
+    expect(intent.workspaceMutationRequested).toBe(false);
+    expect(intent.targetFiles).toEqual([]);
+    expect(intent.failureReason).toContain("no deterministic fallback");
   });
 
   it("extracts referenced files across text, @ mentions, and multi-turn history", () => {
@@ -41,52 +37,6 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
     expect(files).toContain("app.js");
   });
 
-  it("contextually routes conversational follow-ups in an active workspace to code-qwen25coder", async () => {
-    const history = [
-      { role: "user", content: "Make @middleware/rateLimiter.js variable time window based" },
-      { role: "assistant", content: "I have updated the rate limiter." },
-    ];
-    const workspaceFiles = ["app.js", "middleware/rateLimiter.js", "package.json"];
-
-    // Follow-up 1: "I think it still uses a fixed 15 min window for 100 requests" (zero generic code words)
-    const intent1 = await resolveSemanticIntent({
-      userPrompt: "I think it still uses a fixed 15 min window for 100 requests",
-      hasWorkspace: true,
-      workspaceFiles,
-      history,
-    });
-
-    expect(intent1.driverModel).toBe("code-qwen25coder");
-    expect(intent1.taskType).toBe("code");
-    expect(intent1.isActionable).toBe(true);
-    expect(intent1.targetFiles).toContain("middleware/rateLimiter.js");
-
-    // Follow-up 2: Colloquial correction ("bruh")
-    const intent2 = await resolveSemanticIntent({
-      userPrompt: "U instead made it into 10 requests per minute bruh",
-      hasWorkspace: true,
-      workspaceFiles,
-      history,
-    });
-
-    expect(intent2.driverModel).toBe("code-qwen25coder");
-    expect(intent2.taskType).toBe("code");
-    expect(intent2.isActionable).toBe(true);
-    expect(intent2.targetFiles).toContain("middleware/rateLimiter.js");
-  });
-
-  it("routes explicit formal document drafting in workspace to draft-qwen3", async () => {
-    const intent = await resolveSemanticIntent({
-      userPrompt: "Draft an approval note memo for this release to be signed by the lead engineer",
-      hasWorkspace: true,
-      workspaceFiles: ["app.js", "package.json"],
-    });
-
-    expect(intent.driverModel).toBe("draft-qwen3");
-    expect(intent.taskType).toBe("draft");
-    expect(intent.intentType).toBe("document_drafting");
-  });
-
   it("uses LLM semantic classification when gateway is provided with model response", async () => {
     const mockGateway = {
       async execute(req: any) {
@@ -97,9 +47,10 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
               text: JSON.stringify({
                 intentType: "code_modification",
                 taskType: "code",
-                driverModel: "code-qwen25coder",
+                driverModel: "primary-model",
                 primaryGoal: "Refactor rate limiter to sliding window",
                 targetFiles: ["middleware/rateLimiter.js"],
+                workspaceMutationRequested: true,
                 isActionable: true,
                 reason: "User requested sliding window refactor on existing middleware",
               }),
@@ -118,10 +69,29 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
       mockGateway as any,
     );
 
-    expect(intent.driverModel).toBe("code-qwen25coder");
+    expect(intent.driverModel).toBe("primary-model");
     expect(intent.primaryGoal).toBe("Refactor rate limiter to sliding window");
     expect(intent.targetFiles).toEqual(["middleware/rateLimiter.js"]);
     expect(intent.isActionable).toBe(true);
+  });
+
+  it("preserves semantic attachment destinations and explicit workspace scope", async () => {
+    const responses = [
+      { workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [{ filename: "fixed-parser.py", type: "file" }], workspaceOperations: [] },
+      { workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [{ filename: "vendor-log-parser.py", type: "file", filenameRequired: true }], workspaceOperations: [] },
+      { workspaceMutationRequested: true, targetFiles: ["broken-parser.py"], expectedDeliverables: [], workspaceOperations: [{ operation: "write", targetPath: "broken-parser.py" }] },
+    ];
+    const gateway = { async execute() { return { ok: true, value: { result: { intentType: "code_modification", taskType: "code", primaryGoal: "Repair attached parser", isActionable: true, chatResponseOnly: false, ...responses.shift() } } }; } };
+    const attachment = { attachmentId: "parser", filename: "broken-parser.py", mediaType: "text/x-python", sizeBytes: 80, relativePath: "input/broken-parser.py" };
+    const input = { attachments: [attachment], hasWorkspace: true, workspaceFiles: ["broken-parser.py"] };
+    const standalone = await resolveSemanticIntent({ ...input, userPrompt: "Repair the attached parser and check the CSV." }, gateway as any);
+    expect(standalone.workspaceMutationRequested).toBe(false);
+    expect(standalone.expectedDeliverables[0].filename).toBe("fixed-parser.py");
+    const named = await resolveSemanticIntent({ ...input, userPrompt: "Please return the repair as vendor-log-parser.py." }, gateway as any);
+    expect(named.expectedDeliverables[0].filename).toBe("vendor-log-parser.py");
+    const workspace = await resolveSemanticIntent({ ...input, userPrompt: "Put the corrected source in my workspace." }, gateway as any);
+    expect(workspace.workspaceMutationRequested).toBe(true);
+    expect(workspace.targetFiles).toEqual(["broken-parser.py"]);
   });
 
   it("handles pre-parsed object results from gateway planner without throwing SyntaxError", async () => {
@@ -133,9 +103,10 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
             result: {
               intentType: "code_modification",
               taskType: "code",
-              driverModel: "code-qwen25coder",
+              driverModel: "primary-model",
               primaryGoal: "Convert JavaScript codebase to TypeScript",
               targetFiles: ["app.ts"],
+              workspaceMutationRequested: true,
               isActionable: true,
               reason: "User requested converting JS to TS",
             },
@@ -153,36 +124,192 @@ describe("Contextual Semantic Intent & Routing Engine", () => {
       mockGateway as any,
     );
 
-    expect(intent.driverModel).toBe("code-qwen25coder");
+    expect(intent.driverModel).toBe("primary-model");
     expect(intent.taskType).toBe("code");
     expect(intent.isActionable).toBe(true);
     expect(intent.primaryGoal).toBe("Convert JavaScript codebase to TypeScript");
   });
 
-  it("routes conversational greeting in an active workspace to draft-qwen3 as pure_chat without requiring disk action", async () => {
-    const intent = await resolveSemanticIntent({
-      userPrompt: "hello",
-      hasWorkspace: true,
-      workspaceFiles: ["app.js", "package.json"],
+  describe("Natural Language Intention Detection & Semantic Constraints", () => {
+    it("separates workspace operations from deliverables and extracts negative constraints", async () => {
+      const mockGateway = {
+        async execute() {
+          return {
+            ok: true,
+            value: {
+              result: {
+                text: JSON.stringify({
+                  status: "resolved",
+                  driverModel: "primary-model",
+                  taskType: "code",
+                  primaryGoal: "Update notes.md while protecting other workspace files",
+                  isActionable: true,
+                  chatResponseOnly: false,
+                  workspaceMutationRequested: true,
+                  targetFiles: ["notes.md"],
+                  protectedPaths: ["config.json", "unrelated.md"],
+                  restrictMutationsToTargets: true,
+                  expectedDeliverables: [],
+                  intentType: "code_modification",
+                  reason: "User requested modifying notes.md with explicit negative constraints on config.json and unrelated.md",
+                }),
+              },
+            },
+          };
+        },
+      };
+
+      const intent = await resolveSemanticIntent(
+        {
+          userPrompt: "Update notes.md. Do not modify config.json, unrelated.md, or any other existing file.",
+          hasWorkspace: true,
+          workspaceFiles: ["notes.md", "config.json", "unrelated.md", "package.json"],
+        },
+        mockGateway as any,
+      );
+
+      expect(intent.status).toBe("resolved");
+      expect(intent.workspaceMutationRequested).toBe(true);
+      expect(intent.targetFiles).toEqual(["notes.md"]);
+      expect(intent.expectedDeliverables).toEqual([]);
+      expect(intent.protectedPaths).toContain("config.json");
+      expect(intent.protectedPaths).toContain("unrelated.md");
+      expect(intent.restrictMutationsToTargets).toBe(true);
+      expect(intent.chatResponseOnly).toBe(false);
+
+      // Verify derived output expectation
+      expect(intent.outputExpectation?.chatResponse).toBe(true);
+      expect(intent.outputExpectation?.expectedFiles).toEqual([]);
+      expect(intent.outputExpectation?.workspaceMutationRequested).toBe(true);
+      expect(intent.outputExpectation?.targetFiles).toEqual(["notes.md"]);
+      expect(intent.outputExpectation?.expectedDeliverables).toEqual([]);
     });
 
-    expect(intent.driverModel).toBe("draft-qwen3");
-    expect(intent.taskType).toBe("draft");
-    expect(intent.isActionable).toBe(false);
-    expect(intent.intentType).toBe("pure_chat");
-  });
+    it("resolves conflicts by prioritizing protectedPaths over targetFiles and sets ambiguous if no targets remain", async () => {
+      const mockGateway = {
+        async execute() {
+          return {
+            ok: true,
+            value: {
+              result: {
+                text: JSON.stringify({
+                  status: "resolved",
+                  driverModel: "primary-model",
+                  taskType: "code",
+                  primaryGoal: "Conflicting file modification",
+                  isActionable: true,
+                  chatResponseOnly: false,
+                  workspaceMutationRequested: true,
+                  targetFiles: ["config.json"],
+                  protectedPaths: ["config.json"],
+                  restrictMutationsToTargets: true,
+                  expectedDeliverables: [],
+                  intentType: "code_modification",
+                  reason: "Conflicting prompt asking to edit and protect config.json",
+                }),
+              },
+            },
+          };
+        },
+      };
 
-  it("routes questions and explanations in an active workspace with isActionable false", async () => {
-    const intent = await resolveSemanticIntent({
-      userPrompt: "How does the authentication flow work in this project?",
-      hasWorkspace: true,
-      workspaceFiles: ["app.js", "auth/jwt.js", "package.json"],
+      const intent = await resolveSemanticIntent(
+        {
+          userPrompt: "Modify config.json but do not touch config.json",
+          hasWorkspace: true,
+          workspaceFiles: ["config.json"],
+        },
+        mockGateway as any,
+      );
+
+      // Protected path wins conflict: targetFiles is purged
+      expect(intent.targetFiles).not.toContain("config.json");
+      expect(intent.protectedPaths).toContain("config.json");
+      // Because actionable mutation has no remaining valid targets, status becomes ambiguous
+      expect(intent.status).toBe("ambiguous");
     });
 
-    expect(intent.driverModel).toBe("code-qwen25coder");
-    expect(intent.taskType).toBe("code");
-    expect(intent.isActionable).toBe(false);
-    expect(intent.intentType).toBe("general_qa");
+    it("performs 1-turn bounded JSON repair when initial LLM response is malformed", async () => {
+      let callCount = 0;
+      const mockGateway = {
+        async execute(req: any) {
+          callCount++;
+          if (callCount === 1) {
+            // Malformed JSON (unclosed quote / brace)
+            return {
+              ok: true,
+              value: {
+                result: {
+                  text: '```json\n{"status": "resolved", "primaryGoal": "Refactor app.js", "targetFiles": ["app.js"',
+                },
+              },
+            };
+          }
+          // Repair call successfully outputs valid JSON
+          return {
+            ok: true,
+            value: {
+              result: {
+                text: JSON.stringify({
+                  status: "resolved",
+                  driverModel: "primary-model",
+                  taskType: "code",
+                  primaryGoal: "Refactor app.js",
+                  isActionable: true,
+                  chatResponseOnly: false,
+                  workspaceMutationRequested: true,
+                  targetFiles: ["app.js"],
+                  protectedPaths: [],
+                  restrictMutationsToTargets: false,
+                  expectedDeliverables: [],
+                  intentType: "code_modification",
+                  reason: "Repaired valid JSON",
+                }),
+              },
+            },
+          };
+        },
+      };
+
+      const intent = await resolveSemanticIntent(
+        {
+          userPrompt: "Refactor app.js to use express router",
+          hasWorkspace: true,
+          workspaceFiles: ["app.js"],
+        },
+        mockGateway as any,
+      );
+
+      expect(callCount).toBe(2);
+      expect(intent.status).toBe("resolved");
+      expect(intent.targetFiles).toEqual(["app.js"]);
+      expect(intent.primaryGoal).toBe("Refactor app.js");
+    });
+
+    it("returns status: failed when JSON remains unrepairable after bounded repair", async () => {
+      const mockGateway = {
+        async execute() {
+          return {
+            ok: true,
+            value: {
+              result: {
+                text: "Here is what I think you want: not valid json at all",
+              },
+            },
+          };
+        },
+      };
+
+      const intent = await resolveSemanticIntent(
+        {
+          userPrompt: "Do something completely unrecognized",
+          hasWorkspace: false,
+        },
+        mockGateway as any,
+      );
+
+      expect(intent.status).toBe("failed");
+      expect(intent.failureReason).toBeDefined();
+    });
   });
 });
-

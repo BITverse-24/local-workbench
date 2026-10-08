@@ -30,9 +30,9 @@ export function routeTask(
 export function routeSubtask(taskType: TaskType): RouteDecision {
   switch (taskType) {
     case "code":
-      return { taskType: "code", modelId: "code-qwen25coder", reason: "code subtask execution" };
+      return { taskType: "code", modelId: "primary-model", reason: "code subtask execution" };
     case "draft":
     default:
-      return { taskType: "draft", modelId: "draft-qwen3", reason: "draft subtask execution" };
+      return { taskType: "draft", modelId: "primary-model", reason: "draft subtask execution" };
   }
 }

@@ -1,0 +1,3122 @@
+[
+  {
+    "type": "routing",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "taskType": "draft",
+    "modelId": "draft-qwen3",
+    "reason": "single configured model"
+  },
+  {
+    "type": "run_state",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "state": "planning"
+  },
+  {
+    "type": "run_state",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "state": "acting"
+  },
+  {
+    "type": "run_state",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "state": "awaiting_confirmation"
+  },
+  {
+    "type": "confirmation_required",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "action": {
+      "actionId": "8b72b0aa-6b08-4026-9c74-005b6ea22e5a",
+      "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+      "kind": "plan_approval",
+      "prompt": "Review Agent Plan (generate_deliverable)",
+      "createdAt": "2026-10-04T14:24:23.732Z",
+      "expiresAt": "2026-10-04T14:29:23.732Z",
+      "preview": "### Objective\nRead these inspection reports, pull out the key findings, and draft an approval \n\n### Proposed Operations\n• **generate_deliverable**: Generate DOCX artifact (`Requested Word document`)\n\n"
+    }
+  },
+  {
+    "type": "run_state",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "state": "acting"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "agent_thinking",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "text": "The user wants me to:\n1. Read the attached inspection reports\n2. Extract key findings from them\n3. Draft an approval note for the plant manager\n\nI have two attached PDF files:\n1. inspection-report-E201-annotated.pdf - for equipment E-201 Heat Exchanger\n2. inspection-report-E202-followup.pdf - for equipment E-202 Pressure Vessel\n\nLet me first read both files to extract the key findings, then I'll need to check the knowledge base for relevant standards, and finally generate an approval note document.\n\nLet me start by reading both PDF files.\n",
+    "turn": 1
+  },
+  {
+    "type": "tool_call",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "tool": "extract_document",
+    "summary": "Extracting document \"74ad8eba-2fc1-4b7d-badf-5350ab08de15-inspection-report-E201-annotated.pdf\"",
+    "callId": "774905944",
+    "args": {
+      "filename": "74ad8eba-2fc1-4b7d-badf-5350ab08de15-inspection-report-E201-annotated.pdf",
+      "query": "extract all inspection findings, measurements, handwritten annotations, and approval status"
+    }
+  },
+  {
+    "type": "tool_call",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "tool": "extract_document",
+    "summary": "Extracting document \"d3ffb0e7-5982-408e-b34e-8cad0b14466c-inspection-report-E202-followup.pdf\"",
+    "callId": "981364073",
+    "args": {
+      "filename": "d3ffb0e7-5982-408e-b34e-8cad0b14466c-inspection-report-E202-followup.pdf",
+      "query": "extract all inspection findings, measurements, handwritten annotations, and approval status"
+    }
+  },
+  {
+    "type": "tool_call",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "tool": "retrieve_knowledge",
+    "summary": "Querying knowledge base for \"pressure equipment inspection criteria tube wall thickness minimum allowable gasket requirements\"",
+    "callId": "372470275",
+    "args": {
+      "query": "pressure equipment inspection criteria tube wall thickness minimum allowable gasket requirements"
+    }
+  },
+  {
+    "type": "tool_result",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "tool": "extract_document",
+    "summary": "Extracted digital text across 2 pages from \"74ad8eba-2fc1-4b7d-badf-5350ab08de15-inspection-report-E201-annotated.pdf\" (551 chars)",
+    "callId": "774905944",
+    "output": "[DURABLE RESULT: 2d9da742-cf23-4dda-9c25-bdb23f55e069; retrieve_result action=read result_id=2d9da742-cf23-4dda-9c25-bdb23f55e069]\n{\n  \"sourceText\": \"--- Page 1 ---\\nNORTH ZONE REFINERY - INSPECTION REPORT\\nReport ID: IR-E201-2026-08-20\\nEquipment: E-201 Heat Exchanger\\nInspection findings\\nTube wall thickness: Rows 12-15 measured 3.8-4.2 mm.\\nMinimum allowable tube wall thickness: 4.6 mm.\\nLocalised pitting corrosion at the shell inlet nozzle; maximum depth 1.8 mm.\\nThe report does not state an approval status.\\nRECHECK WELD JOINT 4B\\n- field inspector\\n\\n--- Page 2 ---\\nPage 2 - follow-up observations\\nChannel-head gasket degradation. Replacement recommended before return to service.\\nInspector annotation is retained as source evidence.\",\n  \"extractionMethod\": \"digital_text\",\n  \"numPages\": 2,\n  \"pageReferences\": [\n    {\n      \"id\": \"page-1\",\n      \"page\": 1,\n      \"text\": \"NORTH ZONE REFINERY - INSPECTION REPORT\\nReport ID: IR-E201-2026-08-20\\nEquipment: E-201 Heat Exchanger\\nInspection findings\\nTube wall thickness: Rows 12-15 measured 3.8-4.2 mm.\\nMinimum allowable tube wall thickness: 4.6 mm.\\nLocalised pitting corrosion at the shell inlet nozzle; maximum depth 1.8 mm.\\nThe report does not state an approval status.\\nRECHECK WELD JOINT 4B\\n- field inspector\"\n    },\n    {\n      \"id\": \"page-2\",\n      \"page\": 2,\n      \"text\": \"Page 2 - follow-up observations\\nChannel-head gasket degradation. Replacement recommended before return to service.\\nInspector annotation is retained as source evidence.\"\n    }\n  ],\n  \"findings\": [\n    {\n      \"findingId\": \"finding-p1\",\n      \"title\": \"Page 1 Content: 74ad8eba-2fc1-4b7d-badf-5350ab08de15-inspection-report-E201-annotated.pdf\",\n      \"value\": \"NORTH ZONE REFINERY - INSPECTION REPORT\\nReport ID: IR-E201-2026-08-20\\nEquipment: E-201 Heat Exchanger\\nInspection findings\\nTube wall thickness: Rows 12-15 measured 3.8-4.2 mm.\\nMinimum allowable tube wall thickness: 4.6 mm.\\nLocalised pitting corrosion at the shell inlet nozzle; maximum depth 1.8 mm.\\nThe report does not state an approval status.\\nRECHECK WELD JOINT 4B\\n- field inspector\",\n      \"pageReferenceIds\": [\n        \"page-1\"\n      ],\n      \"confidence\": \"high\",\n      \"evidence\": \"NORTH ZONE REFINERY - INSPECTION REPORT\\nReport ID: IR-E201-2026-08-20\\nEquipment: E-201 Heat Exchanger\\nInspection findings\\nTube wall thickness: Rows 12-15 measured 3.8-4.2 mm.\\nMinimum allowable tube wall thickness: 4.6 mm.\\nLocalised pitting corrosion at the shell inlet nozzle; maximum depth 1.8 mm.\\nT\"\n    },\n    {\n      \"findingId\": \"finding-p2\",\n      \"title\": \"Page 2 Content: 74ad8eba-2fc1-4b7d-badf-5350ab08de15-inspection-report-E201-annotated.pdf\",\n      \"value\": \"Page 2 - follow-up observations\\nChannel-head gasket degradation. Replacement recommended before return to service.\\nInspector annotation is retained as source evidence.\",\n      \"pageReferenceIds\": [\n        \"page-2\"\n      ],\n      \"confidence\": \"high\",\n      \"evidence\": \"Page 2 - follow-up observations\\nChannel-head gasket degradation. Replacement recommended before return to service.\\nInspector annotation is retained as source evidence.\"\n    }\n  ]\n}",
+    "durationMs": 14,
+    "ok": true
+  },
+  {
+    "type": "tool_result",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "tool": "extract_document",
+    "summary": "Extracted digital text across 2 pages from \"d3ffb0e7-5982-408e-b34e-8cad0b14466c-inspection-report-E202-followup.pdf\" (530 chars)",
+    "callId": "981364073",
+    "output": "[DURABLE RESULT: e89223ef-6532-422a-b8d8-65dc82a9cd76; retrieve_result action=read result_id=e89223ef-6532-422a-b8d8-65dc82a9cd76]\n{\n  \"sourceText\": \"--- Page 1 ---\\nNORTH ZONE REFINERY - INSPECTION REPORT\\nReport ID: IR-E202-2026-08-21\\nEquipment: E-202 Pressure Vessel\\nInspection findings\\nTube wall thickness: Rows 12-15 measured 3.8-4.2 mm.\\nMinimum allowable tube wall thickness: 4.6 mm.\\nLocalised pitting corrosion at the shell inlet nozzle; maximum depth 1.8 mm.\\nThe report does not state an approval status.\\nverify after repair\\n- field inspector\\n\\n--- Page 2 ---\\nPage 2 - follow-up observations\\nFollow-up visual inspection complete. No new defects observed.\\nInspector annotation is retained as source evidence.\",\n  \"extractionMethod\": \"digital_text\",\n  \"numPages\": 2,\n  \"pageReferences\": [\n    {\n      \"id\": \"page-1\",\n      \"page\": 1,\n      \"text\": \"NORTH ZONE REFINERY - INSPECTION REPORT\\nReport ID: IR-E202-2026-08-21\\nEquipment: E-202 Pressure Vessel\\nInspection findings\\nTube wall thickness: Rows 12-15 measured 3.8-4.2 mm.\\nMinimum allowable tube wall thickness: 4.6 mm.\\nLocalised pitting corrosion at the shell inlet nozzle; maximum depth 1.8 mm.\\nThe report does not state an approval status.\\nverify after repair\\n- field inspector\"\n    },\n    {\n      \"id\": \"page-2\",\n      \"page\": 2,\n      \"text\": \"Page 2 - follow-up observations\\nFollow-up visual inspection complete. No new defects observed.\\nInspector annotation is retained as source evidence.\"\n    }\n  ],\n  \"findings\": [\n    {\n      \"findingId\": \"finding-p1\",\n      \"title\": \"Page 1 Content: d3ffb0e7-5982-408e-b34e-8cad0b14466c-inspection-report-E202-followup.pdf\",\n      \"value\": \"NORTH ZONE REFINERY - INSPECTION REPORT\\nReport ID: IR-E202-2026-08-21\\nEquipment: E-202 Pressure Vessel\\nInspection findings\\nTube wall thickness: Rows 12-15 measured 3.8-4.2 mm.\\nMinimum allowable tube wall thickness: 4.6 mm.\\nLocalised pitting corrosion at the shell inlet nozzle; maximum depth 1.8 mm.\\nThe report does not state an approval status.\\nverify after repair\\n- field inspector\",\n      \"pageReferenceIds\": [\n        \"page-1\"\n      ],\n      \"confidence\": \"high\",\n      \"evidence\": \"NORTH ZONE REFINERY - INSPECTION REPORT\\nReport ID: IR-E202-2026-08-21\\nEquipment: E-202 Pressure Vessel\\nInspection findings\\nTube wall thickness: Rows 12-15 measured 3.8-4.2 mm.\\nMinimum allowable tube wall thickness: 4.6 mm.\\nLocalised pitting corrosion at the shell inlet nozzle; maximum depth 1.8 mm.\\n\"\n    },\n    {\n      \"findingId\": \"finding-p2\",\n      \"title\": \"Page 2 Content: d3ffb0e7-5982-408e-b34e-8cad0b14466c-inspection-report-E202-followup.pdf\",\n      \"value\": \"Page 2 - follow-up observations\\nFollow-up visual inspection complete. No new defects observed.\\nInspector annotation is retained as source evidence.\",\n      \"pageReferenceIds\": [\n        \"page-2\"\n      ],\n      \"confidence\": \"high\",\n      \"evidence\": \"Page 2 - follow-up observations\\nFollow-up visual inspection complete. No new defects observed.\\nInspector annotation is retained as source evidence.\"\n    }\n  ]\n}",
+    "durationMs": 30,
+    "ok": true
+  },
+  {
+    "type": "tool_result",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "tool": "retrieve_knowledge",
+    "summary": "Retrieved 5 clauses for \"pressure equipment inspection criteria tube wall thickness minimum allowable gasket requirements\" (top: fixture-0 §3.2)",
+    "callId": "372470275",
+    "output": "[CITATION: fixture-0-p1-4] (Document: fixture-0, §3.2, Page 1):\n## [section:3.2] Approval criteria\n\nWhen a report identifies a tube-wall measurement below the minimum allowable\nvalue, localised pitting, or gasket degradation, the approval note must list\neach finding and its evidence. Conditional clearance may be recorded only\nwhen the affected tubes are scheduled for retubing and any recommended gasket\nreplacement is recorded. The approval note must cite this section as\n`[SOP-114 §3.2]`.\n\nFor the fixed E-201 report, the supported recommendation is: conditional\nclearance pending retubing of the affected tubes. The note must not claim that\nfinal approval has already been granted.\n\n---\n\n[CITATION: fixture-0-p1-2] (Document: fixture-0, §1.0, Page 1):\n## [section:1.0] Purpose\n\nThis procedure defines the evidence and approval criteria for pressure\nequipment inspection reports. The approval decision must identify the\nequipment, preserve measured values, record defects, and state any required\nrepair before return to service.\n\n---\n\n[CITATION: fixture-0-p1-1] (Document: fixture-0, §sop-114-pressure-equipment-ins, Page 1):\n# SOP-114 — Pressure Equipment Inspection and Approval\n\nDocument ID: `SOP-114`\nRevision: `4.0`\nStatus: Approved\n\n---\n\n[CITATION: fixture-0-p1-3] (Document: fixture-0, §2.1, Page 1):\n## [section:2.1] Inspection evidence\n\nInspection findings must retain their original units, ranges, locations, and\npage evidence. A report may be used for an approval note only when its\nfindings are traceable to the supplied inspection record.\n\n---\n\n[CITATION: fixture-0-p1-5] (Document: fixture-0, §4.1, Page 1):\n## [section:4.1] Records\n\nThe generated approval note must retain the report reference, equipment\nidentifier, findings summary, recommendation, and grounding references.",
+    "durationMs": 63,
+    "ok": true
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "agent_thinking",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "text": "I now have the key findings from both inspection reports and the relevant SOP-114 standards. Let me analyze the findings:\n\n**E-201 Heat Exchanger (IR-E201-2026-08-20):**\n- Tube wall thickness: Rows 12-15 measured 3.8-4.2 mm (minimum allowable: 4.6 mm) - **NON-COMPLIANT**\n- Localised pitting corrosion at shell inlet nozzle; maximum depth 1.8 mm - **NON-COMPLIANT**\n- Channel-head gasket degradation. Replacement recommended before return to service - **NON-COMPLIANT**\n- Handwritten annotation: \"RECHECK WELD JOINT 4B\"\n- No approval status stated\n\n**E-202 Pressure Vessel (IR-E202-2026-08-21):**\n- Tube wall thickness: Rows 12-15 measured 3.8-4.2 mm (minimum allowable: 4.6 mm) - **NON-COMPLIANT**\n- Localised pitting corrosion at shell inlet nozzle; maximum depth 1.8 mm - **NON-COMPLIANT**\n- Handwritten annotation: \"verify after repair\"\n- Follow-up visual inspection complete. No new defects observed - **COMPLIANT**\n- No approval status stated\n\nAccording to SOP-114 §3.2:\n- When tube-wall measurement is below minimum allowable value, localised pitting, or gasket degradation are found, the approval note must list each finding and its evidence\n- Conditional clearance may be recorded only when affected tubes are scheduled for retubing and any recommended gasket replacement is recorded\n- The approval note must cite SOP-114 §3.2\n\nFor E-201: Multiple non-compliant findings (tube thickness, pitting, gasket). No approval can be granted until repairs are completed.\n\nFor E-202: Tube thickness and pitting still non-compliant, but follow-up shows no new defects. \n\nI'll draft an approval note that clearly outlines the non-compliant conditions and specifies the necessary corrective actions before any equipment can be cleared for service.\n",
+    "turn": 2
+  },
+  {
+    "type": "tool_call",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "tool": "generate_deliverable",
+    "summary": "Generating deliverable \"approval-note-pressure-equipment.docx\"",
+    "callId": "189523964",
+    "args": {
+      "type": "docx",
+      "title": "Approval Note - Pressure Equipment Inspection",
+      "filename": "approval-note-pressure-equipment.docx",
+      "content": "# APPROVAL NOTE - PRESSURE EQUIPMENT INSPECTION\n\n**Facility:** North Zone Refinery  \n**Date:** 2026-08-20 to 2026-08-21  \n**Governing Standard:** SOP-114 — Pressure Equipment Inspection and Approval (Revision 4.0)\n\n---\n\n## EQUIPMENT E-201: Heat Exchanger\n\n### Inspection Report Reference\n- **Report ID:** IR-E201-2026-08-20\n- **Report Date:** 2026-08-20\n- **Inspector:** Field Inspector\n\n### Key Findings\n\n| Finding | Location | Measured Value | Minimum Allowable | Status |\n|---------|---------|----------------|-------------------|--------|\n| Tube wall thickness | Rows 12-15 | 3.8-4.2 mm | 4.6 mm | **NON-COMPLIANT** |\n| Localised pitting corrosion | Shell inlet nozzle | Maximum depth 1.8 mm | N/A | **NON-COMPLIANT** |\n| Channel-head gasket degradation | - | - | - | **NON-COMPLIANT** |\n\n### Handwritten Inspector Annotations\n- **RECHECK WELD JOINT 4B** (Page 1)\n\n### Compliance Assessment\n**Status: CONDITIONAL CLEARANCE PENDING REPAIR**\n\n**Non-Compliant Defects:**\n1. **Tube wall thickness below minimum allowable** (SOP-114 §3.2): Rows 12-15 measured 3.8-4.2 mm, below minimum allowable 4.6 mm. This requires retubing of affected tubes before return to service.\n2. **Localised pitting corrosion** (SOP-114 §3.2): Maximum depth 1.8 mm at shell inlet nozzle. Repair required.\n3. **Gasket degradation** (SOP-114 §3.2): Channel-head gasket requires replacement before return to service.\n\n### Recommendation\n**E-201 is NOT approved for return to service.** The following repairs must be completed and verified:\n1. Retubing of Rows 12-15 (affected by wall thickness corrosion)\n2. Repair of pitting corrosion at shell inlet nozzle\n3. Replacement of channel-head gasket\n4. Recheck of Weld Joint 4B as annotated\n\n**Conditional clearance may be granted only after all repairs are completed and verified.**\n\n---\n\n## EQUIPMENT E-202: Pressure Vessel\n\n### Inspection Report Reference\n- **Report ID:** IR-E202-2026-08-21\n- **Report Date:** 2026-08-21\n- **Inspector:** Field Inspector\n\n### Key Findings\n\n| Finding | Location | Measured Value | Minimum Allowable | Status |\n|---------|---------|----------------|-------------------|--------|\n| Tube wall thickness | Rows 12-15 | 3.8-4.2 mm | 4.6 mm | **NON-COMPLIANT** |\n| Localised pitting corrosion | Shell inlet nozzle | Maximum depth 1.8 mm | N/A | **NON-COMPLIANT** |\n\n### Handwritten Inspector Annotations\n- **verify after repair** (Page 1)\n- **Follow-up visual inspection complete. No new defects observed** (Page 2)\n\n### Compliance Assessment\n**Status: CONDITIONAL CLEARANCE PENDING RETUBING**\n\n**Non-Compliant Defects:**\n1. **Tube wall thickness below minimum allowable** (SOP-114 §3.2): Rows 12-15 measured 3.8-4.2 mm, below minimum allowable 4.6 mm. This requires retubing of affected tubes before return to service.\n2. **Localised pitting corrosion** (SOP-114 §3.2): Maximum depth 1.8 mm at shell inlet nozzle. Repair required.\n\n**Follow-up Status:** Visual inspection complete with no new defects observed.\n\n### Recommendation\n**E-202 is NOT approved for return to service.** The following repairs must be completed and verified:\n1. Retubing of Rows 12-15 (affected by wall thickness corrosion)\n2. Repair of pitting corrosion at shell inlet nozzle\n3. Completion of required repairs as per \"verify after repair\" annotation\n\n**Conditional clearance may be granted only after all repairs are completed and verified.**\n\n---\n\n## SUMMARY\n\n| Equipment | Report ID | Critical Defects | Approval Status |\n|-----------|-----------|------------------|-----------------|\n| E-201 Heat Exchanger | IR-E201-2026-08-20 | Tube thickness, pitting, gasket degradation | **NOT APPROVED** - Pending retubing, pitting repair, gasket replacement, weld recheck |\n| E-202 Pressure Vessel | IR-E202-2026-08-21 | Tube thickness, pitting corrosion | **NOT APPROVED** - Pending retubing and pitting repair |\n\n---\n\n## GROUNDING REFERENCES\n\n- **SOP-114 §3.2:** Approval criteria - When a report identifies tube-wall measurement below minimum allowable value, localised pitting, or gasket degradation, the approval note must list each finding and its evidence. Conditional clearance may be recorded only when the affected tubes are scheduled for retubing and any recommended gasket replacement is recorded.\n- **SOP-114 §1.0:** Purpose - Inspection findings must retain their original units, ranges, locations, and page evidence.\n- **SOP-114 §4.1:** Records - The generated approval note must retain the report reference, equipment identifier, findings summary, recommendation, and grounding references.\n\n---\n\n**Note:** Neither equipment is currently approved for return to service. All identified defects must be repaired and verified before any conditional or final approval can be granted."
+    }
+  },
+  {
+    "type": "tool_result",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "tool": "generate_deliverable",
+    "summary": "Created deliverable: approval-note-pressure-equipment.docx",
+    "callId": "189523964",
+    "output": "Deliverable \"approval-note-pressure-equipment.docx\" (11348 bytes) generated and verified. File passed all structural verification checks (DOCX package validated). Saved to disk at runs/21540f3e-a147-4742-ab0e-4ead398f46a8/output/approval-note-pressure-equipment.docx. Deliverable creation is complete.",
+    "durationMs": 70,
+    "ok": true
+  },
+  {
+    "type": "artifact_ready",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "artifact": {
+      "artifactId": "1341d8cf-6b2a-495f-b6aa-5169a9d223e0",
+      "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+      "kind": "docx",
+      "filename": "approval-note-pressure-equipment.docx",
+      "relativePath": "runs/21540f3e-a147-4742-ab0e-4ead398f46a8/output/approval-note-pressure-equipment.docx",
+      "sizeBytes": 11348,
+      "createdAt": "2026-10-04T14:27:03.631Z",
+      "verified": true,
+      "verificationDetails": {
+        "paragraphCount": 60,
+        "contentMatch": true
+      }
+    }
+  },
+  {
+    "type": "context_compaction",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "metadata": {
+      "truncated": true,
+      "originalChars": 3011,
+      "retainedChars": 1865,
+      "toolName": "extract_document",
+      "source": "74ad8eba-2fc1-4b7d-badf-5350ab08de15-inspection-report-E201-annotated.pdf",
+      "omittedChars": 1691,
+      "omittedLines": 21,
+      "resultId": "2d9da742-cf23-4dda-9c25-bdb23f55e069"
+    }
+  },
+  {
+    "type": "context_compaction",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "metadata": {
+      "truncated": true,
+      "originalChars": 2926,
+      "retainedChars": 1847,
+      "toolName": "extract_document",
+      "source": "d3ffb0e7-5982-408e-b34e-8cad0b14466c-inspection-report-E202-followup.pdf",
+      "omittedChars": 1622,
+      "omittedLines": 18,
+      "resultId": "e89223ef-6532-422a-b8d8-65dc82a9cd76"
+    }
+  },
+  {
+    "type": "context_compaction",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "metadata": {
+      "truncated": true,
+      "originalChars": 1795,
+      "retainedChars": 1922,
+      "toolName": "retrieve_knowledge",
+      "source": "pressure equipment inspection criteria tube wall thickness minimum allowable gasket requirements",
+      "omittedChars": 333,
+      "omittedLines": 9
+    }
+  },
+  {
+    "type": "context_compaction",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "metadata": {
+      "truncated": true,
+      "originalChars": 1744,
+      "retainedChars": 1422,
+      "reason": "older_assistant_turn"
+    }
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "##",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Summary",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " for",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Plant",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Manager",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "I",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "'ve",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " generated",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " the",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " approval",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " note",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " document",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " (`",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "approval",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-note",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-pressure",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-e",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "quipment",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ".doc",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "x",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "`).",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Here",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " are",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " the",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " key",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " findings",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "###",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "E",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "0",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "1",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Heat",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Ex",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "changer",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " (",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "IR",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-E",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "0",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "1",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "0",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "6",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "0",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "8",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "0",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ")**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "Status",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " NOT",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " APPRO",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "VED",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " -",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Multiple",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " critical",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " defects",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " found",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "Tube",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " wall",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " thickness",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Rows",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " 1",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "1",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "5",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " measured",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " 3",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "8",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "4",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " mm",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " (",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "minimum",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " allowable",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " 4",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "6",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " mm",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ")",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " —",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "FAIL",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "P",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "itting",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " corrosion",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Shell",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " inlet",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " nozzle",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " max",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " depth",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " 1",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "8",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " mm",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " —",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "FAIL",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "G",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "asket",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " degradation",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Channel",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-head",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " g",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "asket",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " requires",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " replacement",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " —",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "FAIL",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "Hand",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "written",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " annotation",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " \"",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "RE",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "CHECK",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " W",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "ELD",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " JO",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "INT",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " 4",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "B",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\"",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "Recommend",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "ation",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Conditional",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " clearance",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " pending",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " ret",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "ub",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "ing",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " p",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "itting",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " repair",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " g",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "asket",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " replacement",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " and",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " weld",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " re",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "check",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "###",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "E",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "0",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Pressure",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " V",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "essel",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " (",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "IR",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-E",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "0",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "0",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "6",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "0",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "8",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "1",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ")**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "Status",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " NOT",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " APPRO",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "VED",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " —",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Critical",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " defects",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " still",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " present",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "Tube",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " wall",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " thickness",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Rows",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " 1",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "1",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "5",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " measured",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " 3",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "8",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "4",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " mm",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " (",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "minimum",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " allowable",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " 4",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "6",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " mm",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ")",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " —",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "FAIL",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "P",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "itting",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " corrosion",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Shell",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " inlet",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " nozzle",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " max",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " depth",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " 1",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "8",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " mm",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " —",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "FAIL",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "Hand",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "written",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " annotation",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " \"",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "verify",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " after",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " repair",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\"",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "Follow",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-up",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Visual",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " inspection",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " complete",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " no",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " new",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " defects",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " observed",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "Recommend",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "ation",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ":**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Conditional",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " clearance",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " pending",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " ret",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "ub",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "ing",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " and",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " p",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "itting",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " repair",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "###",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "Com",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "pliance",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Status",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "Both",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " equipment",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " items",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " are",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "NOT",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " APPRO",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "VED",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "**",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " for",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " return",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " to",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " service",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " Per",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " SOP",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "-",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "1",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "1",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "4",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " §",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "3",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " conditional",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " clearance",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " can",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " only",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " be",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " granted",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " after",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " all",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " repairs",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " (",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "ret",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "ub",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "ing",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " corrosion",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " repair",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " g",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "asket",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " replacement",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ")",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " are",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " completed",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " and",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " verified",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "\n\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "The",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " approval",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " note",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " document",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " has",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " been",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " created",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " with",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " full",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " details",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " measurements",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " handwritten",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " annotations",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " and",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " standard",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": " citations",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "agent_thinking",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "text": "\n\n## Summary for Plant Manager\n\nI've generated the approval note document (`approval-note-pressure-equipment.docx`). Here are the key findings:\n\n### **E-201 Heat Exchanger (IR-E201-2026-08-20)**\n- **Status: NOT APPROVED** - Multiple critical defects found\n- **Tube wall thickness:** Rows 12-15 measured 3.8-4.2 mm (minimum allowable: 4.6 mm) — **FAIL**\n- **Pitting corrosion:** Shell inlet nozzle, max depth 1.8 mm — **FAIL**\n- **Gasket degradation:** Channel-head gasket requires replacement — **FAIL**\n- **Handwritten annotation:** \"RECHECK WELD JOINT 4B\"\n- **Recommendation:** Conditional clearance pending retubing, pitting repair, gasket replacement, and weld recheck\n\n### **E-202 Pressure Vessel (IR-E202-2026-08-21)**\n- **Status: NOT APPROVED** — Critical defects still present\n- **Tube wall thickness:** Rows 12-15 measured 3.8-4.2 mm (minimum allowable: 4.6 mm) — **FAIL**\n- **Pitting corrosion:** Shell inlet nozzle, max depth 1.8 mm — **FAIL**\n- **Handwritten annotation:** \"verify after repair\"\n- **Follow-up:** Visual inspection complete, no new defects observed\n- **Recommendation:** Conditional clearance pending retubing and pitting repair\n\n### **Compliance Status**\nBoth equipment items are **NOT APPROVED** for return to service. Per SOP-114 §3.2, conditional clearance can only be granted after all repairs (retubing, corrosion repair, gasket replacement) are completed and verified.\n\nThe approval note document has been created with full details, measurements, handwritten annotations, and standard citations.",
+    "turn": 3
+  },
+  {
+    "type": "assistant_message_reset",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "delta": "## Summary for Plant Manager\n\nI've generated the approval note document (`approval-note-pressure-equipment.docx`). Here are the key findings:\n\n### **E-201 Heat Exchanger (IR-E201-2026-08-20)**\n- **Status: NOT APPROVED** - Multiple critical defects found\n- **Tube wall thickness:** Rows 12-15 measured 3.8-4.2 mm (minimum allowable: 4.6 mm) — **FAIL**\n- **Pitting corrosion:** Shell inlet nozzle, max depth 1.8 mm — **FAIL**\n- **Gasket degradation:** Channel-head gasket requires replacement — **FAIL**\n- **Handwritten annotation:** \"RECHECK WELD JOINT 4B\"\n- **Recommendation:** Conditional clearance pending retubing, pitting repair, gasket replacement, and weld recheck\n\n### **E-202 Pressure Vessel (IR-E202-2026-08-21)**\n- **Status: NOT APPROVED** — Critical defects still present\n- **Tube wall thickness:** Rows 12-15 measured 3.8-4.2 mm (minimum allowable: 4.6 mm) — **FAIL**\n- **Pitting corrosion:** Shell inlet nozzle, max depth 1.8 mm — **FAIL**\n- **Handwritten annotation:** \"verify after repair\"\n- **Follow-up:** Visual inspection complete, no new defects observed\n- **Recommendation:** Conditional clearance pending retubing and pitting repair\n\n### **Compliance Status**\nBoth equipment items are **NOT APPROVED** for return to service. Per SOP-114 §3.2, conditional clearance can only be granted after all repairs (retubing, corrosion repair, gasket replacement) are completed and verified.\n\nThe approval note document has been created with full details, measurements, handwritten annotations, and standard citations.",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "messageId": "5bc5f4d1-7b6d-45ee-a186-af66e2e4514b",
+    "text": "## Summary for Plant Manager\n\nI've generated the approval note document (`approval-note-pressure-equipment.docx`). Here are the key findings:\n\n### **E-201 Heat Exchanger (IR-E201-2026-08-20)**\n- **Status: NOT APPROVED** - Multiple critical defects found\n- **Tube wall thickness:** Rows 12-15 measured 3.8-4.2 mm (minimum allowable: 4.6 mm) — **FAIL**\n- **Pitting corrosion:** Shell inlet nozzle, max depth 1.8 mm — **FAIL**\n- **Gasket degradation:** Channel-head gasket requires replacement — **FAIL**\n- **Handwritten annotation:** \"RECHECK WELD JOINT 4B\"\n- **Recommendation:** Conditional clearance pending retubing, pitting repair, gasket replacement, and weld recheck\n\n### **E-202 Pressure Vessel (IR-E202-2026-08-21)**\n- **Status: NOT APPROVED** — Critical defects still present\n- **Tube wall thickness:** Rows 12-15 measured 3.8-4.2 mm (minimum allowable: 4.6 mm) — **FAIL**\n- **Pitting corrosion:** Shell inlet nozzle, max depth 1.8 mm — **FAIL**\n- **Handwritten annotation:** \"verify after repair\"\n- **Follow-up:** Visual inspection complete, no new defects observed\n- **Recommendation:** Conditional clearance pending retubing and pitting repair\n\n### **Compliance Status**\nBoth equipment items are **NOT APPROVED** for return to service. Per SOP-114 §3.2, conditional clearance can only be granted after all repairs (retubing, corrosion repair, gasket replacement) are completed and verified.\n\nThe approval note document has been created with full details, measurements, handwritten annotations, and standard citations.",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "run_state",
+    "runId": "21540f3e-a147-4742-ab0e-4ead398f46a8",
+    "state": "completed"
+  }
+]

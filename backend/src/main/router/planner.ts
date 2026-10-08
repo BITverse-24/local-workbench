@@ -1,5 +1,5 @@
 import { requestBase, ModelGateway } from "../gateway/model-gateway.js";
-import type { PlanModelRequest, SubtaskPlan } from "../../shared/contracts.js";
+import type { ChatModelRequest, SubtaskPlan } from "../../shared/contracts.js";
 import { randomUUID } from "node:crypto";
 import { routeTask } from "./deterministic-router.js";
 
@@ -39,15 +39,15 @@ export async function generatePlan(
     };
   }
 
-  // Complex Path: Use the planning model
+  // Complex Path: Use the draft reasoning model
   const attachments = Array.isArray(attachment) ? attachment : attachment ? [attachment] : [];
   const contextText = attachments.map((a) => `\n\n[Attachment: ${a.filename}]`).join("");
   const prompt = `${userText}${contextText}\n\nPlease generate the JSON subtask plan.`;
 
   const base = requestBase(
     runId,
-    "plan",
-    "plan-qwen3-8b",
+    "draft",
+    "primary-model",
     "chat-result",
     PLANNER_PROMPT,
     prompt,
@@ -56,10 +56,10 @@ export async function generatePlan(
     temperature
   );
 
-  const request: PlanModelRequest = {
+  const request: ChatModelRequest = {
     ...base,
-    taskType: "plan",
-    modelId: "plan-qwen3-8b",
+    taskType: "draft",
+    modelId: "primary-model",
     responseFormat: "chat-result",
   };
 

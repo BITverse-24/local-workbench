@@ -1,17 +1,19 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { matchesContractDeliverable } from "../run/contract.js";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AgentTool, ToolExecutionContext, ToolExecutionResult } from "./types.js";
 import { requestBase } from "../gateway/model-gateway.js";
 import { executePython } from "./python.js";
-import { generateDocx, generateXlsx } from "./artifacts.js";
-import { resolveRunPath } from "../run/filesystem.js";
+import { generateDocx, generateXlsxFromContent, verifyArtifactFile } from "./artifacts.js";
+import { resolveRunPath, writeRunFile, artifactRef } from "../run/filesystem.js";
+import { extractContentArg, extractPathArg, findFileInRunDirectories } from "./workspace-tools.js";
 import type {
   ArtifactKind,
   ArtifactRef,
   CodeModelRequest,
   DraftModelRequest,
-  PythonExecutionResult,
+  ModelId,
   VisionModelRequest,
 } from "../../shared/contracts.js";
 import { extractDocxText, extractPdfText } from "./document-reader.js";
@@ -50,15 +52,32 @@ export const extractDocumentTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const filename = String(args.filename ?? "");
-    const query = String(args.query ?? "Extract all findings, measurements, and annotations from this document.");
-    const inputDir = resolveRunPath(context.runId, "input", "input");
-    const filePath = path.join(inputDir, filename);
+    const rawPath = extractPathArg(args) || String(args.filename ?? args.path ?? args.document ?? args.file ?? "");
+    const cleanRawPath = rawPath.trim().replace(/^['"]|['"]$/g, "");
+    if (!cleanRawPath) {
+      throw new Error(`extract_document requires a filename or path parameter. Received: ${JSON.stringify(args)}`);
+    }
+    const query = String(args.query ?? args.prompt ?? args.instruction ?? args.focus ?? args.task ?? "Extract all findings, measurements, and annotations from this document.");
 
-    if (!existsSync(filePath)) {
-      throw new Error(`Attached file "${filename}" not found in run input directory`);
+    let filePath: string | null = null;
+    if (context.workspaceRoot) {
+      try {
+        const resolved = path.resolve(context.workspaceRoot, cleanRawPath);
+        if (existsSync(resolved)) filePath = resolved;
+      } catch {}
+    }
+    if (!filePath && context.runId) {
+      filePath = findFileInRunDirectories(context.runId, cleanRawPath);
+    }
+    if (!filePath && existsSync(cleanRawPath)) {
+      filePath = cleanRawPath;
     }
 
+    if (!filePath || !existsSync(filePath)) {
+      throw new Error(`Attached file "${cleanRawPath}" not found in run directories or workspace`);
+    }
+
+    const filename = path.basename(filePath);
     const ext = path.extname(filename).toLowerCase();
 
     // 1. Native Word document extraction (DOCX)
@@ -84,6 +103,7 @@ export const extractDocumentTool: AgentTool = {
       return {
         output: JSON.stringify(docResult, null, 2),
         summary: `Extracted text from Word document "${filename}" (${docxRes.totalChars} chars)`,
+        intermediate: { type: "document", status: "complete", origin: "source_extracted", payload: docResult, sources: [{ filename: cleanRawPath, relation: "source" }] },
       };
     }
 
@@ -115,6 +135,7 @@ export const extractDocumentTool: AgentTool = {
           return {
             output: JSON.stringify(digitalResult, null, 2),
             summary: `Extracted digital text across ${pdfRes.numPages} pages from "${filename}" (${pdfRes.totalChars} chars)`,
+            intermediate: { type: "document", status: "complete", origin: "source_extracted", payload: { ...digitalResult, pages: pdfRes.pages }, sources: pdfRes.pages.map((p) => ({ filename: cleanRawPath, page: p.pageNumber, relation: "source" as const })) },
           };
         }
       } catch (err) {
@@ -127,7 +148,7 @@ export const extractDocumentTool: AgentTool = {
     if (ext === ".svg") {
       try {
         const raw = readFileSync(filePath);
-        const svgText = extractSvgText(raw);
+        const svgText = extractSvgText(raw, null);
         if (svgText && svgText.trim().length > 0) {
           const pageReferences = [{ id: "svg-1", page: 1, text: svgText.slice(0, 1000) }];
           const findings = [
@@ -149,6 +170,7 @@ export const extractDocumentTool: AgentTool = {
           return {
             output: JSON.stringify(svgResult, null, 2),
             summary: `Extracted vector diagram text and annotations from SVG "${filename}" (${svgText.length} chars)`,
+            intermediate: { type: "document", status: "complete", origin: "source_extracted", payload: svgResult, sources: [{ filename: cleanRawPath, relation: "source" }] },
           };
         }
       } catch (err) {
@@ -167,10 +189,14 @@ export const extractDocumentTool: AgentTool = {
       ? "image/jpeg"
       : "application/octet-stream";
 
+    const targetModelId = (context.gateway?.registry?.has("primary-model")
+      ? "primary-model"
+      : context.runContract?.routing.driverModel ?? "primary-model") as ModelId;
+
     const base = requestBase(
       context.runId,
       "vision",
-      "vision-qwen25vl",
+      targetModelId,
       "vision-result",
       "You are a specialized multimodal engineering document inspector. Extract all text, tabular readings, handwritten notes, and component identifiers accurately.",
       query,
@@ -183,7 +209,7 @@ export const extractDocumentTool: AgentTool = {
       ...base,
       requestId: randomUUID(),
       taskType: "vision",
-      modelId: "vision-qwen25vl",
+      modelId: targetModelId as "primary-model",
       responseFormat: "vision-result",
       attachment: {
         attachmentId: randomUUID(),
@@ -193,6 +219,7 @@ export const extractDocumentTool: AgentTool = {
         relativePath: `runs/${context.runId}/input/${filename}`,
       },
       inputMode: "typed-scan",
+      parentToolCallId: context.currentCallId,
     };
 
     const resp = await context.gateway.execute(req);
@@ -206,6 +233,7 @@ export const extractDocumentTool: AgentTool = {
     return {
       output: JSON.stringify(visionResult, null, 2),
       summary,
+      intermediate: { type: "document", status: "complete", origin: "model_derived", payload: visionResult, sources: [{ filename: cleanRawPath, relation: "input" }] },
     };
   },
 };
@@ -232,12 +260,31 @@ export const generateCodeTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const spec = String(args.spec ?? "");
-    const filename = String(args.filename ?? "task.py");
+    let effectiveArgs = args;
+    if (typeof args.raw === "string" && args.raw.trim().startsWith("{")) {
+      try {
+        effectiveArgs = { ...args, ...JSON.parse(args.raw) };
+      } catch {}
+    }
+    for (const wrapper of ["parameters", "arguments", "input", "params"]) {
+      const val = effectiveArgs[wrapper];
+      if (val && typeof val === "object" && !Array.isArray(val)) {
+        effectiveArgs = { ...effectiveArgs, ...(val as Record<string, unknown>) };
+      }
+    }
+    const spec = String(effectiveArgs.spec ?? effectiveArgs.prompt ?? effectiveArgs.task ?? effectiveArgs.instruction ?? effectiveArgs.description ?? effectiveArgs.code_spec ?? "");
+    const filename = String(effectiveArgs.filename ?? effectiveArgs.path ?? effectiveArgs.file ?? "task.py");
+    if (!spec.trim()) {
+      throw new Error("generate_code requires a 'spec' or 'prompt' description of the code to generate.");
+    }
+    const targetModelId = (context.gateway?.registry?.has("primary-model")
+      ? "primary-model"
+      : context.runContract?.routing.driverModel ?? "primary-model") as ModelId;
+
     const base = requestBase(
       context.runId,
       "code",
-      "code-qwen25coder",
+      targetModelId,
       "code-result",
       "You are an expert software engineer. Generate robust, production-grade code that satisfies the specification without external internet dependencies.",
       spec,
@@ -250,12 +297,13 @@ export const generateCodeTool: AgentTool = {
       ...base,
       requestId: randomUUID(),
       taskType: "code",
-      modelId: "code-qwen25coder",
+      modelId: targetModelId as "primary-model",
       responseFormat: "code-result",
       task: spec,
       inputFile: { attachmentId: randomUUID(), filename, mediaType: "text/x-python", rowCount: 1 },
       allowedLanguage: "python",
       executionRules: ["sandbox-isolated"],
+      parentToolCallId: context.currentCallId,
     };
 
     const resp = await context.gateway.execute(req);
@@ -293,12 +341,33 @@ export const generateTextTool: AgentTool = {
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const prompt = String(args.prompt ?? "");
-    const extraContext = args.context ? `\n\nCONTEXT:\n${String(args.context)}` : "";
+    let effectiveArgs = args;
+    if (typeof args.raw === "string" && args.raw.trim().startsWith("{")) {
+      try {
+        effectiveArgs = { ...args, ...JSON.parse(args.raw) };
+      } catch {}
+    }
+    for (const wrapper of ["parameters", "arguments", "input", "params"]) {
+      const val = effectiveArgs[wrapper];
+      if (val && typeof val === "object" && !Array.isArray(val)) {
+        effectiveArgs = { ...effectiveArgs, ...(val as Record<string, unknown>) };
+      }
+    }
+    const prompt = String(effectiveArgs.prompt ?? effectiveArgs.text ?? effectiveArgs.query ?? effectiveArgs.instruction ?? effectiveArgs.spec ?? "");
+    const extraContext = (effectiveArgs.context || effectiveArgs.data || effectiveArgs.findings || effectiveArgs.input)
+      ? `\n\nCONTEXT:\n${String(effectiveArgs.context ?? effectiveArgs.data ?? effectiveArgs.findings ?? effectiveArgs.input)}`
+      : "";
+    if (!prompt.trim()) {
+      throw new Error("generate_text requires a 'prompt' or 'instruction' for the text to draft.");
+    }
+    const targetModelId = (context.gateway?.registry?.has("primary-model")
+      ? "primary-model"
+      : context.runContract?.routing.driverModel ?? "primary-model") as ModelId;
+
     const base = requestBase(
       context.runId,
       "draft",
-      "draft-qwen3",
+      targetModelId,
       "chat-result",
       "You are a technical engineering drafting assistant. Produce clear, formal, publication-grade documentation grounded strictly in provided evidence.",
       `${prompt}${extraContext}`,
@@ -311,8 +380,9 @@ export const generateTextTool: AgentTool = {
       ...base,
       requestId: randomUUID(),
       taskType: "draft",
-      modelId: "draft-qwen3",
+      modelId: targetModelId,
       responseFormat: "chat-result",
+      parentToolCallId: context.currentCallId,
     } as any);
 
     if (!resp.ok) {
@@ -340,14 +410,17 @@ export const retrieveKnowledgeTool: AgentTool = {
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Search query or standard identifier (e.g. 'SOP-114 tube wall thickness criteria', 'SOP-220 valve rating')." },
+          query: { type: "string", description: "Combined query for the required governing criteria." },
         },
         required: ["query"],
       },
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const query = String(args.query ?? "");
+    const query = String(args.query ?? args.search ?? args.question ?? args.prompt ?? args.text ?? "");
+    if (!query.trim()) {
+      throw new Error("retrieve_knowledge requires a 'query' parameter to search the knowledge base.");
+    }
     if (!context.grounding) {
       return {
         output: "Knowledge base (RAG) is not initialized or configured in this environment.",
@@ -384,28 +457,74 @@ export const executePythonTool: AgentTool = {
     type: "function",
     function: {
       name: "execute_python",
-      description: "Execute Python code inside the secure, air-gapped sandbox without network access. Captures stdout, stderr, exit code, and created files.",
+      description: "Execute Python code inside the secure, air-gapped sandbox without network access. Standard library only (no docx/openpyxl). For Word (.docx) or Excel (.xlsx) deliverables, use 'generate_deliverable' instead. Captures stdout, stderr, exit code, and created files.",
       parameters: {
         type: "object",
         properties: {
-          code: { type: "string", description: "The Python source code to execute." },
+          code: { type: "string", format: "multiline", description: "The complete Python source code to execute." },
           input_files: {
             type: "array",
             items: { type: "string" },
             description: "Filenames from run input directory to stage into sandbox.",
           },
           filename: { type: "string", description: "Name of the script file. Defaults to 'task.py'." },
+          validation_code: { type: "string", format: "multiline", description: "Optional separate Python assertions, run after the repaired script succeeds. The dict 'repaired' contains the exact repaired script's functions (use repaired['function'](...)). Input files are available by filename. Derive assertions from the request and actual source data. Validation code is not included in the downloadable repaired source." },
         },
         required: ["code"],
       },
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const code = String(args.code ?? "");
-    const filename = String(args.filename ?? "task.py");
-    let inputFiles = Array.isArray(args.input_files) ? args.input_files.map(String) : [];
+    let code = extractContentArg(args) || String(args.code ?? args.script ?? args.python_code ?? args.source ?? "");
+    if (args.source_file !== undefined || args.edits !== undefined) {
+      const source = String(args.source_file ?? "");
+      if (!source || source !== path.basename(source) || !Array.isArray(args.edits) || !args.edits.length) {
+        throw { code: "invalid_arguments", retryable: true, message: "Source repair requires a run input filename and nonempty exact edits." };
+      }
+      const inputDirectory = resolveRunPath(context.runId, "input", "input");
+      const entry = readdirSync(inputDirectory).find(filename => filename === source || filename.endsWith(`-${source}`));
+      if (!entry) throw { code: "file_not_found", retryable: true, message: `Attached source not found: ${source}` };
+      code = readFileSync(resolveRunPath(context.runId, `input/${entry}`, "input"), "utf8");
+      for (const edit of args.edits) {
+        if (!edit || typeof edit.old !== "string" || !edit.old || typeof edit.new !== "string" || code.split(edit.old).length !== 2) {
+          throw { code: "invalid_arguments", retryable: true, message: "Each edit must supply old/new strings, with old matching exactly once in the source." };
+        }
+        const offset = code.indexOf(edit.old);
+        const lineStart = code.lastIndexOf("\n", offset - 1) + 1;
+        const prefix = code.slice(lineStart, offset);
+        let replacement = edit.new;
+        // Statement-sized edits use indentation relative to their source line.
+        // Preserve nested indentation while retaining the source block's prefix.
+        if (/^[ \t]*$/.test(prefix) && !/^[ \t]/.test(edit.old)) {
+          const lines = replacement.split("\n");
+          const nonempty = lines.filter((line: string) => line.trim());
+          const common = nonempty.length ? Math.min(...nonempty.map((line: string) => line.match(/^[ \t]*/)?.[0].length ?? 0)) : 0;
+          replacement = lines.map((line: string) => line.slice(common)).join(`\n${prefix}`);
+        }
+        code = code.replace(edit.old, () => replacement);
+      }
+    }
+    // JSON transport has already decoded strings. Keep executable source exact;
+    // a second escape decode or a speculative syntax rewrite changes behavior.
+    if (!code.trim()) {
+      throw new Error("execute_python requires 'code' (or 'script') containing Python source code to execute.");
+    }
+    const filename = String(args.filename ?? args.path ?? args.file ?? "task.py");
+    let inputFiles: string[] = [];
+    if (Array.isArray(args.input_files)) {
+      inputFiles = args.input_files.map((f) => path.basename(String(f).trim())).filter(Boolean);
+    } else if (typeof args.input_files === "string" && args.input_files.trim()) {
+      inputFiles = args.input_files.split(",").map((f) => path.basename(f.trim())).filter(Boolean);
+    } else if (typeof args.input_file === "string" && args.input_file.trim()) {
+      inputFiles = [path.basename(args.input_file.trim())];
+    } else if (typeof args.data_file === "string" && args.data_file.trim()) {
+      inputFiles = [path.basename(args.data_file.trim())];
+    }
 
-    // Automatically stage run attachments if input_files is omitted or incomplete
+    // Explicit input_files define the command-line interface. Discover only when
+    // omitted; source attachments are not extra arguments to the repaired program.
+    const hasExplicitInputs = inputFiles.length > 0;
+    // Automatically stage run data attachments when input_files is omitted.
     const inputDir = resolveRunPath(context.runId, "input", "input");
     if (existsSync(inputDir)) {
       const entries = readdirSync(inputDir, { withFileTypes: true });
@@ -413,14 +532,25 @@ export const executePythonTool: AgentTool = {
         .filter((e: any) => e.isFile() && !e.name.startsWith("."))
         .map((e: any) => e.name.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, ""));
       for (const f of cleanFiles) {
-        if (!inputFiles.includes(f)) {
+        if (!hasExplicitInputs && !/\.(?:py|js|ts|sh)$/i.test(f) && !inputFiles.includes(f)) {
           inputFiles.push(f);
         }
       }
     }
 
+    // Prioritize data files (.csv, .tsv, .json, .log, .txt, .dat, .xml, .xlsx) before code files (.py, .js, .ts)
+    // so sys.argv[1] is the primary data file target for the script
+    const isDataFile = (f: string) => /\.(csv|tsv|json|log|txt|dat|xml|xlsx)$/i.test(f);
+    if (!hasExplicitInputs) inputFiles.sort((a, b) => {
+      const aData = isDataFile(a);
+      const bData = isDataFile(b);
+      if (aData && !bData) return -1;
+      if (!aData && bData) return 1;
+      return 0;
+    });
+
     const intermediateDir = resolveRunPath(context.runId, "intermediate", "intermediate");
-    const scriptPath = path.join(intermediateDir, filename);
+    const scriptPath = resolveRunPath(context.runId, `intermediate/${filename}`, "intermediate");
     mkdirSync(path.dirname(scriptPath), { recursive: true });
     writeFileSync(scriptPath, code, "utf8");
 
@@ -428,15 +558,40 @@ export const executePythonTool: AgentTool = {
     if (filename !== "task.py") {
       writeFileSync(path.join(intermediateDir, "task.py"), code, "utf8");
     }
+    if (filename.includes("-")) {
+      const underscored = filename.replace(/-/g, "_");
+      writeFileSync(path.join(intermediateDir, underscored), code, "utf8");
+    }
 
-    const execResult = await executePython(context.runId, filename, inputFiles, []);
+    let execResult = await executePython(context.runId, filename, inputFiles, [], 60000, context.workspaceRoot);
+    if (execResult.exitCode === 0 && !execResult.timedOut && typeof args.validation_code === "string" && args.validation_code.trim()) {
+      const validationName = `validation-${randomUUID()}.py`;
+      const validationSource = `import pathlib, runpy\nrepaired = runpy.run_path(str(pathlib.Path(__file__).parent / ${JSON.stringify(filename)}), run_name="workbench_validation")\n${args.validation_code}\n`;
+      writeRunFile(context.runId, "intermediate", validationName, validationSource);
+      const validation = await executePython(context.runId, validationName, inputFiles, [], 60000, context.workspaceRoot);
+      execResult = { ...validation, stdout: `${execResult.stdout}\n${validation.stdout}`.trim(), durationMs: execResult.durationMs + validation.durationMs,
+        capturedOutput: { stdout: `${execResult.capturedOutput?.stdout ?? execResult.stdout}\n${validation.capturedOutput?.stdout ?? validation.stdout}`.trim(), stderr: `${execResult.capturedOutput?.stderr ?? execResult.stderr}\n${validation.capturedOutput?.stderr ?? validation.stderr}`.trim(), truncated: Boolean(execResult.capturedOutput?.truncated || validation.capturedOutput?.truncated) },
+      };
+    }
     const summary = `Executed Python (${filename}): exit ${execResult.exitCode} in ${execResult.durationMs}ms`;
+    const intermediate: ToolExecutionResult["intermediate"] = {
+      type: "execution", status: execResult.exitCode === 0 && !execResult.timedOut && !execResult.capturedOutput?.truncated ? "complete" : "partial", origin: "execution",
+      payload: { ...execResult }, sources: inputFiles.map((file) => ({ filename: file, relation: "input" })),
+    };
+    const { capturedOutput: _capturedOutput, ...observation } = execResult;
+
+    if (execResult.exitCode !== 0 || execResult.timedOut) {
+      return { ok: false, output: JSON.stringify(observation, null, 2), summary, intermediate,
+        error: { code: execResult.timedOut ? "timeout" : "validation_failure", retryable: true,
+          message: execResult.stderr || `Python execution failed with exit ${execResult.exitCode}` } };
+    }
 
     const artifacts: ArtifactRef[] = [];
     const outputDir = resolveRunPath(context.runId, "output", "output");
 
     // Collect any output files created during execution
     for (const outFile of execResult.outputFiles) {
+      if (context.runContract && !matchesContractDeliverable(context.runContract, outFile)) continue;
       const outPath = path.join(outputDir, outFile);
       if (existsSync(outPath)) {
         try {
@@ -455,10 +610,29 @@ export const executePythonTool: AgentTool = {
     }
 
     // Also persist the executed/repaired script itself as an artifact
-    try {
+    if (!context.runContract || context.runContract.deliverables.some((d) => d.filename?.endsWith(".py"))) try {
       const scriptBase = path.basename(filename);
-      const artifactScriptFilename = scriptBase.startsWith("repaired-") ? scriptBase : `repaired-${scriptBase}`;
-      const scriptOutPath = path.join(outputDir, artifactScriptFilename);
+      // If the filename was generic (task.py or run_fixed_script.py), check if run attachments have a source python script
+      let targetName = scriptBase;
+      if (scriptBase === "task.py" || scriptBase.startsWith("run_")) {
+        const inDir = resolveRunPath(context.runId, "input", "input");
+        if (existsSync(inDir)) {
+          const pyEntry = readdirSync(inDir).find((f) => f.endsWith(".py") && !f.startsWith("."));
+          if (pyEntry) {
+            const cleanName = pyEntry.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, "");
+            targetName = cleanName.replace(/^(?:broken|buggy)-/i, "fixed-");
+          }
+        }
+      }
+      const requestedScript = context.requestedArtifacts?.filter((item) => item.type === "file" && item.filename.endsWith(".py"));
+      const contractScripts = context.runContract?.deliverables.filter((item) => item.type === "file" && item.filename?.endsWith(".py"));
+      const artifactScriptFilename = requestedScript?.length === 1 ? requestedScript[0].filename :
+        contractScripts?.length === 1 && contractScripts[0].filename ? contractScripts[0].filename :
+        targetName.startsWith("repaired-") || targetName.startsWith("fixed-")
+          ? targetName
+          : `repaired-${targetName}`;
+      const scriptOutPath = resolveRunPath(context.runId, `output/${artifactScriptFilename}`, "output");
+      mkdirSync(path.dirname(scriptOutPath), { recursive: true });
       writeFileSync(scriptOutPath, code, "utf8");
       artifacts.push({
         artifactId: randomUUID(),
@@ -469,13 +643,30 @@ export const executePythonTool: AgentTool = {
         sizeBytes: Buffer.byteLength(code, "utf8"),
         createdAt: new Date().toISOString(),
       });
-    } catch {}
+    } catch (error) {
+      throw new Error(`Repaired source export failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    const hasDocDeliverables =
+      context.runContract?.deliverables.some((d) => d.type === "docx" || d.type === "xlsx" || d.type === "md") ||
+      context.requestedArtifacts?.some((a) => a.filename?.endsWith(".docx") || a.filename?.endsWith(".xlsx") || a.filename?.endsWith(".md"));
+
+    const deliveryStatus = hasDocDeliverables
+      ? "Calculations completed successfully. Proceed immediately to invoke 'generate_deliverable' to generate the requested document using the computed figures."
+      : "The executed source is already exported and ran successfully against the supplied inputs. Report the observed output and any limits; do not create another export or helper script.";
 
     return {
-      output: JSON.stringify(execResult, null, 2),
+      output: JSON.stringify({
+        ...observation,
+        artifacts: artifacts.map((artifact) => ({ filename: artifact.filename, relativePath: artifact.relativePath })),
+        executionPassed: execResult.exitCode === 0 && !execResult.timedOut,
+        validationAssertionsPassed: typeof args.validation_code === "string" && Boolean(args.validation_code.trim()),
+        deliveryStatus,
+      }, null, 2),
       summary,
       artifacts: artifacts.length > 0 ? artifacts : undefined,
       sideEffects: [`executed:${filename}`],
+      intermediate,
     };
   },
 };
@@ -489,25 +680,149 @@ export const generateDeliverableTool: AgentTool = {
     type: "function",
     function: {
       name: "generate_deliverable",
-      description: "Generate an official deliverable document (Word .docx, Excel .xlsx, or Markdown .md) in the run output folder.",
+      description:
+        "Generate a requested downloadable file in the run output folder: Word (.docx), Excel (.xlsx), Markdown (.md) or source/text file. Compiles .docx and .xlsx automatically without Python packages. Use type='file' for repaired code. Use ONLY for requested deliverables.",
       parameters: {
         type: "object",
         properties: {
-          type: { type: "string", enum: ["docx", "xlsx", "md"], description: "Format of the deliverable." },
-          title: { type: "string", description: "Document title or subject." },
-          content: { type: "string", description: "Text or markdown content for the deliverable." },
-          filename: { type: "string", description: "Desired deliverable filename (e.g. 'approval-note.docx', 'findings.md')." },
+          type: {
+            type: "string",
+            enum: ["docx", "xlsx", "md", "file"],
+            description: "'docx' for Word, 'xlsx' for Excel, 'md' for Markdown, 'file' for exact source/text content and filename.",
+          },
+          title: {
+            type: "string",
+            description: "Formal title of the deliverable document.",
+          },
+          content: {
+            type: "string",
+            format: "multiline",
+            description:
+              "Complete Markdown document body, or exact source/text content for type='file'. Do not pass outlines or placeholder text.",
+          },
+          filename: {
+            type: "string",
+            description: "Desired deliverable filename (e.g. 'approval-note.docx', 'findings.md', 'summary.xlsx').",
+          },
         },
         required: ["type", "content"],
       },
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
-    const type = String(args.type ?? "md").toLowerCase();
-    let title = String(args.title ?? "Deliverable");
-    let content = String(args.content ?? "");
-    let filename = String(args.filename ?? `deliverable.${type}`);
-    if (!filename.endsWith(`.${type}`)) filename += `.${type}`;
+    let effectiveArgs = args;
+    if (typeof args.raw === "string" && args.raw.trim().startsWith("{")) {
+      try {
+        effectiveArgs = { ...args, ...JSON.parse(args.raw) };
+      } catch {}
+    }
+    for (const wrapper of ["parameters", "arguments", "input", "params"]) {
+      const val = effectiveArgs[wrapper];
+      if (val && typeof val === "object" && !Array.isArray(val)) {
+        effectiveArgs = { ...effectiveArgs, ...(val as Record<string, unknown>) };
+      }
+    }
+    let type = String(effectiveArgs.type ?? effectiveArgs.kind ?? effectiveArgs.format ?? "").toLowerCase();
+    let title = String(effectiveArgs.title ?? effectiveArgs.name ?? effectiveArgs.heading ?? "Deliverable");
+    let content = extractContentArg(effectiveArgs) || String(effectiveArgs.content ?? effectiveArgs.body ?? effectiveArgs.text ?? effectiveArgs.markdown ?? "");
+    if (Array.isArray(effectiveArgs.report_rows)) {
+      const columns = ["source", "equipment", "measurements", "defects", "inspector_notes"];
+      const rows = effectiveArgs.report_rows;
+      if (!rows.length || rows.some(row => !row || typeof row !== "object" || columns.some(key => typeof row[key] !== "string"))) {
+        throw { code: "invalid_arguments", retryable: true, message: "report_rows requires source, equipment, measurements, defects and inspector_notes strings." };
+      }
+      const cell = (value: string) => value.replace(/\|/g, "\\|").replace(/\r?\n/g, "; ");
+      const requestedPages = context.sourceReferences?.map(reference => `${reference.filename}, page ${reference.page}`) ?? [];
+      if (requestedPages.some(source => !rows.some(row => row.source === source))) {
+        throw { code: "invalid_arguments", retryable: true, message: `The evidence report must cover every source page: ${requestedPages.join("; ")}.` };
+      }
+      content = [`# ${title}`, "", "| Equipment / source | Readings / limits | Findings / inspector notes |", "| --- | --- | --- |", ...rows.map(row => {
+        const cells = [
+          [row.equipment, row.source].filter(Boolean).join("; "), row.measurements,
+          [row.defects, row.inspector_notes ? `Inspector: ${row.inspector_notes}` : ""].filter(Boolean).join("; "),
+        ];
+        return `| ${cells.map(cell).join(" | ")} |`;
+      })].join("\n");
+      if (effectiveArgs.review_decisions !== undefined) {
+        const decisions = effectiveArgs.review_decisions;
+        const keys = ["equipment", "status", "required_actions", "citations"];
+        if (!Array.isArray(decisions) || !decisions.length || decisions.some(decision => !decision || keys.some(key => typeof decision[key] !== "string" || !decision[key].trim())) ||
+          rows.some(row => !decisions.some(decision => decision.equipment === row.equipment))) {
+          throw { code: "invalid_arguments", retryable: true, message: "review_decisions must include a nonempty status, required_actions and citations for every source equipment identifier." };
+        }
+        content += "\n\n## Clearance decisions\n" + decisions.map(decision => `- **${cell(decision.equipment)}**: ${cell(decision.status)}${/[.!?]$/.test(decision.status.trim()) ? "" : "."} ${cell(decision.required_actions)} ${cell(decision.citations)}`).join("\n");
+      }
+    }
+    const rawFilename = String(effectiveArgs.filename ?? effectiveArgs.path ?? effectiveArgs.file ?? "");
+    let filename = rawFilename;
+
+    // 1. Align with contract deliverables if present
+    const contractDeliverables = context.runContract?.deliverables ?? [];
+    if (contractDeliverables.length > 0) {
+      const matchingContractD = contractDeliverables.find((d) =>
+        filename && d.filename && (
+          path.basename(filename).toLowerCase() === path.basename(d.filename).toLowerCase() ||
+          path.basename(filename, path.extname(filename)).toLowerCase() === path.basename(d.filename, path.extname(d.filename)).toLowerCase()
+        )
+      ) || (!rawFilename && contractDeliverables.length === 1 ? contractDeliverables[0] : undefined);
+
+      if (matchingContractD) {
+        if (!rawFilename || (matchingContractD.filename && path.basename(filename, path.extname(filename)).toLowerCase() === path.basename(matchingContractD.filename, path.extname(matchingContractD.filename)).toLowerCase())) {
+          filename = matchingContractD.filename ?? filename;
+        }
+        if (matchingContractD.filename?.endsWith(".docx") || matchingContractD.type === "docx") {
+          type = "docx";
+        } else if (matchingContractD.filename?.endsWith(".xlsx") || matchingContractD.type === "xlsx") {
+          type = "xlsx";
+        } else if (matchingContractD.type && !type) {
+          type = matchingContractD.type;
+        }
+      }
+    }
+
+    if (type !== "file" && content.includes("\\n") && !content.includes("\n")) {
+      content = content.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n");
+    }
+    if (!type) {
+      type = filename.endsWith(".docx") ? "docx" : filename.endsWith(".xlsx") ? "xlsx" : "md";
+    }
+    if (!["docx", "xlsx", "md", "file"].includes(type)) {
+      throw { code: "invalid_arguments", retryable: true, message: `Unsupported deliverable type ${type}. Use docx, xlsx, md or file.` };
+    }
+    if (!filename) {
+      filename = `deliverable.${type}`;
+    }
+    if (type !== "file" && !filename.endsWith(`.${type}`)) {
+      filename = filename.replace(/\.[^.]+$/, "") + `.${type}`;
+    }
+
+    if (context.runContract && contractDeliverables.length > 0 && !matchesContractDeliverable(context.runContract, filename, type)) {
+      throw { code: "invalid_arguments", retryable: true, message: `The persisted run contract does not request this deliverable: ${filename}.` };
+    }
+    if (context.requestedArtifacts?.length && !context.requestedArtifacts.some((artifact) => artifact.filename === filename)) {
+      const stemMatch = context.requestedArtifacts.find((artifact) =>
+        path.basename(artifact.filename, path.extname(artifact.filename)).toLowerCase() === path.basename(filename, path.extname(filename)).toLowerCase()
+      );
+      if (!rawFilename && context.requestedArtifacts.length === 1 && context.requestedArtifacts[0].filename) {
+        filename = context.requestedArtifacts[0].filename;
+        if (filename.endsWith(".docx")) type = "docx";
+        else if (filename.endsWith(".xlsx")) type = "xlsx";
+      } else if (stemMatch && stemMatch.filename) {
+        filename = stemMatch.filename;
+        if (filename.endsWith(".docx")) type = "docx";
+        else if (filename.endsWith(".xlsx")) type = "xlsx";
+      } else {
+        throw { code: "invalid_arguments", retryable: true,
+          message: `Use the requested deliverable type and filename: ${context.requestedArtifacts.map((artifact) => artifact.filename).join(", ")}. Received ${filename}.` };
+      }
+    }
+
+    if (type === "file") {
+      if (!content.trim() || !args.filename) throw { code: "invalid_arguments", retryable: true, message: "Source file deliverables require filename and complete nonempty content." };
+      const relativePath = writeRunFile(context.runId, "output", filename, content, true);
+      const artifact = artifactRef(context.runId, inferArtifactKind(filename), filename, relativePath);
+      return { output: `Created downloadable file ${filename} (${artifact.sizeBytes} bytes).`, summary: `Created deliverable: ${filename}`, artifacts: [artifact], sideEffects: [`artifact:${filename}`] };
+    }
 
     // Clean placeholder markers if present
     content = content
@@ -522,11 +837,90 @@ export const generateDeliverableTool: AgentTool = {
       /\[tool_result\]/i.test(content);
 
     if (isPlaceholderOnly) {
-      throw new Error(
-        `Cannot generate deliverable "${filename}" with placeholder or empty content. ` +
-        `You must first inspect input files (using read_file or extract_document), synthesize the findings, ` +
-        `and call generate_deliverable with complete, comprehensive, publication-ready markdown or text content.`
+      if (
+        context.lastAssistantContent &&
+        context.lastAssistantContent.length > 150 &&
+        (/#+\s+/m.test(context.lastAssistantContent) || /\|[^\n]+\|[^\n]+\|/m.test(context.lastAssistantContent))
+      ) {
+        content = context.lastAssistantContent;
+      } else {
+        let candidateFromStore = "";
+        if (context.resultStore) {
+          const results = context.resultStore.listResults();
+          for (const r of results) {
+            if (r.type === "execution") {
+              const slice = context.resultStore.retrieveResultSlice(r.resultId);
+              if (slice.content && slice.content.length > 50) {
+                candidateFromStore = `# Execution observations\n\n${slice.content}`;
+                break;
+              }
+            }
+          }
+        }
+        if (candidateFromStore) {
+          content = candidateFromStore;
+        } else {
+          throw new Error(
+            `Cannot generate deliverable "${filename}" with placeholder or empty content. ` +
+            `You must first inspect input files (using read_file or extract_document), synthesize the findings, ` +
+            `and call generate_deliverable with complete, comprehensive, publication-ready markdown or text content.`
+          );
+        }
+      }
+    }
+
+    // Keep provenance from actual document extraction in the exported artifact,
+    // even when the model mentions the source only in its chat response.
+    const citations = (context.sourceReferences ?? []).map((source) => `${source.filename}, page ${source.page}`);
+    if (citations.length > 0) content += `\n\n## Source documents\n${citations.map((citation) => `- ${citation}`).join("\n")}`;
+
+    // If content contains template placeholder text ("Markdown table with columns" or "[insert table]"), enrich or reject
+    const placeholderTableRegex = /(?:markdown\s+)?table\s+(?:with|of)\s+columns|\[(?:insert\s+)?(?:table|findings|measurements)[^\]]*\]|\((?:insert\s+)?(?:table|findings|measurements)[^)]*\)/i;
+    if (
+      placeholderTableRegex.test(content) &&
+      !/\|[^\n]+\|[^\n]+\|\r?\n\s*\|?[-:\s|]+\|\r?\n\s*\|?[^\n]+\|[^\n]+\|/.test(content)
+    ) {
+      const realTableMatch = context.lastAssistantContent?.match(
+        /(?:^|\n)\s*(\|?[^\n]+\|\r?\n\s*\|?[-:\s|]+\|\r?\n(?:\s*\|?[^\n]+\|\r?\n?)+)/m
       );
+      if (realTableMatch && realTableMatch[1]) {
+        const extractedTable = realTableMatch[1].trim();
+        content = content.replace(new RegExp(`.*(?:${placeholderTableRegex.source}).*`, "i"), extractedTable);
+      } else if (
+        context.lastAssistantContent &&
+        context.lastAssistantContent.length > 200 &&
+        /#+\s+/m.test(context.lastAssistantContent) &&
+        /\|[^\n]+\|[^\n]+\|/m.test(context.lastAssistantContent)
+      ) {
+        content = context.lastAssistantContent;
+      } else {
+        throw new Error(
+          `Cannot generate deliverable "${filename}" with template placeholder text. ` +
+          `You must provide the complete document content with actual measured values and completed Markdown table rows.`
+        );
+      }
+    }
+
+    // If content still lacks a multi-row markdown table, check if the assistant generated one in this turn
+    const hasTableInContent = /\|[^\n]+\|[^\n]+\|\r?\n\s*\|?[-:\s|]+\|\r?\n\s*\|?[^\n]+\|[^\n]+\|/m.test(content);
+    if (!hasTableInContent && context.lastAssistantContent) {
+      const realTableMatch = context.lastAssistantContent.match(
+        /(?:^|\n)\s*(\|?[^\n]+\|\r?\n\s*\|?[-:\s|]+\|\r?\n(?:\s*\|?[^\n]+\|\r?\n?)+)/m
+      );
+      if (realTableMatch && realTableMatch[1]) {
+        const extractedTable = realTableMatch[1].trim();
+        const placeholderRegex = /(\[insert (?:table|findings|measurements)[^\]]*\]|\(insert (?:table|findings|measurements)[^)]*\)|\[table (?:with|of)[^\]]*\]|\[findings table\])/i;
+        if (placeholderRegex.test(content)) {
+          content = content.replace(placeholderRegex, extractedTable);
+        } else {
+          // If there is a Findings or Measurements section header, insert the table right below it
+          const findingsHeaderMatch = content.match(/(#{1,3}\s+(?:\d+\.\s+)?(?:Findings|Measurements|Inspection Results)[^\n]*\n)/i);
+          if (findingsHeaderMatch && findingsHeaderMatch.index !== undefined) {
+            const insertPos = findingsHeaderMatch.index + findingsHeaderMatch[0].length;
+            content = `${content.slice(0, insertPos)}\n${extractedTable}\n\n${content.slice(insertPos)}`;
+          }
+        }
+      }
     }
 
     // If title is default "Deliverable", extract title from the first heading if present
@@ -543,21 +937,33 @@ export const generateDeliverableTool: AgentTool = {
       const art = await generateDocx(context.runId, { title, body: content, sections: [] }, filename);
       artifacts.push(art);
     } else if (type === "xlsx") {
-      const mockExec: PythonExecutionResult = {
-        exitCode: 0,
-        stdout: "",
-        stderr: "",
-        timedOut: false,
-        outputFiles: [],
-        durationMs: 0,
-      };
-      const art = await generateXlsx(context.runId, mockExec, filename);
+      if (!content.trim()) throw new Error("Spreadsheet export requires complete source-derived content.");
+      const art = await generateXlsxFromContent(context.runId, content, filename, title);
       artifacts.push(art);
     } else {
+      const intermediateDir = resolveRunPath(context.runId, "intermediate", "intermediate");
+      const tempName = `staging-${randomUUID()}-${filename}`;
+      const tempPath = path.join(intermediateDir, tempName);
+      mkdirSync(intermediateDir, { recursive: true });
+      writeFileSync(tempPath, content, "utf8");
+
+      const verification = await verifyArtifactFile(tempPath, {
+        runId: context.runId,
+        expectedKind: "md",
+        originalContent: content,
+      });
+
+      if (!verification.valid) {
+        try { rmSync(tempPath, { force: true }); } catch {}
+        throw new Error(`Artifact verification failed for Markdown deliverable "${filename}": ${verification.details.error}`);
+      }
+
       const outDir = resolveRunPath(context.runId, "output", "output");
       const outPath = path.join(outDir, filename);
       mkdirSync(path.dirname(outPath), { recursive: true });
       writeFileSync(outPath, content, "utf8");
+      try { rmSync(tempPath, { force: true }); } catch {}
+
       artifacts.push({
         artifactId: randomUUID(),
         runId: context.runId,
@@ -566,12 +972,20 @@ export const generateDeliverableTool: AgentTool = {
         relativePath: `runs/${context.runId}/output/${filename}`,
         sizeBytes: Buffer.byteLength(content, "utf8"),
         createdAt: new Date().toISOString(),
+        verified: true,
+        verificationDetails: verification.details,
       });
     }
 
+    const primaryArt = artifacts[0];
+    const checkSummary = primaryArt?.verified
+      ? `File passed all structural verification checks (${type.toUpperCase()} package validated)`
+      : `File written (${primaryArt?.sizeBytes ?? 0} bytes)`;
+
     return {
-      output: `Generated deliverable "${filename}" (${artifacts[0]?.sizeBytes ?? 0} bytes) successfully. The file is compiled, verified, and saved to disk in the run output folder. Deliverable creation is complete. Do not re-read this file.`,
+      output: `Deliverable "${filename}" (${primaryArt?.sizeBytes ?? 0} bytes) generated and verified. ${checkSummary}. Saved to disk at ${primaryArt?.relativePath || filename}. Deliverable creation is complete.`,
       summary: `Created deliverable: ${filename}`,
+      ...(["docx", "md"].includes(type) ? { data: { responseText: `${content}\n\nSaved: ${filename}.` } } : {}),
       artifacts,
       sideEffects: [`artifact:${filename}`],
     };

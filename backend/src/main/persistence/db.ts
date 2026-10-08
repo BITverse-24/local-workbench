@@ -7,10 +7,10 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const SCHEMA_VERSION = "1";
+export const SCHEMA_VERSION = "2";
 
 export const SETTING_DEFAULTS: Record<string, unknown> = {
-  selectedModel: "draft-qwen3",
+  selectedModel: "primary-model",
   temperature: 0.2,
   theme: "dark",
   sovereigntyVisible: true,
@@ -97,6 +97,8 @@ function migrateArtifactsSchema(db: Db): void {
     | { sql: string }
     | undefined;
   if (!row?.sql) return;
+  const columns = db.prepare("PRAGMA table_info(artifacts)").all() as Array<{ name: string }>;
+  const hasSha256 = columns.some((column) => column.name === "sha256");
   if (!row.sql.includes("'txt'") || !row.sql.includes("'md'")) {
     db.pragma("foreign_keys = OFF");
     db.exec(`
@@ -107,14 +109,17 @@ function migrateArtifactsSchema(db: Db): void {
         filename      TEXT NOT NULL,
         relative_path TEXT NOT NULL,
         size_bytes    INTEGER NOT NULL DEFAULT 0,
+        sha256        TEXT,
         created_at    TEXT NOT NULL
       );
-      INSERT INTO artifacts_new (artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at)
-        SELECT artifact_id, run_id, kind, filename, relative_path, size_bytes, created_at FROM artifacts;
+      INSERT INTO artifacts_new (artifact_id, run_id, kind, filename, relative_path, size_bytes, sha256, created_at)
+        SELECT artifact_id, run_id, kind, filename, relative_path, size_bytes, ${hasSha256 ? "sha256" : "NULL"}, created_at FROM artifacts;
       DROP TABLE artifacts;
       ALTER TABLE artifacts_new RENAME TO artifacts;
     `);
     db.pragma("foreign_keys = ON");
+  } else if (!hasSha256) {
+    db.exec("ALTER TABLE artifacts ADD COLUMN sha256 TEXT");
   }
 }
 
@@ -145,6 +150,39 @@ function migrateConfirmationsSchema(db: Db): void {
   }
 }
 
+function migrateRunsSchema(db: Db): void {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='runs'").get() as
+    | { sql: string }
+    | undefined;
+  if (!row?.sql) return;
+  if (!row.sql.includes("state")) return;
+  if (!row.sql.includes("'limit_exceeded'") || !row.sql.includes("'partial'")) {
+    db.pragma("foreign_keys = OFF");
+    const cols = (db.prepare("PRAGMA table_info(runs)").all() as Array<{ name: string }>).map((c) => c.name);
+    const colList = cols.join(", ");
+    db.exec(`
+      CREATE TABLE runs_new (
+        id              TEXT PRIMARY KEY,
+        chat_id         TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+        state           TEXT NOT NULL DEFAULT 'created'
+                        CHECK (state IN ('created','classifying','planning','acting',
+                                         'awaiting_confirmation','completed','partial','failed','cancelled','limit_exceeded')),
+        user_text_summary TEXT NOT NULL DEFAULT '',
+        attachment_id   TEXT REFERENCES attachments(attachment_id),
+        iteration_count INTEGER NOT NULL DEFAULT 0,
+        created_at      TEXT NOT NULL,
+        completed_at    TEXT
+      );
+      INSERT INTO runs_new (${colList})
+        SELECT ${colList} FROM runs;
+      DROP TABLE runs;
+      ALTER TABLE runs_new RENAME TO runs;
+      CREATE INDEX IF NOT EXISTS idx_runs_chat ON runs(chat_id, created_at DESC);
+    `);
+    db.pragma("foreign_keys = ON");
+  }
+}
+
 function seedDefaults(db: Db): void {
   const now = new Date().toISOString();
   const seedSetting = db.prepare(
@@ -154,7 +192,7 @@ function seedDefaults(db: Db): void {
     for (const [key, value] of Object.entries(SETTING_DEFAULTS)) {
       seedSetting.run(key, JSON.stringify(value), now);
     }
-    db.prepare("INSERT OR IGNORE INTO kv_meta(key, value) VALUES ('schema_version', ?)").run(
+    db.prepare("INSERT INTO kv_meta(key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(
       SCHEMA_VERSION,
     );
   });
@@ -170,11 +208,21 @@ export function initDb(dbPath?: string): Db {
     mkdirSync(path.dirname(resolved), { recursive: true });
   }
   const db = new Database(resolved);
+  // Never apply an older application's schema to a database created by a future version.
+  if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='kv_meta'").get()) {
+    const version = (db.prepare("SELECT value FROM kv_meta WHERE key='schema_version'").get() as { value: string } | undefined)?.value;
+    if (version && (!/^\d+$/.test(version) || Number(version) > Number(SCHEMA_VERSION))) {
+      db.close();
+      throw new Error(`Unsupported database schema version: ${version}`);
+    }
+  }
   db.pragma("journal_mode = WAL");
+  db.pragma("synchronous = FULL");
   db.pragma("foreign_keys = ON");
   applySchema(db);
   migrateArtifactsSchema(db);
   migrateConfirmationsSchema(db);
+  migrateRunsSchema(db);
   seedDefaults(db);
   instance = db;
   instancePath = resolved;

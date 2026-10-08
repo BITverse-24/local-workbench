@@ -145,8 +145,14 @@ export async function startRun(input: {
   temperature?: number;
   groundingEnabled?: boolean;
   preferredRoute?: string;
+  selectedModel?: string;
+  mode?: "chat" | "agent";
 }): Promise<{ runId: string }> {
   return bridge().startRun(input);
+}
+
+export async function resumeRun(input: { runId: string; largerGenerationAllowance?: boolean }): Promise<{ runId: string }> {
+  return bridge().resumeRun(input);
 }
 
 // Knowledge Base APIs
@@ -202,6 +208,10 @@ export async function getRunHistory(limit?: number): Promise<RunSummary[]> {
 
 export async function getArtifact(input: { runId: string; artifactId: string }): Promise<ArtifactRef> {
   return bridge().getArtifact(input);
+}
+
+export async function getVerificationReport(input: { runId: string }): Promise<RunVerificationReport | undefined> {
+  return bridge().getVerificationReport(input);
 }
 
 export async function openArtifact(input: { runId: string; artifactId: string }): Promise<void> {
@@ -295,4 +305,3 @@ export async function testModelEndpoint(input: {
 export async function resetOnboarding(): Promise<{ ok: boolean }> {
   return bridge().resetOnboarding();
 }
-

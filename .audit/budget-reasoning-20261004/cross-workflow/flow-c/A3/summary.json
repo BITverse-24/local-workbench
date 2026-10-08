@@ -1,0 +1,153 @@
+{
+  "workflow": "flow-c",
+  "profile": "A3",
+  "caps": [
+    2048,
+    1280
+  ],
+  "exitCode": 0,
+  "accepted": true,
+  "wallMs": 167035,
+  "flowWallSeconds": 166.2,
+  "outcome": "completed",
+  "acceptance": {
+    "passed": 8,
+    "failed": 0,
+    "total": 8
+  },
+  "calls": {
+    "working": 6,
+    "classification": 0,
+    "delegated": 0,
+    "total": 6
+  },
+  "tokens": {
+    "input": 30549,
+    "completion": 1993,
+    "reasoning": 1607,
+    "nonReasoning": 386
+  },
+  "lengthStopCount": 0,
+  "toolSequence": [
+    "retrieve_knowledge",
+    "extract_document",
+    "extract_document",
+    "extract_document",
+    "extract_document",
+    "extract_document",
+    "extract_document"
+  ],
+  "toolExecutionDurationMs": 48,
+  "failedTools": [],
+  "repeatedTools": [
+    "extract_document"
+  ],
+  "perCall": [
+    {
+      "purpose": "working_1",
+      "durationMs": 22268,
+      "ttftMs": 10873,
+      "finishReason": "tool_calls",
+      "inputTokens": 2210,
+      "completionTokens": 227,
+      "reasoningTokens": 120,
+      "maxTokens": 2048,
+      "toolCalls": [
+        {
+          "name": "retrieve_knowledge",
+          "argumentsChars": 63
+        },
+        {
+          "name": "extract_document",
+          "argumentsChars": 121
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_2",
+      "durationMs": 37504,
+      "ttftMs": 18166,
+      "finishReason": "tool_calls",
+      "inputTokens": 3764,
+      "completionTokens": 386,
+      "reasoningTokens": 332,
+      "maxTokens": 2048,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 92
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_3",
+      "durationMs": 23080,
+      "ttftMs": 6044,
+      "finishReason": "tool_calls",
+      "inputTokens": 4767,
+      "completionTokens": 340,
+      "reasoningTokens": 283,
+      "maxTokens": 2048,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 100
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_4",
+      "durationMs": 24163,
+      "ttftMs": 5694,
+      "finishReason": "tool_calls",
+      "inputTokens": 5728,
+      "completionTokens": 364,
+      "reasoningTokens": 304,
+      "maxTokens": 2048,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 117
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_5",
+      "durationMs": 22774,
+      "ttftMs": 5626,
+      "finishReason": "tool_calls",
+      "inputTokens": 6706,
+      "completionTokens": 338,
+      "reasoningTokens": 284,
+      "maxTokens": 2048,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 94
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_6",
+      "durationMs": 36233,
+      "ttftMs": 18913,
+      "finishReason": "tool_calls",
+      "inputTokens": 7374,
+      "completionTokens": 338,
+      "reasoningTokens": 284,
+      "maxTokens": 1906,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 94
+        }
+      ],
+      "cacheUsage": null
+    }
+  ]
+}

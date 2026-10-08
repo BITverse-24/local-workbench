@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { ModelConfigRow, ModelId, ModelRegistryEntry } from "../../shared/contracts.js";
 import { getSetting } from "../persistence/settings-store.js";
 
-const entry = z.object({ id: z.enum(["vision-qwen25vl", "draft-qwen3", "code-qwen25coder", "plan-qwen3-8b"]), taskTypes: z.array(z.enum(["vision", "draft", "code", "plan"])), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
+const entry = z.object({ id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1).optional(), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), toolCallingFormat: z.enum(["native", "json"]).optional(), temperature: z.number().min(0).max(2).optional(), contextLength: z.number().int().positive().max(128000).optional(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
 const config = z.object({ $comment: z.string().optional(), models: z.array(entry).min(1) }).strict();
 
 
@@ -36,91 +36,37 @@ export function sanitizeHost(host: string): string {
 }
 
 export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntry[] {
-  const entries: ModelRegistryEntry[] = [];
-  let draftRow: ModelConfigRow | undefined;
-  let hasPlan = false;
-
-  for (const row of rows) {
+  // Preserve endpoint-specific transport and generation settings when restoring
+  // the same selected endpoint from onboarding. Selection still comes from rows.
+  let profiles: ModelRegistryEntry[] = [];
+  try { profiles = Array.from(loadRegistry().values()); } catch { /* No file profile configured. */ }
+  const eligible = rows.filter((row) => row.role !== "embedding" && row.modelName?.trim());
+  // New settings use generic primary rows. Collapse old role-specific settings
+  // to their former general model so legacy specialist rows do not route work.
+  const primaryRows = eligible.filter((row) => row.role === "primary");
+  const candidates = primaryRows.length ? primaryRows : [eligible.find((row) => row.role === "draft") ?? eligible[0]].filter(Boolean) as ModelConfigRow[];
+  const seen = new Set<string>();
+  return candidates.filter((row) => {
+    const key = `${sanitizeHost(row.host)}:${row.port || 11434}/${row.modelName.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map((row, index) => {
     const host = sanitizeHost(row.host);
     const port = row.port || 11434;
     const baseUrl = `http://${host}:${port}/v1`;
-
-    if (row.role === "vision") {
-      entries.push({
-        id: "vision-qwen25vl",
-        taskTypes: ["vision"],
-        runtime: "ollama",
-        baseUrl,
-        model: row.modelName,
-        capabilities: ["text", "image-input", "structured-output"],
-        requestTimeoutMs: 180000,
-        healthPath: "/models",
-        enabled: true,
-        maxOutputTokens: row.contextLength || 4096,
-      });
-    } else if (row.role === "coding") {
-      entries.push({
-        id: "code-qwen25coder",
-        taskTypes: ["code"],
-        runtime: "ollama",
-        baseUrl,
-        model: row.modelName,
-        capabilities: ["text", "structured-output", "code-generation"],
-        requestTimeoutMs: 300000,
-        healthPath: "/models",
-        enabled: true,
-        maxOutputTokens: row.contextLength || 8192,
-      });
-    } else if (row.role === "draft") {
-      draftRow = row;
-      entries.push({
-        id: "draft-qwen3",
-        taskTypes: ["draft"],
-        runtime: "ollama",
-        baseUrl,
-        model: row.modelName,
-        capabilities: ["text", "structured-output"],
-        requestTimeoutMs: 180000,
-        healthPath: "/models",
-        enabled: true,
-        maxOutputTokens: row.contextLength || 8192,
-      });
-    } else if (row.role === "plan") {
-      hasPlan = true;
-      entries.push({
-        id: "plan-qwen3-8b",
-        taskTypes: ["plan"],
-        runtime: "ollama",
-        baseUrl,
-        model: row.modelName,
-        capabilities: ["text", "structured-output"],
-        requestTimeoutMs: 180000,
-        healthPath: "/models",
-        enabled: true,
-        maxOutputTokens: row.contextLength || 8192,
-      });
-    }
-  }
-
-  // If no explicit plan row was provided, default plan to draft endpoint
-  if (!hasPlan && draftRow) {
-    const host = sanitizeHost(draftRow.host);
-    const port = draftRow.port || 11434;
-    entries.push({
-      id: "plan-qwen3-8b",
-      taskTypes: ["plan"],
-      runtime: "ollama",
-      baseUrl: `http://${host}:${port}/v1`,
-      model: draftRow.modelName,
-      capabilities: ["text", "structured-output"],
-      requestTimeoutMs: 180000,
-      healthPath: "/models",
-      enabled: true,
-      maxOutputTokens: draftRow.contextLength || 8192,
-    });
-  }
-
-  return entries;
+    const profile = profiles.find(candidate => candidate.model === row.modelName && candidate.baseUrl.replace(/\/$/, "") === baseUrl);
+    return {
+      id: index === 0 ? "primary-model" : `model-${index + 1}`, runtime: "ollama",
+      baseUrl, model: row.modelName,
+      capabilities: profile?.capabilities ?? ["text", "image-input", "structured-output", "code-generation"],
+      requestTimeoutMs: 300000, healthPath: "/models", enabled: true,
+      contextLength: row.contextLength || 8192,
+      maxOutputTokens: profile?.maxOutputTokens ?? (row.contextLength || 8192),
+      ...(profile?.toolCallingFormat ? { toolCallingFormat: profile.toolCallingFormat } : {}),
+      ...(profile?.temperature !== undefined ? { temperature: profile.temperature } : {}),
+    };
+  });
 }
 
 export function writeRegistryToFile(entries: ModelRegistryEntry[], filePath?: string): void {
@@ -134,10 +80,7 @@ export function writeRegistryToFile(entries: ModelRegistryEntry[], filePath?: st
 
 export function defaultLocalRegistry(): Map<ModelId, ModelRegistryEntry> {
   const entries = buildRegistryFromRows([
-    { role: "vision", modelName: "qwen2.5vl:3b", host: "127.0.0.1", port: 11434, contextLength: 32768 },
-    { role: "coding", modelName: "qwen2.5-coder:7b", host: "127.0.0.1", port: 11434, contextLength: 32768 },
     { role: "draft", modelName: "qwen3:8b", host: "127.0.0.1", port: 11434, contextLength: 32768 },
-    { role: "plan", modelName: "qwen3:8b", host: "127.0.0.1", port: 11434, contextLength: 8192 },
   ]);
   return new Map(entries.map((e) => [e.id, e]));
 }
@@ -156,7 +99,7 @@ export function loadProductionRegistryEntriesFromDb(dbModels?: ModelConfigRow[])
     return buildRegistryFromRows(rows);
   }
 
-  return Array.from(defaultLocalRegistry().values());
+  try { return Array.from(loadRegistry().values()); } catch { return Array.from(defaultLocalRegistry().values()); }
 }
 
 export function loadProductionRegistryFromDb(dbModels?: ModelConfigRow[]): Map<ModelId, ModelRegistryEntry> {
@@ -179,7 +122,8 @@ export function loadRegistry(filePath?: string): Map<ModelId, ModelRegistryEntry
 
 export function resolveModel(registry: Map<ModelId, ModelRegistryEntry>, modelId: ModelId, taskType?: string): ModelRegistryEntry {
   const model = registry.get(modelId);
-  if (!model || !model.enabled || (taskType && !model.taskTypes.includes(taskType as never))) throw new Error(`model unavailable: ${modelId}`);
+  // Task type records request semantics. It does not route to a specialist endpoint.
+  void taskType;
+  if (!model || !model.enabled) throw new Error(`model unavailable: ${modelId}`);
   return model;
 }
-

@@ -1,0 +1,184 @@
+{
+  "workflow": "flow-c",
+  "profile": "A0",
+  "caps": [
+    1024,
+    768
+  ],
+  "exitCode": 0,
+  "accepted": true,
+  "wallMs": 171441,
+  "flowWallSeconds": 170.6,
+  "outcome": "completed",
+  "acceptance": {
+    "passed": 8,
+    "failed": 0,
+    "total": 8
+  },
+  "calls": {
+    "working": 8,
+    "classification": 0,
+    "delegated": 0,
+    "total": 8
+  },
+  "tokens": {
+    "input": 41446,
+    "completion": 2151,
+    "reasoning": 1344,
+    "nonReasoning": 807
+  },
+  "lengthStopCount": 0,
+  "toolSequence": [
+    "retrieve_knowledge",
+    "extract_document",
+    "extract_document",
+    "extract_document",
+    "extract_document",
+    "extract_document",
+    "extract_document",
+    "extract_document"
+  ],
+  "toolExecutionDurationMs": 30,
+  "failedTools": [],
+  "repeatedTools": [
+    "extract_document"
+  ],
+  "perCall": [
+    {
+      "purpose": "working_1",
+      "durationMs": 18825,
+      "ttftMs": 10812,
+      "finishReason": "tool_calls",
+      "inputTokens": 2215,
+      "completionTokens": 163,
+      "reasoningTokens": 112,
+      "maxTokens": 1024,
+      "toolCalls": [
+        {
+          "name": "retrieve_knowledge",
+          "argumentsChars": 73
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_2",
+      "durationMs": 18591,
+      "ttftMs": 3703,
+      "finishReason": "tool_calls",
+      "inputTokens": 2746,
+      "completionTokens": 301,
+      "reasoningTokens": 234,
+      "maxTokens": 1024,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 164
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_3",
+      "durationMs": 59991,
+      "ttftMs": 19435,
+      "finishReason": "tool_calls",
+      "inputTokens": 4022,
+      "completionTokens": 805,
+      "reasoningTokens": 387,
+      "maxTokens": 1024,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 98
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_4",
+      "durationMs": 10595,
+      "ttftMs": 6258,
+      "finishReason": "tool_calls",
+      "inputTokens": 5057,
+      "completionTokens": 77,
+      "reasoningTokens": 21,
+      "maxTokens": 1024,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 100
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_5",
+      "durationMs": 8744,
+      "ttftMs": 4829,
+      "finishReason": "tool_calls",
+      "inputTokens": 5751,
+      "completionTokens": 73,
+      "reasoningTokens": 22,
+      "maxTokens": 1024,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 68
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_6",
+      "durationMs": 8890,
+      "ttftMs": 4453,
+      "finishReason": "tool_calls",
+      "inputTokens": 6443,
+      "completionTokens": 82,
+      "reasoningTokens": 20,
+      "maxTokens": 1024,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 138
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_7",
+      "durationMs": 21776,
+      "ttftMs": 4146,
+      "finishReason": "tool_calls",
+      "inputTokens": 7136,
+      "completionTokens": 325,
+      "reasoningTokens": 274,
+      "maxTokens": 1024,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 68
+        }
+      ],
+      "cacheUsage": null
+    },
+    {
+      "purpose": "working_8",
+      "durationMs": 22929,
+      "ttftMs": 6301,
+      "finishReason": "tool_calls",
+      "inputTokens": 8076,
+      "completionTokens": 325,
+      "reasoningTokens": 274,
+      "maxTokens": 1024,
+      "toolCalls": [
+        {
+          "name": "extract_document",
+          "argumentsChars": 68
+        }
+      ],
+      "cacheUsage": null
+    }
+  ]
+}

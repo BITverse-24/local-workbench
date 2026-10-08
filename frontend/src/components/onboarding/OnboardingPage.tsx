@@ -28,69 +28,18 @@ export interface RoleCardState {
 
 const DEFAULT_CARDS: RoleCardState[] = [
   {
-    role: "vision",
-    title: "Vision & OCR",
-    description: "Inspection reports, engineering drawings, P&ID diagrams",
-    badge: "VISION",
+    role: "primary",
+    title: "Primary Model",
+    description: "One local model for chat, documents, vision, code, and tool use",
+    badge: "PRIMARY",
     badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
     nodes: [
       {
-        id: "vision-node-1",
-        modelName: "qwen2.5vl:3b",
+        id: "primary-node-1",
+        modelName: "qwen3.5:9b",
         host: "127.0.0.1",
         port: "11434",
         contextLength: "32768",
-        testStatus: "idle",
-      },
-    ],
-  },
-  {
-    role: "coding",
-    title: "Coding & Analysis",
-    description: "Python execution, automated script repair, CSV parsing",
-    badge: "CODE",
-    badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
-    nodes: [
-      {
-        id: "coding-node-1",
-        modelName: "qwen2.5-coder:7b",
-        host: "127.0.0.1",
-        port: "11434",
-        contextLength: "32768",
-        testStatus: "idle",
-      },
-    ],
-  },
-  {
-    role: "draft",
-    title: "Draft & Reasoning",
-    description: "Approval notes, synthesis, technical memos, chat",
-    badge: "DRAFT",
-    badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
-    nodes: [
-      {
-        id: "draft-node-1",
-        modelName: "qwen3:8b",
-        host: "127.0.0.1",
-        port: "11434",
-        contextLength: "32768",
-        testStatus: "idle",
-      },
-    ],
-  },
-  {
-    role: "plan",
-    title: "Routing & Planning",
-    description: "Multi-stage pipeline decomposition and subtask routing",
-    badge: "PLAN",
-    badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
-    nodes: [
-      {
-        id: "plan-node-1",
-        modelName: "qwen3:8b",
-        host: "127.0.0.1",
-        port: "11434",
-        contextLength: "8192",
         testStatus: "idle",
       },
     ],
@@ -128,7 +77,9 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
   const [cards, setCards] = useState<RoleCardState[]>(() => {
     if (initialConfig && initialConfig.length > 0) {
       return DEFAULT_CARDS.map((def) => {
-        const matching = initialConfig.filter((c) => c.role === def.role);
+        const matching = def.role === "primary"
+          ? [initialConfig.find((c) => c.role === "primary") ?? initialConfig.find((c) => c.role === "draft")].filter(Boolean) as ModelConfigRow[]
+          : initialConfig.filter((c) => c.role === def.role);
         if (matching.length > 0) {
           return {
             ...def,
@@ -480,14 +431,6 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
-          </svg>
-        );
-      case "plan":
-        return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="12 2 2 7 12 12 22 7 12 2" />
-            <polyline points="2 17 12 22 22 17" />
-            <polyline points="2 12 12 17 22 12" />
           </svg>
         );
       default:

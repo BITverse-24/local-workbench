@@ -18,12 +18,13 @@ type Props = {
   onRefreshHealth?: () => void;
   runEvents?: RunEvent[];
   runId?: string | null;
+  verificationReport?: RunVerificationReport | null;
 };
 
 export default function RightSidebar({
   collapsed,
   onCollapse,
-  models: _models,
+  models,
   selectedModel,
   modelOpen,
   setModelOpen,
@@ -35,8 +36,9 @@ export default function RightSidebar({
   onRefreshHealth,
   runEvents,
   runId,
+  verificationReport,
 }: Props) {
-  const isRunning = runState != null && !["completed", "failed", "cancelled"].includes(runState);
+  const isRunning = runState != null && !["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(runState);
   return (
     <aside
       className={`hidden lg:flex flex-col neu-panel overflow-hidden flex-shrink-0 ${!collapsed ? "animate-apple-right delay-200" : ""}`}
@@ -65,6 +67,22 @@ export default function RightSidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {verificationReport && (
+          <section className="space-y-2 p-3 rounded-[var(--radius-md)] neu-card" aria-label="Run verification">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-[var(--text-secondary)]">Outcome verification</span>
+              <span className="text-xs capitalize text-[var(--text-primary)]">{verificationReport.status.replace(/_/g, " ")}</span>
+            </div>
+            {verificationReport.checks.filter((item) => item.status === "failed" || item.status === "unverified").slice(0, 5).map((item) => (
+              <div key={item.criterionId} className="text-xs text-[var(--text-secondary)]">
+                <div><span className="capitalize">{item.status}</span>: {item.requirement}</div>
+                <div className="text-[var(--text-tertiary)]">{item.reason}</div>
+                {item.evidence.length > 0 && <div className="text-[var(--text-tertiary)] font-mono">Evidence: {item.evidence.map((ref) => `${ref.kind}:${ref.id}`).join(", ")}</div>}
+              </div>
+            ))}
+            {!verificationReport.checks.some((item) => item.status === "failed" || item.status === "unverified") && <div className="text-xs text-[var(--text-tertiary)]">All supported checks passed.</div>}
+          </section>
+        )}
         {/* Service health (top of right sidebar, above model route preference) */}
         <div className="space-y-2 p-3 rounded-[var(--radius-md)] neu-card">
           <div className="flex items-center justify-between">
@@ -89,27 +107,28 @@ export default function RightSidebar({
           )}
         </div>
 
-        {/* Model route preference */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-[var(--text-secondary)]">Model route {isRunning ? "(locked during run)" : "(preference)"}</label>
-          <button
-            ref={modelBtnRef as React.RefObject<HTMLButtonElement>}
-            onClick={() => !isRunning && setModelOpen(!modelOpen)}
-            disabled={isRunning}
-            className={`w-full rounded-[var(--radius-md)] p-3 neu-raised flex items-center justify-between text-left ${isRunning ? "opacity-60 cursor-not-allowed" : ""}`}
-          >
-            <div>
-              <div className="text-sm font-medium text-[var(--text-primary)]">{activeRoute ? `${activeRoute.taskType} → ${activeRoute.modelId}` : selectedModel.name}</div>
-              <div className="text-xs text-[var(--text-tertiary)] mt-0.5">{activeRoute ? `Reason: ${activeRoute.reason}` : selectedModel.desc}</div>
-            </div>
-            <span
-              className={`w-6 h-6 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs transition-transform duration-150 ${modelOpen ? "rotate-180" : "rotate-0"}`}
+        {/* Model selection (only exposed when multiple usable models are configured) */}
+        {models.length > 1 && (
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-[var(--text-secondary)]">Model selection {isRunning ? "(locked during run)" : ""}</label>
+            <button
+              ref={modelBtnRef as React.RefObject<HTMLButtonElement>}
+              onClick={() => !isRunning && setModelOpen(!modelOpen)}
+              disabled={isRunning}
+              className={`w-full rounded-[var(--radius-md)] p-3 neu-raised flex items-center justify-between text-left ${isRunning ? "opacity-60 cursor-not-allowed" : ""}`}
             >
-              ▾
-            </span>
-          </button>
-          {activeRoute && <div className="text-xs text-[var(--text-tertiary)]">Backend controls routing for locked flows; this display reflects the active route.</div>}
-        </div>
+              <div>
+                <div className="text-sm font-medium text-[var(--text-primary)]">{activeRoute ? activeRoute.modelId : selectedModel?.name}</div>
+                <div className="text-xs text-[var(--text-tertiary)] mt-0.5">{activeRoute ? `Reason: ${activeRoute.reason}` : selectedModel?.desc}</div>
+              </div>
+              <span
+                className={`w-6 h-6 rounded-[var(--radius-sm)] neu-button grid place-items-center text-xs transition-transform duration-150 ${modelOpen ? "rotate-180" : "rotate-0"}`}
+              >
+                ▾
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* Knowledge panel (below model route preference) */}
         <div className="p-3 rounded-[var(--radius-md)] neu-card border border-[var(--border-subtle)] bg-[var(--bg-surface)]">

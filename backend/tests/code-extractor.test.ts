@@ -156,6 +156,27 @@ npm start
     expect(result).toContain("**Implemented**:");
     expect(result).toContain("npm start");
   });
+
+  it("strips fenced exitCode JSON blocks and command output headers from assistant responses", () => {
+    const agentResponse = `
+Execution output:
+\`\`\`json
+{
+  "exitCode": 0,
+  "stdout": "Loaded 5 records",
+  "stderr": ""
+}
+\`\`\`
+
+### Summary of Findings
+- All 5 records processed successfully.
+`;
+    const result = cleanFinalSummary(agentResponse, false);
+    expect(result).not.toContain("exitCode");
+    expect(result).not.toContain("Execution output:");
+    expect(result).toContain("### Summary of Findings");
+    expect(result).toContain("All 5 records processed successfully.");
+  });
 });
 
 describe("cleanPlanPreview", () => {
@@ -330,5 +351,90 @@ Next Steps:
     expect(cleaned).not.toContain("const x = 1");
     expect(cleaned).toContain("Implemented:");
     expect(cleaned).toContain("Next Steps:");
+  });
+
+  it("strips tool execution instructions, expected output, and conversational filler in cleanFinalSummary", () => {
+    const text = `
+Sure, I can help you fix the Python script to work with the attached CSV file. Let's go through the issues and then I'll provide the corrected code.
+
+### Issues Identified:
+1. **Bug 1**: The script crashes if a row is malformed.
+2. **Bug 2**: The script rejects valid rows above 350.0.
+
+### Corrected Code:
+Here's the corrected Python script:
+
+\`\`\`python
+import csv
+def summarize(p): return {}
+\`\`\`
+
+### Explanation of Changes:
+1. **Bug 1 Fix**: Handled empty fields.
+2. **Bug 2 Fix**: Allowed values up to 350.0.
+
+### Steps to Execute:
+1. **Write the Corrected Code**: Use the write_file tool.
+2. **Execute the Script**: Use the execute_python tool.
+
+### Tool Requests:
+
+### Expected Output:
+The script should output counts.
+
+Let me know if you need further assistance!
+`;
+    const cleaned = cleanFinalSummary(text, true);
+    expect(cleaned).not.toContain("Sure, I can help you");
+    expect(cleaned).not.toContain("### Steps to Execute");
+    expect(cleaned).not.toContain("### Tool Requests");
+    expect(cleaned).not.toContain("### Expected Output");
+    expect(cleaned).not.toContain("### Corrected Code");
+    expect(cleaned).not.toContain("import csv");
+    expect(cleaned).not.toContain("Let me know if you need further assistance");
+    expect(cleaned).toContain("### Issues Identified:");
+    expect(cleaned).toContain("### Explanation of Changes:");
+  });
+
+  it("strips raw execution JSON blobs and exitCode objects from cleanFinalSummary", () => {
+    const text = `The script has been successfully fixed and executed.
+
+- **Malformed Rows**: 1 skipped
+- **High Temperature Rows**: 2 flagged
+- **Valid Rows**: 4 processed
+
+[TOOL_RESULT]{
+  "exitCode": 0,
+  "stdout": "{'ok': 4, 'malformed': 1, 'high': 2}\\n",
+  "stderr": "",
+  "timedOut": false,
+  "outputFiles": [],
+  "durationMs": 75
+}[END_TOOL_RESULT]`;
+
+    const cleaned = cleanFinalSummary(text, true);
+    expect(cleaned).not.toContain("[TOOL_RESULT]");
+    expect(cleaned).not.toContain("[END_TOOL_RESULT]");
+    expect(cleaned).not.toContain('"exitCode": 0');
+    expect(cleaned).not.toContain('"stdout":');
+    expect(cleaned).toContain("- **Malformed Rows**: 1 skipped");
+  });
+
+  it("un-bullets and un-indents markdown table rows in cleanFinalSummary", () => {
+    const text = `### Engineering Summary:
+- **Equipment ID**: P-204 Pump Skid
+- **Findings & Measurements Table**:
+  - | Equipment | Component / Location | Measured Value | Allowable Limit | Deviation | Status |
+  - | --- | --- | --- | --- | --- | --- |
+  - | P-204 Pump Skid | Discharge Line Diameter | DN80 | DN100 or larger | Below allowable limit | Non-Compliant |
+  - | P-204 Pump Skid | Isolation Valve Rating | Class 150 | Class 300 or higher | Below allowable limit | Non-Compliant |
+
+### Risk Analysis:
+Review complete.`;
+
+    const cleaned = cleanFinalSummary(text, false);
+    expect(cleaned).not.toMatch(/(?:^|\n)\s*[-*+]\s+\|/);
+    expect(cleaned).toContain("| Equipment | Component / Location | Measured Value | Allowable Limit | Deviation | Status |");
+    expect(cleaned).toContain("| P-204 Pump Skid | Discharge Line Diameter | DN80 | DN100 or larger | Below allowable limit | Non-Compliant |");
   });
 });

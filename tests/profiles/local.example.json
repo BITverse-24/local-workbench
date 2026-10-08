@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "name": "explicit-local-models",
+  "target": {
+    "registry": [
+      { "id": "draft-qwen3", "taskTypes": ["draft"], "runtime": "ollama", "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen3:8b", "capabilities": ["text", "structured-output"], "requestTimeoutMs": 45000, "healthPath": "/models", "enabled": true, "maxOutputTokens": 8192 },
+      { "id": "code-qwen25coder", "taskTypes": ["code"], "runtime": "ollama", "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen2.5-coder:7b", "capabilities": ["text", "code-generation"], "requestTimeoutMs": 60000, "healthPath": "/models", "enabled": true, "maxOutputTokens": 8192 },
+      { "id": "vision-qwen25vl", "taskTypes": ["vision"], "runtime": "ollama", "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen2.5vl:3b", "capabilities": ["text", "image-input", "structured-output"], "requestTimeoutMs": 60000, "healthPath": "/models", "enabled": true, "maxOutputTokens": 4096 }
+    ],
+    "embedding": { "baseUrl": "http://127.0.0.1:11434/v1", "model": "nomic-embed-text:v1.5" }
+  },
+  "attacker": { "name": "openrouter", "baseUrl": "https://openrouter.ai/api/v1", "model": "stealth/space-bunny-alpha", "apiKeyEnv": "OPENROUTER_ATTACKER_API_KEY" },
+  "attackerFallback": { "name": "local-attacker", "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen3:8b" },
+  "judge": { "name": "openrouter-judge", "baseUrl": "https://openrouter.ai/api/v1", "model": "stealth/space-bunny-alpha", "apiKeyEnv": "OPENROUTER_JUDGE_API_KEY", "temperature": 0 },
+  "judgeFallback": { "name": "local-judge", "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen3:8b", "temperature": 0 },
+  "sharedGPU": true
+}

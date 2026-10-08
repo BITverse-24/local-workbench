@@ -1,0 +1,235 @@
+[
+  {
+    "name": "same-seed-42-first",
+    "request": {
+      "model": "qwen/qwen3.5-9b",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write exactly 12 random decimal digits. Do not explain."
+        }
+      ],
+      "temperature": 1,
+      "max_tokens": 160,
+      "seed": 42
+    },
+    "status": 200,
+    "response": {
+      "id": "chatcmpl-mtl01kcgr7dxa6oaqt3ar",
+      "object": "chat.completion",
+      "created": 1791119675,
+      "model": "qwen/qwen3.5-9b",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Write exactly 12 random decimal digits.\n    *   Constraint: Do not explain.\n    *   Output: A string of 12 digits (0-9).\n\n2.  **Generate the Digits:**\n    *   I need to select 12 integers from the set {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}.\n    *   I will generate them randomly (simulated for this thought process).\n    *   Let's create a sequence: 5, 8, 1, 9, 3, 7, 0,",
+            "tool_calls": []
+          },
+          "logprobs": null,
+          "finish_reason": "length"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 23,
+        "completion_tokens": 159,
+        "total_tokens": 182,
+        "completion_tokens_details": {
+          "reasoning_tokens": 159
+        }
+      },
+      "stats": {},
+      "system_fingerprint": "qwen/qwen3.5-9b"
+    },
+    "elapsedMs": 8491
+  },
+  {
+    "name": "same-seed-42-repeat",
+    "request": {
+      "model": "qwen/qwen3.5-9b",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write exactly 12 random decimal digits. Do not explain."
+        }
+      ],
+      "temperature": 1,
+      "max_tokens": 160,
+      "seed": 42
+    },
+    "status": 200,
+    "response": {
+      "id": "chatcmpl-jd0gwfaxomhdb0gbrx8iqg",
+      "object": "chat.completion",
+      "created": 1791119683,
+      "model": "qwen/qwen3.5-9b",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Target: Write exactly 12 random decimal digits.\n    *   Constraint: Do not explain.\n    *   Format: Just the digits, nothing else.\n\n2.  **Determine the Content:**\n    *   Decimal digits are 0-9.\n    *   Count: 12 digits.\n    *   Randomness: I need to generate a sequence of 12 numbers from the set {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}.\n\n3.  **Generate the Sequence:**\n    *   Digit 1: 3\n    *   Digit",
+            "tool_calls": []
+          },
+          "logprobs": null,
+          "finish_reason": "length"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 23,
+        "completion_tokens": 159,
+        "total_tokens": 182,
+        "completion_tokens_details": {
+          "reasoning_tokens": 159
+        }
+      },
+      "stats": {},
+      "system_fingerprint": "qwen/qwen3.5-9b"
+    },
+    "elapsedMs": 8088
+  },
+  {
+    "name": "different-seed-43",
+    "request": {
+      "model": "qwen/qwen3.5-9b",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write exactly 12 random decimal digits. Do not explain."
+        }
+      ],
+      "temperature": 1,
+      "max_tokens": 160,
+      "seed": 43
+    },
+    "status": 200,
+    "response": {
+      "id": "chatcmpl-fqaipk08gtusqpgnnrng5",
+      "object": "chat.completion",
+      "created": 1791119691,
+      "model": "qwen/qwen3.5-9b",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Write exactly 12 random decimal digits.\n    *   Constraint: Do not explain.\n    *   Content: 12 digits (0-9) separated by spaces or just listed? Usually, \"12 random decimal digits\" implies a string of digits. I should ensure there are exactly 12.\n    *   Format: Just the digits, no text, no labels, no explanation.\n\n2.  **Generate the Digits:**\n    *   I need to select 12 integers from the set {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}.",
+            "tool_calls": []
+          },
+          "logprobs": null,
+          "finish_reason": "length"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 23,
+        "completion_tokens": 159,
+        "total_tokens": 182,
+        "completion_tokens_details": {
+          "reasoning_tokens": 159
+        }
+      },
+      "stats": {},
+      "system_fingerprint": "qwen/qwen3.5-9b"
+    },
+    "elapsedMs": 7924
+  },
+  {
+    "name": "reasoning-disabled-512",
+    "request": {
+      "model": "qwen/qwen3.5-9b",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 19 plus 23? Reply with the number only."
+        }
+      ],
+      "temperature": 0.2,
+      "max_tokens": 512,
+      "seed": 42,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "status": 200,
+    "response": {
+      "id": "chatcmpl-albn97ju9cms9f41xn1ym",
+      "object": "chat.completion",
+      "created": 1791119699,
+      "model": "qwen/qwen3.5-9b",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "\n\n42",
+            "reasoning_content": "Thinking Process:\n\n1.  **Analyze the Request:** The user is asking for the sum of 19 and 23 (\"What is 19 plus 23?\"). The constraint is to \"Reply with the number only.\"\n\n2.  **Perform the Calculation:**\n    *   19 + 23\n    *   9 + 3 = 12 (write down 2, carry over 1)\n    *   1 + 2 + 1 (carry) = 4\n    *   Result: 42\n\n3.  **Format the Output:** The user explicitly requested \"Reply with the number only.\" This means no text, no explanations, just the digit(s).\n\n4.  **Final Check:** Does \"42\" meet the criteria? Yes.\n\n5.  **Construct Output:** 42\n",
+            "tool_calls": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 26,
+        "completion_tokens": 191,
+        "total_tokens": 217,
+        "completion_tokens_details": {
+          "reasoning_tokens": 186
+        }
+      },
+      "stats": {},
+      "system_fingerprint": "qwen/qwen3.5-9b"
+    },
+    "elapsedMs": 9550
+  },
+  {
+    "name": "reasoning-default-512",
+    "request": {
+      "model": "qwen/qwen3.5-9b",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 19 plus 23? Reply with the number only."
+        }
+      ],
+      "temperature": 0.2,
+      "max_tokens": 512,
+      "seed": 42
+    },
+    "status": 200,
+    "response": {
+      "id": "chatcmpl-ytfr2qlriggi53s0e0neuf",
+      "object": "chat.completion",
+      "created": 1791119709,
+      "model": "qwen/qwen3.5-9b",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "\n\n42",
+            "reasoning_content": "Thinking Process:\n\n1.  **Analyze the Request:** The user is asking for the sum of 19 and 23 (\"What is 19 plus 23?\"). The constraint is to \"Reply with the number only.\"\n\n2.  **Perform the Calculation:**\n    *   19 + 23\n    *   9 + 3 = 12 (write down 2, carry over 1)\n    *   1 + 2 + 1 (carry) = 4\n    *   Result: 42\n\n3.  **Format the Output:** The user explicitly requested \"Reply with the number only.\" This means no text, no explanations, just the digit(s).\n\n4.  **Final Check:** Does \"42\" meet the criteria? Yes.\n\n5.  **Construct Output:** 42\n",
+            "tool_calls": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 26,
+        "completion_tokens": 191,
+        "total_tokens": 217,
+        "completion_tokens_details": {
+          "reasoning_tokens": 186
+        }
+      },
+      "stats": {},
+      "system_fingerprint": "qwen/qwen3.5-9b"
+    },
+    "elapsedMs": 9514
+  }
+]

@@ -1,0 +1,771 @@
+[
+  {
+    "type": "routing",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "taskType": "draft",
+    "modelId": "draft-qwen3",
+    "reason": "single configured model"
+  },
+  {
+    "type": "run_state",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "state": "classifying"
+  },
+  {
+    "type": "run_state",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "state": "planning"
+  },
+  {
+    "type": "run_state",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "state": "acting"
+  },
+  {
+    "type": "run_state",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "state": "awaiting_confirmation"
+  },
+  {
+    "type": "confirmation_required",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "action": {
+      "actionId": "de577ae6-7f2a-49b9-bb03-5aba996b1b70",
+      "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+      "kind": "plan_approval",
+      "prompt": "Review Agent Plan (Write broken-vendor-log-parser.py)",
+      "createdAt": "2026-10-04T13:33:26.027Z",
+      "expiresAt": "2026-10-04T13:38:26.027Z",
+      "preview": "### Objective\nFix crashing parser\n\n### Proposed Operations\n• **write_file**: Write `broken-vendor-log-parser.py`\n\nmake sure it actually works"
+    }
+  },
+  {
+    "type": "run_state",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "state": "acting"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "\n\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "I",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "'ll",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " analyze",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " the",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " bugs",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " and",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " fix",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " them",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " The",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " issues",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " are",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": ":",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "1",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "Bug",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " 1",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "**:",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " Empty",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " temperature",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " values",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " crash",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " when",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " trying",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " to",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " convert",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " to",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " float",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "Bug",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " 2",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "**:",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " Need",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " to",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " handle",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " the",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " inclusive",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " 3",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "5",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "0",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "0",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " limit",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " properly",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " (",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "3",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "5",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "0",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "0",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " should",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " be",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " \"",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "ok",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "\",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " not",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " \"",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "high",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "\")",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "3",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": ".",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " **",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "Logic",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " issue",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "**:",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " The",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " code",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " increments",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " \"",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "ok",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "\"",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " for",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " all",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " rows",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": ",",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " but",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " should",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " only",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " increment",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " for",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " valid",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " \"",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "ok",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "\"",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " readings",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "\n\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "Let",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " me",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " fix",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " the",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": " code",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": ":",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "\n\n",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message_reset",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "delta": "Generation stopped at the model output limit before the task was complete. No proposed action from the truncated response was executed.",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "assistant_message",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "messageId": "bd609b11-0013-49f0-be79-b5baa3a87530",
+    "text": "Generation stopped at the model output limit before the task was complete. No proposed action from the truncated response was executed.",
+    "modelId": "draft-qwen3"
+  },
+  {
+    "type": "run_state",
+    "runId": "c3616211-e529-4e73-a27b-e5665572a9e0",
+    "state": "partial"
+  }
+]

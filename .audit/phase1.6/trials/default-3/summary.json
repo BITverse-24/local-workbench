@@ -1,0 +1,85 @@
+{
+  "profile": "default",
+  "trial": 3,
+  "totalFlowWallSeconds": 223.3,
+  "processWallMs": 223960,
+  "outcome": "completed",
+  "acceptanceChecksPassed": 7,
+  "acceptanceChecksFailed": 0,
+  "accepted": true,
+  "modelCalls": {
+    "classifier": 1,
+    "working": 4,
+    "total": 5
+  },
+  "workingCompletionTokens": 3678,
+  "workingReasoningTokens": 2967,
+  "totalCompletionTokens": 3848,
+  "totalReasoningTokens": 2967,
+  "toolSequence": [
+    "read_file",
+    "write_file",
+    "run_command"
+  ],
+  "repeatedWriteAttempts": 0,
+  "failedToolResults": 0,
+  "lengthTerminatedCalls": 0,
+  "perCall": [
+    {
+      "purpose": "classification",
+      "durationMs": 10178,
+      "finishReason": "stop",
+      "promptTokens": 742,
+      "completionTokens": 170,
+      "reasoningTokens": 0,
+      "maxTokens": 768,
+      "tools": []
+    },
+    {
+      "purpose": "working_1",
+      "durationMs": 57572,
+      "finishReason": "tool_calls",
+      "promptTokens": 2798,
+      "completionTokens": 1086,
+      "reasoningTokens": 1029,
+      "maxTokens": 4096,
+      "tools": [
+        "read_file"
+      ]
+    },
+    {
+      "purpose": "working_2",
+      "durationMs": 101609,
+      "finishReason": "tool_calls",
+      "promptTokens": 3493,
+      "completionTokens": 1809,
+      "reasoningTokens": 1408,
+      "maxTokens": 4096,
+      "tools": [
+        "write_file"
+      ]
+    },
+    {
+      "purpose": "working_3",
+      "durationMs": 13068,
+      "finishReason": "tool_calls",
+      "promptTokens": 3970,
+      "completionTokens": 67,
+      "reasoningTokens": 26,
+      "maxTokens": 4096,
+      "tools": [
+        "run_command"
+      ]
+    },
+    {
+      "purpose": "working_4",
+      "durationMs": 40603,
+      "finishReason": "stop",
+      "promptTokens": 3997,
+      "completionTokens": 716,
+      "reasoningTokens": 504,
+      "maxTokens": 4096,
+      "tools": []
+    }
+  ]
+}

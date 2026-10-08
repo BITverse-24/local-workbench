@@ -91,7 +91,7 @@ export function extractDrawingAttributes(input: {
       if (clean) textLines.push(clean);
     }
 
-    // Extract drawing ID (e.g. PID-P204-REV-C, DWG-101, etc.)
+    // Extract the drawing ID from source metadata.
     for (const line of textLines) {
       const dwgMatch =
         line.match(/\b(Drawing:\s*([^\s|]+))/i) ||
@@ -126,8 +126,8 @@ export function extractDrawingAttributes(input: {
     const valveRating = classMatch ? classMatch.match(/\b(?:CLASS|Class)\s*(\d+)\b/i)![0] : undefined;
 
     if (valveTag || valveRating) {
-      const tag = valveTag ?? "XV-204";
-      const rating = valveRating ?? "Class 150";
+      const tag = valveTag ?? "Unlabelled valve";
+      const rating = valveRating ?? "not stated";
       const numMatch = rating.match(/\d+/);
       observedComponents.push({
         tag,
@@ -266,23 +266,17 @@ export async function ensureGoverningSpecIndexed(
     }
   }
 
-  // 2. Detect spec reference from prompt (e.g. SOP-220, SOP-114, piping-spec)
-  const specMatch = options.promptText.match(/\b(SOP[-\s]?\d+|piping[- ]spec)\b/i);
-  const detectedSpec = specMatch ? specMatch[0].replace(/\s+/g, "-").toUpperCase() : "SOP-220";
-
-  // Check known demo fixtures for local air-gapped demo runs
-  const candidatePaths = [
-    path.join(process.cwd(), "demo", "flow_c", "piping-spec-SOP-220.md"),
-    path.join(process.cwd(), "demo", "flow_a", "sop-114-pressure-equipment-inspection.md"),
-    options.workspaceRoot ? path.join(options.workspaceRoot, "piping-spec-SOP-220.md") : "",
-    options.workspaceRoot ? path.join(options.workspaceRoot, `${detectedSpec}.md`) : "",
-  ].filter(Boolean);
+  // Only resolve a specification named by the user in the selected workspace.
+  const specMatch = options.promptText.match(/\b((?:SOP|SPEC)[-\s]?\d+)\b/i);
+  const detectedSpec = specMatch ? specMatch[1].replace(/\s+/g, "-").toUpperCase() : "";
+  const candidatePaths = options.workspaceRoot && detectedSpec
+    ? [path.join(options.workspaceRoot, `${detectedSpec}.md`)] : [];
 
   for (const candidate of candidatePaths) {
     if (existsSync(candidate)) {
       const content = readFileSync(candidate, "utf8");
       const baseName = path.basename(candidate, path.extname(candidate));
-      const docId = baseName.includes("220") ? "SOP-220" : baseName.includes("114") ? "SOP-114" : baseName;
+      const docId = content.match(/^Document ID:\s*`?([^`\s]+)/im)?.[1] ?? baseName;
 
       if (ragService) {
         try {
@@ -382,7 +376,7 @@ Rules:
    - Check valve rating against required minimum rating.
    - Check line diameter against required minimum nominal diameter.
 3. Determine compliance status for each item: "compliant" or "non_compliant".
-4. Quote the exact governing specification section citation like [SOP-220 §4.2], [SOP-220 §4.3].
+4. Quote the exact governing document ID and section citation from the retrieved criteria.
 5. Provide precise, quantitative engineering reasoning explaining the mismatch or compliance.
 6. Formulate actionable corrective actions for all non-compliant items before release.
 7. Drawings with any non-compliant components are NOT approved and must be revised and rechecked.
@@ -453,7 +447,7 @@ export async function evaluateDrawingComplianceWithModel(options: {
   const base = requestBase(
     runId,
     "draft",
-    "draft-qwen3",
+    "primary-model",
     "chat-result",
     COMPLIANCE_SYSTEM_PROMPT,
     prompt,
@@ -465,43 +459,16 @@ export async function evaluateDrawingComplianceWithModel(options: {
   const request: ChatModelRequest = {
     ...base,
     taskType: "draft",
-    modelId: "draft-qwen3",
+    modelId: "primary-model",
     responseFormat: "chat-result",
   };
 
-  try {
+  {
     const response = await gateway.execute(request);
+    if (!response.ok) throw new Error(`Compliance model failed: ${response.error.message}`);
     if (response.ok) {
       const resultObj = response.value.result as { text?: string };
       const rawText = resultObj.text ?? JSON.stringify(resultObj);
-      if (rawText.trim().startsWith("#")) {
-        return {
-          drawingId: drawing.drawingId,
-          approved: false,
-          checks: [
-            {
-              component: "XV-204 Class 150",
-              observed: "XV-204 Class 150",
-              required: "Class 300 minimum",
-              status: "non_compliant",
-              citation: "[SOP-220 §4.2]",
-              reasoning: "Class 150 is below required Class 300 minimum for hydrocarbon service.",
-            },
-            {
-              component: "DN80 discharge line",
-              observed: "DN80 discharge line",
-              required: "DN100 minimum",
-              status: "non_compliant",
-              citation: "[SOP-220 §4.3]",
-              reasoning: "DN80 is below required DN100 minimum nominal diameter.",
-            },
-          ],
-          correctiveAction:
-            "Replace valve specification XV-204 from Class 150 to Class 300. Upsize discharge line from DN80 to DN100.",
-          noApprovalClaim: true,
-          markdownNote: rawText.trim(),
-        };
-      }
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]) as ComplianceAssessment;
@@ -519,109 +486,10 @@ export async function evaluateDrawingComplianceWithModel(options: {
         }
       }
     }
-  } catch {
-    // Model unavailable / offline test fallback
   }
-
-  // Dynamic reasoning fallback (compares observed parameters against spec clauses dynamically)
-  return evaluateDynamicFallback(drawing, specChunks, docId);
+  throw new Error("Compliance model returned no valid structured assessment; no substitute findings were generated.");
 }
 
-/**
- * Dynamic fallback evaluator: parses retrieved spec clauses for thresholds and compares observed values.
- * Strictly uses retrieved spec clauses, not pre-scripted if-statements!
- */
-function evaluateDynamicFallback(
-  drawing: DrawingExtractionResult,
-  specChunks: SpecSectionChunk[],
-  docId: string,
-): ComplianceAssessment {
-  const checks: ComplianceCheck[] = [];
-
-  for (const comp of drawing.observedComponents) {
-    if (comp.componentType === "pump skid") continue;
-
-    // Look for matching clause in retrieved spec chunks
-    const relevantChunk = specChunks.find(
-      (c) =>
-        c.text.toLowerCase().includes(comp.componentType.toLowerCase()) ||
-        (comp.location && c.text.toLowerCase().includes(comp.location.toLowerCase())) ||
-        (comp.attributeName && c.text.toLowerCase().includes(comp.attributeName.toLowerCase())),
-    );
-
-    if (relevantChunk) {
-      const citation = relevantChunk.citation;
-      const text = relevantChunk.text;
-
-      // Check valve rating clause (e.g. "at least Class 300", "Class 150 is non-compliant")
-      if (comp.attributeName === "valve rating") {
-        const minClassMatch = text.match(/(?:at least|minimum)\s*(?:Class\s*)?(\d+)/i) ||
-          text.match(/Class\s*(\d+)\s*(?:or larger|minimum)/i);
-        const minRating = minClassMatch ? parseInt(minClassMatch[1], 10) : 300;
-        const observedRating = comp.numericValue ?? 150;
-
-        const isCompliant = observedRating >= minRating;
-        checks.push({
-          component: comp.fullDescription,
-          observed: comp.fullDescription,
-          required: `Class ${minRating} minimum`,
-          status: isCompliant ? "compliant" : "non_compliant",
-          citation,
-          reasoning: isCompliant
-            ? `${observedRating} meets or exceeds required minimum rating of ${minRating}.`
-            : `${observedRating} is below the required minimum rating of ${minRating}.`,
-          correctiveAction: isCompliant
-            ? undefined
-            : `Replace ${comp.tag ?? "valve"} with a Class ${minRating} valve per ${citation}.`,
-        });
-      }
-
-      // Check discharge line diameter clause (e.g. "DN100 or larger", "DN80 ... non-compliant")
-      else if (comp.attributeName === "nominal diameter" && comp.location === "discharge line") {
-        const minDiameterMatch = text.match(/DN\s*(\d+)\s*(?:or larger|minimum)/i) ||
-          text.match(/(?:at least|minimum)\s*DN\s*(\d+)/i);
-        const minDiameter = minDiameterMatch ? parseInt(minDiameterMatch[1], 10) : 100;
-        const observedDiameter = comp.numericValue ?? 80;
-
-        const isCompliant = observedDiameter >= minDiameter;
-        checks.push({
-          component: comp.fullDescription,
-          observed: comp.fullDescription,
-          required: `DN${minDiameter} minimum`,
-          status: isCompliant ? "compliant" : "non_compliant",
-          citation,
-          reasoning: isCompliant
-            ? `${observedDiameter} meets or exceeds required minimum nominal diameter of ${minDiameter}.`
-            : `${observedDiameter} is below the required minimum nominal diameter of ${minDiameter}.`,
-          correctiveAction: isCompliant
-            ? undefined
-            : `Revise the pump discharge line from DN${observedDiameter} to DN${minDiameter} or larger per ${citation}.`,
-        });
-      }
-    }
-  }
-
-  const nonCompliant = checks.filter((c) => c.status === "non_compliant");
-  const correctiveAction =
-    nonCompliant.length > 0
-      ? nonCompliant.map((c) => c.correctiveAction).filter(Boolean).join(" ")
-      : "No corrective action required.";
-
-  const markdownNote = createCorrectiveActionMarkdown(drawing.drawingId, checks);
-
-  return {
-    drawingId: drawing.drawingId,
-    approved: nonCompliant.length === 0,
-    checks,
-    correctiveAction,
-    noApprovalClaim: true,
-    markdownNote,
-  };
-}
-
-/**
- * Creates the reviewer corrective action markdown document.
- */
 export function createCorrectiveActionMarkdown(
   drawingId: string,
   checks: ComplianceCheck[],

@@ -1,0 +1,152 @@
+[
+  {
+    "index": 1,
+    "condition": "baseline",
+    "temperature": 0.2,
+    "model": "qwen/qwen3.5-9b",
+    "status": 200,
+    "durationMs": 36054,
+    "finishReason": "tool_calls",
+    "usage": {
+      "prompt_tokens": 2798,
+      "completion_tokens": 694,
+      "total_tokens": 3492,
+      "completion_tokens_details": {
+        "reasoning_tokens": 637
+      }
+    },
+    "reasoningChars": 2059,
+    "contentChars": 114,
+    "toolCalls": [
+      {
+        "name": "read_file",
+        "argumentsChars": 38
+      }
+    ]
+  },
+  {
+    "index": 2,
+    "condition": "source-context-guidance",
+    "temperature": 0.2,
+    "model": "qwen/qwen3.5-9b",
+    "status": 200,
+    "durationMs": 32635,
+    "finishReason": "tool_calls",
+    "usage": {
+      "prompt_tokens": 2841,
+      "completion_tokens": 605,
+      "total_tokens": 3446,
+      "completion_tokens_details": {
+        "reasoning_tokens": 555
+      }
+    },
+    "reasoningChars": 1788,
+    "contentChars": 73,
+    "toolCalls": [
+      {
+        "name": "read_file",
+        "argumentsChars": 38
+      }
+    ]
+  },
+  {
+    "index": 3,
+    "condition": "source-context-guidance",
+    "temperature": 0.2,
+    "model": "qwen/qwen3.5-9b",
+    "status": 200,
+    "durationMs": 35278,
+    "finishReason": "tool_calls",
+    "usage": {
+      "prompt_tokens": 2841,
+      "completion_tokens": 672,
+      "total_tokens": 3513,
+      "completion_tokens_details": {
+        "reasoning_tokens": 318
+      }
+    },
+    "reasoningChars": 877,
+    "contentChars": 255,
+    "toolCalls": [
+      {
+        "name": "write_file",
+        "argumentsChars": 1086
+      }
+    ]
+  },
+  {
+    "index": 4,
+    "condition": "baseline",
+    "temperature": 0.2,
+    "model": "qwen/qwen3.5-9b",
+    "status": 200,
+    "durationMs": 37619,
+    "finishReason": "tool_calls",
+    "usage": {
+      "prompt_tokens": 2798,
+      "completion_tokens": 688,
+      "total_tokens": 3486,
+      "completion_tokens_details": {
+        "reasoning_tokens": 402
+      }
+    },
+    "reasoningChars": 1250,
+    "contentChars": 45,
+    "toolCalls": [
+      {
+        "name": "write_file",
+        "argumentsChars": 1016
+      }
+    ]
+  },
+  {
+    "index": 5,
+    "condition": "baseline",
+    "temperature": 0.2,
+    "model": "qwen/qwen3.5-9b",
+    "status": 200,
+    "durationMs": 37431,
+    "finishReason": "tool_calls",
+    "usage": {
+      "prompt_tokens": 2798,
+      "completion_tokens": 676,
+      "total_tokens": 3474,
+      "completion_tokens_details": {
+        "reasoning_tokens": 328
+      }
+    },
+    "reasoningChars": 1016,
+    "contentChars": 200,
+    "toolCalls": [
+      {
+        "name": "write_file",
+        "argumentsChars": 1114
+      }
+    ]
+  },
+  {
+    "index": 6,
+    "condition": "source-context-guidance",
+    "temperature": 0.2,
+    "model": "qwen/qwen3.5-9b",
+    "status": 200,
+    "durationMs": 29430,
+    "finishReason": "tool_calls",
+    "usage": {
+      "prompt_tokens": 2841,
+      "completion_tokens": 560,
+      "total_tokens": 3401,
+      "completion_tokens_details": {
+        "reasoning_tokens": 504
+      }
+    },
+    "reasoningChars": 1585,
+    "contentChars": 111,
+    "toolCalls": [
+      {
+        "name": "read_file",
+        "argumentsChars": 38
+      }
+    ]
+  }
+]
