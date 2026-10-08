@@ -1,0 +1,211 @@
+{
+  "id": "document-unrelated",
+  "family": "document",
+  "prompt": "Make a Markdown review note from these training records and our policy. For each staff identifier, say whether the person may handle records independently on the review date, give the reason, and include the required next actions and policy references. Return the note as a file.",
+  "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+  "terminalState": "completed",
+  "latencySec": 99.88908533399994,
+  "text": "# Training Review Note\n\n## Staff-LARK (Mira Sen)\n- **May handle records independently:** Yes\n- **Reason:** Completed training within the last 12 months and supervisor acknowledged.\n- **Next Actions:** None\n- **Policy Reference:** [Training Policy, §2](training-policy.md#records-handling-training-poli)\n- **Source Evidence:** \n  - Training completed: 2026-09-10\n  - Supervisor acknowledgement recorded on 2026-09-12\n\n## Staff-FERN (Owen Hale)\n- **May handle records independently:** No\n- **Reason:** Training completed over 12 months ago and supervisor not acknowledged.\n- **Next Actions:**\n  - Arrange refresher training.\n  - Obtain supervisor acknowledgement.\n- **Policy Reference:** [Training Policy, §2](training-policy.md#records-handling-training-poli)\n  - [Training Policy, §3](training-policy.md#records)\n- **Source Evidence:** \n  - Training completed: 2025-08-02\n  - Source instruction: Arrange refresher training and obtain supervisor acknowledgement.\n\nSaved: review-note.md.",
+  "artifacts": [
+    {
+      "artifact_id": "d6f11742-4420-407d-903b-be7ba36b65d8",
+      "run_id": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+      "kind": "md",
+      "filename": "review-note.md",
+      "relative_path": "runs/437a9bce-14f0-49f6-9d65-b7761e988eeb/output/review-note.md",
+      "size_bytes": 964,
+      "sha256": null,
+      "created_at": "2026-10-08T13:51:03.229Z",
+      "relativePath": "runs/437a9bce-14f0-49f6-9d65-b7761e988eeb/output/review-note.md"
+    }
+  ],
+  "telemetry": {
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "outcome": "completed",
+    "totalDurationMs": 99704,
+    "calls": {
+      "workingTurns": 6,
+      "delegated": 0,
+      "classification": 2,
+      "total": 8
+    },
+    "inferenceDurationMs": 99574,
+    "tokens": {
+      "source": "provider",
+      "prompt": 6131,
+      "completion": 1488,
+      "reasoning": 0,
+      "reasoningShareOfCompletion": 0
+    },
+    "perCall": [
+      {
+        "purpose": "classification",
+        "durationMs": 5933,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 627,
+          "completionTokens": 54,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "classification",
+        "durationMs": 3536,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 755,
+          "completionTokens": 54,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 19472,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 1289,
+          "completionTokens": 258,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": [
+          "generate_deliverable"
+        ]
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 17972,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 583,
+          "completionTokens": 301,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 11310,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 580,
+          "completionTokens": 177,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 16924,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 972,
+          "completionTokens": 241,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 11417,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 664,
+          "completionTokens": 188,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 13010,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 661,
+          "completionTokens": 215,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      }
+    ]
+  },
+  "artifactText": "# Training Review Note\n\n## Staff-LARK (Mira Sen)\n- **May handle records independently:** Yes\n- **Reason:** Completed training within the last 12 months and supervisor acknowledged.\n- **Next Actions:** None\n- **Policy Reference:** [Training Policy, §2](training-policy.md#records-handling-training-poli)\n- **Source Evidence:** \n  - Training completed: 2026-09-10\n  - Supervisor acknowledgement recorded on 2026-09-12\n\n## Staff-FERN (Owen Hale)\n- **May handle records independently:** No\n- **Reason:** Training completed over 12 months ago and supervisor not acknowledged.\n- **Next Actions:**\n  - Arrange refresher training.\n  - Obtain supervisor acknowledgement.\n- **Policy Reference:** [Training Policy, §2](training-policy.md#records-handling-training-poli)\n  - [Training Policy, §3](training-policy.md#records)\n- **Source Evidence:** \n  - Training completed: 2025-08-02\n  - Source instruction: Arrange refresher training and obtain supervisor acknowledgement.",
+  "requirements": [
+    {
+      "name": "Harness did not deadlock or violate integrity",
+      "severity": "harness",
+      "passed": true
+    },
+    {
+      "name": "Task reached completion with a useful response",
+      "severity": "critical",
+      "passed": true
+    },
+    {
+      "name": "Artifact exists: review-note.md",
+      "severity": "harness",
+      "passed": true
+    },
+    {
+      "name": "Original supplied source files are unchanged",
+      "severity": "harness",
+      "passed": true
+    },
+    {
+      "name": "Real knowledge retrieval completed",
+      "severity": "critical",
+      "passed": true
+    },
+    {
+      "name": "Requested artifact exists in the requested format",
+      "severity": "critical",
+      "passed": true
+    },
+    {
+      "name": "Both staff identifiers are preserved",
+      "severity": "major",
+      "passed": false,
+      "reason": "A staff identifier is absent"
+    },
+    {
+      "name": "Training dates and review date are grounded",
+      "severity": "major",
+      "passed": false,
+      "reason": "Relevant date absent"
+    },
+    {
+      "name": "Eligibility decisions and evidence are supplied",
+      "severity": "critical",
+      "passed": true
+    },
+    {
+      "name": "Source actions and policy references are preserved",
+      "severity": "major",
+      "passed": false,
+      "reason": "An action or governing source is absent"
+    }
+  ],
+  "classification": "PARTIAL",
+  "manualReviewRequired": true,
+  "toolPath": [
+    "retrieve_knowledge",
+    "generate_deliverable"
+  ]
+}

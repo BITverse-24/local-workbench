@@ -1,12 +1,14 @@
-# V0 shipping baseline — 8 October 2026
+# V0 shipping status — 8 October 2026
 
-The reviewed baseline meets the model-quality gate in `FRAMEWORK.md`: **7/9 PASS**, with documents **2/3**, code **2/3**, and inspection **3/3**. No harness failure was detected in these runs. This does not claim that every equivalent prompt succeeds.
+V0 reached the Qwen2.5 Coder 7B gate in [FRAMEWORK.md](../FRAMEWORK.md): **7/9 PASS**, at least **2/3 in each capability family**, and **zero detected harness failures**. These results do not establish universal reliability.
 
-The lead is **Qwen2.5 Coder 7B**, using **Standard/default**, temperature 0 and the existing 1536-token working allowance. Qwen3-VL is the existing visual-input fallback. Qwen3.5 9B was not evaluated. Latency is reported without a release cutoff, as requested by the user.
+Family results: grounded documents **2/3 PASS**, code modification **2/3 PASS**, and grounded inspection **3/3 PASS**.
 
-The evidence uses the full nine-task campaign at `tests/.runtime/v0/2026-10-08T13-41-14-397Z`, followed by the unchanged three-code-task rerun at `tests/.runtime/v0/2026-10-08T14-20-19-059Z`. Changes between them affect code repair only. Document and inspection paths remain unchanged. This is an affected-suite certification; all nine did not run on one worker hash. Each campaign has its own provenance file.
+The certified setup uses Qwen2.5 Coder 7B, Standard/default generation, temperature 0, and a 1536-token working allowance. Qwen3-VL 4B is the visual fallback. Qwen3.5 was not evaluated.
 
-| Task | Reviewed result | Terminal state | Seconds | Model calls | Output tokens | Finish reasons | Tool path |
+## Certification results
+
+| Task | Result | Terminal state | Seconds | Model calls | Output tokens | Finish | Tool path |
 |---|---|---|---:|---:|---:|---|---|
 | Document, normal | PASS | completed | 229.6 | 10 | 3664 | stop | extract ×2 → retrieve → generate |
 | Document, paraphrase | PASS | completed | 257.5 | 10 | 4197 | stop | extract ×2 → retrieve → generate |
@@ -18,53 +20,48 @@ The evidence uses the full nine-task campaign at `tests/.runtime/v0/2026-10-08T1
 | Inspection, paraphrase | PASS | completed | 151.8 | 8 | 2277 | stop | extract → retrieve |
 | Inspection, unrelated parcel review | PASS | completed | 59.5 | 5 | 951 | stop | retrieve |
 
-Calls include interpretation and review calls, but exclude embeddings. Token usage is the provider's total output across those calls. `extract`, `retrieve` and `generate` mean `extract_document`, `retrieve_knowledge` and `generate_deliverable`.
+Calls include interpretation and review. They exclude embeddings. Tokens are provider output tokens across calls. `extract`, `retrieve`, and `generate` refer to `extract_document`, `retrieve_knowledge`, and `generate_deliverable`.
 
-The training review gives the correct eligibility decisions. It omits the attendance-retention action, changes the case of source identifiers, and omits the review date. The missing action is a significant omission, so the result remains PARTIAL.
+The code paraphrase returns wrong counts for the supplied input and fails independent-input checks. The model moved the count update into the wrong branch and missed the boundary case. This is a real behavior failure. The training review gives the right eligibility decisions but omits an attendance-retention action, changes source identifier case, and omits the review date. That result is PARTIAL. Minor draft issues include repeated headings and a shifted table row. They do not change the major findings.
 
-The parser paraphrase returns `ok=3, malformed=1, high=1` on the supplied input. The source-supported test requires `ok=4, malformed=1, high=2`. It changes the original counting path and does not implement the boundary repair. Both supplied-input and independent-input checks fail. This is a model behavior failure, not a wording or formatting difference. The model-based review missed it. A successful process exit alone does not prove that an arbitrary repair is correct.
+The full nine-task certification and final three-code confirmation used different workers. Code changes between these campaigns were limited to code repair. The document and inspection paths did not change. Evidence records this as an affected-suite certification.
 
-Minor document issues include a repeated title and redundant decision text. The inspection paraphrase has one table row with shifted columns; its prose correctly states both important findings and corrections. These issues did not prevent useful task completion. The normal DOCX was opened in Pages and was readable. Final artifacts were not manually edited.
+## Recorded demo and latency exception
 
-The general changes in this pass are:
+The certified runtime has genuine successful A, B, and C CLI recordings. The successes span two recordings; they are not one 3/3 run.
 
-- Coverage review now lists exact source evidence and checks whether the draft contains it. A known omission can use the existing bounded correction turn.
-- A model-generated checklist cannot create source authority.
-- Optional assertions absent from the original request or evidence cannot reject an attached repair or direct another repair. The tool reports skipped checks. A check explicitly supplied by the user remains authoritative.
-- Code recovery shares a maximum of two correction turns and uses the latest source and actual execution error.
-- The unsafe comparison shortcut was removed. It could reject a valid opposite-branch implementation.
-- Attached repair turns can give a brief, source-grounded change summary. Existing behavior reviews must give a nonempty explanation for their status.
+| Flow | Result | Seconds | Model calls | Output tokens | Tool path |
+|---|---|---:|---:|---:|---|
+| A, additional normal run | PASS | 202.6 | 10 | 3451 | extract ×2 → retrieve → generate |
+| B, normal run | PASS | 94.9 | 6 | 1559 | execute_python |
+| C, normal run | PASS | 137.5 | 7 | 2480 | extract → retrieve |
 
-No fixture values, business conclusions, filenames or entity rules were added to production code. The targeted production scan found no demo identifiers or expected values. The inverse-branch regression uses an unrelated program. Tests and source evidence contain scenario values; production routing does not use them.
+The successful Flow A run took **203 seconds**. This exceeds the framework's normal 120-second target. V0 accepts this as a documented exception for complex grounded document work. The earlier A recording took 192 seconds and was PARTIAL because it omitted the gasket finding and replacement action. Both recordings are retained.
 
-Core integrity and V0 regression checks: **164/164 PASS** across ten test files. Type checking and the frontend/Electron build pass. The macOS app package builds. The full legacy suite remains **618 PASS, 72 FAIL, 6 skipped**. Its failure set matches the pre-existing failure set in this goal. Many failures use old model IDs or old intent/tool contracts. This report does not mark that suite green or treat every old failure as harmless.
+The nine-task campaign also recorded document runs at 229.6 and 257.5 seconds and a normal inspection run at 137.5 seconds. These results are above the normal 120-second target and remain visible in the table; this release does not claim that all workflows meet the target.
 
-Visual-input smoke: **3/3 PASS**, manually checked. The image-only PDF and raster image show the two blue circles and red triangle. The SVG contains geometry without text; extraction correctly identifies two blue circles, the green rectangle and their connections. Each uses the actual Qwen3-VL fallback through `extract_document → ModelGateway.execute(vision)`. Times are **13.5 s, 14.7 s and 13.1 s**, with one successful inference each and `stop` finish reasons. LM Studio rejects the initial response format; the gateway records that error and succeeds with its existing JSON-schema format retry. Evidence: `tests/.runtime/vision-v0/2026-10-08T14-18-47-396Z`.
+The final A DOCX opened and was readable in Pages. It has a repeated title and weak placement of some follow-up notes. The final artifact was not manually edited. Flow C identified the core drawing findings and actions, with some unnecessary uncertainty in its final wording.
 
-The runtime is frozen after reaching the required family thresholds. No 18-prompt campaign, profile comparison, routing redesign, P2 work, Laya/Jev work or latency tuning was added. The remaining model-quality failures are retained in the report. First-shot success is not inferred from total model calls; those calls also include review. A separate first-shot rate was not instrumented.
+## Visual fallback and software checks
 
-The frozen runtime has genuine successful CLI recordings for normal A, B and C. These are live asciicast recordings and plain transcripts, not GUI videos. The successful runs were selected across two recordings; this is not a claim of one fresh 3/3 run.
+The Qwen3-VL fallback passed **3/3** visual smoke checks for a raster image, an image-only PDF, and an SVG drawing without useful text labels. The tests used `extract_document` and the vision model. Each had one successful inference and a `stop` finish reason. The initial JSON object format was rejected; the existing JSON-schema retry succeeded.
 
-| Recorded task | Reviewed result | Terminal state | Seconds | Model calls | Output tokens | Finish reason | Tool path |
-|---|---|---|---:|---:|---:|---|---|
-| A, additional unchanged run | PASS | completed | 202.6 | 10 | 3451 | stop | extract ×2 → retrieve → generate |
-| B, first frozen recording | PASS | completed | 94.9 | 6 | 1559 | stop | execute_python |
-| C, first frozen recording | PASS | completed | 137.5 | 7 | 2480 | stop | extract → retrieve |
+The V0 core suite passed **164/164 checks** across ten test files. Typecheck, production build, and package build passed. The wider legacy suite had **618 pass, 72 fail, and 6 skipped**. Those failures matched the earlier failure set in this work. They are outside the V0-critical suite; they are not reported as passing.
 
-The first recorded A run was PARTIAL in 192.0 seconds: it omitted the gasket finding and replacement action. That run remains in the evidence. No runtime change was made before the additional A recording. The additional run contains that finding and action. Its DOCX opens and is readable in Pages. Pages reports a missing font, but displays the document. The repeated title and weak placement of follow-up observations remain draft-quality issues. The document was closed without edits. The repaired B artifact passes the supplied-input and independent-input checks. C identifies the core drawing mismatches and actions; it adds unnecessary uncertainty to some source values.
+## Frozen runtime and retained evidence
 
-Recordings and full run evidence:
+The certified pre-cleanup source commit is `0d5c23423c9b31494e18520b9816c368ff3df523`; its retained source archive SHA-256 is `945b8cb141246ba995ac016d9fafca97733118548ff7644b84925c010dcc3c4c`. The worker SHA-256 is `afacf6c8d7a314ada8ae3594d70df842403430417fcc6660c44d454eb285d1f0`. The certified runtime manifest, campaign summaries, selected run records, recordings, smoke results, and check logs are in [docs/evidence/v0](evidence/v0/README.md).
 
-- [First frozen A/B/C transcript](../tests/.runtime/v0-recordings/2026-10-08T14-28-25-239Z/normal-abc.log) and its adjacent `normal-abc.cast` and `recording.json`.
-- [Additional A transcript](../tests/.runtime/v0-recordings/2026-10-08T14-38-09-239Z/normal-abc.log) and its adjacent `normal-abc.cast` and `recording.json`. The shared filename is retained; its metadata identifies A only.
-- Run data: `tests/.runtime/v0/2026-10-08T14-28-25-329Z` and `tests/.runtime/v0/2026-10-08T14-38-09-321Z`.
+The distributable is built from `frontend/dist`, `electron/dist-electron`, the model registry, schema, and production dependencies. It excludes `.env`, `.git`, project source, benchmark data, databases, telemetry, and user files. The model weights are not included. The package targets macOS arm64.
 
-The source and package are saved locally:
+The packaged app uses any model configuration saved in its local database. During this release check, an earlier saved alias (`qwen2.5-coder:7b`) did not match the loaded LM Studio model ID. The local profile was updated to the loaded Qwen2.5 Coder ID before the app smoke test. The V0 example configuration and [README setup steps](../README.md) show the exact reference model IDs.
 
-- [macOS arm64 app ZIP](../release/0.1.0/Sovereign-Workbench-V0-mac-arm64.zip). The developer package is unsigned; it was not published externally.
-- [Source snapshot](../release/0.1.0/v0-source-snapshot.tar.gz), including current source, tests, configuration and build scripts. This preserves uncommitted files as well as tracked files.
-- [Evidence archive](../release/0.1.0/v0-evidence.tar.gz), including reviewed results, campaign data, visual smoke, recordings and final check logs.
-- [Runtime freeze manifest](../release/0.1.0/v0-freeze-manifest.json) and [archive checksums](../release/0.1.0/v0-release-files.json).
+## Release verification
 
-Use LM Studio with `qwen2.5-coder-7b-instruct-mlx` as the lead and Standard/default generation. The existing visual fallback is `qwen/qwen3-vl-4b`. Both were served at `http://127.0.0.1:1234/v1` in these checks. Select the Qwen2.5 model in the app if onboarding shows another default. Add the relevant source files and index the relevant knowledge documents before a grounded task. The package does not contain model weights. The source freeze manifest and worker hash were checked after the recordings; runtime files did not change.
+Version metadata is `0.1.0` in `VERSION` and `package.json`; the release snapshot is tagged `v0.1.0`. Typecheck, production build, the 164-check V0 core suite, and the macOS arm64 installer build passed. Their logs are in `check-logs/`.
 
+The final packaged app launched from the release output and reported Qwen2.5 Coder available from the local endpoint. Chat returned `READY` in 3.5 seconds. Agent smoke checks were mixed: one run did not call a tool; a fresh run called `read_file` on a connected temporary workspace, then returned text that did not match the file. The UI marked the run as passed. This is recorded in [KNOWN_LIMITATIONS.md](../KNOWN_LIMITATIONS.md).
+
+The final DMG passed `hdiutil verify`. Its package inventory contains no `.env`, `.git`, database, log, benchmark output, telemetry file, project or dependency test fixture, personal path string, secret-like assignment, or repository update metadata. It includes the application, production dependencies, model registry, and schema. The DMG SHA-256 and inventory are recorded in the [package audit](evidence/v0/check-logs/release-final-package-audit.json).
+
+No changes were made to prompts, routing, recovery logic, tool contracts, evaluation semantics, or generation settings during release cleanup. The certified worker hash remained unchanged. Electron 30.5.1 was end-of-life, so the packaged shell uses Electron 44.7.0 and electron-builder 26.17.0. The removed `clipboard.writeBuffer` call was replaced with Electron's supported clipboard API to preserve file-copy behavior. `better-sqlite3` was updated to 13.0.3 because its prior native code did not build against Electron 44. The 164 core checks pass with these package changes. The app still has no valid Developer ID signing identity, so the DMG is unsigned and not notarized. The production dependency audit has two moderate UUID findings and no high or critical findings; see [KNOWN_LIMITATIONS.md](../KNOWN_LIMITATIONS.md).

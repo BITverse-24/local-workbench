@@ -1,0 +1,7 @@
+{
+  "createdAt": "2026-10-08T14:41:32.803Z",
+  "command": "node scripts/certify-v0.cjs document-normal",
+  "exitCode": 0,
+  "elapsedSec": 203.554677333,
+  "kind": "live CLI output capture; no GUI video"
+}

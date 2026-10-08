@@ -1,0 +1,7 @@
+{
+  "workerSha256": "afacf6c8d7a314ada8ae3594d70df842403430417fcc6660c44d454eb285d1f0",
+  "lead": "qwen2.5-coder-7b-instruct-mlx",
+  "profile": "default",
+  "gitHead": "270754959cdcb60df0f1eee291b43e22a8825040",
+  "startedAt": "2026-10-08T14:20:19.073Z"
+}

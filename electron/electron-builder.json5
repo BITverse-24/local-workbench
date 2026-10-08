@@ -1,26 +1,30 @@
 // @see - https://www.electron.build/configuration/configuration
-// Packaging smoke coverage is deferred (migration phase 3 leaves it out).
-// This config already reflects the migrated layout so the later packaging
-// phase needs no path rework: built frontend output, Electron bundles, and
-// the model registry are included; no .env file and no source tree are.
+// Package only the production UI, Electron bundles, model registry, schema,
+// and production dependencies. Local data, credentials, and project source
+// are not part of the distributable.
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "com.sovereign.workbench",
   "asar": true,
+  "publish": null,
   "productName": "Sovereign Workbench",
   "directories": {
     "output": "release/${version}"
   },
   "asarUnpack": [
-    "**/*.node",
-    "**/node_modules/better-sqlite3/**/*",
-    "**/node_modules/canvas/**/*"
+    "**/*.node"
   ],
   "files": [
     "frontend/dist/**/*",
     "electron/dist-electron/**/*",
     "config/models.json",
-    "backend/src/main/persistence/schema.sql"
+    "backend/src/main/persistence/schema.sql",
+    "!**/node_modules/**/test/**",
+    "!**/node_modules/**/tests/**",
+    "!**/node_modules/**/__tests__/**",
+    "!**/node_modules/**/fixtures/**",
+    "!**/node_modules/**/benchmarks/**",
+    "!**/node_modules/better-sqlite3/**/test_extension.*"
   ],
   "extraResources": [
     {

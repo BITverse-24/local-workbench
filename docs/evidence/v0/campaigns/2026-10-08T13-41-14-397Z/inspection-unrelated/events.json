@@ -1,0 +1,2965 @@
+[
+  {
+    "type": "run_state",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "state": "classifying"
+  },
+  {
+    "type": "routing",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "taskType": "draft",
+    "modelId": "primary-model",
+    "reason": "single configured model"
+  },
+  {
+    "type": "run_state",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "state": "planning"
+  },
+  {
+    "type": "tool_call",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "tool": "retrieve_knowledge",
+    "callId": "db197b6d-10f2-49d2-810a-b7958291bb96",
+    "args": {
+      "query": "Check these parcel labels against our dispatch policy. Use the exact box identifiers, identify any defects and required corrections, and say which parcels can be dispatched. Cite the relevant policy sections.\ndispatch-policy.md\n\nPRIMARY TARGET USER ATTACHMENTS (Attached directly in this chat):\n--- ATTACHED FILE: package-labels.md (text/markdown, 250 bytes) ---\n# Dispatch label audit\nIdentifier: BOX-ORCHID\nDestination: Bristol\nReturn address: 18 Willow Road, York\nTracking barcode: Present and readable\n\nIdentifier: BOX-CEDAR\nDestination: Leeds\nReturn address: Missing\nTracking barcode: Present but unreadable\n\n--- END ATTACHED FILE: package-labels.md ---\n"
+    },
+    "summary": "Retrieving indexed criteria for supplied evidence"
+  },
+  {
+    "type": "tool_result",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "tool": "retrieve_knowledge",
+    "callId": "db197b6d-10f2-49d2-810a-b7958291bb96",
+    "ok": true,
+    "output": "[SOURCE: dispatch-policy.md; §3; Page 1; CHUNK: fixture-0-p1-4]\n## 3 Tracking\nEvery parcel must have a readable tracking barcode. Reprint an unreadable barcode before dispatch.\n\n[SOURCE: dispatch-policy.md; §2; Page 1; CHUNK: fixture-0-p1-3]\n## 2 Return address\nEvery parcel must have a return address. Add the sender's return address if it is missing.\n\n[SOURCE: dispatch-policy.md; §dispatch-label-requirements; Page 1; CHUNK: fixture-0-p1-1]\n# Dispatch label requirements\nDocument ID: DISPATCH-POLICY\n\n[SOURCE: dispatch-policy.md; §4; Page 1; CHUNK: fixture-0-p1-5]\n## 4 Release\nDo not dispatch a parcel until all label requirements are met.\n\n[SOURCE: dispatch-policy.md; §1; Page 1; CHUNK: fixture-0-p1-2]\n## 1 Destination\nEvery parcel must state its destination.",
+    "summary": "Retrieved 5 indexed excerpts"
+  },
+  {
+    "type": "run_state",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "state": "acting"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "###",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Find",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "ings",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Table",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "\n\n",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "|",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Identifier",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Observation",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Requirement",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Assessment",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Action",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Evidence",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |\n",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "|",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "------------",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "|",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-------------",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "|",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-------------",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "|",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "------------",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "|",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "--------",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "|",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "----------",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "|\n",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "|",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " BOX",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "OR",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "CH",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "ID",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "  ",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Destination",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Bristol",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "<br>",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "Return",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " address",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " 1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "8",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Willow",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Road",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ",",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " York",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "<br>",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "Tracking",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " barcode",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Present",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " and",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " readable",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Every",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " parcel",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " must",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " state",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " its",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " destination",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "<br>",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "Every",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " parcel",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " must",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " have",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " a",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " return",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " address",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "<br>",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "Every",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " parcel",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " must",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " have",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " a",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " readable",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " tracking",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " barcode",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Me",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "ets",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " all",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " requirements",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Dispatch",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " is",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " allowed",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " ",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "[dispatch-policy",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".md",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " §",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ",",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Page",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " 1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " CHUNK",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " fixture",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "0",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-p",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "2",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "]",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "<br>",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "[dispatch-policy",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".md",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " §",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "2",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ",",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Page",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " 1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " CHUNK",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " fixture",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "0",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-p",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "3",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "]",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "<br>",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "[dispatch-policy",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".md",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " §",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "3",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ",",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Page",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " 1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " CHUNK",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " fixture",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "0",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-p",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "4",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "]",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |\n",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "|",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " BOX",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-C",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "ED",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "AR",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "   ",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Destination",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Leeds",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "<br>",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "Return",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " address",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Missing",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "<br>",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "Tracking",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " barcode",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Present",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " but",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " unread",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "able",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Every",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " parcel",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " must",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " state",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " its",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " destination",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "<br>",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "Every",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " parcel",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " must",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " have",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " a",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " return",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " address",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "<br>",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "Every",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " parcel",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " must",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " have",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " a",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " readable",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " tracking",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " barcode",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Does",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " not",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " meet",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " all",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " requirements",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Re",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "print",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " the",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " unread",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "able",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " barcode",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " and",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " add",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " a",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " return",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " address",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " before",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " dispatch",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " ",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "[dispatch-policy",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".md",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " §",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ",",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Page",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " 1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " CHUNK",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " fixture",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "0",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-p",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "2",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "]",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "<br>",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "[dispatch-policy",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".md",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " §",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "2",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ",",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Page",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " 1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " CHUNK",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " fixture",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "0",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-p",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "3",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "]",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "<br>",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "[dispatch-policy",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".md",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " §",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "3",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ",",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Page",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " 1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " CHUNK",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " fixture",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "0",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-p",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "4",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "]",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " |\n\n",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "###",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Recommendations",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "\n\n",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " **",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "Recommend",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "ation",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " for",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " BOX",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-C",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "ED",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "AR",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " —",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Re",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "print",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " the",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " unread",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "able",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " barcode",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " and",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " add",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " a",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " return",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " address",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " before",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " dispatch",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " (",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "dispatch",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-policy",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".md",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " §",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "2",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ",",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Page",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " 1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " CHUNK",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " fixture",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "0",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-p",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "3",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ")",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "<br>(",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "dispatch",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-policy",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".md",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " §",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "3",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ",",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Page",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " 1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ";",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " CHUNK",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ":",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " fixture",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "0",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-p",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "1",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "4",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ")**",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "\n\n",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "###",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " Summary",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "\n\n",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " **",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "BOX",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "OR",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "CH",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "ID",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "**",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " can",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " be",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " dispatched",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " as",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " it",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " meets",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " all",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " the",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " dispatch",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " policy",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " requirements",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".\n",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " **",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "BOX",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "-C",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "ED",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "AR",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "**",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " cannot",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " be",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " dispatched",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " until",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " the",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " unread",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "able",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " barcode",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " is",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " replaced",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " and",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " a",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " return",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " address",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " is",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": " added",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": ".",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "agent_thinking",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "text": "### Findings Table\n\n| Identifier | Observation | Requirement | Assessment | Action | Evidence |\n|------------|-------------|-------------|------------|--------|----------|\n| BOX-ORCHID   | Destination: Bristol<br>Return address: 18 Willow Road, York<br>Tracking barcode: Present and readable | Every parcel must state its destination.<br>Every parcel must have a return address.<br>Every parcel must have a readable tracking barcode. | Meets all requirements. | Dispatch is allowed. | [dispatch-policy.md; §1, Page 1; CHUNK: fixture-0-p1-2]<br>[dispatch-policy.md; §2, Page 1; CHUNK: fixture-0-p1-3]<br>[dispatch-policy.md; §3, Page 1; CHUNK: fixture-0-p1-4] |\n| BOX-CEDAR    | Destination: Leeds<br>Return address: Missing<br>Tracking barcode: Present but unreadable | Every parcel must state its destination.<br>Every parcel must have a return address.<br>Every parcel must have a readable tracking barcode. | Does not meet all requirements. | Reprint the unreadable barcode and add a return address before dispatch. | [dispatch-policy.md; §1, Page 1; CHUNK: fixture-0-p1-2]<br>[dispatch-policy.md; §2, Page 1; CHUNK: fixture-0-p1-3]<br>[dispatch-policy.md; §3, Page 1; CHUNK: fixture-0-p1-4] |\n\n### Recommendations\n\n- **Recommendation for BOX-CEDAR — Reprint the unreadable barcode and add a return address before dispatch. (dispatch-policy.md; §2, Page 1; CHUNK: fixture-0-p1-3)<br>(dispatch-policy.md; §3, Page 1; CHUNK: fixture-0-p1-4)**\n\n### Summary\n\n- **BOX-ORCHID** can be dispatched as it meets all the dispatch policy requirements.\n- **BOX-CEDAR** cannot be dispatched until the unreadable barcode is replaced and a return address is added.",
+    "turn": 1
+  },
+  {
+    "type": "assistant_message_reset",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96"
+  },
+  {
+    "type": "assistant_message_chunk",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "delta": "### Findings Table\n\n\n| Identifier | Observation | Requirement | Assessment | Action | Evidence |\n|------------|-------------|-------------|------------|--------|----------|\n| BOX-ORCHID   | Destination: Bristol<br>Return address: 18 Willow Road, York<br>Tracking barcode: Present and readable | Every parcel must state its destination.<br>Every parcel must have a return address.<br>Every parcel must have a readable tracking barcode. | Meets all requirements. | Dispatch is allowed. | [dispatch-policy.md; §1, Page 1; CHUNK: fixture-0-p1-2]<br>[dispatch-policy.md; §2, Page 1; CHUNK: fixture-0-p1-3]<br>[dispatch-policy.md; §3, Page 1; CHUNK: fixture-0-p1-4] |\n| BOX-CEDAR    | Destination: Leeds<br>Return address: Missing<br>Tracking barcode: Present but unreadable | Every parcel must state its destination.<br>Every parcel must have a return address.<br>Every parcel must have a readable tracking barcode. | Does not meet all requirements. | Reprint the unreadable barcode and add a return address before dispatch. | [dispatch-policy.md; §1, Page 1; CHUNK: fixture-0-p1-2]<br>[dispatch-policy.md; §2, Page 1; CHUNK: fixture-0-p1-3]<br>[dispatch-policy.md; §3, Page 1; CHUNK: fixture-0-p1-4] |\n\n### Recommendations\n\n- **Recommendation for BOX-CEDAR — Reprint the unreadable barcode and add a return address before dispatch. (dispatch-policy.md; §2, Page 1; CHUNK: fixture-0-p1-3)<br>(dispatch-policy.md; §3, Page 1; CHUNK: fixture-0-p1-4)**\n\n### Summary\n\n- **BOX-ORCHID** can be dispatched as it meets all the dispatch policy requirements.\n- **BOX-CEDAR** cannot be dispatched until the unreadable barcode is replaced and a return address is added.",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "assistant_message",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "messageId": "d9ddc356-5cd4-4c03-b5c9-951625cd3e96",
+    "text": "### Findings Table\n\n\n| Identifier | Observation | Requirement | Assessment | Action | Evidence |\n|------------|-------------|-------------|------------|--------|----------|\n| BOX-ORCHID   | Destination: Bristol<br>Return address: 18 Willow Road, York<br>Tracking barcode: Present and readable | Every parcel must state its destination.<br>Every parcel must have a return address.<br>Every parcel must have a readable tracking barcode. | Meets all requirements. | Dispatch is allowed. | [dispatch-policy.md; §1, Page 1; CHUNK: fixture-0-p1-2]<br>[dispatch-policy.md; §2, Page 1; CHUNK: fixture-0-p1-3]<br>[dispatch-policy.md; §3, Page 1; CHUNK: fixture-0-p1-4] |\n| BOX-CEDAR    | Destination: Leeds<br>Return address: Missing<br>Tracking barcode: Present but unreadable | Every parcel must state its destination.<br>Every parcel must have a return address.<br>Every parcel must have a readable tracking barcode. | Does not meet all requirements. | Reprint the unreadable barcode and add a return address before dispatch. | [dispatch-policy.md; §1, Page 1; CHUNK: fixture-0-p1-2]<br>[dispatch-policy.md; §2, Page 1; CHUNK: fixture-0-p1-3]<br>[dispatch-policy.md; §3, Page 1; CHUNK: fixture-0-p1-4] |\n\n### Recommendations\n\n- **Recommendation for BOX-CEDAR — Reprint the unreadable barcode and add a return address before dispatch. (dispatch-policy.md; §2, Page 1; CHUNK: fixture-0-p1-3)<br>(dispatch-policy.md; §3, Page 1; CHUNK: fixture-0-p1-4)**\n\n### Summary\n\n- **BOX-ORCHID** can be dispatched as it meets all the dispatch policy requirements.\n- **BOX-CEDAR** cannot be dispatched until the unreadable barcode is replaced and a return address is added.",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "verification_report",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "report": {
+      "schemaVersion": 1,
+      "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+      "status": "passed",
+      "checks": [
+        {
+          "criterionId": "acceptance:response",
+          "requirement": "Provide a response to the user",
+          "status": "passed",
+          "method": "agent_loop_completion",
+          "evidence": [],
+          "reason": "The existing AgentLoop RunContract completion evaluator accepted this criterion.",
+          "verifiedAt": "2026-10-08T14:01:44.104Z",
+          "mandatory": true
+        }
+      ],
+      "updatedAt": "2026-10-08T14:01:44.104Z"
+    }
+  },
+  {
+    "type": "run_state",
+    "runId": "b6720509-c70a-4c42-ab71-f5364d34a3ec",
+    "state": "completed"
+  }
+]

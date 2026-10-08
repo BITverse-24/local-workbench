@@ -1,8 +1,0 @@
-{
-  "flow": "flow_a",
-  "monitor": "independent-lan-monitor",
-  "allowedHosts": ["vision-lan", "draft-lan", "code-lan", "app-lan", "monitor-lan"],
-  "externalRequests": 0,
-  "blockedAttempt": {"host": "example.com", "result": "blocked", "recorded": true},
-  "assertion": "OCR, SOP grounding, drafting, and DOCX generation stayed on the approved LAN."
-}

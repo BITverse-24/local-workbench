@@ -1,0 +1,53 @@
+
+> sovereign-workbench@0.1.0 package
+> npm run build && electron-builder --config electron/electron-builder.json5
+
+
+> sovereign-workbench@0.1.0 build
+> npm run build:frontend && npm run build:electron
+
+
+> sovereign-workbench@0.1.0 build:frontend
+> vite build --config frontend/vite.config.ts
+
+vite v5.4.21 building for production...
+transforming...
+✓ 61 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.72 kB │ gzip:  0.40 kB
+dist/assets/index-Du_YJHEZ.css   50.20 kB │ gzip:  9.39 kB
+dist/assets/index-CHvQ8vOq.js   350.76 kB │ gzip: 93.16 kB
+✓ built in 841ms
+
+> sovereign-workbench@0.1.0 build:electron
+> node scripts/build-electron.cjs
+
+
+  electron/dist-electron/main.cjs  17.7mb ⚠️
+
+⚡ Done in 188ms
+
+  electron/dist-electron/preload.cjs  5.1kb
+
+⚡ Done in 1ms
+  • electron-builder  version=26.17.0 os=25.6.0
+  • loaded configuration  file=/Users/krishay/projects/agent/electron/electron-builder.json5
+  • executing @electron/rebuild  electronVersion=44.7.0 arch=arm64 buildFromSource=false workspaceRoot=/Users/krishay/projects/agent projectDir=./ appDir=./
+  • installing native dependencies  arch=arm64
+  • preparing       moduleName=better-sqlite3 arch=arm64
+  • finished        moduleName=better-sqlite3 arch=arm64
+  • preparing       moduleName=canvas arch=arm64
+  • finished        moduleName=canvas arch=arm64
+  • completed installing native dependencies
+  • packaging       platform=darwin arch=arm64 electron=44.7.0 appOutDir=release/0.1.0/mac-arm64
+  • downloaded      label=electron progress=100%
+  • downloaded electron zip extracted successfully  output=/Users/krishay/projects/agent/release/0.1.0/mac-arm64
+  • searching for node modules  pm=npm searchDir=/Users/krishay/projects/agent
+  • duplicate dependency references  dependencies=["once@1.4.0","once@1.4.0","pump@3.0.4","tar-stream@2.2.0","jszip@3.10.2","once@1.4.0","once@1.4.0","readable-stream@3.6.2","readable-stream@3.6.2","end-of-stream@1.4.5","readable-stream@3.6.2","glob@7.2.3","lazystream@1.0.1","readable-stream@3.6.2","readable-stream@3.6.2","readable-stream@3.6.2","readable-stream@3.6.2","jszip@3.10.2","glob@7.2.3","react@18.3.1","loose-envify@1.4.0","loose-envify@1.4.0","@grpc/proto-loader@0.8.1","string-width@4.2.3","string-width@4.2.3","strip-ansi@6.0.1","strip-ansi@6.0.1","domhandler@5.0.3","domutils@3.2.2","domhandler@5.0.3","domutils@3.2.2","domhandler@5.0.3","dom-serializer@2.0.0","domhandler@5.0.3","iconv-lite@0.6.3","domhandler@5.0.3","domutils@3.2.2","domhandler@5.0.3","parse5@7.3.0","parse5@7.3.0","strip-ansi@7.2.0","strip-ansi@7.2.0","strip-ansi@7.2.0","strip-ansi@7.2.0"]
+  • default Electron icon is used  reason=application icon is not set
+  • skipped macOS application code signing  reason=cannot find valid "Developer ID Application" identity or custom non-Apple code signing certificate, it could cause some undefined behaviour, e.g. macOS localized description not visible, see https://electron.build/code-signing allIdentities=     0 identities found
+                                                Valid identities only
+     0 valid identities found
+  • building        target=DMG arch=arm64 file=release/0.1.0/Sovereign Workbench-Mac-0.1.0-Installer.dmg
+  • building block map  blockMapFile=release/0.1.0/Sovereign Workbench-Mac-0.1.0-Installer.dmg.blockmap

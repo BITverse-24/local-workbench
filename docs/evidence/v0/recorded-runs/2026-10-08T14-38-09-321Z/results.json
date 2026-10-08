@@ -1,0 +1,256 @@
+{
+  "model": "qwen2.5-coder-7b-instruct-mlx",
+  "profile": "Standard/default",
+  "byFamily": {
+    "document": 1,
+    "code": 0,
+    "inspection": 0
+  },
+  "fullPasses": 1,
+  "harnessFailures": 0,
+  "manualReviewRequired": true,
+  "subset": true,
+  "results": [
+    {
+      "id": "document-normal",
+      "family": "document",
+      "prompt": "Read these inspection reports, pull out the key findings, and draft an approval note for the plant manager.",
+      "runId": "59f8e119-5663-4e6b-aec2-df190b1ed62f",
+      "terminalState": "completed",
+      "latencySec": 202.589554,
+      "text": "# Approval Note for North Zone Refinery Equipment\n\n## Report ID: IR-E201-2026-08-20\n### Equipment: E-201 Heat Exchanger\n\n**Inspection Findings:**\n- **Tube Wall Thickness:** Rows 12-15 measured 3.8-4.2 mm.\n- **Minimum Allowable Tube Wall Thickness:** 4.6 mm (Source: Inspection Report E201).\n- **Localised Pitting Corrosion at the Shell Inlet Nozzle; Maximum Depth:** 1.8 mm (Source: Inspection Report E201).\n\n**Action Required:**\n- **Conditional Clearance Pending Retubing of Affected Tubes.** ([SOP-114 §3.2])\n\nApproval decision for E-201 Heat Exchanger: Pending until the source shows that the affected tubes are scheduled for retubing and any recommended gasket replacement is recorded; and its findings are traceable to the supplied inspection record [SOURCE: sop-114-pressure-equipment-inspection.md; §3.2; Page 1; CHUNK: fixture-0-p1-4].\n## Report ID: IR-E202-2026-08-21\n### Equipment: E-202 Pressure Vessel\n\n**Inspection Findings:**\n- **Tube Wall Thickness:** Rows 12-15 measured 3.8-4.2 mm.\n- **Minimum Allowable Tube Wall Thickness:** 4.6 mm (Source: Inspection Report E202).\n- **Localised Pitting Corrosion at the Shell Inlet Nozzle; Maximum Depth:** 1.8 mm (Source: Inspection Report E202).\n\n**Action Required:**\n- **Verify After Repair.** ([SOP-114 §3.2])\n\nApproval decision for E-202 Pressure Vessel: Pending until the source shows that the affected tubes are scheduled for retubing and any recommended gasket replacement is recorded; and its findings are traceable to the supplied inspection record [SOURCE: sop-114-pressure-equipment-inspection.md; §3.2; Page 1; CHUNK: fixture-0-p1-4].\n## Follow-Up Observations:\n- **Channel-Head Gasket Degradation:** Replacement Recommended Before Return to Service.\n\n**Action Required:**\n- **Follow-Up Visual Inspection Complete. No New Defects Observed.** ([SOP-114 §3.2])\n\n## Grounding References:\n- **SOP-114 — Pressure Equipment Inspection and Approval**\n  - Document ID: `SOP-114`\n  - Revision: `4.0`\n  - Status: Approved\n\n**Approval Decision:**\n- **E-201 Heat Exchanger:** Conditional Clearance Pending Retubing of Affected Tubes.\n- **E-202 Pressure Vessel:** Conditional Clearance Pending Retubing of Affected Tubes.\n\n**Note:** The approval note must list each finding and its evidence. Conditional clearance may be recorded only when the affected tubes are scheduled for retubing and any recommended gasket replacement is recorded. The approval note must cite this section as `[SOP-114 §3.2]`.\n\n**Recommendations:**\n- **E-201 Heat Exchanger:** Conditional Clearance Pending Retubing of Affected Tubes. ([SOP-114 §3.2])\n- **E-202 Pressure Vessel:** Conditional Clearance Pending Retubing of Affected Tubes. ([SOP-114 §3.2])\n\n**Follow-Up Actions:**\n- **E-201 Heat Exchanger:** Recheck Weld Joint 4B.\n- **E-202 Pressure Vessel:** Verify After Repair.\n\n## Source documents\n- inspection-report-E201-annotated.pdf, page 1\n- inspection-report-E201-annotated.pdf, page 2\n- inspection-report-E202-followup.pdf, page 1\n- inspection-report-E202-followup.pdf, page 2\n\nSaved: approval_note.docx.",
+      "artifacts": [
+        {
+          "artifact_id": "12b4570f-27d0-41f3-ab7a-a29242358a09",
+          "run_id": "59f8e119-5663-4e6b-aec2-df190b1ed62f",
+          "kind": "docx",
+          "filename": "approval_note.docx",
+          "relative_path": "runs/59f8e119-5663-4e6b-aec2-df190b1ed62f/output/approval_note.docx",
+          "size_bytes": 9731,
+          "sha256": "217b0b9cc730883bc8d1a424538c9aed0b9e473908218d0b5cae72157834cb61",
+          "created_at": "2026-10-08T14:41:32.651Z",
+          "relativePath": "runs/59f8e119-5663-4e6b-aec2-df190b1ed62f/output/approval_note.docx"
+        }
+      ],
+      "telemetry": {
+        "runId": "59f8e119-5663-4e6b-aec2-df190b1ed62f",
+        "outcome": "completed",
+        "totalDurationMs": 202498,
+        "calls": {
+          "workingTurns": 8,
+          "delegated": 0,
+          "classification": 2,
+          "total": 10
+        },
+        "inferenceDurationMs": 201822,
+        "tokens": {
+          "source": "provider",
+          "prompt": 13674,
+          "completion": 3451,
+          "reasoning": 0,
+          "reasoningShareOfCompletion": 0
+        },
+        "perCall": [
+          {
+            "purpose": "classification",
+            "durationMs": 5813,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 622,
+              "completionTokens": 55,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "classification",
+            "durationMs": 3040,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 752,
+              "completionTokens": 55,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 39266,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 2120,
+              "completionTokens": 733,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": [
+              "generate_deliverable"
+            ]
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 17951,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1226,
+              "completionTokens": 287,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 22431,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1207,
+              "completionTokens": 403,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 18667,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1384,
+              "completionTokens": 276,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 39885,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 2438,
+              "completionTokens": 640,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 17072,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1262,
+              "completionTokens": 305,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 22329,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1243,
+              "completionTokens": 421,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 15368,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1420,
+              "completionTokens": 276,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          }
+        ]
+      },
+      "artifactText": "Approval Note for North Zone Refinery Equipment\nApproval Note for North Zone Refinery Equipment\nReport ID: IR-E201-2026-08-20\nEquipment: E-201 Heat Exchanger\nInspection Findings:\nTube Wall Thickness: Rows 12-15 measured 3.8-4.2 mm.\nMinimum Allowable Tube Wall Thickness: 4.6 mm (Source: Inspection Report E201).\nLocalised Pitting Corrosion at the Shell Inlet Nozzle; Maximum Depth: 1.8 mm (Source: Inspection Report E201).\nAction Required:\nConditional Clearance Pending Retubing of Affected Tubes. ([SOP-114 §3.2])\nApproval decision for E-201 Heat Exchanger: Pending until the source shows that the affected tubes are scheduled for retubing and any recommended gasket replacement is recorded; and its findings are traceable to the supplied inspection record [SOURCE: sop-114-pressure-equipment-inspection.md; §3.2; Page 1; CHUNK: fixture-0-p1-4].\nReport ID: IR-E202-2026-08-21\nEquipment: E-202 Pressure Vessel\nInspection Findings:\nTube Wall Thickness: Rows 12-15 measured 3.8-4.2 mm.\nMinimum Allowable Tube Wall Thickness: 4.6 mm (Source: Inspection Report E202).\nLocalised Pitting Corrosion at the Shell Inlet Nozzle; Maximum Depth: 1.8 mm (Source: Inspection Report E202).\nAction Required:\nVerify After Repair. ([SOP-114 §3.2])\nApproval decision for E-202 Pressure Vessel: Pending until the source shows that the affected tubes are scheduled for retubing and any recommended gasket replacement is recorded; and its findings are traceable to the supplied inspection record [SOURCE: sop-114-pressure-equipment-inspection.md; §3.2; Page 1; CHUNK: fixture-0-p1-4].\nFollow-Up Observations:\nChannel-Head Gasket Degradation: Replacement Recommended Before Return to Service.\nAction Required:\nFollow-Up Visual Inspection Complete. No New Defects Observed. ([SOP-114 §3.2])\nGrounding References:\nSOP-114 — Pressure Equipment Inspection and Approval\nDocument ID: SOP-114\nRevision: 4.0\nStatus: Approved\nApproval Decision:\nE-201 Heat Exchanger: Conditional Clearance Pending Retubing of Affected Tubes.\nE-202 Pressure Vessel: Conditional Clearance Pending Retubing of Affected Tubes.\nNote: The approval note must list each finding and its evidence. Conditional clearance may be recorded only when the affected tubes are scheduled for retubing and any recommended gasket replacement is recorded. The approval note must cite this section as [SOP-114 §3.2].\nRecommendations:\nE-201 Heat Exchanger: Conditional Clearance Pending Retubing of Affected Tubes. ([SOP-114 §3.2])\nE-202 Pressure Vessel: Conditional Clearance Pending Retubing of Affected Tubes. ([SOP-114 §3.2])\nFollow-Up Actions:\nE-201 Heat Exchanger: Recheck Weld Joint 4B.\nE-202 Pressure Vessel: Verify After Repair.\nSource documents\ninspection-report-E201-annotated.pdf, page 1\ninspection-report-E201-annotated.pdf, page 2\ninspection-report-E202-followup.pdf, page 1\ninspection-report-E202-followup.pdf, page 2\n",
+      "requirements": [
+        {
+          "name": "Harness did not deadlock or violate integrity",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Task reached completion with a useful response",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Artifact exists: approval_note.docx",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Original supplied source files are unchanged",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Real knowledge retrieval completed",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Requested artifact exists in the requested format",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Both reviewed subjects are included",
+          "severity": "major",
+          "passed": true
+        },
+        {
+          "name": "Important measurements and defect are preserved",
+          "severity": "major",
+          "passed": true
+        },
+        {
+          "name": "Core decision is grounded and conditional on required work",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Source follow-up actions are included",
+          "severity": "major",
+          "passed": true
+        },
+        {
+          "name": "Source annotation is carried through",
+          "severity": "minor",
+          "passed": true
+        }
+      ],
+      "classification": "PASS",
+      "manualReviewRequired": true,
+      "toolPath": [
+        "extract_document",
+        "extract_document",
+        "retrieve_knowledge",
+        "generate_deliverable"
+      ]
+    }
+  ]
+}

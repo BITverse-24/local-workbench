@@ -16,6 +16,7 @@ release/
 .env
 *.env
 !.env.example
+.DS_Store
 
 # GitHub Wiki submodule/clone
 wiki/
@@ -24,7 +25,9 @@ wiki/
 tests/.runtime/
 tests/profiles/*.local.json
 
-.audit
-.*
+# Local audit worktrees and editor history
+.audit/
+.ori/
+.tmp-v2-*/
 
 blog

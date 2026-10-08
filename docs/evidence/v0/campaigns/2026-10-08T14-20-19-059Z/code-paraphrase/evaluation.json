@@ -1,0 +1,188 @@
+{
+  "id": "code-paraphrase",
+  "family": "code",
+  "prompt": "Can you repair this parser and check it with the attached CSV? Keep the same interface and give me the corrected Python file.",
+  "runId": "4230e40b-4d2b-49cb-a8c9-5ecb1d7c4119",
+  "terminalState": "completed",
+  "latencySec": 95.268895208,
+  "text": "### Change Summary\n\n1. **Bug 1: Malformed rows have no temperature and crash the run.**\n   - **Faulty Behavior:** The function crashes when encountering a row without a temperature value.\n   - **Intended Behavior:** Skip malformed rows and count them as 'malformed'.\n   - **Code Change:** Add a check to ensure the temperature value exists before converting it to a float.\n\n2. **Bug 2: The vendor's inclusive 350.0 upper limit is rejected.**\n   - **Faulty Behavior:** Temperatures exactly at 350.0 are rejected.\n   - **Intended Behavior:** Include temperatures up to and including 350.0 in the 'high' category.\n   - **Code Change:** Adjust the condition to include temperatures up to 350.0.\n\n### Executing the Repair\n\n### Execution\n\nLet's execute the repaired code with the provided CSV file to verify its correctness.\n\nThe corrected source ran successfully against the supplied input files (exit code 0).\n\nObserved output:\n{'ok': 3, 'malformed': 1, 'high': 1}\n\nSaved corrected source: broken-vendor-log-parser.py.",
+  "artifacts": [
+    {
+      "artifact_id": "65f7c839-f64d-49bd-834f-b8b130d9dbae",
+      "run_id": "4230e40b-4d2b-49cb-a8c9-5ecb1d7c4119",
+      "kind": "txt",
+      "filename": "broken-vendor-log-parser.py",
+      "relative_path": "runs/4230e40b-4d2b-49cb-a8c9-5ecb1d7c4119/output/broken-vendor-log-parser.py",
+      "size_bytes": 770,
+      "sha256": null,
+      "created_at": "2026-10-08T14:22:53.881Z",
+      "relativePath": "runs/4230e40b-4d2b-49cb-a8c9-5ecb1d7c4119/output/broken-vendor-log-parser.py"
+    }
+  ],
+  "telemetry": {
+    "runId": "4230e40b-4d2b-49cb-a8c9-5ecb1d7c4119",
+    "outcome": "completed",
+    "totalDurationMs": 95067,
+    "calls": {
+      "workingTurns": 5,
+      "delegated": 0,
+      "classification": 2,
+      "total": 7
+    },
+    "inferenceDurationMs": 94909,
+    "tokens": {
+      "source": "provider",
+      "prompt": 6984,
+      "completion": 1645,
+      "reasoning": 0,
+      "reasoningShareOfCompletion": 0
+    },
+    "perCall": [
+      {
+        "purpose": "classification",
+        "durationMs": 3120,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 617,
+          "completionTokens": 56,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "classification",
+        "durationMs": 3100,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 747,
+          "completionTokens": 56,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 8416,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 636,
+          "completionTokens": 126,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 37413,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 1853,
+          "completionTokens": 725,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 5203,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 1034,
+          "completionTokens": 7,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 26092,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 1094,
+          "completionTokens": 487,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 11565,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 1003,
+          "completionTokens": 188,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "name": "Harness did not deadlock or violate integrity",
+      "severity": "harness",
+      "passed": true
+    },
+    {
+      "name": "Task reached completion with a useful response",
+      "severity": "critical",
+      "passed": true
+    },
+    {
+      "name": "Artifact exists: broken-vendor-log-parser.py",
+      "severity": "harness",
+      "passed": true
+    },
+    {
+      "name": "Original supplied source files are unchanged",
+      "severity": "harness",
+      "passed": true
+    },
+    {
+      "name": "Requested artifact exists in the requested format",
+      "severity": "critical",
+      "passed": true
+    },
+    {
+      "name": "Runtime executed the repaired source",
+      "severity": "critical",
+      "passed": true
+    },
+    {
+      "name": "Saved program meets source-derived behavior on supplied input",
+      "severity": "critical",
+      "passed": false,
+      "reason": "{\"value\":{\"ok\":3,\"malformed\":1,\"high\":1}}"
+    },
+    {
+      "name": "Saved program preserves behavior on independent input",
+      "severity": "critical",
+      "passed": false,
+      "reason": "{\"value\":{\"ok\":2,\"malformed\":1,\"high\":1}}"
+    },
+    {
+      "name": "Public callable interface is retained",
+      "severity": "critical",
+      "passed": true
+    }
+  ],
+  "classification": "FAIL",
+  "manualReviewRequired": true,
+  "toolPath": [
+    "execute_python"
+  ]
+}

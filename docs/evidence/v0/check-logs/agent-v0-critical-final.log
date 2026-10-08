@@ -1,0 +1,86 @@
+
+> sovereign-workbench@0.1.0 test
+> node scripts/test.cjs backend/tests/mutation-guard.test.ts backend/tests/path-guard.test.ts backend/tests/execution-envelope.test.ts backend/tests/completion-semantics.test.ts backend/tests/artifact-verification-lifecycle.test.ts backend/tests/result-store.test.ts backend/tests/result-memory-integration.test.ts backend/tests/agent-loop.test.ts backend/tests/source-review.test.ts backend/tests/v0-regressions.test.ts
+
+
+ RUN  v3.2.7 /Users/krishay/projects/agent
+
+ ✓ backend/tests/path-guard.test.ts (13 tests) 20ms
+ ✓ backend/tests/source-review.test.ts (18 tests) 15ms
+ ✓ backend/tests/execution-envelope.test.ts (9 tests) 5ms
+ ✓ backend/tests/result-store.test.ts (9 tests) 303ms
+ ✓ backend/tests/agent-loop.test.ts (34 tests) 113ms
+stdout | backend/tests/mutation-guard.test.ts > P0-06: Mutation Approvals and Containment Guard > Tool-Level and IPC Consistency > HarnessManager.executeTool enforces the same policy guard constraints
+┌── [Tool Executing: write_file] ──────────────────────────────────
+│ Target:   unauthorized.txt (5 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/mutation-guard.test.ts > P0-06: Mutation Approvals and Containment Guard > Tool-Level and IPC Consistency > HarnessManager.executeTool enforces the same policy guard constraints
+┌── [Tool Executing: write_file] ──────────────────────────────────
+│ Target:   allowed.txt (18 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/mutation-guard.test.ts > P0-06: Mutation Approvals and Containment Guard > Tool-Level and IPC Consistency > HarnessManager.executeTool enforces the same policy guard constraints
+┌── [Tool Result: write_file] ✔ SUCCESS ────────────────────────
+│ File:   allowed.txt
+│ Status: Written to workspace disk
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/mutation-guard.test.ts > P0-06: Mutation Approvals and Containment Guard > Tool-Level and IPC Consistency > HarnessManager.executeTool enforces the same policy guard constraints
+┌── [Tool Executing: delete_file] ─────────────────────────────────
+│ Args:     {"path":"allowed.txt"}
+└──────────────────────────────────────────────────────────
+
+ ✓ backend/tests/mutation-guard.test.ts (19 tests) 101ms
+ ✓ backend/tests/artifact-verification-lifecycle.test.ts (17 tests) 140ms
+stderr | backend/tests/v0-regressions.test.ts > V0 attached-source transport and execution integrity > dispatches a complete source emitted as text only under the persisted repair contract
+[python-runner] macOS sandbox-exec unavailable or disabled; using validated development runner
+
+stdout | backend/tests/completion-semantics.test.ts > P0-02: Truthful Completion Semantics > Persistence & Store Truthful Transitions > RunManager dispatches partial and limit_exceeded outcomes correctly
+[run:66930efc] ➜ classifying
+
+stdout | backend/tests/completion-semantics.test.ts > P0-02: Truthful Completion Semantics > Persistence & Store Truthful Transitions > RunManager dispatches partial and limit_exceeded outcomes correctly
+[run:66930efc] ➜ planning
+[run:66930efc] ➜ acting
+[run:66930efc] ➜ awaiting_confirmation
+[run:66930efc] ➜ acting
+
+stdout | backend/tests/completion-semantics.test.ts > P0-02: Truthful Completion Semantics > Persistence & Store Truthful Transitions > RunManager dispatches partial and limit_exceeded outcomes correctly
+[run:66930efc] ➜ partial
+
+stderr | backend/tests/v0-regressions.test.ts > V0 attached-source transport and execution integrity > repairs from the latest source and real error, preserving actual supplied input
+[python-runner] macOS sandbox-exec unavailable or disabled; using validated development runner
+
+stderr | backend/tests/v0-regressions.test.ts > V0 attached-source transport and execution integrity > repairs from the latest source and real error, preserving actual supplied input
+[python-runner] macOS sandbox-exec unavailable or disabled; using validated development runner
+
+ ✓ backend/tests/completion-semantics.test.ts (24 tests) 149ms
+stderr | backend/tests/v0-regressions.test.ts > V0 attached-source transport and execution integrity > shares the two-correction budget across source review and execution recovery
+[python-runner] macOS sandbox-exec unavailable or disabled; using validated development runner
+
+stderr | backend/tests/result-memory-integration.test.ts > P1 production result registration and retrieval integration > registers real Python output before display truncation and retrieves its original tail
+[python-runner] macOS sandbox-exec unavailable or disabled; using validated development runner
+
+stderr | backend/tests/v0-regressions.test.ts > V0 attached-source transport and execution integrity > shares the two-correction budget across source review and execution recovery
+[python-runner] macOS sandbox-exec unavailable or disabled; using validated development runner
+
+stderr | backend/tests/v0-regressions.test.ts > V0 attached-source transport and execution integrity > keeps optional empty validation separate from exact saved-program execution
+[python-runner] macOS sandbox-exec unavailable or disabled; using validated development runner
+
+ ✓ backend/tests/result-memory-integration.test.ts (11 tests) 395ms
+stderr | backend/tests/v0-regressions.test.ts > V0 attached-source transport and execution integrity > does not let unsupported assertions or expected values reject a working repair
+[python-runner] macOS sandbox-exec unavailable or disabled; using validated development runner
+
+stderr | backend/tests/v0-regressions.test.ts > V0 attached-source transport and execution integrity > keeps a check explicitly supplied by the user authoritative
+[python-runner] macOS sandbox-exec unavailable or disabled; using validated development runner
+
+stderr | backend/tests/v0-regressions.test.ts > V0 attached-source transport and execution integrity > keeps a check explicitly supplied by the user authoritative
+[python-runner] macOS sandbox-exec unavailable or disabled; using validated development runner
+
+ ✓ backend/tests/v0-regressions.test.ts (10 tests) 533ms
+
+ Test Files  10 passed (10)
+      Tests  164 passed (164)
+   Start at  19:50:20
+   Duration  1.50s (transform 1.09s, setup 0ms, collect 3.77s, tests 1.77s, environment 1ms, prepare 591ms)
+

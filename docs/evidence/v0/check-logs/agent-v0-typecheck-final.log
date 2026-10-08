@@ -1,0 +1,4 @@
+
+> sovereign-workbench@0.1.0 typecheck
+> tsc --noEmit -p backend/tsconfig.json && tsc --noEmit -p electron/tsconfig.json && tsc --noEmit -p frontend/tsconfig.json
+

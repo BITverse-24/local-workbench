@@ -1,11 +1,11 @@
-// Polyfill Promise.try for Node.js < 22 environments (Electron 30 is Node 20.16)
+// Polyfill Promise.try for Node.js versions that do not provide it.
 if (typeof (Promise as any).try !== "function") {
   (Promise as any).try = function <T>(fn: (...args: any[]) => T, ...args: any[]): Promise<T> {
     return new Promise((resolve) => resolve(fn(...args)));
   };
 }
 
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ClipboardItem, clipboard, dialog, ipcMain, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -302,14 +302,17 @@ app.whenReady().then(async () => {
 
       if (textExtensions.includes(ext)) {
         const text = readFileSync(abs, "utf8");
-        clipboard.writeText(text);
+        await clipboard.writeText(text);
         return { copied: true as const, kind: "text" as const, content: text, filename: ref.filename };
       } else {
         if (process.platform === "darwin") {
           const plist = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><array><string>${abs}</string></array></plist>`;
-          clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(plist));
+          const format = 'electron application/osclipboard;format="NSFilenamesPboardType"';
+          await clipboard.write([
+            new ClipboardItem({ [format]: new Blob([new Uint8Array(Buffer.from(plist))]) }),
+          ]);
         } else {
-          clipboard.writeText(abs);
+          await clipboard.writeText(abs);
         }
         return { copied: true as const, kind: "file" as const, filename: ref.filename };
       }

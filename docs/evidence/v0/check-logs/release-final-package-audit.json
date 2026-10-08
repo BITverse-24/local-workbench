@@ -1,0 +1,42 @@
+{
+  "version": "0.1.0",
+  "package": "release/0.1.0/Sovereign Workbench-Mac-0.1.0-Installer.dmg",
+  "platform": "macOS arm64",
+  "format": "DMG installer with app bundle",
+  "signed": false,
+  "notarized": false,
+  "packageBytes": 207523204,
+  "packageSha256": "b0fe9cb375353318021c07da9a71355ee32227b47858678e7ef8e6478e34f0b0",
+  "appBundleBytes": 579194880,
+  "appAsarBytes": 181803742,
+  "appAsarSha256": "988525fe18ebb615cf32c0feef0b5fdf01a4cd3ae2bd6b1bf663fb28cdf3ce78",
+  "archiveEntries": 9986,
+  "forbiddenEntryNames": [],
+  "personalPathStrings": [],
+  "secretLikeAssignments": [],
+  "sourceRegistryMatchesPackaged": true,
+  "sourceSchemaMatchesPackaged": true,
+  "updateMetadataIncluded": false,
+  "appVersion": "0.1.0",
+  "electronVersion": "44.7.0",
+  "betterSqlite3Version": "13.0.3",
+  "bundleIdentifier": "com.sovereign.workbench",
+  "dmgContents": [
+    ".DS_Store",
+    ".background.tiff",
+    "Applications",
+    "Sovereign Workbench.app"
+  ],
+  "dmgIntegrity": "PASS",
+  "appBundleMatchesDmgBuildOutput": true,
+  "certifiedBaselineCommit": "0d5c23423c9b31494e18520b9816c368ff3df523",
+  "certifiedSourceArchiveSha256": "945b8cb141246ba995ac016d9fafca97733118548ff7644b84925c010dcc3c4c",
+  "certifiedWorkerSha256": "afacf6c8d7a314ada8ae3594d70df842403430417fcc6660c44d454eb285d1f0",
+  "frameworkSha256": "49e3da95e35851f53f598da04d2a7f3ae55b8e4bb038011dd50999008a2e2893",
+  "productionAudit": {
+    "moderate": 2,
+    "high": 0,
+    "critical": 0
+  },
+  "appSmoke": "Chat PASS (3.5 s); Qwen health available (12 ms); Agent tool dispatch observed, but final response was semantically incorrect; details in release-final-app-smoke.json"
+}

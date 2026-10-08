@@ -1,0 +1,173 @@
+{
+  "id": "code-unrelated",
+  "family": "code",
+  "prompt": "This word counter loses repeated words. Fix the attached source, keep its function and command-line interface, run it on the attached text, and return the working Python file.",
+  "runId": "f73d30b4-a814-4bf2-9455-e0df4159954c",
+  "terminalState": "completed",
+  "latencySec": 48.84101116699999,
+  "text": "### Change Summary\n\n**Defect:** The word counter overwrites the count of repeated words instead of accumulating them.\n\n**Intended Behavior:** Repeated words should accumulate their counts.\n\n**Code Change:**\n- Changed `counts[word] = 1` to `counts[word] = counts.get(word, 0) + 1`.\n\n### Executing the Repaired Source\n\n### Execution Output\n\n### Explanation\n\nThe repaired code now correctly accumulates the counts of repeated words. The `counts.get(word, 0) + 1` expression ensures that if the word is already in the dictionary, its count is incremented; otherwise, it is initialized to 1. This change preserves the function and command-line interface of the original code while fixing the defect.\n\nThe execution output shows that the word \"ash\" appears once, \"maple\" appears twice, and \"robin\" appears three times, as expected.\n\nThe corrected source ran successfully against the supplied input files (exit code 0).\n\nObserved output:\n{\"ash\": 1, \"maple\": 2, \"robin\": 3}\n\nSaved corrected source: word-count.py.",
+  "artifacts": [
+    {
+      "artifact_id": "08b884e4-4164-433a-9e45-87b9b4f3dfb6",
+      "run_id": "f73d30b4-a814-4bf2-9455-e0df4159954c",
+      "kind": "txt",
+      "filename": "word-count.py",
+      "relative_path": "runs/f73d30b4-a814-4bf2-9455-e0df4159954c/output/word-count.py",
+      "size_bytes": 430,
+      "sha256": null,
+      "created_at": "2026-10-08T14:24:07.609Z",
+      "relativePath": "runs/f73d30b4-a814-4bf2-9455-e0df4159954c/output/word-count.py"
+    }
+  ],
+  "telemetry": {
+    "runId": "f73d30b4-a814-4bf2-9455-e0df4159954c",
+    "outcome": "completed",
+    "totalDurationMs": 48758,
+    "calls": {
+      "workingTurns": 4,
+      "delegated": 0,
+      "classification": 2,
+      "total": 6
+    },
+    "inferenceDurationMs": 48605,
+    "tokens": {
+      "source": "provider",
+      "prompt": 4815,
+      "completion": 734,
+      "reasoning": 0,
+      "reasoningShareOfCompletion": 0
+    },
+    "perCall": [
+      {
+        "purpose": "classification",
+        "durationMs": 2888,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 618,
+          "completionTokens": 54,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "classification",
+        "durationMs": 2998,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 746,
+          "completionTokens": 54,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 4089,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 454,
+          "completionTokens": 43,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 21682,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 1586,
+          "completionTokens": 335,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 3409,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 675,
+          "completionTokens": 7,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      },
+      {
+        "purpose": "working_turn",
+        "durationMs": 13539,
+        "ttftMs": null,
+        "finishReason": "stop",
+        "usage": {
+          "source": "provider",
+          "promptTokens": 736,
+          "completionTokens": 241,
+          "reasoningTokens": 0
+        },
+        "toolCallNames": []
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "name": "Harness did not deadlock or violate integrity",
+      "severity": "harness",
+      "passed": true
+    },
+    {
+      "name": "Task reached completion with a useful response",
+      "severity": "critical",
+      "passed": true
+    },
+    {
+      "name": "Artifact exists: word-count.py",
+      "severity": "harness",
+      "passed": true
+    },
+    {
+      "name": "Original supplied source files are unchanged",
+      "severity": "harness",
+      "passed": true
+    },
+    {
+      "name": "Requested artifact exists in the requested format",
+      "severity": "critical",
+      "passed": true
+    },
+    {
+      "name": "Runtime executed the repaired source",
+      "severity": "critical",
+      "passed": true
+    },
+    {
+      "name": "Saved program meets source-derived behavior on supplied input",
+      "severity": "critical",
+      "passed": true
+    },
+    {
+      "name": "Saved program preserves behavior on independent input",
+      "severity": "critical",
+      "passed": true
+    },
+    {
+      "name": "Public callable interface is retained",
+      "severity": "critical",
+      "passed": true
+    }
+  ],
+  "classification": "PASS",
+  "manualReviewRequired": true,
+  "toolPath": [
+    "execute_python"
+  ]
+}

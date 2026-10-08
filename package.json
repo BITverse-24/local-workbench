@@ -20,8 +20,6 @@
     "package:dir": "npm run build && electron-builder --config electron/electron-builder.json5 --dir",
     "typecheck": "tsc --noEmit -p backend/tsconfig.json && tsc --noEmit -p electron/tsconfig.json && tsc --noEmit -p frontend/tsconfig.json",
     "test": "node scripts/test.cjs",
-    "benchmark:phase2": "node scripts/benchmark-phase2.cjs",
-    "benchmark:demo": "npm run build:behavioral && node scripts/benchmark-demo-latency.cjs",
     "typecheck:behavioral": "tsc --noEmit -p tests/tsconfig.json",
     "build:behavioral": "node scripts/build-behavioral.cjs",
     "behavioral": "node scripts/behavioral.cjs",
@@ -30,7 +28,7 @@
     "postinstall": "electron-builder install-app-deps && node scripts/patch-vectra.cjs"
   },
   "dependencies": {
-    "better-sqlite3": "^11.10.0",
+    "better-sqlite3": "13.0.3",
     "canvas": "^3.2.3",
     "docx": "^9.7.1",
     "exceljs": "^4.4.0",
@@ -44,7 +42,6 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "electron": "^30.5.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.4.1",
@@ -54,7 +51,8 @@
     "@typescript-eslint/parser": "^7.1.1",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.5.4",
-    "electron-builder": "^24.13.3",
+    "electron": "44.7.0",
+    "electron-builder": "26.17.0",
     "esbuild": "^0.21.5",
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.0",

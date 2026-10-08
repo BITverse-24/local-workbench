@@ -1,0 +1,4 @@
+.DS_Store
+.background.tiff
+Applications
+Sovereign Workbench.app

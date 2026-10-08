@@ -1,0 +1,5 @@
+timestamp,asset_id,temperature_c,event
+x,a,350.0,limit
+x,a,349.9,normal
+x,a,,gap
+x,a,400,high

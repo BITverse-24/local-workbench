@@ -1,0 +1,232 @@
+[
+  {
+    "type": "run_state",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "state": "classifying"
+  },
+  {
+    "type": "routing",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "taskType": "draft",
+    "modelId": "primary-model",
+    "reason": "single configured model"
+  },
+  {
+    "type": "run_state",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "state": "planning"
+  },
+  {
+    "type": "tool_call",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "tool": "retrieve_knowledge",
+    "callId": "75ad653d-08c8-4046-b598-3d0a7408f220",
+    "args": {
+      "query": "Make a Markdown review note from these training records and our policy. For each staff identifier, say whether the person may handle records independently on the review date, give the reason, and include the required next actions and policy references. Return the note as a file.\ntraining-policy.md\n\nPRIMARY TARGET USER ATTACHMENTS (Attached directly in this chat):\n--- ATTACHED FILE: training-records.md (text/markdown, 479 bytes) ---\n# Training review records\nReview date: 2026-09-30\n\nIdentifier: STAFF-LARK\nPerson: Mira Sen\nCourse: Records handling\nTraining completed: 2026-09-10\nSupervisor acknowledgement: Recorded on 2026-09-12\nSource instruction: Retain the signed attendance sheet.\n\nIdentifier: STAFF-FERN\nPerson: Owen Hale\nCourse: Records handling\nTraining completed: 2025-08-02\nSupervisor acknowledgement: Not recorded\nSource instruction: Arrange refresher training and obtain supervisor acknowledgement.\n\n--- END ATTACHED FILE: training-records.md ---\n"
+    },
+    "summary": "Retrieving indexed criteria for supplied evidence"
+  },
+  {
+    "type": "tool_result",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "tool": "retrieve_knowledge",
+    "callId": "75ad653d-08c8-4046-b598-3d0a7408f220",
+    "ok": true,
+    "output": "[SOURCE: training-policy.md; §3; Page 1; CHUNK: fixture-0-p1-3]\n## 3 Records\nRetain the signed attendance sheet. Staff who do not meet section 2 require refresher training and supervisor acknowledgement before independent records handling.\n\n[SOURCE: training-policy.md; §2; Page 1; CHUNK: fixture-0-p1-2]\n## 2 Eligibility\nStaff may handle records independently only if records-handling training was completed within the preceding twelve months and supervisor acknowledgement is recorded.\n\n[SOURCE: training-policy.md; §records-handling-training-poli; Page 1; CHUNK: fixture-0-p1-1]\n# Records handling training policy\nDocument ID: TRAIN-POLICY",
+    "summary": "Retrieved 3 indexed excerpts"
+  },
+  {
+    "type": "run_state",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "state": "acting"
+  },
+  {
+    "type": "run_state",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "state": "awaiting_confirmation"
+  },
+  {
+    "type": "confirmation_required",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "action": {
+      "actionId": "274771fd-42e2-4871-9196-4b78c04256c3",
+      "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+      "kind": "plan_approval",
+      "prompt": "Review Agent Plan (generate_deliverable)",
+      "createdAt": "2026-10-08T13:49:33.085Z",
+      "expiresAt": "2026-10-08T13:54:33.085Z",
+      "preview": "### Objective\nCreate a Markdown review note\n\n### Proposed Operations\n• **generate_deliverable**: Generate MD artifact (`review-note.md`)\n\n"
+    }
+  },
+  {
+    "type": "run_state",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "state": "acting"
+  },
+  {
+    "type": "tool_call",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "tool": "generate_deliverable",
+    "summary": "Generating deliverable \"review-note.md\"",
+    "callId": "dc95617a-d79c-4ba8-80c5-cf59d68000df",
+    "args": {
+      "type": "md",
+      "title": "Training Review Note",
+      "content": "# Training Review Note\n\n## Staff-LARK (Mira Sen)\n- **May handle records independently:** Yes\n- **Reason:** Completed training within the last 12 months and supervisor acknowledged.\n- **Next Actions:** None\n- **Policy Reference:** [Training Policy, §2](training-policy.md#records-handling-training-poli)\n- **Source Evidence:** \n  - Training completed: 2026-09-10\n  - Supervisor acknowledgement recorded on 2026-09-12\n\n## Staff-FERN (Owen Hale)\n- **May handle records independently:** No\n- **Reason:** Training completed over 12 months ago and supervisor not acknowledged.\n- **Next Actions:**\n  - Arrange refresher training.\n  - Obtain supervisor acknowledgement.\n- **Policy Reference:** [Training Policy, §2](training-policy.md#records-handling-training-poli)\n  - [Training Policy, §3](training-policy.md#records)\n- **Source Evidence:** \n  - Training completed: 2025-08-02\n  - Source instruction: Arrange refresher training and obtain supervisor acknowledgement.",
+      "filename": "review-note.md"
+    }
+  },
+  {
+    "type": "tool_result",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "tool": "generate_deliverable",
+    "summary": "Created deliverable: review-note.md",
+    "callId": "dc95617a-d79c-4ba8-80c5-cf59d68000df",
+    "output": "Deliverable \"review-note.md\" (964 bytes) generated and verified. File passed all structural verification checks (MD package validated). Saved to disk at runs/437a9bce-14f0-49f6-9d65-b7761e988eeb/output/review-note.md. Deliverable creation is complete.",
+    "durationMs": 6,
+    "ok": true
+  },
+  {
+    "type": "verification_report",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "report": {
+      "schemaVersion": 1,
+      "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+      "status": "unverified",
+      "checks": [
+        {
+          "criterionId": "artifact-integrity:d6f11742-4420-407d-903b-be7ba36b65d8",
+          "requirement": "Integrity of artifact review-note.md",
+          "status": "unverified",
+          "method": "sha256",
+          "evidence": [
+            {
+              "kind": "artifact",
+              "id": "d6f11742-4420-407d-903b-be7ba36b65d8"
+            }
+          ],
+          "reason": "Legacy artifact has no stored SHA-256 digest.",
+          "verifiedAt": "2026-10-08T13:51:03.231Z",
+          "mandatory": false
+        },
+        {
+          "criterionId": "artifact-format:d6f11742-4420-407d-903b-be7ba36b65d8",
+          "requirement": "Structural format of review-note.md",
+          "status": "passed",
+          "method": "format_parser",
+          "evidence": [
+            {
+              "kind": "artifact",
+              "id": "d6f11742-4420-407d-903b-be7ba36b65d8"
+            }
+          ],
+          "reason": "Text is valid UTF-8 and the extension matches the registered format.",
+          "verifiedAt": "2026-10-08T13:51:03.232Z",
+          "mandatory": true
+        },
+        {
+          "criterionId": "deliverable:deliverable-1",
+          "requirement": "review-note.md",
+          "status": "passed",
+          "method": "filesystem",
+          "evidence": [
+            {
+              "kind": "artifact",
+              "id": "d6f11742-4420-407d-903b-be7ba36b65d8"
+            }
+          ],
+          "reason": "A registered artifact matches the RunContract deliverable. Its format and integrity have separate checks.",
+          "verifiedAt": "2026-10-08T13:51:03.233Z",
+          "mandatory": true
+        }
+      ],
+      "updatedAt": "2026-10-08T13:51:03.230Z"
+    }
+  },
+  {
+    "type": "artifact_ready",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "artifact": {
+      "artifactId": "d6f11742-4420-407d-903b-be7ba36b65d8",
+      "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+      "kind": "md",
+      "filename": "review-note.md",
+      "relativePath": "runs/437a9bce-14f0-49f6-9d65-b7761e988eeb/output/review-note.md",
+      "sizeBytes": 964,
+      "createdAt": "2026-10-08T13:51:03.229Z",
+      "verified": true,
+      "verificationDetails": {
+        "contentMatch": true
+      }
+    }
+  },
+  {
+    "type": "assistant_message",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "messageId": "e1197549-b921-467c-99c1-7fb8dd00d42c",
+    "text": "# Training Review Note\n\n## Staff-LARK (Mira Sen)\n- **May handle records independently:** Yes\n- **Reason:** Completed training within the last 12 months and supervisor acknowledged.\n- **Next Actions:** None\n- **Policy Reference:** [Training Policy, §2](training-policy.md#records-handling-training-poli)\n- **Source Evidence:** \n  - Training completed: 2026-09-10\n  - Supervisor acknowledgement recorded on 2026-09-12\n\n## Staff-FERN (Owen Hale)\n- **May handle records independently:** No\n- **Reason:** Training completed over 12 months ago and supervisor not acknowledged.\n- **Next Actions:**\n  - Arrange refresher training.\n  - Obtain supervisor acknowledgement.\n- **Policy Reference:** [Training Policy, §2](training-policy.md#records-handling-training-poli)\n  - [Training Policy, §3](training-policy.md#records)\n- **Source Evidence:** \n  - Training completed: 2025-08-02\n  - Source instruction: Arrange refresher training and obtain supervisor acknowledgement.\n\nSaved: review-note.md.",
+    "modelId": "primary-model"
+  },
+  {
+    "type": "verification_report",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "report": {
+      "schemaVersion": 1,
+      "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+      "status": "unverified",
+      "checks": [
+        {
+          "criterionId": "artifact-integrity:d6f11742-4420-407d-903b-be7ba36b65d8",
+          "requirement": "Integrity of artifact review-note.md",
+          "status": "unverified",
+          "method": "sha256",
+          "evidence": [
+            {
+              "kind": "artifact",
+              "id": "d6f11742-4420-407d-903b-be7ba36b65d8"
+            }
+          ],
+          "reason": "Legacy artifact has no stored SHA-256 digest.",
+          "verifiedAt": "2026-10-08T13:51:03.235Z",
+          "mandatory": false
+        },
+        {
+          "criterionId": "artifact-format:d6f11742-4420-407d-903b-be7ba36b65d8",
+          "requirement": "Structural format of review-note.md",
+          "status": "passed",
+          "method": "format_parser",
+          "evidence": [
+            {
+              "kind": "artifact",
+              "id": "d6f11742-4420-407d-903b-be7ba36b65d8"
+            }
+          ],
+          "reason": "Text is valid UTF-8 and the extension matches the registered format.",
+          "verifiedAt": "2026-10-08T13:51:03.235Z",
+          "mandatory": true
+        },
+        {
+          "criterionId": "deliverable:deliverable-1",
+          "requirement": "review-note.md",
+          "status": "passed",
+          "method": "filesystem",
+          "evidence": [
+            {
+              "kind": "artifact",
+              "id": "d6f11742-4420-407d-903b-be7ba36b65d8"
+            }
+          ],
+          "reason": "A registered artifact matches the RunContract deliverable. Its format and integrity have separate checks.",
+          "verifiedAt": "2026-10-08T13:51:03.235Z",
+          "mandatory": true
+        }
+      ],
+      "updatedAt": "2026-10-08T13:51:03.235Z"
+    }
+  },
+  {
+    "type": "run_state",
+    "runId": "437a9bce-14f0-49f6-9d65-b7761e988eeb",
+    "state": "completed"
+  }
+]

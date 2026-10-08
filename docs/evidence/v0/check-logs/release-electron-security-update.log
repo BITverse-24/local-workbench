@@ -1,0 +1,31 @@
+npm warn deprecated rimraf@2.6.3: Rimraf versions prior to v4 are no longer supported
+
+added 65 packages, removed 86 packages, changed 40 packages, and audited 666 packages in 36s
+
+136 packages are looking for funding
+  run `npm fund` for details
+
+27 vulnerabilities (12 moderate, 13 high, 2 critical)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+
+changed 6 packages, and audited 666 packages in 1s
+
+136 packages are looking for funding
+  run `npm fund` for details
+
+25 vulnerabilities (12 moderate, 11 high, 2 critical)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.

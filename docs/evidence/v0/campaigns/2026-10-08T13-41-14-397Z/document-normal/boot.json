@@ -1,0 +1,39 @@
+{
+  "root": "/Users/krishay/projects/agent/tests/.runtime/v0/2026-10-08T13-41-14-397Z/document-normal",
+  "setup": {
+    "workspace": [],
+    "attachments": [],
+    "knowledgeBase": [
+      {
+        "path": "sop-114-pressure-equipment-inspection.md",
+        "kind": "markdown"
+      }
+    ],
+    "conversation": []
+  },
+  "campaignType": "behavioral",
+  "registry": [
+    {
+      "id": "primary-model",
+      "runtime": "ollama",
+      "baseUrl": "http://127.0.0.1:1234/v1",
+      "model": "qwen2.5-coder-7b-instruct-mlx",
+      "capabilities": [
+        "text",
+        "structured-output",
+        "code-generation"
+      ],
+      "requestTimeoutMs": 300000,
+      "healthPath": "/models",
+      "enabled": true,
+      "maxOutputTokens": 1536,
+      "toolCallingFormat": "json",
+      "temperature": 0
+    }
+  ],
+  "embedding": {
+    "baseUrl": "http://127.0.0.1:1234/v1",
+    "model": "text-embedding-nomic-embed-text-v1.5"
+  },
+  "schemaPath": "/Users/krishay/projects/agent/tests/.runtime/v0/2026-10-08T13-41-14-397Z/document-normal/config/schema.sql"
+}
