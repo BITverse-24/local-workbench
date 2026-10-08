@@ -26,3 +26,5 @@ tests/profiles/*.local.json
 
 .audit
 .*
+
+blog
