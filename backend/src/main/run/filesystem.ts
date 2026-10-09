@@ -5,16 +5,6 @@ import { assertSafeRelativePath } from "../persistence/paths.js";
 import type { ArtifactRef, AttachmentReference } from "../../shared/contracts.js";
 
 const MAX_ATTACHMENT = 25 * 1024 * 1024;
-const allowed = (mediaType: string) =>
-  mediaType === "application/pdf" ||
-  mediaType === "text/csv" ||
-  mediaType === "text/plain" ||
-  mediaType === "text/x-python" ||
-  mediaType === "application/x-python-code" ||
-  mediaType === "text/markdown" ||
-  mediaType === "application/json" ||
-  mediaType.startsWith("image/") ||
-  mediaType.startsWith("text/");
 
 let configuredDataDir: string | null = null;
 
@@ -42,7 +32,7 @@ export function absoluteDataPath(relativePath: string): string { assertSafeRelat
 export function runRoot(runId: string): string { if (!/^[0-9a-f-]{36}$/i.test(runId)) throw new Error("invalid run id"); return path.join(dataRoot(), "runs", runId); }
 export function createRunDirectories(runId: string): string { const root = runRoot(runId); for (const name of ["input", "intermediate", "output", "logs"]) mkdirSync(path.join(root, name), { recursive: true }); return root; }
 export function resolveRunPath(runId: string, relativePath: string, area?: "input" | "intermediate" | "output" | "logs"): string { assertSafeRelativePath(relativePath); const root = runRoot(runId); const target = path.resolve(root, relativePath); if (!target.startsWith(`${root}${path.sep}`)) throw new Error("path escapes run"); if (area) { const areaRoot = path.join(root, area); if (target !== areaRoot && !target.startsWith(`${areaRoot}${path.sep}`)) throw new Error("path outside permitted run area"); } return target; }
-export function registerAttachment(runId: string, input: { filename: string; mediaType: string; sizeBytes: number; base64OrBuffer: string | Buffer }): AttachmentReference { if (!allowed(input.mediaType)) throw new Error("unsupported attachment type"); const bytes = typeof input.base64OrBuffer === "string" ? Buffer.from(input.base64OrBuffer, "base64") : input.base64OrBuffer; if (input.sizeBytes !== bytes.length || bytes.length > MAX_ATTACHMENT) throw new Error("attachment size rejected"); const filename = path.basename(input.filename); if (!filename || filename !== input.filename || /[\0]/.test(filename)) throw new Error("invalid attachment filename"); createRunDirectories(runId); const relativePath = `runs/${runId}/input/${randomUUID()}-${filename}`; writeFileSync(absoluteDataPath(relativePath), bytes, { flag: "wx" }); try { writeFileSync(absoluteDataPath(`runs/${runId}/input/${filename}`), bytes, { flag: "w" }); } catch {} return { attachmentId: randomUUID(), filename, mediaType: input.mediaType, sizeBytes: bytes.length, relativePath }; }
+export function registerAttachment(runId: string, input: { filename: string; mediaType: string; sizeBytes: number; base64OrBuffer: string | Buffer }): AttachmentReference { const bytes = typeof input.base64OrBuffer === "string" ? Buffer.from(input.base64OrBuffer, "base64") : input.base64OrBuffer; if (input.sizeBytes !== bytes.length || bytes.length > MAX_ATTACHMENT) throw new Error("attachment size rejected"); const filename = path.basename(input.filename); if (!filename || filename !== input.filename || /[\0]/.test(filename)) throw new Error("invalid attachment filename"); createRunDirectories(runId); const relativePath = `runs/${runId}/input/${randomUUID()}-${filename}`; writeFileSync(absoluteDataPath(relativePath), bytes, { flag: "wx" }); try { writeFileSync(absoluteDataPath(`runs/${runId}/input/${filename}`), bytes, { flag: "w" }); } catch {} return { attachmentId: randomUUID(), filename, mediaType: input.mediaType, sizeBytes: bytes.length, relativePath }; }
 export function readRunFile(runId: string, relativePath: string, area: "input" | "intermediate" | "output" = "input"): Buffer { const expected = resolveRunPath(runId, relativePath.replace(`runs/${runId}/`, ""), area); return readFileSync(expected); }
 export function writeRunFile(runId: string, area: "intermediate" | "output" | "logs", filename: string, content: string | Buffer, overwrite = false): string {
   assertSafeRelativePath(filename);

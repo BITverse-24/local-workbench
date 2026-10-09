@@ -274,6 +274,8 @@ export interface CompactionMetadata {
 }
 
 export type RunEvent =
+  | ModelProgressEvent
+  | TaskProgressEvent
   | { type: "run_state"; runId: string; state: RunState }
   | { type: "verification_report"; runId: string; report: RunVerificationReport }
   | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number; providerEndpoint?: string }
@@ -291,6 +293,38 @@ export type RunEvent =
   | { type: "grounding_context"; runId: string; status: "retrieving" | "injected" | "skipped"; chunkCount?: number; chunks?: GroundingChunk[] }
   | { type: "delegated_model_invocation"; runId: string; parentCallId?: string; modelId: ModelId | string; taskType: TaskType; purpose?: string; isRetry?: boolean; latencyMs: number; promptTokens: number; outputTokens: number; totalTokens: number }
   | { type: "capability_expanded"; runId: string; capability: CapabilityGroup; permitted: boolean; reason?: string };
+/** Runtime checkpoints, separate from model output and acceptance decisions. */
+export interface TaskProgressEvent {
+  type: "task_progress";
+  runId: string;
+  activityId: string;
+  stage: "source_inspection" | "repair_generation" | "draft_generation" | "pre_execution_review" | "post_execution_review" | "source_coverage_review" | "correction" | "result_verification";
+  status: "active" | "completed" | "blocked";
+  target?: string;
+  parentCallId?: string;
+  /** Nested work does not count as an additional parallel task. */
+  parentActivityId?: string;
+  /** Complete, parsed, index-matched assessments; never a pass count. */
+  assessedChecks?: number;
+  totalChecks?: number;
+  /** Runtime stop reason, never a partial model response. */
+  reason?: string;
+}
+
+/** Transient generation activity. Never contains reasoning, JSON, or tool arguments. */
+export interface ModelProgressEvent {
+  type: "model_progress";
+  runId: string;
+  requestId: string;
+  modelId: ModelId;
+  purpose: string;
+  parentCallId?: string;
+  status: "waiting" | "receiving" | "received" | "failed";
+  channel: "text" | "reasoning" | "tool_arguments" | "structured";
+  outputChars: number;
+  /** Bounded visible text from a draft/summary request, separate from the final answer. */
+  preview?: string;
+}
 export interface RunSummary { runId: string; chatId: string; state: RunState; createdAt: string; completedAt: string | null; }
 export interface ModelHealth { modelId: ModelId | string; port?: number; available: boolean; checkedAt: string; latencyMs?: number; message?: string; }
 

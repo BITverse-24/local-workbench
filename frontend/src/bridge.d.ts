@@ -153,7 +153,24 @@ interface RAGStats {
   initialized: boolean;
 }
 
+interface ModelProgressEvent {
+  type: "model_progress";
+  runId: string;
+  requestId: string;
+  modelId: string;
+  purpose: string;
+  parentCallId?: string;
+  status: "waiting" | "receiving" | "received" | "failed";
+  channel: "text" | "reasoning" | "tool_arguments" | "structured";
+  outputChars: number;
+  preview?: string;
+}
+
+type TaskProgressEvent = import("../../backend/src/shared/contracts.js").TaskProgressEvent;
+
 type RunEvent =
+  | ModelProgressEvent
+  | TaskProgressEvent
   | { type: "run_state"; runId: string; state: RunState }
   | { type: "verification_report"; runId: string; report: RunVerificationReport }
   | { type: "routing"; runId: string; taskType: "vision" | "draft" | "code"; modelId: string; reason: string }

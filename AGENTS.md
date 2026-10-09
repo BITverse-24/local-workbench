@@ -203,6 +203,8 @@ data/
 9. RunManager persists assistant message to SQLite and transitions to 'completed'
 ```
 
+- The gateway sends transient `model_progress` metadata through the existing run-event bridge during driver and specialist requests. The waiting view uses it for generation activity, with separate reasoning, text, structured output, and tool argument channels. It has no live elapsed clock. See [backend/STREAMING.md](backend/STREAMING.md) for output boundaries and transport limits.
+
 ### 5.1.1 P1 Persistent Execution Data
 
 - The active V2 path normalizes the existing semantic interpretation into a versioned `RunContract` and persists it before execution (`backend/src/main/run/contract.ts`). Model/output routing and completion consume that same contract; it does not grant mutation permissions.

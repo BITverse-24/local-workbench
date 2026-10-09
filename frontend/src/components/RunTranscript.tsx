@@ -1,10 +1,12 @@
 import { memo, useMemo } from "react";
+import { assessedCheckLabel, TASK_STAGE_LABELS } from "../../../backend/src/shared/task-progress.js";
 
 type Props = { events: RunEvent[] };
 
 function iconFor(e: RunEvent): string {
   switch (e.type) {
     case "run_state": return "●";
+    case "task_progress": return e.status === "blocked" ? "!" : e.status === "completed" ? "✓" : "•";
     case "routing": return "↗";
     case "plan_step": return "▣";
     case "agent_thinking": return "💭";
@@ -22,6 +24,7 @@ function iconFor(e: RunEvent): string {
 function labelFor(e: RunEvent): string {
   switch (e.type) {
     case "run_state": return `state: ${e.state}`;
+    case "task_progress": return `${e.status === "completed" ? TASK_STAGE_LABELS[e.stage].completed : TASK_STAGE_LABELS[e.stage].active}${e.target ? `: ${e.target}` : ""}${assessedCheckLabel(e) ? ` · ${assessedCheckLabel(e)}` : ""}${e.status === "blocked" && e.reason ? ` — ${e.reason}` : ""}`;
     case "routing": return `Model selected: ${e.modelId} (${e.reason})`;
     case "plan_step": return e.text;
     case "agent_thinking": return (e as any).text ? String((e as any).text).slice(0, 140) : "Thinking...";
@@ -40,7 +43,7 @@ function labelFor(e: RunEvent): string {
 // Prevents recalculating label strings and icons across the entire events array on every minor stream tick or parent component re-render.
 const RunTranscript = memo(function RunTranscript({ events }: Props) {
   const visibleEvents = useMemo(() => {
-    return events.filter((e) => (e as any).type !== "workspace_tree");
+    return events.filter((e) => (e as any).type !== "workspace_tree" && e.type !== "model_progress");
   }, [events]);
 
   const formattedEvents = useMemo(() => {

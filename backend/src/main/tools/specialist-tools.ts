@@ -1,3 +1,4 @@
+import { withTaskProgress } from "../run/task-progress.js";
 import { createHash, randomUUID } from "node:crypto";
 import { matchesContractDeliverable } from "../run/contract.js";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -249,7 +250,7 @@ export const extractDocumentTool: AgentTool = {
 /**
  * 2. generate_code: Cross-model delegation to code specialist model (e.g. qwen2.5-coder).
  */
-export const generateCodeTool: AgentTool = {
+const generateCodeImplementation: AgentTool = {
   name: "generate_code",
   definition: {
     type: "function",
@@ -331,7 +332,9 @@ export const generateCodeTool: AgentTool = {
 /**
  * 3. generate_text: Cross-model delegation to draft/reasoning specialist model (e.g. qwen3:8b).
  */
-export const generateTextTool: AgentTool = {
+export const generateCodeTool = observeGeneration(generateCodeImplementation, "repair_generation");
+
+const generateTextImplementation: AgentTool = {
   name: "generate_text",
   definition: {
     type: "function",
@@ -408,6 +411,8 @@ export const generateTextTool: AgentTool = {
 /**
  * 4. retrieve_knowledge: Local vector RAG query into ChromaDB for SOPs and standards.
  */
+export const generateTextTool = observeGeneration(generateTextImplementation, "draft_generation");
+
 export const retrieveKnowledgeTool: AgentTool = {
   name: "retrieve_knowledge",
   definition: {
@@ -1034,6 +1039,18 @@ export const generateDeliverableTool: AgentTool = {
     };
   },
 };
+
+/** Adds runtime observation without changing requests or tool result contracts. */
+function observeGeneration(tool: AgentTool, stage: "repair_generation" | "draft_generation"): AgentTool {
+  return { ...tool, execute: (args, context) => withTaskProgress({
+    runId: context.runId, emitProgress: context.emitRunEvent, isCancelled: context.isCancelled,
+    target: typeof args.filename === "string" ? args.filename : undefined, parentCallId: context.currentCallId,
+  }, stage, async activity => {
+    const result = await tool.execute(args, context);
+    if (result.ok === false) activity.block(result.error?.message ?? "The generation did not finish.");
+    return result;
+  }) };
+}
 
 export const specialistTools: AgentTool[] = [
   extractDocumentTool,

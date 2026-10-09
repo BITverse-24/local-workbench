@@ -24,11 +24,12 @@ import {
 } from "./code-extractor.js";
 import { normalizeRunCommandArgs, extractContentArg } from "../tools/workspace-tools.js";
 import { StreamingTagFilter } from "./streaming-filter.js";
+import { withTaskProgress } from "../run/task-progress.js";
 import type { SemanticIntent } from "../router/contextual-router.js";
 import { determineOutputExpectation, isInformationalInquiry, extractNegativeFileConstraints } from "../router/output-expectation.js";
 import { MutationPolicyGuard, extractPathArg, extractCommandArg } from "../harness/policy-guard.js";
 import { executionLedgerSummary, markAuthorizationPending, recordAuthorizationDecision, markExecutionTokenLimit } from "../run/execution-ledger.js";
-import { reviewAttachedPython, reviewProposedPython, reviewSourceResponse } from "./source-review.js";
+import { CodeBehaviorReviewIncompleteError, reviewAttachedPython, reviewProposedPython, reviewSourceResponse } from "./source-review.js";
 
 export interface AgentLoopOptions {
   runId: string;
@@ -591,6 +592,7 @@ export class AgentLoop {
       onPlanConfirmationRequired,
       emitEvent,
     } = options;
+    const progressContext = { runId, emitProgress: emitEvent, isCancelled: options.isCancelled };
     const runContract = options.runContract ?? context.runContract;
     if (runContract && runContract.runId !== runId) throw new Error("Run contract belongs to another run");
     if (runContract) context.runContract = runContract;
@@ -984,6 +986,7 @@ export class AgentLoop {
       let streamedChunks: string[] = [];
       const tagFilter = shouldStreamLive
         ? new StreamingTagFilter((cleanDelta: string) => {
+            if (options.isCancelled?.()) return;
             streamedChunks.push(cleanDelta);
             emitEvent({
               type: "assistant_message_chunk",
@@ -999,7 +1002,7 @@ export class AgentLoop {
       // providers lose tool arguments in non-streaming recovery completions.
       const onChunk = tagFilter ? (delta: string) => tagFilter.process(delta) : (_delta: string) => {};
 
-      const turnResponse = await context.gateway.chatWithTools(
+      const requestTurn = async () => context.gateway.chatWithTools(
         driverModelId,
         activeMessages,
         currentToolDefinitions,
@@ -1011,6 +1014,16 @@ export class AgentLoop {
           onChunk,
         },
       );
+
+      const generationStage = attachedPythonRepair || semanticIntent?.intentType === "code_modification"
+        ? attachedRepairRecoveryTurns > 0 || lastExecutionHadError ? "correction" : "repair_generation"
+        : semanticIntent?.intentType === "document_drafting" ? "draft_generation" : undefined;
+      const turnResponse = generationStage ? await withTaskProgress(progressContext, generationStage, async activity => {
+        const response = await requestTurn();
+        if (!response.ok) activity.block(response.error.message);
+        else if (response.value.finishReason === "length") activity.block("Model output limit reached. The incomplete response was discarded.");
+        return response;
+      }) : await requestTurn();
 
       if (tagFilter) {
         tagFilter.flush();
@@ -1120,12 +1133,16 @@ export class AgentLoop {
         }
       }
 
-      // 3. Emit model thinking / scratchpad to UI if present
+      // 3. Publish visible activity notes, using the same boundary as live text.
       if (content) {
-        emitEvent({
+        let activityText = "";
+        const activityFilter = new StreamingTagFilter(delta => { activityText += delta; });
+        activityFilter.process(content);
+        activityFilter.flush();
+        if (activityText.trim()) emitEvent({
           type: "agent_thinking",
           runId,
-          text: content,
+          text: activityText,
           turn,
         });
       }
@@ -1341,13 +1358,13 @@ export class AgentLoop {
         const candidates = (effectiveToolCalls ?? []).filter(call => call.name === "generate_deliverable" &&
           ["docx", "md"].includes(call.arguments?.type) && typeof call.arguments?.content === "string");
         for (const candidate of candidates) {
-          const reviewed = await reviewSourceResponse({ gateway: context.gateway, modelId: driverModelId, runId,
-            request: userPrompt, evidence: sourceEvidence, candidate: candidate.arguments.content });
+          const reviewed = await reviewSourceResponse({ ...progressContext, gateway: context.gateway, modelId: driverModelId,
+            target: candidate.arguments.filename, parentCallId: candidate.id, request: userPrompt, evidence: sourceEvidence, candidate: candidate.arguments.content });
           candidate.arguments.content = reviewed.content;
         }
         if (!effectiveToolCalls?.length && content?.trim() && evaluateCurrentCompletion(content).outcome === "completed" &&
             ["file_inspection", "document_drafting"].includes(semanticIntent?.intentType ?? "")) {
-          const reviewed = await reviewSourceResponse({ gateway: context.gateway, modelId: driverModelId, runId,
+          const reviewed = await reviewSourceResponse({ ...progressContext, gateway: context.gateway, modelId: driverModelId,
             request: userPrompt, evidence: sourceEvidence, candidate: content });
           content = reviewed.content;
           if (streamedChunks.length) emitEvent({ type: "assistant_message_reset", runId, messageId: assistantMessageId });
@@ -1676,6 +1693,7 @@ export class AgentLoop {
         let preflightFindings: Array<{ issue: string; evidence: string }>;
         try {
           preflightFindings = await reviewProposedPython({
+            ...progressContext, target: proposedAttachedPython.arguments.filename, parentCallId: proposedAttachedPython.id,
             gateway: context.gateway,
             modelId: driverModelId,
             runId,
@@ -1874,16 +1892,34 @@ export class AgentLoop {
           observedOutput = typeof output.stdout === "string" ? output.stdout.trim() : "";
         } catch {}
         const repairedSource = String(successfulAttachedPythonRepair.args.code ?? "");
-        const codeReview = await reviewAttachedPython({
-          gateway: context.gateway,
-          modelId: driverModelId,
-          runId,
-          request: userPrompt,
-          sourceEvidence: context.sourceReviewEvidence ?? systemPrompt,
-          sourceChecklist: options.sourceReviewChecklist,
-          currentSource: repairedSource,
-          executionOutput: observedOutput || successfulAttachedPythonRepair.result.output,
-        });
+        let codeReview: Awaited<ReturnType<typeof reviewAttachedPython>>;
+        try {
+          codeReview = await reviewAttachedPython({
+            ...progressContext, target: repairedPythonArtifact.filename, parentCallId: successfulAttachedPythonRepair.id,
+            gateway: context.gateway,
+            modelId: driverModelId,
+            runId,
+            request: userPrompt,
+            sourceEvidence: context.sourceReviewEvidence ?? systemPrompt,
+            sourceChecklist: options.sourceReviewChecklist,
+            currentSource: repairedSource,
+            executionOutput: observedOutput || successfulAttachedPythonRepair.result.output,
+          });
+        } catch (error) {
+          if (!(error instanceof CodeBehaviorReviewIncompleteError)) throw error;
+          if (options.isCancelled?.()) return buildResult("Run cancelled by user.", "cancelled");
+          // Execution evidence remains valid, but an incomplete behavior review
+          // cannot establish task completion or justify another code mutation.
+          validatedPythonArtifacts.delete(repairedPythonArtifact.filename);
+          const summary = [
+            "The saved source executed against the supplied input files (exit code 0).",
+            observedOutput ? `Observed output:\n${observedOutput}` : "The script completed without captured output.",
+            `Saved source: ${repairedPythonArtifact.filename}.`,
+            `Behavior validation is incomplete: ${error.message}`,
+            "The artifact remains available, but its requested behavior has not been fully verified.",
+          ].join("\n\n");
+          return buildResult(summary, "partial", evaluateCurrentCompletion(summary));
+        }
         if (codeReview.length) {
           if (attachedRepairRecoveryTurns >= 2) {
             const completion = evaluateCurrentCompletion("A source-grounded behavior review found unresolved gaps after the bounded correction attempt.");

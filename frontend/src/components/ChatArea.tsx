@@ -908,6 +908,7 @@ export default function ChatArea({
             runState={runState ?? null}
             activeRoute={activeRoute}
             runEvents={runEvents}
+            hasStreamingText={Boolean(messages[messages.length - 1]?.role === "assistant" && messages[messages.length - 1]?.text && !messages[messages.length - 1]?.execution)}
             onCancel={onCancel}
           />
         )}

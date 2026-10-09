@@ -58,3 +58,29 @@ describe("StreamingTagFilter", () => {
     expect(emitted).toBe("Wall thickness is 3.8 mm [Tolerance: ±0.2 mm].");
   });
 });
+
+it("hides JSON tool envelopes and inline reasoning across every token boundary", () => {
+  const cases = [
+    ['<think>Private reasoning</think>Visible answer', 'Visible answer'],
+    ['Before <tool_call>{"name":"write_file","arguments":{"content":"secret code"}}</tool_call> after', 'Before  after'],
+    ['{"tool_calls":[{"arguments":{"code":"secret code"}}]}', ''],
+    ['```json\n{"tool_calls":[]}', ''],
+    ['[TOOL_CALL]{"arguments":{"code":"secret"}}[END_TOOL_CALL]Visible', 'Visible'],
+  ];
+  for (const [source, expected] of cases) {
+    let text = "";
+    const filter = new StreamingTagFilter(delta => { text += delta; });
+    for (const char of source) filter.process(char);
+    filter.flush();
+    expect(text).toBe(expected);
+  }
+});
+
+it("streams normal code fences and reference brackets without changing the content", () => {
+  const source = '[Note] Here is the code:\n```python\nvalue = {"key": 1}\n```\n';
+  let text = "";
+  const filter = new StreamingTagFilter(delta => { text += delta; });
+  for (const char of source) filter.process(char);
+  filter.flush();
+  expect(text).toBe(source);
+});

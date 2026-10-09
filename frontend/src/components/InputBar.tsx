@@ -211,7 +211,6 @@ export default function InputBar({ input, setInput, onSend, attachedFiles = [], 
             type="file"
             multiple
             className="hidden"
-            accept=".pdf,.doc,.docx,.txt,.md,.csv,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.gif,.svg,.zip,.rar,.heic,application/pdf,image/*,text/*"
             onChange={(e) => {
               if (e.target.files) handleFiles(e.target.files);
               e.target.value = '';

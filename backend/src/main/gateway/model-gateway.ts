@@ -9,6 +9,7 @@ import type {
   AgentToolDefinition,
   AgentTurnResponse,
   ModelHealth,
+  ModelProgressEvent,
   ModelId,
   ModelRegistryEntry,
   ModelRequest,
@@ -35,7 +36,9 @@ import {
   logModelSummary,
   logVisionFindings,
 } from "../logger.js";
+import { readCompletionStream, withoutInlineReasoning, type StreamActivity } from "./completion-stream.js";
 import { countTokens } from "../agent/context-manager.js";
+import { StreamingTagFilter } from "../agent/streaming-filter.js";
 import { parseProviderUsage, recordInference, resolveReasoningControl, type InferencePurpose } from "./telemetry.js";
 
 export interface DelegatedInvocationTelemetry {
@@ -109,6 +112,7 @@ export interface GatewayTransport {
     init: { method: string; headers: Record<string, string>; body?: string },
     timeoutMs: number,
     onChunk: (delta: string) => void,
+    onActivity?: (activity: StreamActivity) => void,
   ): Promise<{ status: number; text(): Promise<string> }>;
 }
 
@@ -127,127 +131,12 @@ const nativeTransport: GatewayTransport = {
     }
   },
 
-  async streamRequest(url, init, timeoutMs, onChunk) {
+  async streamRequest(url, init, timeoutMs, onChunk, onActivity) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(url, { ...init, signal: controller.signal });
-      if (response.status < 200 || response.status >= 300 || !response.body) {
-        return response;
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buffer = "";
-      let accumulatedText = "";
-      let accumulatedReasoning = "";
-      const accumulatedToolCalls: Array<{
-        id: string;
-        type: string;
-        function: { name: string; arguments: string };
-      }> = [];
-      let finishReason: string | null = null;
-      let usage: any = undefined;
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith(":")) continue;
-            if (trimmed === "data: [DONE]") continue;
-            if (trimmed.startsWith("data: ")) {
-              const jsonStr = trimmed.slice(6);
-              try {
-                const parsed = JSON.parse(jsonStr);
-                if (parsed.usage) {
-                  usage = parsed.usage;
-                }
-                const choice = parsed.choices?.[0];
-                if (choice) {
-                  if (choice.finish_reason) {
-                    finishReason = choice.finish_reason;
-                  }
-                  const delta = choice.delta;
-                  if (delta) {
-                    if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) {
-                      accumulatedReasoning += delta.reasoning_content;
-                    }
-                    if (typeof delta.content === "string" && delta.content.length > 0) {
-                      accumulatedText += delta.content;
-                      onChunk(delta.content);
-                    }
-                    if (Array.isArray(delta.tool_calls)) {
-                      for (const tc of delta.tool_calls) {
-                        if (!tc || typeof tc !== "object") continue;
-                        const idx = typeof tc.index === "number" ? tc.index : accumulatedToolCalls.length;
-                        if (!accumulatedToolCalls[idx]) {
-                          accumulatedToolCalls[idx] = {
-                            id: tc.id ?? `call_${idx}`,
-                            type: tc.type ?? "function",
-                            function: {
-                              name: tc.function?.name ?? "",
-                              arguments: tc.function?.arguments ?? "",
-                            },
-                          };
-                        } else {
-                          if (tc.id) accumulatedToolCalls[idx].id = tc.id;
-                          if (tc.type) accumulatedToolCalls[idx].type = tc.type;
-                          if (tc.function?.name) {
-                            accumulatedToolCalls[idx].function.name += tc.function.name;
-                          }
-                          if (tc.function?.arguments) {
-                            accumulatedToolCalls[idx].function.arguments += tc.function.arguments;
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              } catch {
-                // Incomplete or malformed SSE line, skip
-              }
-            }
-          }
-        }
-      } catch (streamErr: any) {
-        if (streamErr.name === "AbortError") throw streamErr;
-      }
-
-      const messageObj: Record<string, any> = {
-        role: "assistant",
-        content: accumulatedText.length > 0
-          ? accumulatedText
-          : (accumulatedReasoning.length > 0 && accumulatedToolCalls.length === 0 ? accumulatedReasoning : (accumulatedToolCalls.length > 0 ? null : "")),
-      };
-      if (accumulatedReasoning.length > 0) {
-        messageObj.reasoning_content = accumulatedReasoning;
-      }
-      if (accumulatedToolCalls.length > 0) {
-        messageObj.tool_calls = accumulatedToolCalls.filter(Boolean);
-      }
-
-      const syntheticEnvelope = JSON.stringify({
-        choices: [
-          {
-            message: messageObj,
-            finish_reason: finishReason ?? (accumulatedToolCalls.length > 0 ? "tool_calls" : "stop"),
-          },
-        ],
-        usage,
-      });
-
-      return {
-        status: response.status,
-        async text() {
-          return syntheticEnvelope;
-        },
-      };
+      return await readCompletionStream(response, onChunk, onActivity);
     } finally {
       clearTimeout(timer);
     }
@@ -665,6 +554,73 @@ export class ModelGateway implements ModelClient {
     };
   }
 
+  private readonly progressListeners = new Set<(event: ModelProgressEvent) => void>();
+
+  onProgress(listener: (event: ModelProgressEvent) => void): () => void {
+    this.progressListeners.add(listener);
+    return () => { this.progressListeners.delete(listener); };
+  }
+
+  /** Observe every inference, including specialist calls and JSON tool fallbacks. */
+  private inferenceTransport(
+    metadata: Pick<ModelProgressEvent, "runId" | "modelId" | "purpose" | "parentCallId">,
+    structured: boolean,
+  ): GatewayTransport {
+    const perform = async (url: string, init: { method: string; headers: Record<string, string>; body?: string },
+      timeoutMs: number, onChunk?: (delta: string) => void, onActivity?: (activity: StreamActivity) => void) => {
+      const snapshot: ModelProgressEvent = { type: "model_progress", ...metadata, requestId: randomUUID(),
+        status: "waiting", channel: structured ? "structured" : "text", outputChars: 0 };
+      let lastPublished = 0;
+      const previewFilter = !structured && !onChunk && ["chat-result", "code-summary"].includes(metadata.purpose)
+        ? new StreamingTagFilter(delta => { snapshot.preview = ((snapshot.preview ?? "") + delta).slice(-800); }) : undefined;
+      const publish = (force = false) => {
+        if (!force && Date.now() - lastPublished < 160) return;
+        lastPublished = Date.now();
+        for (const listener of this.progressListeners) {
+          // Observers cannot turn an inference into a model failure.
+          try { listener({ ...snapshot }); } catch {}
+        }
+      };
+      publish(true);
+      const activity = (channel: ModelProgressEvent["channel"], chars: number) => {
+        if (!chars) return;
+        const nextChannel = channel === "text" && structured ? "structured" : channel;
+        const firstOutput = snapshot.status !== "receiving";
+        snapshot.status = "receiving";
+        snapshot.channel = nextChannel;
+        snapshot.outputChars += chars;
+        publish(firstOutput);
+      };
+      try {
+        const stream = Boolean(this.transport.streamRequest && (onChunk || this.progressListeners.size));
+        const payload = JSON.parse(init.body ?? "{}");
+        if (stream) { payload.stream = true; payload.stream_options = { include_usage: true }; }
+        else { delete payload.stream; delete payload.stream_options; }
+        const outbound = { ...init, body: JSON.stringify(payload) };
+        const response = stream
+          ? await this.transport.streamRequest!(url, outbound, timeoutMs, delta => {
+              previewFilter?.process(delta);
+              activity("text", delta.length);
+              if (!structured) onChunk?.(delta);
+            }, update => { activity(update.channel, update.chars); onActivity?.(update); })
+          : await this.transport.request(url, outbound, timeoutMs);
+        const body = await response.text();
+        previewFilter?.flush();
+        snapshot.status = response.status >= 200 && response.status < 300 ? "received" : "failed";
+        publish(true);
+        return { status: response.status, text: async () => body };
+      } catch (error) {
+        snapshot.status = "failed";
+        publish(true);
+        throw error;
+      }
+    };
+    return {
+      request: (url, init, timeoutMs) => perform(url, init, timeoutMs),
+      ...(this.transport.streamRequest ? { streamRequest: perform } : {}),
+    };
+  }
+
   constructor(
     private readonly transport: GatewayTransport = nativeTransport,
     initialRegistry?: Map<string, ModelRegistryEntry> | ModelRegistryEntry[],
@@ -773,6 +729,9 @@ export class ModelGateway implements ModelClient {
   }
 
   async execute(request: ModelRequest): Promise<AIResult<ModelResponse>> {
+    const transport = this.inferenceTransport({ runId: request.runId, modelId: request.modelId,
+      purpose: request.purpose ?? request.responseFormat, parentCallId: request.parentToolCallId },
+      !["chat-result", "code-summary"].includes(request.responseFormat) || Boolean(request.responseSchema));
     let model: ModelRegistryEntry | undefined = this.resolveNextEndpoint(request.modelId);
     if (!model) {
       try {
@@ -918,8 +877,9 @@ export class ModelGateway implements ModelClient {
     if (request.reasoningEffort !== undefined) {
       requestPayload.reasoning_effort = request.reasoningEffort;
     }
-    if (request.onChunk) {
+    if (transport.streamRequest && (request.onChunk || this.progressListeners.size)) {
       requestPayload.stream = true;
+      requestPayload.stream_options = { include_usage: true };
     }
     const body = JSON.stringify(requestPayload);
     const minTimeout = isLocal ? (request.taskType === "code" ? 300000 : 180000) : 0;
@@ -976,15 +936,15 @@ export class ModelGateway implements ModelClient {
         request.onChunk?.(delta);
       };
       let response: { status: number; text(): Promise<string> };
-      if (request.onChunk && this.transport.streamRequest) {
-        response = await this.transport.streamRequest(
+      if (request.onChunk && transport.streamRequest) {
+        response = await transport.streamRequest(
           `${model.baseUrl}/chat/completions`,
           { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body },
           effectiveTimeout,
           onInferenceChunk,
         );
       } else {
-        response = await this.transport.request(
+        response = await transport.request(
           `${model.baseUrl}/chat/completions`,
           { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body },
           effectiveTimeout,
@@ -1009,7 +969,7 @@ export class ModelGateway implements ModelClient {
           ...requestPayload,
           response_format: retryFormat,
         });
-        const retryResponse = await this.transport.request(
+        const retryResponse = await transport.request(
           `${model.baseUrl}/chat/completions`,
           { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: retryBody },
           effectiveTimeout
@@ -1026,7 +986,7 @@ export class ModelGateway implements ModelClient {
               ...requestPayload,
               response_format: { type: "text" },
             });
-            const textResponse = await this.transport.request(
+            const textResponse = await transport.request(
               `${model.baseUrl}/chat/completions`,
               { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: textBody },
               effectiveTimeout
@@ -1040,7 +1000,7 @@ export class ModelGateway implements ModelClient {
             logGatewayError(request, "retrying without response_format", rawText.slice(0, 200));
             const plainPayload = { ...requestPayload };
             delete plainPayload.response_format;
-            const plainResponse = await this.transport.request(
+            const plainResponse = await transport.request(
               `${model.baseUrl}/chat/completions`,
               { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify(plainPayload) },
               effectiveTimeout
@@ -1090,9 +1050,7 @@ export class ModelGateway implements ModelClient {
       };
       const choiceMsg = envTyped.choices?.[0]?.message;
       const reasoning = choiceMsg?.reasoning ?? choiceMsg?.reasoning_content;
-      extractedContent = (typeof choiceMsg?.content === "string" && choiceMsg.content.trim())
-        ? choiceMsg.content
-        : (request.purpose === "intent_classification" ? choiceMsg?.content : (reasoning ?? choiceMsg?.content));
+      extractedContent = typeof choiceMsg?.content === "string" ? withoutInlineReasoning(choiceMsg.content) : choiceMsg?.content;
       const finishReason = (envTyped.choices?.[0] as { finish_reason?: string })?.finish_reason ?? choiceMsg?.finish_reason;
       const usage = envTyped["usage" as keyof typeof envTyped];
       persistGatewayTrace(request.runId, request.requestId, {
@@ -1139,7 +1097,7 @@ export class ModelGateway implements ModelClient {
         }
       } else {
         try {
-          parsedJson = parseProviderContent(extractedContent, reasoning);
+          parsedJson = parseProviderContent(extractedContent);
         } catch (e) {
           logGatewayError(request, "parseProviderContent failed (empty/invalid JSON)", e instanceof Error ? e.message : String(e));
           persistGatewayTrace(request.runId, request.requestId, { phase: "parse_error", taskType: request.taskType, error: e instanceof Error ? e.message : String(e), extractedContent, reasoning, rawText, envelope });
@@ -1148,7 +1106,7 @@ export class ModelGateway implements ModelClient {
       }
       persistGatewayTrace(request.runId, request.requestId, { phase: "parsed_json", taskType: request.taskType, parsedJson });
 
-      if (request.onChunk && !this.transport.streamRequest) {
+      if (request.onChunk && !transport.streamRequest && isFreeText) {
         const finalText = typeof parsedJson === "object" && parsedJson && "text" in parsedJson ? String((parsedJson as any).text) : String(extractedContent ?? "");
         if (finalText) {
           request.onChunk(finalText);
@@ -1186,7 +1144,7 @@ export class ModelGateway implements ModelClient {
       recordInference({
         requestId: request.requestId, runId: request.runId, startedAt: new Date(inferenceStartedAt).toISOString(),
         purpose: request.purpose === "intent_classification" ? "classification" : request.parentToolCallId ? "delegated" : "working_turn",
-        modelId: request.modelId, providerModel: model.model, streamed: Boolean(request.onChunk && this.transport.streamRequest),
+        modelId: request.modelId, providerModel: model.model, streamed: Boolean(requestPayload.stream),
         messageCount: (request.history?.length ?? 0) + 2, requestBodyChars: body.length,
         toolSchema: { count: 0, serializedChars: 0, estimatedTokens: 0, estimated: true },
         reasoningControl: { mode: "default", params: {} }, ttftMs: inferenceTtftMs, durationMs: latencyMs,
@@ -1371,6 +1329,8 @@ export class ModelGateway implements ModelClient {
       toolChoice?: "auto" | "required";
     },
   ): Promise<AIResult<AgentTurnResponse>> {
+    const transport = this.inferenceTransport({ runId: options?.runId ?? "run-agent-loop", modelId,
+      purpose: options?.purpose ?? "working_turn" }, Boolean(options?.responseSchema));
     const model = this.resolveNextEndpoint(modelId);
     if (!model) {
       return {
@@ -1420,7 +1380,7 @@ export class ModelGateway implements ModelClient {
         payload.tools = tools;
         payload.tool_choice = options?.toolChoice ?? "auto";
       }
-      if (options?.onChunk && this.transport.streamRequest) {
+      if (transport.streamRequest && (options?.onChunk || this.progressListeners.size)) {
         payload.stream = true;
         // LM Studio emits provider token usage in the final SSE frame only when requested.
         payload.stream_options = { include_usage: true };
@@ -1436,8 +1396,8 @@ export class ModelGateway implements ModelClient {
         };
         let response: { status: number; text(): Promise<string> };
 
-        if (options?.onChunk && this.transport.streamRequest) {
-          response = await this.transport.streamRequest(
+        if (options?.onChunk && transport.streamRequest) {
+          response = await transport.streamRequest(
             `${model.baseUrl}/chat/completions`,
             {
               method: "POST",
@@ -1448,7 +1408,7 @@ export class ModelGateway implements ModelClient {
             onStreamChunk,
           );
         } else {
-          response = await this.transport.request(
+          response = await transport.request(
             `${model.baseUrl}/chat/completions`,
             {
               method: "POST",
@@ -1501,15 +1461,19 @@ export class ModelGateway implements ModelClient {
             }
           }
 
-          let content = (typeof msg?.content === "string" && msg.content.trim())
-            ? String(msg.content)
-            : (msg?.reasoning_content ? String(msg.reasoning_content) : (msg?.content ? String(msg.content) : null));
+          let content = typeof msg?.content === "string" ? withoutInlineReasoning(msg.content) || null : null;
           if (parsedCalls.length === 0 && content) {
             const embedded = extractEmbeddedToolCalls(content);
             if (embedded.toolCalls.length > 0) {
               parsedCalls.push(...embedded.toolCalls);
               content = embedded.cleanedContent;
             }
+          }
+
+          if (!content && !parsedCalls.length && choice?.finish_reason !== "length") {
+            return { ok: false, error: { kind: "ai-error", code: "empty_model_response",
+              message: "The model returned no answer or tool call. Reasoning alone is not a completed response.",
+              retryable: true, modelId, runId, requestId } };
           }
 
           if (options?.runId) {
@@ -1585,6 +1549,7 @@ export class ModelGateway implements ModelClient {
     // 2. Fallback Path: JSON-in-Prompt Emulation when native tools parameter is unsupported
     // A line array avoids deeply escaped code/document strings on small local
     // models. Decode it losslessly back to the canonical tool string at ingress.
+    const fallbackTransport = this.inferenceTransport({ runId, modelId, purpose: options?.purpose ?? "working_turn" }, true);
     const transportSchema = (field: any): any => {
       if (field.format === "multiline") return { type: "array", items: { type: "string" }, description: `${field.description} One raw string per line; retain indentation. Blank lines are empty strings.` };
       return { ...field,
@@ -1624,7 +1589,7 @@ export class ModelGateway implements ModelClient {
       }
 
       const t0 = Date.now();
-      let response = await this.transport.request(
+      let response = await fallbackTransport.request(
         `${model.baseUrl}/chat/completions`,
         {
           method: "POST",
@@ -1644,7 +1609,7 @@ export class ModelGateway implements ModelClient {
           temperature: effectiveTemperature,
           max_tokens: effectiveMaxTokens,
         });
-        const retryRes = await this.transport.request(
+        const retryRes = await fallbackTransport.request(
           `${model.baseUrl}/chat/completions`,
           {
             method: "POST",
@@ -1660,7 +1625,7 @@ export class ModelGateway implements ModelClient {
       if (response.status >= 200 && response.status < 300) {
         const envelope = JSON.parse(rawText);
         const choice = envelope.choices?.[0];
-        const rawContent = choice?.message?.content;
+        const rawContent = typeof choice?.message?.content === "string" ? withoutInlineReasoning(choice.message.content) : choice?.message?.content;
         let parsedJson: any = null;
 
         if (typeof rawContent === "string") {
@@ -1712,7 +1677,7 @@ export class ModelGateway implements ModelClient {
           recordInference({
             requestId, runId: options.runId, startedAt: new Date(t0).toISOString(),
             purpose: options.purpose ?? "working_turn", modelId, providerModel: model.model,
-            streamed: false, messageCount: fallbackMessages.length, requestBodyChars: fallbackBody.length,
+            streamed: Boolean(fallbackTransport.streamRequest && this.progressListeners.size), messageCount: fallbackMessages.length, requestBodyChars: fallbackBody.length,
             toolSchema: { count: tools.length, serializedChars: JSON.stringify(tools).length, estimatedTokens: Math.ceil(JSON.stringify(tools).length / 4), estimated: true },
             reasoningControl: resolveReasoningControl(), ttftMs: null, durationMs, status: response.status,
             finishReason: choice?.finish_reason ?? null, usage: fallbackUsage,

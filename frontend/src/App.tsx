@@ -19,6 +19,7 @@ import { useDropdownPosition } from "./lib/hooks/useDropdownPosition";
 import { useCamera } from "./lib/hooks/useCamera";
 import { useVoice } from "./lib/hooks/useVoice";
 import { useUpload } from "./lib/hooks/useUpload";
+import { updateRunEvents } from "./lib/run-progress";
 
 const MAX_SIZE = 10 * 1024 * 1024;
 
@@ -203,6 +204,26 @@ export default function App() {
   useEffect(() => {
     if (!wb.isWorkbenchAvailable()) return;
     let unsub: (() => void) | undefined;
+    let chunkTimer: ReturnType<typeof setTimeout> | undefined;
+    let pendingChunks: Array<Extract<RunEvent, { type: "assistant_message_chunk" }>> = [];
+    const flushChunks = () => {
+      if (chunkTimer) clearTimeout(chunkTimer);
+      chunkTimer = undefined;
+      const chunks = pendingChunks;
+      pendingChunks = [];
+      if (!chunks.length) return;
+      setMessages((previous) => {
+        let next = previous;
+        for (const event of chunks) {
+          const last = next[next.length - 1];
+          if (last?.id === event.messageId) next = [...next.slice(0, -1), { ...last, text: last.text + event.delta }];
+          else if (last?.role === "assistant" && (!last.text || last.id.startsWith("artifact-msg-"))) {
+            next = [...next.slice(0, -1), { ...last, id: event.messageId, runId: event.runId, text: event.delta }];
+          } else next = [...next, { id: event.messageId, runId: event.runId, role: "assistant", text: event.delta }];
+        }
+        return next;
+      });
+    };
     try {
       unsub = wb.onRunEvent((event: RunEvent) => {
         // Ignore events for other runs when we have an active run filter
@@ -217,9 +238,11 @@ export default function App() {
           activeRunRef.current = rid;
           setActiveRunId(rid);
         }
+        // Drain earlier tokens before resets, final messages, and tool transitions.
+        if (event.type !== "assistant_message_chunk" && event.type !== "model_progress") flushChunks();
         if (event.type !== "assistant_message_chunk") {
           setRunEvents((prev) => {
-            const next = [...prev, event];
+            const next = updateRunEvents(prev, event);
             runEventsRef.current = next;
             return next;
           });
@@ -232,11 +255,11 @@ export default function App() {
             setRunState(event.state);
             if (event.state === "completed" || event.state === "partial" || event.state === "failed" || event.state === "cancelled" || event.state === "limit_exceeded") {
               setPendingConfirmation(null);
-              const currentEvents = [...runEventsRef.current];
+              const currentEvents = runEventsRef.current.filter((item) => item.type !== "model_progress");
               if (currentEvents.length > 0) {
                 setMessages((prev) => {
                   const lastIdx = prev.length - 1;
-                  if (lastIdx >= 0 && prev[lastIdx]?.role === "assistant" && !prev[lastIdx]?.execution) {
+                  if (lastIdx >= 0 && prev[lastIdx]?.role === "assistant" && (prev[lastIdx]?.runId === event.runId || !prev[lastIdx]?.execution)) {
                     const updated = [...prev];
                     updated[lastIdx] = {
                       ...updated[lastIdx]!,
@@ -312,32 +335,17 @@ export default function App() {
             });
             break;
           case "assistant_message_chunk":
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (last && last.id === event.messageId) {
-                return [
-                  ...prev.slice(0, -1),
-                  { ...last, text: last.text + event.delta },
-                ];
-              }
-              if (last && last.role === "assistant" && (!last.text || last.id.startsWith("artifact-msg-"))) {
-                return [
-                  ...prev.slice(0, -1),
-                  { ...last, id: event.messageId, text: event.delta },
-                ];
-              }
-              return [...prev, { id: event.messageId, role: "assistant", text: event.delta }];
-            });
+            pendingChunks.push(event);
+            if (!chunkTimer) chunkTimer = setTimeout(flushChunks, 50);
             break;
           case "assistant_message_reset":
-            // Reset text but preserve any attached artifacts in React state
-            setMessages((prev) =>
-              prev.map((m) => (m.id === event.messageId ? { ...m, text: "" } : m)),
-            );
+            // Remove discarded provisional bubbles; keep any attached artifacts.
+            setMessages((prev) => prev.flatMap((message) => message.id !== event.messageId ? [message]
+              : message.artifacts?.length ? [{ ...message, text: "" }] : []));
             break;
           case "assistant_message":
             setMessages((prev) => {
-              const currentEvents = [...runEventsRef.current];
+              const currentEvents = runEventsRef.current.filter((item) => item.type !== "model_progress");
               const executionData = currentEvents.length > 0 ? {
                 modelId: event.modelId || activeRouteRef.current?.modelId,
                 taskType: activeRouteRef.current?.taskType,
@@ -425,6 +433,8 @@ export default function App() {
       void 0;
     }
     return () => {
+      if (chunkTimer) clearTimeout(chunkTimer);
+      pendingChunks = [];
       try {
         unsub?.();
       } catch {

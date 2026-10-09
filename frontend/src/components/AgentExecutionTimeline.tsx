@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, memo } from "react";
+import { useState, useMemo, useCallback, memo } from "react";
 
 export interface ExecutionStep {
   id: string;
@@ -20,6 +20,7 @@ interface Props {
   defaultExpanded?: boolean;
   compact?: boolean;
   totalDurationMs?: number;
+  hideHeader?: boolean;
 }
 
 function getToolIcon(tool: string) {
@@ -234,24 +235,12 @@ const AgentExecutionTimeline = memo(function AgentExecutionTimeline({
   defaultExpanded = true,
   compact = false,
   totalDurationMs,
+  hideHeader = false,
 }: Props) {
-  const [elapsedMs, setElapsedMs] = useState(0);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
-  const [thinkingExpanded, setThinkingExpanded] = useState(isRunning);
+  const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [expandedStepId, setExpandedStepId] = useState<string | null>(null);
   const [copiedStepId, setCopiedStepId] = useState<string | null>(null);
-
-  // Live timer while running
-  useEffect(() => {
-    if (!isRunning) {
-      return;
-    }
-    const start = Date.now();
-    const timer = setInterval(() => {
-      setElapsedMs(Date.now() - start);
-    }, 100);
-    return () => clearInterval(timer);
-  }, [isRunning]);
 
   // Aggregate thinking text across turns
   const thinkingText = useMemo(() => {
@@ -356,15 +345,8 @@ const AgentExecutionTimeline = memo(function AgentExecutionTimeline({
     setTimeout(() => setCopiedStepId(null), 2000);
   }, []);
 
-  const effectiveDuration = isRunning
-    ? formatDuration(elapsedMs)
-    : totalDurationMs
-    ? formatDuration(totalDurationMs)
-    : elapsedMs > 0
-    ? formatDuration(elapsedMs)
-    : "";
+  const effectiveDuration = !isRunning && totalDurationMs ? formatDuration(totalDurationMs) : "";
 
-  const completedStepCount = steps.filter((s) => s.status === "completed").length;
   const runningStepCount = steps.filter((s) => s.status === "running").length;
 
   const effectiveTerminalState = useMemo(() => {
@@ -410,7 +392,7 @@ const AgentExecutionTimeline = memo(function AgentExecutionTimeline({
   return (
     <div className={`w-full select-text transition-all duration-150 ${compact ? "my-1" : "my-2 max-w-[95%] sm:max-w-[85%]"}`}>
       {/* Top Badge-Level Status Row - NO CHUNKY BOX */}
-      <div className="flex flex-wrap items-center gap-2 select-none mb-1.5">
+      {!hideHeader && <div className="flex flex-wrap items-center gap-2 select-none mb-1.5">
         {/* Status indicator pill */}
         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-secondary)]">
           {isRunning ? (
@@ -524,7 +506,7 @@ const AgentExecutionTimeline = memo(function AgentExecutionTimeline({
             </svg>
           </button>
         )}
-      </div>
+      </div>}
 
       {/* Execution Content (Badges Flow) - NO OUTER CARD */}
       {isExpanded && (
@@ -541,7 +523,7 @@ const AgentExecutionTimeline = memo(function AgentExecutionTimeline({
                   <path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7z" />
                   <path d="M9 21h6" />
                 </svg>
-                <span>{isRunning ? "Thinking..." : "Thought process"}</span>
+                <span>Activity notes</span>
                 <svg
                   width="10"
                   height="10"
@@ -567,18 +549,15 @@ const AgentExecutionTimeline = memo(function AgentExecutionTimeline({
           {planSteps.length > 1 && (
             <div className="space-y-1 py-1 pl-1">
               {planSteps.map((s, idx) => {
-                const isDone = completedStepCount > idx;
-                const isCurrent = runningStepCount > 0 && completedStepCount === idx;
+                const isDone = !isRunning && effectiveTerminalState === "completed";
                 return (
                   <div key={idx} className="flex items-center gap-2 text-xs font-mono">
                     {isDone ? (
                       <span className="text-[var(--status-success)] font-bold text-[10px]">✓</span>
-                    ) : isCurrent ? (
-                      <span className="w-2.5 h-2.5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <span className="text-[var(--text-tertiary)] text-[10px]">○</span>
                     )}
-                    <span className={isDone ? "text-[var(--text-tertiary)] line-through" : isCurrent ? "text-[var(--text-primary)] font-medium" : "text-[var(--text-secondary)]"}>
+                    <span className={isDone ? "text-[var(--text-tertiary)] line-through" : "text-[var(--text-secondary)]"}>
                       {s.text}
                     </span>
                   </div>

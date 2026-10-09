@@ -61,51 +61,17 @@ export async function setSetting(key: string, value: unknown): Promise<void> {
 
 // Run protocol
 
-const ALLOWED_MEDIA = new Set([
-  "application/pdf",
-  "text/csv",
-  "text/plain",
-  "text/x-python",
-  "application/x-python-code",
-  "application/json",
-  "text/markdown",
-]);
-function isAllowedMedia(mediaType: string): boolean {
-  return ALLOWED_MEDIA.has(mediaType) || mediaType.startsWith("image/") || mediaType.startsWith("text/");
-}
-
 export async function registerAttachment(input: {
   chatId?: string;
   file: File;
 }): Promise<{ runId: string; attachment: AttachmentReference }> {
   const { file, chatId } = input;
-  if (!isAllowedMedia(file.type) && !isAllowedMedia(file.type || "")) {
-    // fallback: infer from extension for files with empty type
-    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-    const inferred =
-      ext === "pdf"
-        ? "application/pdf"
-        : ext === "csv"
-        ? "text/csv"
-        : ext === "py"
-        ? "text/x-python"
-        : ext === "txt"
-        ? "text/plain"
-        : ext === "json"
-        ? "application/json"
-        : ext === "md"
-        ? "text/markdown"
-        : ext.match(/^(png|jpg|jpeg|webp|gif|svg|heic)$/)
-        ? "image/" + ext
-        : "";
-    if (!inferred || !isAllowedMedia(inferred)) throw new Error(`unsupported file type: ${file.type || ext}`);
-  }
   if (file.size > 25 * 1024 * 1024) throw new Error("file too large (limit 25MB)");
   const base64OrBuffer = await fileToBase64(file);
   return bridge().registerAttachment({
     chatId,
     filename: file.name,
-    mediaType: file.type || guessMediaType(file.name),
+    mediaType: file.type.trim() || guessMediaType(file.name),
     sizeBytes: file.size,
     base64OrBuffer,
   });
