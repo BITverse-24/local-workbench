@@ -23,7 +23,7 @@ describe("Intelligent Intent Classifier", () => {
 
   it("routes user request with specific filename to harness even without active workspace", () => {
     const decision = classifyIntent({
-      userText: "Write a txt file in the directory saying 'Krishay'",
+      userText: "Write a txt file in the directory saying 'sample'",
       isWorkspaceActive: false,
     });
     expect(decision.actionTarget).toBe("harness");

@@ -1,10 +1,10 @@
 {
-  "name": "sovereign-workbench",
+  "name": "local-workbench",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Sovereign Workbench — self-hosted agentic AI desktop app (Electron shell, framework-agnostic backend, React/Vite renderer)",
-  "author": "Sovereign Workbench Team",
+  "description": "Local Workbench — self-hosted agentic AI desktop app (Electron shell, framework-agnostic backend, React/Vite renderer)",
+  "author": "Unpaid_Interns",
   "main": "electron/dist-electron/main.cjs",
   "scripts": {
     "demo": "npm run build:behavioral && node scripts/test-all-flows.cjs",

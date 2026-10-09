@@ -253,16 +253,16 @@ describe("Workspace Task Execution Loop (HARNESS.md)", () => {
   });
 
   it("intercepts Python with open(...) code emitted by model and writes the file to disk", async () => {
-    // Simulated model behavior: instead of structured tool_call, model returns Python code trying to write Krishay.txt
+    // Simulated model behavior: instead of structured tool_call, model returns Python code trying to write sample.txt
     const mockGateway = createMockGateway((req, count) => {
       if (count === 1) {
         return {
-          text: "with open('Krishay.txt', 'w') as file:\n    file.write('Krishay')",
+          text: "with open('sample.txt', 'w') as file:\n    file.write('sample')",
         };
       }
       return {
         action: "final_answer",
-        text: "I have written Krishay to Krishay.txt",
+        text: "I have written sample to sample.txt",
       };
     });
 
@@ -273,15 +273,15 @@ describe("Workspace Task Execution Loop (HARNESS.md)", () => {
     harness.registerWorkspace(workspaceRoot);
 
     const { runId } = await manager.start({
-      userText: "Write a txt file in the directory saying 'Krishay'",
+      userText: "Write a txt file in the directory saying 'sample'",
     });
 
     await waitForCompletion(runEvents);
 
-    // Verify Krishay.txt was physically created in the workspace!
-    const targetFile = path.join(workspaceRoot, "Krishay.txt");
+    // Verify sample.txt was physically created in the workspace!
+    const targetFile = path.join(workspaceRoot, "sample.txt");
     expect(existsSync(targetFile)).toBe(true);
-    expect(readFileSync(targetFile, "utf8")).toBe("Krishay");
+    expect(readFileSync(targetFile, "utf8")).toBe("sample");
 
     // Verify Artifact resolution: workbench:openArtifact can resolve the artifact from SQLite!
     const artifactEvent = runEvents.find((e) => e.type === "artifact_ready");
@@ -290,20 +290,20 @@ describe("Workspace Task Execution Loop (HARNESS.md)", () => {
       const artifactId = artifactEvent.artifact.artifactId;
       const artifactRow = manager.artifact(runId, artifactId);
       expect(artifactRow).toBeDefined();
-      expect(artifactRow.filename).toBe("Krishay.txt");
+      expect(artifactRow.filename).toBe("sample.txt");
 
       // Verify that absoluteDataPath resolves to an existing file that shell.openPath can open
       const { absoluteDataPath } = await import("../src/main/run/filesystem.js");
       const absPath = absoluteDataPath(artifactRow.relativePath);
       expect(existsSync(absPath)).toBe(true);
-      expect(readFileSync(absPath, "utf8")).toBe("Krishay");
+      expect(readFileSync(absPath, "utf8")).toBe("sample");
     }
   });
 
   it("creates a downloadable artifact when file write is requested without an active workspace", async () => {
     const mockGateway = createMockGateway(() => ({
-      filename: "Krishay.txt",
-      content: "Krishay",
+      filename: "sample.txt",
+      content: "sample",
     }));
 
     manager = new RunManager(mockGateway as any, (event) => runEvents.push(event));
@@ -313,7 +313,7 @@ describe("Workspace Task Execution Loop (HARNESS.md)", () => {
     expect(harness.isWorkspaceActive()).toBe(false);
 
     await manager.start({
-      userText: "Write a txt file in the directory saying 'Krishay'",
+      userText: "Write a txt file in the directory saying 'sample'",
     });
 
     await waitForCompletion(runEvents);
@@ -322,13 +322,13 @@ describe("Workspace Task Execution Loop (HARNESS.md)", () => {
     const artifactEvent = runEvents.find((e) => e.type === "artifact_ready");
     expect(artifactEvent).toBeDefined();
     if (artifactEvent && artifactEvent.type === "artifact_ready") {
-      expect(artifactEvent.artifact.filename).toBe("Krishay.txt");
+      expect(artifactEvent.artifact.filename).toBe("sample.txt");
     }
 
     const assistantMsg = runEvents.find((e) => e.type === "assistant_message");
     expect(assistantMsg).toBeDefined();
     if (assistantMsg && assistantMsg.type === "assistant_message") {
-      expect(assistantMsg.text).toContain("Krishay.txt");
+      expect(assistantMsg.text).toContain("sample.txt");
     }
   });
 
