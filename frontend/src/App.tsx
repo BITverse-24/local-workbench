@@ -56,7 +56,7 @@ export default function App() {
   // Run state
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runState, setRunState] = useState<RunState | null>(null);
-  const [activeRoute, setActiveRoute] = useState<{ taskType: string; modelId: string; reason: string } | null>(null);
+  const [activeRoute, setActiveRoute] = useState<{ taskType?: string; tier?: "text" | "vision"; modelId: string; reason: string } | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingAction | null>(null);
   const [confirmationBusy, setConfirmationBusy] = useState(false);
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
@@ -89,7 +89,7 @@ export default function App() {
   const runEventsRef = useRef<RunEvent[]>([]);
   runEventsRef.current = runEvents;
   const runArtifactsRef = useRef<ArtifactRef[]>([]);
-  const activeRouteRef = useRef<{ taskType: string; modelId: string; reason: string } | null>(null);
+  const activeRouteRef = useRef<{ taskType?: string; tier?: "text" | "vision"; modelId: string; reason: string } | null>(null);
   activeRouteRef.current = activeRoute;
   const runStartTimeRef = useRef<number | null>(null);
   const isRunning = runState !== null && !["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(runState);
@@ -267,6 +267,7 @@ export default function App() {
                         state: event.state,
                         modelId: activeRouteRef.current?.modelId,
                         taskType: activeRouteRef.current?.taskType,
+                        tier: activeRouteRef.current?.tier,
                         reason: activeRouteRef.current?.reason,
                         events: currentEvents,
                         durationMs: runStartTimeRef.current ? Date.now() - runStartTimeRef.current : undefined,
@@ -280,8 +281,8 @@ export default function App() {
             }
             break;
           case "routing":
-            activeRouteRef.current = { taskType: event.taskType, modelId: event.modelId, reason: event.reason };
-            setActiveRoute({ taskType: event.taskType, modelId: event.modelId, reason: event.reason });
+            activeRouteRef.current = { taskType: event.taskType, tier: event.tier, modelId: event.modelId, reason: event.reason };
+            setActiveRoute({ taskType: event.taskType, tier: event.tier, modelId: event.modelId, reason: event.reason });
             break;
           case "confirmation_required":
             setPendingConfirmation(event.action);
@@ -349,6 +350,7 @@ export default function App() {
               const executionData = currentEvents.length > 0 ? {
                 modelId: event.modelId || activeRouteRef.current?.modelId,
                 taskType: activeRouteRef.current?.taskType,
+                tier: activeRouteRef.current?.tier,
                 reason: activeRouteRef.current?.reason,
                 events: currentEvents,
                 durationMs: runStartTimeRef.current ? Date.now() - runStartTimeRef.current : undefined,

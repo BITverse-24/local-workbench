@@ -278,7 +278,7 @@ export type RunEvent =
   | TaskProgressEvent
   | { type: "run_state"; runId: string; state: RunState }
   | { type: "verification_report"; runId: string; report: RunVerificationReport }
-  | { type: "routing"; runId: string; taskType: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number; providerEndpoint?: string }
+  | { type: "routing"; runId: string; taskType?: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number; providerEndpoint?: string }
   | { type: "plan_step"; runId: string; index: number; text: string }
   | { type: "agent_thinking"; runId: string; text: string; turn?: number }
   | { type: "tool_call"; runId: string; tool: ToolName; summary: string; callId?: string; args?: Record<string, unknown> }

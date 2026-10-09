@@ -214,9 +214,10 @@ export const extractDocumentTool: AgentTool = {
     const attachmentPath = sourceRelativePath.startsWith("..") || path.isAbsolute(sourceRelativePath)
       ? writeRunFile(context.runId, "intermediate", `${randomUUID()}-${filename}`, readFileSync(filePath))
       : sourceRelativePath;
+    const requestId = randomUUID();
     const req: VisionModelRequest = {
       ...base,
-      requestId: randomUUID(),
+      requestId,
       taskType: "vision",
       modelId: targetModelId,
       responseFormat: "vision-result",
@@ -230,6 +231,17 @@ export const extractDocumentTool: AgentTool = {
       inputMode: "typed-scan",
       parentToolCallId: context.currentCallId,
     };
+
+    context.emitRunEvent?.({
+      type: "routing",
+      runId: context.runId,
+      taskType: "vision",
+      modelId: targetModelId,
+      reason: targetModelId === context.runContract?.routing.driverModel
+        ? `Visual extraction: ${filename}`
+        : `Vision fallback model for ${filename}`,
+      tier: "vision",
+    });
 
     const resp = await context.gateway.execute(req);
     if (!resp.ok) {

@@ -6,7 +6,7 @@ import { assessedCheckLabel, TASK_STAGE_LABELS } from "../../../backend/src/shar
 type Props = {
   isRunning: boolean;
   runState: RunState | null;
-  activeRoute?: { taskType: string; modelId: string; reason: string } | null;
+  activeRoute?: { taskType?: string; tier?: "text" | "vision"; modelId: string; reason: string } | null;
   runEvents?: RunEvent[];
   hasStreamingText?: boolean;
   onCancel?: () => void;
@@ -68,7 +68,7 @@ const RunWaitingIndicator = memo(function RunWaitingIndicator({
         </div>)}
       </div>}
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--text-tertiary)]">
-        {(state.progress?.modelId || activeRoute?.modelId) && <span>{state.progress?.modelId || activeRoute?.modelId}</span>}
+        {(activeRoute?.modelId || state.progress?.modelId) && <span>{activeRoute?.modelId || state.progress?.modelId}</span>}
         {!state.paused && state.progress?.status === "receiving" && state.progress.outputChars > 0 && <span className="tabular-nums">{state.progress.outputChars.toLocaleString()} characters received</span>}
         {activity.some(event => event.type === "tool_call" || event.type === "agent_thinking" || event.type === "plan_step" || event.type === "task_progress") && <button type="button" className="ml-auto text-[var(--text-secondary)] hover:text-[var(--text-primary)]" onClick={() => setExpanded(value => !value)} aria-expanded={expanded}>
           {expanded ? "Hide activity" : `Show activity${results.length ? ` · ${results.length} ${results.length === 1 ? "step" : "steps"}` : ""}`}

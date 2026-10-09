@@ -267,6 +267,9 @@ export default function InputBar({ input, setInput, onSend, attachedFiles = [], 
               )}
               <span className="hidden sm:inline">{mode === 'agent' ? 'Agent' : 'Chat'}</span>
               <span className={`w-1.5 h-1.5 rounded-full ${mode === 'agent' ? 'bg-[var(--accent)]' : 'bg-emerald-400'}`} />
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="opacity-70">
+                <path d="m4 6 4 4 4-4" />
+              </svg>
             </button>
           )}
 

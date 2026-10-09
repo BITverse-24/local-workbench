@@ -15,7 +15,7 @@ interface Props {
   events?: RunEvent[];
   isRunning?: boolean;
   runState?: RunState | null;
-  activeRoute?: { taskType: string; modelId: string; reason: string } | null;
+  activeRoute?: { taskType?: string; tier?: "text" | "vision"; modelId: string; reason: string } | null;
   onCancel?: () => void;
   defaultExpanded?: boolean;
   compact?: boolean;

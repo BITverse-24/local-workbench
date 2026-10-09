@@ -173,7 +173,7 @@ type RunEvent =
   | TaskProgressEvent
   | { type: "run_state"; runId: string; state: RunState }
   | { type: "verification_report"; runId: string; report: RunVerificationReport }
-  | { type: "routing"; runId: string; taskType: "vision" | "draft" | "code"; modelId: string; reason: string }
+  | { type: "routing"; runId: string; taskType?: "vision" | "draft" | "code"; modelId: string; reason: string; tier?: "text" | "vision" }
   | { type: "plan_step"; runId: string; index: number; text: string }
   | { type: "agent_thinking"; runId: string; text: string; turn?: number }
   | { type: "tool_call"; runId: string; tool: string; summary: string; callId?: string; args?: Record<string, unknown> }

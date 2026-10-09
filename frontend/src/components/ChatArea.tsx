@@ -19,6 +19,7 @@ export type ChatMessage = {
     state?: RunState;
     modelId?: string;
     taskType?: string;
+    tier?: "text" | "vision";
     reason?: string;
     durationMs?: number;
     events: RunEvent[];
@@ -32,7 +33,7 @@ type Props = {
   onSaveArtifact?: (artifact: ArtifactRef) => void;
   isRunning?: boolean;
   runState?: RunState | null;
-  activeRoute?: { taskType: string; modelId: string; reason: string } | null;
+  activeRoute?: { taskType?: string; tier?: "text" | "vision"; modelId: string; reason: string } | null;
   runEvents?: RunEvent[];
   onCancel?: () => void;
 };

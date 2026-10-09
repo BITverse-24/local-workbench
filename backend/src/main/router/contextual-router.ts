@@ -604,7 +604,11 @@ LATEST USER REQUEST:
         if (parsed && typeof parsed === "object") {
           const validationContext = { hasWorkspace, workspaceFiles, userPrompt: promptTrimmed, attachments };
           const normalized = validateAndNormalizeIntent(parsed, validationContext);
-          const needsAudit = input.verifyContract && (normalized.expectedDeliverables.length > 0 || normalized.status !== "resolved");
+          // A schema-valid, resolved intent already passed deterministic contract
+          // normalization. Re-asking the model to audit ordinary deliverables
+          // adds latency without adding a new source of evidence. Reinterpret
+          // only unresolved or failed intents.
+          const needsAudit = input.verifyContract && normalized.status !== "resolved";
           if ((normalized.status === "failed" || needsAudit) && !classificationRepairUsed && Date.now() < deadline) {
             // Invalid model fields are not missing user information. Repair the
             // interpretation once, under the original classification deadline.

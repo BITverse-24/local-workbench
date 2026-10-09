@@ -11,7 +11,7 @@ type Props = {
   modelOpen: boolean;
   setModelOpen: (v: boolean) => void;
   modelBtnRef: React.RefObject<HTMLButtonElement | null>;
-  activeRoute?: { taskType: string; modelId: string; reason: string } | null;
+  activeRoute?: { taskType?: string; tier?: "text" | "vision"; modelId: string; reason: string } | null;
   runState?: string | null;
   health?: ModelHealth[] | null;
   healthLoading?: boolean;
@@ -118,7 +118,7 @@ export default function RightSidebar({
               className={`w-full rounded-[var(--radius-md)] p-3 neu-raised flex items-center justify-between text-left ${isRunning ? "opacity-60 cursor-not-allowed" : ""}`}
             >
               <div>
-                <div className="text-sm font-medium text-[var(--text-primary)]">{activeRoute ? activeRoute.modelId : selectedModel?.name}</div>
+              <div className="text-sm font-medium text-[var(--text-primary)]">{activeRoute ? `${activeRoute.tier === "vision" || activeRoute.taskType === "vision" ? "Vision → " : ""}${activeRoute.modelId}` : selectedModel?.name}</div>
                 <div className="text-xs text-[var(--text-tertiary)] mt-0.5">{activeRoute ? `Reason: ${activeRoute.reason}` : selectedModel?.desc}</div>
               </div>
               <span
