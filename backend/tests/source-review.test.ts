@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { enforceSourceConditionalPreconditions, findingsTableAlignmentGaps, linkRecommendationsToSubjects, preserveExtractedAnnotations, preserveExtractedFindings, preserveMissingSubjectSections, reviewAttachedPython, reviewProposedPython } from "../src/main/agent/source-review.js";
+import { enforceSourceConditionalPreconditions, findingsTableAlignmentGaps, linkRecommendationsToSubjects, preserveExtractedAnnotations, preserveExtractedFindings, preserveMissingSubjectSections, reviewAttachedPython, reviewProposedPython, unchangedMarkedConditionGaps, unmarkedConditionalUpdateGaps } from "../src/main/agent/source-review.js";
 import { runRoot } from "../src/main/run/filesystem.js";
 import type { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import type { ModelId } from "../src/shared/contracts.js";
@@ -32,6 +32,30 @@ const twoSatisfiedChecks = JSON.stringify([
 ]);
 
 describe("code review evidence contract", () => {
+  it('detects an unconditional update moved into a new else branch',()=>{
+    const source='for item in items:\n    if item.failed:\n        errors += 1\n    processed += 1\n';
+    expect(unmarkedConditionalUpdateGaps(source,'for item in items:\n    if item.failed:\n        errors += 1\n    else:\n        processed += 1\n')).toEqual([expect.objectContaining({evidence:'processed += 1'})]);
+    expect(unmarkedConditionalUpdateGaps(source,source)).toEqual([]);
+    expect(unmarkedConditionalUpdateGaps('# BUG: count the wrong cases\nprocessed += 1\n','if valid:\n    processed += 1\n')).toEqual([]);
+  });
+  it('allows a faulty branch body to change with its predicate retained',()=>{
+    expect(unchangedMarkedConditionGaps('# BUG: increments the wrong field\nif item.failed:\n    processed += 1\n','if item.failed:\n    errors += 1\n')).toEqual([]);
+  });
+  it('rejects an unchanged source-marked predicate even when the candidate removes its comment',()=>{
+    const original='# BUG: This boundary must include equality.\nif reading > limit:\n    record(reading)\n';
+    const gaps=unchangedMarkedConditionGaps(original,'if reading > limit:\n    record(reading)\n');
+    expect(gaps).toHaveLength(1);expect(gaps[0].evidence).toContain('include equality');
+    expect(unchangedMarkedConditionGaps(original,'if reading >= limit:\n    record(reading)\n')).toEqual([]);
+    const numeric='# BUG: The inclusive upper boundary is 42.0.\nif reading > 42.0:\n    record(reading)\n';
+    expect(unchangedMarkedConditionGaps(numeric,'if reading > 41.5:\n    record(reading)\n')).toEqual([expect.objectContaining({issue:expect.stringContaining('without request evidence')})]);
+    expect(unchangedMarkedConditionGaps(numeric,'if reading >= 42.0:\n    record(reading)\n')).toEqual([]);
+    expect(unchangedMarkedConditionGaps(numeric,"if reading == '42.0':\n    record(reading)\n")).toEqual([expect.objectContaining({issue:expect.stringContaining('equality-only')})]);
+    expect(unchangedMarkedConditionGaps(numeric,'if reading >= 40.0:\n    record(reading)\n','Use an inclusive upper limit of 40.0.')).toEqual([]);
+  });
+  it('allows a retained conversion when a source-marked crash is fixed by a guard',()=>{
+    const original='# BUG: Empty readings cause a conversion crash.\nreading = float(value)\n';
+    expect(unchangedMarkedConditionGaps(original,'if not value:\n    return None\nreading = float(value)\n')).toEqual([]);
+  });
   it("rejects a bare satisfied label without an explanation", async () => {
     const checks = JSON.parse(twoSatisfiedChecks);
     checks[0].issue = "";

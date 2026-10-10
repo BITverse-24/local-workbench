@@ -1,3 +1,4 @@
+import { approvedPythonTool as executePythonTool } from "./helpers/approved-python.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -6,12 +7,15 @@ import path from "node:path";
 import { resolveSemanticIntent, validateAndNormalizeIntent } from "../src/main/router/contextual-router.js";
 import { composeTools, constrainToolsToIntent } from "../src/main/router/tool-compositor.js";
 import { createRunDirectories, resolveRunPath } from "../src/main/run/filesystem.js";
-import { executePythonTool, generateDeliverableTool } from "../src/main/tools/specialist-tools.js";
+import { generateDeliverableTool } from "../src/main/tools/specialist-tools.js";
 import { runCommandTool } from "../src/main/tools/workspace-tools.js";
-import { AgentLoop } from "../src/main/agent/agent-loop.js";
+import { AgentLoop } from "./helpers/agent-loop-fixture.js";
 import { RunManager } from "../src/main/run/manager.js";
 import { HarnessManager } from "../src/main/harness/harness-manager.js";
-import { closeDb, initDb } from "../src/main/persistence/db.js";
+import { closeDb, initDb, getDb } from "../src/main/persistence/db.js";
+import { createChat } from "../src/main/persistence/chats.js";
+import { ModelGateway } from "../src/main/gateway/model-gateway.js";
+import type { RunEvent } from "../src/shared/contracts.js";
 
 const attachment = { attachmentId: "source", filename: "broken-reader.py", mediaType: "text/x-python-script", sizeBytes: 30, relativePath: "runs/source/input/broken-reader.py" };
 const prompt = "This is crashing on our input files. Fix it and make sure it actually works.";
@@ -76,7 +80,7 @@ describe("Attached code repair scope and validation", () => {
     expect(names).not.toContain("generate_text");
     const pythonTool = constrainToolsToIntent(composeTools({ hasWorkspace: true, hasAttachments: true, hasKnowledgeBaseDocs: false }, intent.driverModel), intent)
       .find((tool) => tool.name === "execute_python")!;
-    expect(pythonTool.definition.function.parameters.properties).not.toHaveProperty("validation_code");
+    expect(pythonTool.definition.function.parameters.properties.validation_code.description).toContain('original evidence');
   });
 
   it("executes assertions against the exact repaired source and exports only the source", async () => {
@@ -109,7 +113,7 @@ describe("Attached code repair scope and validation", () => {
 
   it("allows direct execution without invented assertions and rejects helper scripts", async () => {
     const execute = vi.fn(async (_args: Record<string, unknown>) => ({ ok: true, output: "executed", summary: "execution accepted" }));
-    const intent = validateAndNormalizeIntent(attachedRepairIntent, { hasWorkspace: true, workspaceFiles: [], userPrompt: prompt });
+    const intent = validateAndNormalizeIntent({...attachedRepairIntent,expectedDeliverables:[{filename:'fixed-reader.py',filenameRequired:true,type:'file'}]}, { hasWorkspace: true, workspaceFiles: [], userPrompt: prompt });
     const tool = constrainToolsToIntent([{ ...executePythonTool, execute }], intent)[0];
     expect(tool.definition.function.parameters.required).toEqual(["code", "filename"]);
     const context = { runId: "unused", workspaceRoot: tempDir, gateway: {} as any };
@@ -171,64 +175,71 @@ describe("Attached code repair scope and validation", () => {
     createRunDirectories(runId);
     const intent = await resolveSemanticIntent({ userPrompt: prompt, attachments: [attachment], hasWorkspace: false }, { execute: classifyAttachedRepair } as any);
     let turn = 0;
-    let validationFeedback = false;
-    const gateway = { async chatWithTools(_model: any, messages: any[]) {
-      turn++;
-      validationFeedback ||= messages.some((m) => String(m.content).includes("exact repaired source must pass"));
-      if (turn === 1 || turn === 3) return { ok: true, value: { content: null, tool_calls: [{ id: String(turn), name: "execute_python", arguments: {
-        filename: "fixed-reader.py", code: "def read(): return 7\n", ...(turn === 3 ? { validation_code: 'assert repaired["read"]() == 7' } : {}),
+    const assertion='assert repaired["read"]() == 7';
+    const request=`Repair the attached source and run this supplied assertion: ${assertion}`;
+    const events:RunEvent[]=[];
+    const gateway = { registry:new Map([['primary-model',{maxOutputTokens:1536}]]), async chatWithTools(_model: any, _messages: any[], _tools:any[], options:any) {
+      if(options?.responseSchema?.name==='proposed_source_behavior_review')return {ok:true,value:{content:'{"gaps":[]}',finishReason:'stop'}};
+      if(options?.responseSchema?.name==='source_derived_code_behavior_review')return {ok:true,value:{content:JSON.stringify([{index:0,status:'satisfied',issue:'The supplied assertion passed on the saved function.',sourceEvidence:assertion,implementationEvidence:'return 7'}]),finishReason:'stop'}};
+      if (++turn<=2) return { ok: true, value: { content: null, tool_calls: [{ id: String(turn), name: "execute_python", arguments: {
+        filename: "fixed-reader.py", code: `def read(): return ${turn===1?6:7}\n`, validation_code:assertion,
       } }] } };
       return { ok: true, value: { content: "Repair verified.", tool_calls: null } };
     } };
-    const result = await new AgentLoop().run({ runId, driverModelId: intent.driverModel, userPrompt: prompt, systemPrompt: "Repair attachment", semanticIntent: intent, tools: [executePythonTool], context: { runId, workspaceRoot: tempDir, gateway: gateway as any }, emitEvent() {} });
-    expect(validationFeedback).toBe(true);
-    expect(turn).toBe(4);
+    const result = await new AgentLoop().run({ runId, driverModelId: intent.driverModel, userPrompt: request, systemPrompt: "Repair attachment", semanticIntent: intent, tools: [executePythonTool], context: { runId, workspaceRoot: tempDir, gateway: gateway as any,sourceReviewEvidence:`def read(): return 6\n${assertion}`,originalUserRequest:request }, emitEvent:event=>events.push(event) });
+    expect(events.filter(event=>event.type==='tool_result'&&event.tool==='execute_python'&&!event.ok)).toHaveLength(1);
+    expect(events.filter(event=>event.type==='tool_result'&&event.tool==='execute_python'&&event.ok)).toHaveLength(1);
+    expect(readFileSync(resolveRunPath(runId,'output/fixed-reader.py','output'),'utf8')).toBe('def read(): return 7\n');
     expect(result.outcome).toBe("completed");
   });
 
-  it("keeps a mounted workspace unchanged throughout a RunManager attachment repair", async () => {
+  it.each(['fenced source','exact edits'])("keeps a mounted workspace unchanged throughout a RunManager attachment repair using %s", async transport => {
     initDb(path.join(tempDir, "workbench.sqlite"));
     const workspace = path.join(tempDir, "workspace");
     mkdirSync(workspace);
     writeFileSync(path.join(workspace, "notes.md"), "workspace content\n");
     const events: any[] = [];
-    const execute = classifyAttachedRepair;
+    const gateway=new ModelGateway();
+    const execute = vi.spyOn(gateway,'execute').mockImplementation(classifyAttachedRepair as any);
     let turn = 0;
-    const gateway = { execute, async chatWithTools(_model: any, messages: any[], options: any) {
+    vi.spyOn(gateway,'chatWithTools').mockImplementation(async (_model: any, messages: any[], definitions: any[], options: any) => {
       // chatWithTools receives tool definitions as the third argument.
       expect(messages[0].content).not.toContain("workspace content");
       expect(messages[0].content).not.toContain("Complete the requested workspace repair");
-      const names = options.map((tool: any) => tool.function.name);
+      const names = definitions.map((tool: any) => tool.function.name);
       expect(names).not.toContain("write_file");
       expect(names).not.toContain("run_command");
       turn++;
-      return { ok: true, value: turn === 1 ? { content: null, tool_calls: [{ id: "repair", name: "execute_python", arguments: {
-        filename: "fixed-reader.py", code, input_files: ["source.txt"], validation_code: 'assert repaired["read"]("source.txt") == "actual input"',
-      } }] } : { content: "Repair verified.", tool_calls: null } };
-    } };
+      const schema=options?.responseSchema?.name;
+      const proposal=transport==='exact edits'?JSON.stringify({edits:[{old:'return handle.read()',new:'return handle.read().strip()'}]}):'```python\n'+code+'```';
+      const content=schema==='work_requirements'?'{"checks":[]}':schema==='software_repair_review'?'{"defects":[],"checks":[],"preservedBehavior":[]}':schema==='proposed_source_behavior_review'?'{"gaps":[]}':schema==='source_derived_code_behavior_review'?JSON.stringify([0,1].map(index=>({index,status:'satisfied',issue:'The original function and input handling are preserved.',sourceEvidence:'def read(path):',implementationEvidence:'def read(path):'}))):String(messages[0].content).startsWith('Independently check')?JSON.stringify({checks:[{id:'content:complete_request',status:'passed',reason:'The original source function is retained and executed.',outputQuotes:['def read(path):'],sourceQuotes:['def read(path):']}],coverageGaps:[]}):proposal;
+      return {ok:true,value:{content,tool_calls:[],finishReason:'stop'}} as any;
+    });
     const manager = new RunManager(gateway as any, (event) => {
       events.push(event);
       if (event.type === "confirmation_required") {
-        expect(turn).toBe(0);
+        expect(event.action.kind).toBe('uncontained_python');
+        expect(turn).toBeGreaterThan(0);
         void manager.confirm({ runId: event.runId, actionId: event.action.actionId, approved: true });
       }
     });
     const harness = new HarnessManager();
     harness.registerWorkspace(workspace);
     manager.setHarness(harness);
-    const source = Buffer.from(code), data = Buffer.from("actual input\n");
-    const uploaded = manager.registerAttachment({ filename: attachment.filename, mediaType: attachment.mediaType, sizeBytes: source.length, base64OrBuffer: source });
-    const input = manager.registerAttachment({ filename: "source.txt", mediaType: "text/plain", sizeBytes: data.length, base64OrBuffer: data });
+    const source = Buffer.from(transport==='exact edits'?code.replace('.strip()',''):code), data = Buffer.from("actual input\n"), chatId=createChat();
+    const uploaded = manager.registerAttachment({ chatId, filename: attachment.filename, mediaType: attachment.mediaType, sizeBytes: source.length, base64OrBuffer: source });
+    const input = manager.registerAttachment({ chatId, filename: "source.txt", mediaType: "text/plain", sizeBytes: data.length, base64OrBuffer: data });
     const previousV2 = process.env.WORKBENCH_AGENT_V2;
     process.env.WORKBENCH_AGENT_V2 = "true";
     try {
-      const started = await manager.start({ userText: prompt, attachmentTokens: [uploaded.attachment.attachmentId, input.attachment.attachmentId] });
-      await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && ["completed", "failed"].includes(e.state))).toBe(true), { timeout: 10000 });
-      expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
+      const started = await manager.start({ chatId, mode:'work', userText: prompt, attachmentTokens: [uploaded.attachment.attachmentId, input.attachment.attachmentId] });
+      await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && ["completed", "partial", "failed"].includes(e.state))).toBe(true), { timeout: 10000 });
+      expect(events.some(e=>e.type==='run_state'&&e.state==='completed'), JSON.stringify(getDb().prepare('SELECT checks_json FROM run_artifact_validations WHERE run_id=?').get(started.runId))).toBe(true);
       expect(execute).toHaveBeenCalledTimes(1);
       expect(readdirSync(workspace)).toEqual(["notes.md"]);
       expect(readFileSync(path.join(workspace, "notes.md"), "utf8")).toBe("workspace content\n");
       expect(readFileSync(resolveRunPath(started.runId, "output/fixed-reader.py", "output"), "utf8")).toBe(code);
+      expect(readFileSync(path.join(process.env.WORKBENCH_DATA_ROOT!,uploaded.attachment.relativePath))).toEqual(source);
     } finally {
       if (previousV2 === undefined) delete process.env.WORKBENCH_AGENT_V2;
       else process.env.WORKBENCH_AGENT_V2 = previousV2;

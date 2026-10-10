@@ -13,7 +13,7 @@ const evidenceSchema = z.object({ kind: z.enum(["result", "artifact", "execution
 const checkSchema = z.object({
   criterionId: z.string().min(1).max(256), requirement: z.string().max(500),
   status: z.enum(["passed", "failed", "unverified", "not_applicable"]),
-  method: z.enum(["sha256", "result_store_checksum", "format_parser", "filesystem", "execution_record", "agent_loop_completion"]),
+  method: z.enum(["sha256", "result_store_checksum", "format_parser", "filesystem", "execution_record", "agent_loop_completion", "content_check", "independent_reader"]),
   evidence: z.array(evidenceSchema).max(40), reason: z.string().max(500), verifiedAt: z.string().datetime(), mandatory: z.boolean(),
 });
 const reportSchema = z.object({ schemaVersion: z.literal(1), runId: z.string().uuid(), status: z.enum(["passed", "failed", "unverified", "not_applicable"]), checks: z.array(checkSchema).max(2000), updatedAt: z.string().datetime() });
@@ -30,7 +30,7 @@ function fileFormat(file: string, kind: string, bytes: Buffer): { status: Verifi
   const extensionKind: Record<string, string> = { ".docx": "docx", ".xlsx": "xlsx", ".pdf": "pdf", ".csv": "csv", ".json": "json", ".md": "md", ".txt": "txt" };
   if (extensionKind[ext] && extensionKind[ext] !== kind) return { status: "failed", reason: `File extension ${ext} does not match registered format ${kind}.` };
   if ((kind === "docx" && ext === ".doc") || (kind === "xlsx" && ext === ".xls")) return { status: "not_applicable", reason: `Legacy ${ext} format is not parsed by this verifier.` };
-  if (kind === "txt" && ![".txt", ".py", ".sh", ".sql", ".log"].includes(ext)) return { status: "not_applicable", reason: `No parser is configured for ${ext || "this file extension"}.` };
+  if (kind === "txt" && ![".txt", ".py", ".sh", ".sql", ".log", ".ts", ".tsx", ".js", ".jsx", ".c", ".cpp", ".h", ".java", ".rs"].includes(ext)) return { status: "not_applicable", reason: `No parser is configured for ${ext || "this file extension"}.` };
   try {
     if (kind === "json") { JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); return { status: "passed", reason: "JSON parsed successfully and the file extension matches." }; }
     if (kind === "pdf") return bytes.subarray(0, 5).toString("ascii") === "%PDF-" && bytes.includes(Buffer.from("%%EOF"))
@@ -203,6 +203,12 @@ export function verifyRunEvidence(runId: string, options: { contractEvaluatorPas
       reason: "This free-text constraint needs semantic review. No deterministic check is defined for it.", mandatory: false }));
   }
 
+  const extra = getDb().prepare("SELECT checks_json FROM run_artifact_validations WHERE run_id=?").get(runId) as { checks_json: string } | undefined;
+  if (extra) {
+    const saved=JSON.parse(extra.checks_json);const recorded=z.array(checkSchema).parse(Array.isArray(saved)?saved:saved.checks);
+    const stale=Object.entries(saved.digests??{}).some(([id,digest])=>{const artifact=artifacts.find(a=>a.artifact_id===id);if(!artifact)return true;try{return sha256File(absoluteDataPath(artifact.relative_path))!==digest;}catch{return true;}});
+    checks.push(...recorded.map(check=>stale&&check.status==="passed"?{...check,status:"unverified" as const,reason:"The saved output changed after its content checks. Recheck this requirement."}:check));
+  }
   const applicable = checks.filter((item) => item.status !== "not_applicable");
   const status: VerificationStatus = applicable.some((item) => item.mandatory && item.status === "failed") ? "failed"
     : applicable.some((item) => item.status === "unverified" || item.status === "failed") ? "unverified" : applicable.length ? "passed" : "not_applicable";

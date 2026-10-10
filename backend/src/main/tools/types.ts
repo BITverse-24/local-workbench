@@ -57,6 +57,8 @@ export type ToolResult =
 
 export interface ToolExecutionContext {
   runId: string;
+  signal?: AbortSignal;
+  assertAuthority?: () => void;
   workspaceRoot: string;
   gateway: ModelGateway;
   harness?: HarnessManager;
@@ -75,6 +77,9 @@ export interface ToolExecutionContext {
   completeKnowledgeEvidence?: boolean;
   /** Original source/criterion evidence for review before publication. */
   sourceReviewEvidence?: string;
+  sourceReviewChecklist?: string;
+  sourceCoverageProblems?: string[];
+  sourceCoverageFailed?: boolean;
   /** Original user text, kept separate from model-generated requirements. */
   originalUserRequest?: string;
   executionLedger?: RunExecutionLedger;

@@ -5,6 +5,7 @@ const prompts: Record<PendingAction["kind"], string> = {
   generate_docx: "Generate the approval-note DOCX?",
   execute_python: "Execute the generated Python?",
   generate_xlsx: "Generate the out-of-range summary XLSX?",
+  uncontained_python: "Approve Python without OS isolation? Filesystem and network isolation are not enforced.",
   plan_approval: "Approve proposed execution plan?",
 };
 export function createConfirmation(runId: string, kind: PendingAction["kind"], preview?: string, customPrompt?: string): PendingAction {

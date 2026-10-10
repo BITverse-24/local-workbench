@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "runId": "58512ca8-edbc-4b96-8faa-d92952febe73",
+  "status": "failed",
+  "checks": [
+    {
+      "criterionId": "artifact-integrity:c8ce7cb9-6e0c-4d57-a8ed-42f7fd6e5a94",
+      "requirement": "Integrity of artifact review-note.md",
+      "status": "passed",
+      "method": "sha256",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "c8ce7cb9-6e0c-4d57-a8ed-42f7fd6e5a94"
+        }
+      ],
+      "reason": "SHA-256 matches the registered digest.",
+      "verifiedAt": "2026-10-10T20:50:50.254Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "artifact-format:c8ce7cb9-6e0c-4d57-a8ed-42f7fd6e5a94",
+      "requirement": "Structural format of review-note.md",
+      "status": "passed",
+      "method": "format_parser",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "c8ce7cb9-6e0c-4d57-a8ed-42f7fd6e5a94"
+        }
+      ],
+      "reason": "Text is valid UTF-8 and the extension matches the registered format.",
+      "verifiedAt": "2026-10-10T20:50:50.254Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "deliverable:deliverable-1",
+      "requirement": "review-note.md",
+      "status": "passed",
+      "method": "filesystem",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "c8ce7cb9-6e0c-4d57-a8ed-42f7fd6e5a94"
+        }
+      ],
+      "reason": "A registered artifact matches the RunContract deliverable. Its format and integrity have separate checks.",
+      "verifiedAt": "2026-10-10T20:50:50.254Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "independent:c8ce7cb9-6e0c-4d57-a8ed-42f7fd6e5a94",
+      "requirement": "Read saved review-note.md",
+      "status": "passed",
+      "method": "independent_reader",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "c8ce7cb9-6e0c-4d57-a8ed-42f7fd6e5a94"
+        }
+      ],
+      "reason": "The independent reader parsed the saved output.",
+      "verifiedAt": "2026-10-10T20:50:50.252Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "content:complete_request",
+      "requirement": "Make a Markdown review note from these training records and our policy. For each staff identifier, say whether the person may handle records independently on the review date, give the reason, and include the required next actions and policy references. Return the note as a file.",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "c8ce7cb9-6e0c-4d57-a8ed-42f7fd6e5a94"
+        }
+      ],
+      "reason": "Independent content review: The response includes a Markdown review note with the required information for each staff identifier, including whether they may handle records independently, reasons, next actions, and policy references. The note is returned as a file.",
+      "verifiedAt": "2026-10-10T20:50:29.494Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:0",
+      "requirement": "Preserve requested source fact: STAFF-LARK",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:50:50.252Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:1",
+      "requirement": "Preserve requested source fact: STAFF-FERN",
+      "status": "failed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "A required source fact or instruction is missing from the saved output.",
+      "verifiedAt": "2026-10-10T20:50:50.252Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:2",
+      "requirement": "Preserve requested source fact: 2026-09-30",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:50:50.252Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:3",
+      "requirement": "Preserve requested source fact: 2026-09-10",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:50:50.252Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:4",
+      "requirement": "Preserve requested source fact: 2026-09-12",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:50:50.252Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:5",
+      "requirement": "Preserve requested source fact: 2025-08-02",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:50:50.252Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:6",
+      "requirement": "Preserve requested source fact: Retain the signed attendance sheet.",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:50:50.252Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:7",
+      "requirement": "Preserve requested source fact: Arrange refresher training and obtain supervisor acknowledgement.",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:50:50.252Z",
+      "mandatory": true
+    }
+  ],
+  "updatedAt": "2026-10-10T20:50:50.254Z"
+}

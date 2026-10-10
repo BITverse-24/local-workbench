@@ -4,7 +4,7 @@ export const families = ["explain-vs-execute", "conflicting-sources", "fabricati
 const relative = z.string().min(1).refine((p) => !p.startsWith("/") && !p.split(/[\\/]/).includes("..") && !p.includes("\0"), "Expected contained relative path");
 const fixture = z.object({ path: relative, content: z.string(), kind: z.enum(["text", "pdf"]).default("text") }).strict();
 export const actionSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("send"), chat: z.string().default("main"), bind: z.string(), text: z.string().max(8000), attachments: z.array(relative).max(10).default([]), temperature: z.number().min(0).max(2).optional(), preferredRoute: z.enum(["draft", "code", "vision", "draft-qwen3", "code-qwen25coder", "vision-qwen25vl"]).optional(), groundingEnabled: z.boolean().default(false) }).strict(),
+  z.object({ type: z.literal("send"), mode: z.enum(["chat","work","agent"]).optional(), chat: z.string().default("main"), bind: z.string(), text: z.string().max(8000), attachments: z.array(relative).max(10).default([]), temperature: z.number().min(0).max(2).optional(), preferredRoute: z.enum(["draft", "code", "vision", "draft-qwen3", "code-qwen25coder", "vision-qwen25vl"]).optional(), groundingEnabled: z.boolean().default(false) }).strict(),
   z.object({ type: z.literal("settle"), run: z.string(), approvals: z.enum(["approve", "reject", "none", "read-only"]).default("none") }).strict(),
   z.object({ type: z.literal("confirm"), run: z.string(), approved: z.boolean(), bind: z.string().optional() }).strict(),
   z.object({ type: z.literal("cancel"), run: z.string() }).strict(),

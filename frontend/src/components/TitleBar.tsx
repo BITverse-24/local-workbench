@@ -8,35 +8,10 @@ export default function TitleBar() {
     >
       <div className="flex items-center gap-3">
         <span className="text-[13px] font-semibold tracking-[0.02em] text-[var(--text-primary)]">
-          Sovereign Workbench
-        </span>
-        <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] font-medium">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-success)]" />
-          Air-gapped · zero egress
+          Local Workbench
         </span>
       </div>
       <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-
-
-        <button
-          type="button"
-          onClick={async () => {
-            try {
-              if (window.workbench) {
-                await window.workbench.resetOnboarding();
-              }
-              window.location.reload();
-            } catch (e) {
-              console.error("Failed to reset onboarding:", e);
-              window.location.reload();
-            }
-          }}
-          className="px-3 py-1 rounded-[var(--radius-sm)] text-xs font-mono font-medium text-[var(--text-secondary)] border border-[var(--border-default)] hover:text-[var(--text-primary)] hover:border-[var(--border-strong)] bg-transparent transition-colors"
-          title="Dev shortcut: Clear onboarding completion and reload to test onboarding again (caches your inputs)"
-        >
-          Dev: Reset Onboarding
-        </button>
-
         <div className="flex items-center gap-1 ml-1">
           <button
             onClick={() => (window as unknown as { electronAPI?: { minimize?: () => void } }).electronAPI?.minimize?.()}
@@ -61,4 +36,3 @@ export default function TitleBar() {
     </div>
   );
 }
-

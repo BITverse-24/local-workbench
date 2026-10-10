@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { AgentLoop } from "../src/main/agent/agent-loop.js";
+import { AgentLoop } from "./helpers/agent-loop-fixture.js";
 import { buildHarnessSystemPrompt, HARNESS_TOOL_DEFINITIONS } from "../src/main/harness/harness-prompt.js";
 import { workspaceTools } from "../src/main/tools/workspace-tools.js";
 import type { AgentTool } from "../src/main/tools/types.js";

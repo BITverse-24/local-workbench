@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AgentLoop } from "../src/main/agent/agent-loop.js";
+import { AgentLoop } from "./helpers/agent-loop-fixture.js";
 import type { AgentTool } from "../src/main/tools/types.js";
 
 describe("Agent Loop Plan Cleaning & Execution Nudges", () => {

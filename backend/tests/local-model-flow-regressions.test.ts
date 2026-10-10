@@ -1,10 +1,11 @@
+import { approvedPythonTool as executePythonTool } from "./helpers/approved-python.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AgentLoop } from "../src/main/agent/agent-loop.js";
-import { executePythonTool, generateDeliverableTool } from "../src/main/tools/specialist-tools.js";
+import { AgentLoop } from "./helpers/agent-loop-fixture.js";
+import { generateDeliverableTool } from "../src/main/tools/specialist-tools.js";
 import { createRunDirectories, resolveRunPath } from "../src/main/run/filesystem.js";
 import { extractAlignedSvgLabels, extractAttributedDocumentNotes, extractDocxText } from "../src/main/tools/document-reader.js";
 import { normalizeRunContract } from "../src/main/run/contract.js";
@@ -77,9 +78,9 @@ describe("Local model flow regressions", () => {
     const sourcePath = resolveRunPath(runId, "input/original.py", "input");
     writeFileSync(sourcePath, source);
     writeFileSync(resolveRunPath(runId, "input/sample.csv", "input"), "value\n7\n\ninvalid\n3\n");
-    const result = await executePythonTool.execute({ source_file: "original.py", filename: "corrected.py", input_files: ["sample.csv"],
+    const result = await executePythonTool.execute({ source_file: "original.py", filename: "corrected.py", input_files: ["sample.csv"], edit_indentation:'relative',
       edits: [{ old: "total += int(row['value'])", new: "try:\n    total += int(row['value'])\nexcept ValueError:\n    continue" }] }, { runId, workspaceRoot: root, gateway: {} as any });
-    expect(result.ok).not.toBe(false);
+    expect(result.ok,result.output).not.toBe(false);
     expect(JSON.parse(result.output).stdout.trim()).toBe("10");
     expect(readFileSync(sourcePath, "utf8")).toBe(source);
     const artifact = result.artifacts!.find(a => a.filename.endsWith(".py"))!;

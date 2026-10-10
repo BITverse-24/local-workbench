@@ -1,0 +1,1638 @@
+{
+  "model": "qwen2.5-coder-7b-instruct-mlx",
+  "profile": "Standard/default",
+  "byFamily": {
+    "document": 0,
+    "code": 0,
+    "inspection": 1
+  },
+  "fullPasses": 1,
+  "harnessFailures": 0,
+  "manualReviewRequired": true,
+  "subset": false,
+  "results": [
+    {
+      "id": "document-normal",
+      "family": "document",
+      "prompt": "Read these inspection reports, pull out the key findings, and draft an approval note for the plant manager.",
+      "runId": "eff937ee-7786-4aef-aeac-fd8e10305c2f",
+      "terminalState": "partial",
+      "latencySec": 243.23969787500002,
+      "text": "**Partially complete**\n\n**Confirmed**\n\n- File saved: `approval_note.docx`.\n\n**Why it stopped:** Not all requested work was confirmed.\n\n**Details**\n\napproval_note.docx saved. Some required checks remain unverified.",
+      "artifacts": [
+        {
+          "artifact_id": "f0d1caa4-983d-4184-95dd-e0e518299d88",
+          "run_id": "eff937ee-7786-4aef-aeac-fd8e10305c2f",
+          "kind": "docx",
+          "filename": "approval_note.docx",
+          "relative_path": "runs/eff937ee-7786-4aef-aeac-fd8e10305c2f/output/approval_note.docx",
+          "size_bytes": 10169,
+          "sha256": "b37ec48229bedcdffbf7a06f2ccc880c9903045f614429483ec566f508327dd0",
+          "created_at": "2026-10-10T15:50:12.268Z",
+          "relativePath": "runs/eff937ee-7786-4aef-aeac-fd8e10305c2f/output/approval_note.docx"
+        }
+      ],
+      "telemetry": {
+        "runId": "eff937ee-7786-4aef-aeac-fd8e10305c2f",
+        "outcome": "partial",
+        "totalDurationMs": 243083,
+        "calls": {
+          "workingTurns": 8,
+          "delegated": 0,
+          "classification": 1,
+          "total": 9
+        },
+        "inferenceDurationMs": 242611,
+        "tokens": {
+          "source": "provider",
+          "prompt": 11555,
+          "completion": 4402,
+          "reasoning": 0,
+          "reasoningShareOfCompletion": 0
+        },
+        "perCall": [
+          {
+            "purpose": "classification",
+            "durationMs": 5631,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 684,
+              "completionTokens": 59,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 948,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 156,
+              "completionTokens": 6,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 27637,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1346,
+              "completionTokens": 512,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 16128,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1001,
+              "completionTokens": 243,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 41124,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 990,
+              "completionTokens": 796,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 57558,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 2174,
+              "completionTokens": 997,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 18847,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1532,
+              "completionTokens": 349,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 17142,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1521,
+              "completionTokens": 310,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 57596,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 2151,
+              "completionTokens": 1130,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          }
+        ],
+        "modeMetrics": {
+          "mode": "work",
+          "engineVersion": "work-v1",
+          "requestReceivedAt": 1791647226851,
+          "modelCallCount": 9,
+          "embeddingCallCount": 1,
+          "preprocessingMs": 307,
+          "queueWaitMs": 3,
+          "toolTimeMs": 150900,
+          "inferenceMs": 242594,
+          "recoveryCount": 1,
+          "isolationStatus": "not_used"
+        }
+      },
+      "artifactText": "Findings:\nNORTH ZONE REFINERY - APPROVAL NOTE\nReport ID: IR-E201-2026-08-20 Equipment: E-201 Heat Exchanger\n\nFindings:\nIdentifier\nObservation\nRequirement\nAssessment\nAction\nEvidence\nE-201\nTube wall thickness: Rows 12-15 measured 3.8-4.2 mm\nMinimum allowable tube wall thickness: 4.6 mm\nBelow minimum\nConditional clearance pending retubing of the affected tubes\n[5f2ddc30-45c8-46c3-94a2-c3de3c8fb411, Page 1]\nE-201\nLocalised pitting corrosion at the shell inlet nozzle; maximum depth 1.8 mm\nNot specified\nPresent\nConditional clearance pending retubing of the affected tubes\n[5f2ddc30-45c8-46c3-94a2-c3de3c8fb411, Page 1]\nE-201\nChannel-head gasket degradation\nNot specified\nPresent\nReplacement recommended before return to service\n[bfb601af-50e4-487a-9b23-3e265162de27, Page 2]\n\n\nRecommendations:\nE-201 Heat Exchanger — Conditional clearance pending retubing of the affected tubes and replacement of the channel-head gasket before return to service. ([SOP-114 §3.2])\n\nApproval Decision:\nE-201 Heat Exchanger: Conditional clearance pending retubing of the affected tubes and replacement of the channel-head gasket before return to service. ([SOP-114 §3.2])\nAction:\nSchedule retubing of the affected tubes and replacement of the channel-head gasket for E-201 Heat Exchanger. ([bfb601af-50e4-487a-9b23-3e265162de27, Page 2])\n\nNote: The approval decision is conditional and pending the completion of the recommended repairs.\n\nNORTH ZONE REFINERY - APPROVAL NOTE\nReport ID: IR-E202-2026-08-21 Equipment: E-202 Pressure Vessel\n\nFindings:\nIdentifier\nObservation\nRequirement\nAssessment\nAction\nEvidence\nE-202\nTube wall thickness: Rows 12-15 measured 3.8-4.2 mm\nMinimum allowable tube wall thickness: 4.6 mm\nBelow minimum\nConditional clearance pending retubing of the affected tubes\n[bfb601af-50e4-487a-9b23-3e265162de27, Page 1]\nE-202\nLocalised pitting corrosion at the shell inlet nozzle; maximum depth 1.8 mm\nNot specified\nPresent\nConditional clearance pending retubing of the affected tubes\n[bfb601af-50e4-487a-9b23-3e265162de27, Page 1]\nE-202\nFollow-up visual inspection complete. No new defects observed.\nNot specified\nPresent\nNo action required\n[bfb601af-50e4-487a-9b23-3e265162de27, Page 2]\n\n\nRecommendations:\nE-202 Pressure Vessel — Conditional clearance pending retubing of the affected tubes. ([SOP-114 §3.2])\n\nApproval Decision:\nE-202 Pressure Vessel: Conditional clearance pending retubing of the affected tubes. ([SOP-114 §3.2])\nAction:\nSchedule retubing of the affected tubes for E-202 Pressure Vessel. ([bfb601af-50e4-487a-9b23-3e265162de27, Page 2])\n\nNote: The approval decision is conditional and pending the completion of the recommended repairs.\nSource documents\ninspection-report-E201-annotated.pdf, page 1\ninspection-report-E201-annotated.pdf, page 2\ninspection-report-E202-followup.pdf, page 1\ninspection-report-E202-followup.pdf, page 2\n",
+      "requirements": [
+        {
+          "name": "Harness did not deadlock or violate integrity",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Task reached completion with a useful response",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Artifact exists: approval_note.docx",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Original supplied source files are unchanged",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Real knowledge retrieval completed",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Requested artifact exists in the requested format",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Both reviewed subjects are included",
+          "severity": "major",
+          "passed": true
+        },
+        {
+          "name": "Important measurements and defect are preserved",
+          "severity": "major",
+          "passed": true
+        },
+        {
+          "name": "Core decision is grounded and conditional on required work",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Source follow-up actions are included",
+          "severity": "major",
+          "passed": false,
+          "reason": "An important follow-up finding or action is absent"
+        },
+        {
+          "name": "Source annotation is carried through",
+          "severity": "minor",
+          "passed": false,
+          "reason": "Annotation is absent"
+        }
+      ],
+      "classification": "PARTIAL",
+      "manualReviewRequired": true,
+      "toolPath": [
+        "retrieve_knowledge",
+        "generate_deliverable"
+      ]
+    },
+    {
+      "id": "document-paraphrase",
+      "family": "document",
+      "prompt": "Can you put together a Word approval note for the plant manager from these two reports? Include the findings and any conditions from our SOP.",
+      "runId": "1e09e235-3a44-4d09-8116-0e6805164043",
+      "terminalState": "partial",
+      "latencySec": 148.57699275,
+      "text": "**Partially complete**\n\n**Confirmed**\n\n- File saved: `approval_note.docx`.\n\n**Why it stopped:** Not all requested work was confirmed.\n\n**Details**\n\nSaved outputs: approval_note.docx. Required content is incomplete.",
+      "artifacts": [
+        {
+          "artifact_id": "9d8576bc-0b40-4c01-9b69-550851968bc3",
+          "run_id": "1e09e235-3a44-4d09-8116-0e6805164043",
+          "kind": "docx",
+          "filename": "approval_note.docx",
+          "relative_path": "runs/1e09e235-3a44-4d09-8116-0e6805164043/output/approval_note.docx",
+          "size_bytes": 9707,
+          "sha256": "3c74fb11e69bc19e1c95f041efaa1460143106c6b8ce0884fb3af4b308bea9b5",
+          "created_at": "2026-10-10T15:53:04.687Z",
+          "relativePath": "runs/1e09e235-3a44-4d09-8116-0e6805164043/output/approval_note.docx"
+        }
+      ],
+      "telemetry": {
+        "runId": "1e09e235-3a44-4d09-8116-0e6805164043",
+        "outcome": "partial",
+        "totalDurationMs": 148399,
+        "calls": {
+          "workingTurns": 7,
+          "delegated": 0,
+          "classification": 1,
+          "total": 8
+        },
+        "inferenceDurationMs": 147901,
+        "tokens": {
+          "source": "provider",
+          "prompt": 7101,
+          "completion": 2837,
+          "reasoning": 0,
+          "reasoningShareOfCompletion": 0
+        },
+        "perCall": [
+          {
+            "purpose": "classification",
+            "durationMs": 5424,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 690,
+              "completionTokens": 54,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 7862,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 162,
+              "completionTokens": 162,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 7735,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 374,
+              "completionTokens": 160,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 6919,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 585,
+              "completionTokens": 160,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 29072,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1414,
+              "completionTokens": 539,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 18564,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1072,
+              "completionTokens": 325,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 38093,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1057,
+              "completionTokens": 815,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 34232,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1747,
+              "completionTokens": 622,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          }
+        ],
+        "modeMetrics": {
+          "mode": "work",
+          "engineVersion": "work-v1",
+          "requestReceivedAt": 1791647470589,
+          "modelCallCount": 8,
+          "embeddingCallCount": 1,
+          "preprocessingMs": 349,
+          "queueWaitMs": 1,
+          "toolTimeMs": 56741,
+          "inferenceMs": 147888,
+          "recoveryCount": 2,
+          "isolationStatus": "not_used"
+        }
+      },
+      "artifactText": "Inspection Findings:\nNORTH ZONE REFINERY - APPROVAL NOTE\nReport ID: IR-E201-2026-08-20 Equipment: E-201 Heat Exchanger\n\nInspection Findings:\nTube Wall Thickness:\nRows 12-15: Measured 3.8-4.2 mm.\nMinimum Allowable Tube Wall Thickness: 4.6 mm.\nObservation: The tube wall thickness is below the minimum allowable value (3.8-4.2 mm vs 4.6 mm).\nLocalised Pitting Corrosion:\nLocation: Shell inlet nozzle.\nMaximum Depth: 1.8 mm.\nObservation: Localised pitting corrosion is present at the shell inlet nozzle with a maximum depth of 1.8 mm.\nChannel-Head Gasket Degradation:\nObservation: Channel-head gasket degradation is observed. Replacement recommended before return to service.\n\nRecommendations:\nFor E-201 Heat Exchanger:\nRecommendation: Conditional clearance pending retubing of the affected tubes and replacement of the channel-head gasket. ([SOP-114 §3.2])\n\nApproval Decision:\nDecision: Conditional clearance pending retubing of the affected tubes and replacement of the channel-head gasket. ([SOP-114 §3.2])\nReasoning: The equipment does not meet the minimum allowable tube wall thickness and has localized pitting corrosion. Retubing of the affected tubes and replacement of the channel-head gasket are required before final approval can be granted.\n\nAction Items:\nRetubing of Affected Tubes: Schedule retubing of the affected tubes (rows 12-15) to meet the minimum allowable tube wall thickness.\nReplacement of Channel-Head Gasket: Replace the channel-head gasket before returning the equipment to service.\n\nGrounding References:\nReport ID: IR-E201-2026-08-20\nEquipment: E-201 Heat Exchanger\nSOP Reference: [SOP-114 §3.2]\n\nNote: The approval note is based on the findings and recommendations outlined in the inspection reports. The equipment must be returned to service only after the recommended repairs have been completed and verified.\n\nPrepared by: [Your Name] [Your Title] [North Zone Refinery]\nDate: [Current Date]\nSource documents\ninspection-report-E201-annotated.pdf, page 1\ninspection-report-E201-annotated.pdf, page 2\ninspection-report-E202-followup.pdf, page 1\ninspection-report-E202-followup.pdf, page 2\n",
+      "requirements": [
+        {
+          "name": "Harness did not deadlock or violate integrity",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Task reached completion with a useful response",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Artifact exists: approval_note.docx",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Original supplied source files are unchanged",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Real knowledge retrieval completed",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Requested artifact exists in the requested format",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Both reviewed subjects are included",
+          "severity": "major",
+          "passed": true
+        },
+        {
+          "name": "Important measurements and defect are preserved",
+          "severity": "major",
+          "passed": true
+        },
+        {
+          "name": "Core decision is grounded and conditional on required work",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Source follow-up actions are included",
+          "severity": "major",
+          "passed": false,
+          "reason": "An important follow-up finding or action is absent"
+        },
+        {
+          "name": "Source annotation is carried through",
+          "severity": "minor",
+          "passed": false,
+          "reason": "Annotation is absent"
+        }
+      ],
+      "classification": "PARTIAL",
+      "manualReviewRequired": true,
+      "toolPath": [
+        "retrieve_knowledge",
+        "generate_deliverable"
+      ]
+    },
+    {
+      "id": "document-unrelated",
+      "family": "document",
+      "prompt": "Make a Markdown review note from these training records and our policy. For each staff identifier, say whether the person may handle records independently on the review date, give the reason, and include the required next actions and policy references. Return the note as a file.",
+      "runId": "640745f0-9ad8-49da-aff9-ac48fd026f6a",
+      "terminalState": "partial",
+      "latencySec": 157.05319291600003,
+      "text": "**Partially complete**\n\n**Confirmed**\n\n- File saved: `review-note.md`.\n\n**Still to check**\n\n- Draft coverage.\n- Verification: Make a Markdown review note from these training records and our policy. For each staff identifier, say whether the person may handle records independently on the review date, give the reason, and include the required next actions and policy references. Return the note as a file..\n- Verification: Preserve requested source fact: STAFF-FERN.\n- 8 additional items; see details.\n\n**Why it stopped:** Source coverage review exceeded its output limit.\n\n**Details**\n\nSaved outputs: review-note.md. Required content is incomplete.",
+      "artifacts": [
+        {
+          "artifact_id": "3a043e4f-0a9f-4854-8d59-8d4d07ee6f80",
+          "run_id": "640745f0-9ad8-49da-aff9-ac48fd026f6a",
+          "kind": "md",
+          "filename": "review-note.md",
+          "relative_path": "runs/640745f0-9ad8-49da-aff9-ac48fd026f6a/output/review-note.md",
+          "size_bytes": 897,
+          "sha256": "ff02443168348eb938cf083a4d9435917a0429040a43b15e996f419a15029c1e",
+          "created_at": "2026-10-10T15:55:59.292Z",
+          "relativePath": "runs/640745f0-9ad8-49da-aff9-ac48fd026f6a/output/review-note.md"
+        }
+      ],
+      "telemetry": {
+        "runId": "640745f0-9ad8-49da-aff9-ac48fd026f6a",
+        "outcome": "partial",
+        "totalDurationMs": 156917,
+        "calls": {
+          "workingTurns": 9,
+          "delegated": 0,
+          "classification": 1,
+          "total": 10
+        },
+        "inferenceDurationMs": 156703,
+        "tokens": {
+          "source": "provider",
+          "prompt": 7871,
+          "completion": 3068,
+          "reasoning": 0,
+          "reasoningShareOfCompletion": 0
+        },
+        "perCall": [
+          {
+            "purpose": "classification",
+            "durationMs": 5651,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 689,
+              "completionTokens": 54,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 1166,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 187,
+              "completionTokens": 6,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 11395,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 869,
+              "completionTokens": 204,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 16552,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 652,
+              "completionTokens": 326,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 19412,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 895,
+              "completionTokens": 373,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 10495,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 848,
+              "completionTokens": 175,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 20337,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1117,
+              "completionTokens": 345,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 10113,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1022,
+              "completionTokens": 215,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 44346,
+            "ttftMs": null,
+            "finishReason": "length",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 659,
+              "completionTokens": 1023,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 17236,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 933,
+              "completionTokens": 347,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          }
+        ],
+        "modeMetrics": {
+          "mode": "work",
+          "engineVersion": "work-v1",
+          "requestReceivedAt": 1791647619653,
+          "modelCallCount": 10,
+          "embeddingCallCount": 1,
+          "preprocessingMs": 70,
+          "queueWaitMs": 4,
+          "toolTimeMs": 90861,
+          "inferenceMs": 156676,
+          "recoveryCount": 2,
+          "isolationStatus": "not_used"
+        }
+      },
+      "artifactText": "# Review Note\n\n## Staff-Lark (Mira Sen)\n- **May handle records independently:** Yes\n- **Reason:** Completed training within the last 12 months (Training completed: 2026-09-10) and supervisor acknowledgement is recorded (Supervisor acknowledgement: Recorded on 2026-09-12).\n- **Next Actions:** None\n- **Policy Reference:** fixture-0, section 2, page 1: ## 2 Eligibility\n\n## Staff-Fern (Owen Hale)\n- **May handle records independently:** No\n- **Reason:** Training completed over 12 months ago (Training completed: 2025-08-02) and supervisor acknowledgement is not recorded.\n- **Next Actions:** Arrange refresher training and obtain supervisor acknowledgement.\n- **Policy Reference:** fixture-0, section 2, page 1: ## 2 Eligibility\n\n**Note:** STAFF-FERN requires refresher training and supervisor acknowledgement before independent records handling.\n\n## Source documents\n- training-records.md, page 1",
+      "requirements": [
+        {
+          "name": "Harness did not deadlock or violate integrity",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Task reached completion with a useful response",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Artifact exists: review-note.md",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Original supplied source files are unchanged",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Real knowledge retrieval completed",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Requested artifact exists in the requested format",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Both staff identifiers are preserved",
+          "severity": "major",
+          "passed": false,
+          "reason": "A staff identifier is absent"
+        },
+        {
+          "name": "Training dates and review date are grounded",
+          "severity": "major",
+          "passed": false,
+          "reason": "Relevant date absent"
+        },
+        {
+          "name": "Eligibility decisions and evidence are supplied",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Source actions and policy references are preserved",
+          "severity": "major",
+          "passed": false,
+          "reason": "An action or governing source is absent"
+        }
+      ],
+      "classification": "PARTIAL",
+      "manualReviewRequired": true,
+      "toolPath": [
+        "retrieve_knowledge",
+        "generate_deliverable",
+        "generate_deliverable"
+      ]
+    },
+    {
+      "id": "code-normal",
+      "family": "code",
+      "prompt": "This is crashing on our vendor log files. Fix it and make sure it actually works.",
+      "runId": "9e4de332-0433-4881-9999-960ac76ca1a0",
+      "terminalState": "partial",
+      "latencySec": 86.363592084,
+      "text": "**Partially complete**\n\n**Confirmed**\n\n- File saved: `fixed-vendor-log-parser.py`.\n- Execution succeeded (exit code 0): `fixed-vendor-log-parser.py`.\n\n**Still to check**\n\n- Acceptance not yet verified: Validate source fixed-vendor-log-parser.py.\n\n**Why it stopped:** Not all requested work was confirmed.\n\n**Details**\n\nWork partial. 1 output file(s) are available.",
+      "artifacts": [
+        {
+          "artifact_id": "14bdd6cb-f9e3-4ec7-b121-9cbcbfe90adb",
+          "run_id": "9e4de332-0433-4881-9999-960ac76ca1a0",
+          "kind": "txt",
+          "filename": "fixed-vendor-log-parser.py",
+          "relative_path": "runs/9e4de332-0433-4881-9999-960ac76ca1a0/output/fixed-vendor-log-parser.py",
+          "size_bytes": 724,
+          "sha256": "4bad322f4b22cb826b889118bd3dc2a36df209d8d9a009971b23b81fc3b8c8d6",
+          "created_at": "2026-10-10T15:57:03.421Z",
+          "relativePath": "runs/9e4de332-0433-4881-9999-960ac76ca1a0/output/fixed-vendor-log-parser.py"
+        }
+      ],
+      "telemetry": {
+        "runId": "9e4de332-0433-4881-9999-960ac76ca1a0",
+        "outcome": "partial",
+        "totalDurationMs": 86295,
+        "calls": {
+          "workingTurns": 7,
+          "delegated": 0,
+          "classification": 1,
+          "total": 8
+        },
+        "inferenceDurationMs": 85846,
+        "tokens": {
+          "source": "provider",
+          "prompt": 10974,
+          "completion": 1210,
+          "reasoning": 0,
+          "reasoningShareOfCompletion": 0
+        },
+        "perCall": [
+          {
+            "purpose": "classification",
+            "durationMs": 3425,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 671,
+              "completionTokens": 65,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 929,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 153,
+              "completionTokens": 6,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 7324,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 611,
+              "completionTokens": 116,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 29868,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 2622,
+              "completionTokens": 441,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": [
+              "read_file",
+              "read_file",
+              "execute_python"
+            ]
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 4510,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 949,
+              "completionTokens": 7,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 8635,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1011,
+              "completionTokens": 97,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 7673,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 4008,
+              "completionTokens": 10,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 23482,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 949,
+              "completionTokens": 468,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          }
+        ],
+        "modeMetrics": {
+          "mode": "work",
+          "engineVersion": "work-v1",
+          "requestReceivedAt": 1791647777142,
+          "modelCallCount": 8,
+          "preprocessingMs": 55,
+          "queueWaitMs": 1,
+          "toolTimeMs": 13265,
+          "inferenceMs": 85828,
+          "recoveryCount": 0,
+          "isolationStatus": "approved_uncontained"
+        }
+      },
+      "requirements": [
+        {
+          "name": "Harness did not deadlock or violate integrity",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Task reached completion with a useful response",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Artifact exists: fixed-vendor-log-parser.py",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Original supplied source files are unchanged",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Requested artifact exists in the requested format",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Runtime executed the repaired source",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Saved program meets source-derived behavior on supplied input",
+          "severity": "critical",
+          "passed": false,
+          "reason": "{\"value\":{\"ok\":4,\"malformed\":1,\"high\":1}}"
+        },
+        {
+          "name": "Saved program preserves behavior on independent input",
+          "severity": "critical",
+          "passed": false,
+          "reason": "{\"value\":{\"ok\":3,\"malformed\":1,\"high\":1}}"
+        },
+        {
+          "name": "Public callable interface is retained",
+          "severity": "critical",
+          "passed": true
+        }
+      ],
+      "classification": "FAIL",
+      "manualReviewRequired": true,
+      "toolPath": [
+        "read_file",
+        "read_file",
+        "execute_python"
+      ]
+    },
+    {
+      "id": "code-paraphrase",
+      "family": "code",
+      "prompt": "Can you repair this parser and check it with the attached CSV? Keep the same interface and give me the corrected Python file.",
+      "runId": "b05e0c14-0602-4485-ba4f-31f92a84b8a4",
+      "terminalState": "failed",
+      "latencySec": 60.150321833999946,
+      "text": "Work failed. 0 output file(s) are available.",
+      "artifacts": [],
+      "telemetry": {
+        "runId": "b05e0c14-0602-4485-ba4f-31f92a84b8a4",
+        "outcome": "failed",
+        "totalDurationMs": 59952,
+        "calls": {
+          "workingTurns": 7,
+          "delegated": 0,
+          "classification": 1,
+          "total": 8
+        },
+        "inferenceDurationMs": 59772,
+        "tokens": {
+          "source": "provider",
+          "prompt": 13014,
+          "completion": 815,
+          "reasoning": 0,
+          "reasoningShareOfCompletion": 0
+        },
+        "perCall": [
+          {
+            "purpose": "classification",
+            "durationMs": 4473,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 679,
+              "completionTokens": 61,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 948,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 160,
+              "completionTokens": 6,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 7643,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 621,
+              "completionTokens": 116,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 22533,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 2637,
+              "completionTokens": 311,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": [
+              "execute_python"
+            ]
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 4469,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 916,
+              "completionTokens": 7,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 15638,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 3331,
+              "completionTokens": 260,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": [
+              "execute_python"
+            ]
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 1032,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 920,
+              "completionTokens": 7,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 3036,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 3750,
+              "completionTokens": 47,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": [
+              "request_capability"
+            ]
+          }
+        ],
+        "modeMetrics": {
+          "mode": "work",
+          "engineVersion": "work-v1",
+          "requestReceivedAt": 1791647864108,
+          "modelCallCount": 8,
+          "preprocessingMs": 49,
+          "queueWaitMs": 3,
+          "toolTimeMs": 4479,
+          "inferenceMs": 59761,
+          "recoveryCount": 2,
+          "isolationStatus": "approved_uncontained"
+        }
+      },
+      "requirements": [
+        {
+          "name": "Harness did not deadlock or violate integrity",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Task reached completion with a useful response",
+          "severity": "critical",
+          "passed": false,
+          "reason": "State: failed; invalid_model_response: Work failed. 0 output file(s) are available."
+        },
+        {
+          "name": "Original supplied source files are unchanged",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Requested artifact exists in the requested format",
+          "severity": "critical",
+          "passed": false,
+          "reason": "No .py artifact"
+        },
+        {
+          "name": "Runtime executed the repaired source",
+          "severity": "critical",
+          "passed": false,
+          "reason": "No successful real execution"
+        }
+      ],
+      "classification": "FAIL",
+      "manualReviewRequired": true,
+      "toolPath": [
+        "execute_python",
+        "execute_python",
+        "request_capability"
+      ]
+    },
+    {
+      "id": "code-unrelated",
+      "family": "code",
+      "prompt": "This word counter loses repeated words. Fix the attached source, keep its function and command-line interface, run it on the attached text, and return the working Python file.",
+      "runId": "21d86fae-638b-4699-844f-2363671c77b3",
+      "terminalState": "failed",
+      "latencySec": 57.12014354200009,
+      "text": "Work failed. 0 output file(s) are available.",
+      "artifacts": [],
+      "telemetry": {
+        "runId": "21d86fae-638b-4699-844f-2363671c77b3",
+        "outcome": "failed",
+        "totalDurationMs": 57064,
+        "calls": {
+          "workingTurns": 6,
+          "delegated": 0,
+          "classification": 1,
+          "total": 7
+        },
+        "inferenceDurationMs": 56870,
+        "tokens": {
+          "source": "provider",
+          "prompt": 5533,
+          "completion": 968,
+          "reasoning": 0,
+          "reasoningShareOfCompletion": 0
+        },
+        "perCall": [
+          {
+            "purpose": "classification",
+            "durationMs": 3191,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 680,
+              "completionTokens": 56,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 8548,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 169,
+              "completionTokens": 190,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 8837,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 409,
+              "completionTokens": 189,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 8046,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 649,
+              "completionTokens": 189,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 6262,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 438,
+              "completionTokens": 107,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 18497,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 2492,
+              "completionTokens": 230,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": [
+              "execute_python"
+            ]
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 3489,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 696,
+              "completionTokens": 7,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          }
+        ],
+        "modeMetrics": {
+          "mode": "work",
+          "engineVersion": "work-v1",
+          "requestReceivedAt": 1791647924639,
+          "modelCallCount": 7,
+          "preprocessingMs": 71,
+          "queueWaitMs": 5,
+          "toolTimeMs": 0,
+          "inferenceMs": 56857,
+          "recoveryCount": 2,
+          "isolationStatus": "approved_uncontained"
+        }
+      },
+      "requirements": [
+        {
+          "name": "Harness did not deadlock or violate integrity",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Task reached completion with a useful response",
+          "severity": "critical",
+          "passed": false,
+          "reason": "State: failed; invalid_model_response: Work failed. 0 output file(s) are available."
+        },
+        {
+          "name": "Original supplied source files are unchanged",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Requested artifact exists in the requested format",
+          "severity": "critical",
+          "passed": false,
+          "reason": "No .py artifact"
+        },
+        {
+          "name": "Runtime executed the repaired source",
+          "severity": "critical",
+          "passed": false,
+          "reason": "No successful real execution"
+        }
+      ],
+      "classification": "FAIL",
+      "manualReviewRequired": true,
+      "toolPath": [
+        "execute_python"
+      ]
+    },
+    {
+      "id": "inspection-normal",
+      "family": "inspection",
+      "prompt": "Check this against our piping spec and tell me if anything's non-compliant.",
+      "runId": "242a2a71-ebb0-4b46-812e-9324e2ce3669",
+      "terminalState": "completed",
+      "latencySec": 33.07543495799997,
+      "text": "### Grounded Inspection Report\n\n**Source ID:** e141c02a-7d2d-426b-8083-0b114c0783ef  \n**Drawing:** P-204 PUMP SKID - DESIGN REVIEW DRAWING  \n**Review Target:** Compare observed drawing values against SOP-220 before sign-off.\n\n| Identifier | Observation | Requirement | Assessment | Action | Evidence |\n|------------|-------------|-----------|------------|--------|----------|\n| svg-f1     | DN80 discharge line | The P-204 discharge line must be DN100 or larger. A DN80 discharge line is non-compliant for the specified pump duty. | Non-compliant | Repair or replace the DN80 discharge line with a DN100 or larger pipe. | [piping-spec-SOP-220.md, section 4.3] |\n| svg-f1     | CLASS 150 valve rating | Isolation valves on the discharge line must be rated at least Class 300. A Class 150 valve is non-compliant regardless of the nominal pipe diameter. | Non-compliant | Replace the CLASS 150 isolation valve with a Class 300 or higher rated valve. | [piping-spec-SOP-220.md, section 4.2] |\n\n### Recommendations\n\n1. **Recommendation for P-204 discharge line — Repair or replace the DN80 discharge line with a DN100 or larger pipe.**  \n   ([piping-spec-SOP-220.md, section 4.3])\n\n2. **Recommendation for isolation valve rating — Replace the CLASS 150 isolation valve with a Class 300 or higher rated valve.**  \n   ([piping-spec-SOP-220.md, section 4.2])\n\n### Approval Decisions\n\n1. **Approval decision for P-204 discharge line — Pending**  \n   (Missing prerequisite: Repair or replace the DN80 discharge line with a DN100 or larger pipe.)\n\n2. **Approval decision for isolation valve rating — Pending**  \n   (Missing prerequisite: Replace the CLASS 150 isolation valve with a Class 300 or higher rated valve.)\n\n### Action Items\n\n1. **Action for P-204 discharge line — Repair or replace the DN80 discharge line with a DN100 or larger pipe.**  \n   (Work)\n\n2. **Action for isolation valve rating — Replace the CLASS 150 isolation valve with a Class 300 or higher rated valve.**  \n   (Work)\n\n### Summary\n\nThe drawing P-204 PUMP SKID - DESIGN REVIEW DRAWING contains non-compliant elements regarding the discharge line diameter and isolation valve rating. The recommendations are to repair or replace these components to meet the requirements specified in SOP-220. The approval decisions are pending until the recommended actions are completed.",
+      "artifacts": [],
+      "telemetry": {
+        "runId": "242a2a71-ebb0-4b46-812e-9324e2ce3669",
+        "outcome": "completed",
+        "totalDurationMs": 33043,
+        "calls": {
+          "workingTurns": 1,
+          "delegated": 0,
+          "classification": 0,
+          "total": 1
+        },
+        "inferenceDurationMs": 32957,
+        "tokens": {
+          "source": "provider",
+          "prompt": 1401,
+          "completion": 633,
+          "reasoning": 0,
+          "reasoningShareOfCompletion": 0
+        },
+        "perCall": [
+          {
+            "purpose": "working_turn",
+            "durationMs": 32957,
+            "ttftMs": 6676,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1401,
+              "completionTokens": 633,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          }
+        ],
+        "modeMetrics": {
+          "mode": "chat",
+          "engineVersion": "chat-v1",
+          "requestReceivedAt": 1791647982129,
+          "modelCallCount": 1,
+          "embeddingCallCount": 1,
+          "preprocessingMs": 63,
+          "queueWaitMs": 1,
+          "toolTimeMs": 2,
+          "inferenceMs": 32954,
+          "recoveryCount": 0,
+          "isolationStatus": "not_used",
+          "firstVisibleTokenMs": 6754
+        }
+      },
+      "requirements": [
+        {
+          "name": "Harness did not deadlock or violate integrity",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Task reached completion with a useful response",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Original supplied source files are unchanged",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Real knowledge retrieval completed",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Major observed and required valve ratings are included",
+          "severity": "critical",
+          "passed": false,
+          "reason": "Valve mismatch is absent"
+        },
+        {
+          "name": "Major observed and required line sizes are included",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Correction requirement is clear",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Retrieved governing clauses are cited",
+          "severity": "major",
+          "passed": true
+        },
+        {
+          "name": "No invented scale requirement",
+          "severity": "critical",
+          "passed": true
+        }
+      ],
+      "classification": "FAIL",
+      "manualReviewRequired": true,
+      "toolPath": [
+        "extract_document",
+        "retrieve_knowledge"
+      ]
+    },
+    {
+      "id": "inspection-paraphrase",
+      "family": "inspection",
+      "prompt": "Does this skid drawing meet our piping standard? Point out any mismatches and the changes needed before sign-off.",
+      "runId": "22d5724b-61af-4077-9bee-ffb24e06158f",
+      "terminalState": "completed",
+      "latencySec": 21.78478687499999,
+      "text": "### Grounded Inspection Report\n\n**Drawing Identifier:** P-204 PUMP SKID - DESIGN REVIEW DRAWING  \n**Review Target:** Compare observed drawing values against SOP-220 before sign-off.\n\n| Identifier | Observation | Requirement | Assessment | Action | Evidence |\n|------------|-------------|-----------|----------|--------|----------|\n| svg-f1     | DN80 discharge line | DN100 or larger (SOP-220 §4.3) | Non-compliant (DN80) | Change to DN100 or larger | Drawing specifies DN80 discharge line |\n| svg-f1     | CLASS 150 valve rating on discharge line | At least Class 300 (SOP-220 §4.2) | Non-compliant (CLASS 150) | Change to Class 300 or higher | Drawing specifies CLASS 150 valve rating |\n\n### Recommendations\n\n- **Recommendation for P-204 PUMP SKID - DESIGN REVIEW DRAWING — Change the discharge line diameter to DN100 or larger (SOP-220 §4.3).**\n- **Recommendation for P-204 PUMP SKID - DESIGN REVIEW DRAWING — Change the valve rating on the discharge line to at least Class 300 (SOP-220 §4.2).**\n\n### Approval Decision\n\n**Approval decision for P-204 PUMP SKID - DESIGN REVIEW DRAWING:** **Conditional**  \n**Reason:** The drawing does not meet the requirements specified in SOP-220. Specifically, the discharge line diameter must be DN100 or larger and the valve rating on the discharge line must be at least Class 300. These changes are necessary before sign-off.\n\n**Missing Prerequisite:** Compliance with the requirements outlined in SOP-220 (SOP-220 §4.2 and §4.3).",
+      "artifacts": [],
+      "telemetry": {
+        "runId": "22d5724b-61af-4077-9bee-ffb24e06158f",
+        "outcome": "completed",
+        "totalDurationMs": 21751,
+        "calls": {
+          "workingTurns": 1,
+          "delegated": 0,
+          "classification": 0,
+          "total": 1
+        },
+        "inferenceDurationMs": 21678,
+        "tokens": {
+          "source": "provider",
+          "prompt": 1406,
+          "completion": 410,
+          "reasoning": 0,
+          "reasoningShareOfCompletion": 0
+        },
+        "perCall": [
+          {
+            "purpose": "working_turn",
+            "durationMs": 21678,
+            "ttftMs": 4805,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1406,
+              "completionTokens": 410,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          }
+        ],
+        "modeMetrics": {
+          "mode": "chat",
+          "engineVersion": "chat-v1",
+          "requestReceivedAt": 1791648015573,
+          "modelCallCount": 1,
+          "embeddingCallCount": 1,
+          "preprocessingMs": 58,
+          "queueWaitMs": 0,
+          "toolTimeMs": 1,
+          "inferenceMs": 21677,
+          "recoveryCount": 0,
+          "isolationStatus": "not_used",
+          "firstVisibleTokenMs": 4876
+        }
+      },
+      "requirements": [
+        {
+          "name": "Harness did not deadlock or violate integrity",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Task reached completion with a useful response",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Original supplied source files are unchanged",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Real knowledge retrieval completed",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Major observed and required valve ratings are included",
+          "severity": "critical",
+          "passed": false,
+          "reason": "Valve mismatch is absent"
+        },
+        {
+          "name": "Major observed and required line sizes are included",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Correction requirement is clear",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Retrieved governing clauses are cited",
+          "severity": "major",
+          "passed": true
+        },
+        {
+          "name": "No invented scale requirement",
+          "severity": "critical",
+          "passed": true
+        }
+      ],
+      "classification": "FAIL",
+      "manualReviewRequired": true,
+      "toolPath": [
+        "extract_document",
+        "retrieve_knowledge"
+      ]
+    },
+    {
+      "id": "inspection-unrelated",
+      "family": "inspection",
+      "prompt": "Check these parcel labels against our dispatch policy. Use the exact box identifiers, identify any defects and required corrections, and say which parcels can be dispatched. Cite the relevant policy sections.",
+      "runId": "d019d3d0-524c-4910-8804-6bc9050a52d9",
+      "terminalState": "completed",
+      "latencySec": 16.536410999999962,
+      "text": "### Dispatch Label Audit\n\n| Identifier | Observation | Requirement | Assessment | Action | Evidence |\n|------------|-------------|-------------|------------|--------|----------|\n| BOX-ORCHID   | Destination: Bristol<br>Return address: 18 Willow Road, York<br>Tracking barcode: Present and readable | Every parcel must state its destination.<br>Every parcel must have a return address.<br>Every parcel must have a readable tracking barcode. | Meets all requirements | Can be dispatched | dispatch-policy.md, section 1, page 1<br>dispatch-policy.md, section 2, page 1<br>dispatch-policy.md, section 3, page 1 |\n| BOX-CEDAR    | Destination: Leeds<br>Return address: Missing<br>Tracking barcode: Present but unreadable | Every parcel must state its destination.<br>Every parcel must have a return address.<br>Every parcel must have a readable tracking barcode. | Does not meet all requirements | Cannot be dispatched<br>Missing return address<br>Unreadable tracking barcode | dispatch-policy.md, section 1, page 1<br>dispatch-policy.md, section 2, page 1<br>dispatch-policy.md, section 3, page 1 |\n\n### Recommendations\n\n- **Recommendation for BOX-CEDAR — Add return address ([dispatch-policy.md, section 2, page 1])**\n- **Recommendation for BOX-CEDAR — Reprint readable tracking barcode ([dispatch-policy.md, section 3, page 1])**\n\n### Summary\n\n- **BOX-ORCHID** can be dispatched as it meets all dispatch label requirements.\n- **BOX-CEDAR** cannot be dispatched until the return address is added and the tracking barcode is made readable.",
+      "artifacts": [],
+      "telemetry": {
+        "runId": "d019d3d0-524c-4910-8804-6bc9050a52d9",
+        "outcome": "completed",
+        "totalDurationMs": 16349,
+        "calls": {
+          "workingTurns": 1,
+          "delegated": 0,
+          "classification": 0,
+          "total": 1
+        },
+        "inferenceDurationMs": 16290,
+        "tokens": {
+          "source": "provider",
+          "prompt": 734,
+          "completion": 360,
+          "reasoning": 0,
+          "reasoningShareOfCompletion": 0
+        },
+        "perCall": [
+          {
+            "purpose": "working_turn",
+            "durationMs": 16290,
+            "ttftMs": 1701,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 734,
+              "completionTokens": 360,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          }
+        ],
+        "modeMetrics": {
+          "mode": "chat",
+          "engineVersion": "chat-v1",
+          "requestReceivedAt": 1791648037671,
+          "modelCallCount": 1,
+          "embeddingCallCount": 1,
+          "preprocessingMs": 45,
+          "queueWaitMs": 1,
+          "toolTimeMs": 0,
+          "inferenceMs": 16288,
+          "recoveryCount": 0,
+          "isolationStatus": "not_used",
+          "firstVisibleTokenMs": 1754
+        }
+      },
+      "requirements": [
+        {
+          "name": "Harness did not deadlock or violate integrity",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Task reached completion with a useful response",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Original supplied source files are unchanged",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Real knowledge retrieval completed",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Both box identifiers are preserved",
+          "severity": "major",
+          "passed": true
+        },
+        {
+          "name": "Missing return address and unreadable barcode are identified",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Required corrections and dispatch decision are supplied",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Policy reference is supplied",
+          "severity": "major",
+          "passed": true
+        }
+      ],
+      "classification": "PASS",
+      "manualReviewRequired": true,
+      "toolPath": [
+        "retrieve_knowledge"
+      ]
+    }
+  ]
+}

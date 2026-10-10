@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const SCHEMA_VERSION = "2";
+export const SCHEMA_VERSION = "3";
 
 export const SETTING_DEFAULTS: Record<string, unknown> = {
   selectedModel: "primary-model",
@@ -128,13 +128,13 @@ function migrateConfirmationsSchema(db: Db): void {
     | { sql: string }
     | undefined;
   if (!row?.sql) return;
-  if (!row.sql.includes("'plan_approval'")) {
+  if (!row.sql.includes("'uncontained_python'")) {
     db.pragma("foreign_keys = OFF");
     db.exec(`
       CREATE TABLE confirmations_new (
         action_id  TEXT PRIMARY KEY,
         run_id     TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-        kind       TEXT NOT NULL CHECK (kind IN ('generate_docx','execute_python','generate_xlsx','plan_approval')),
+        kind       TEXT NOT NULL CHECK (kind IN ('generate_docx','execute_python','generate_xlsx','plan_approval','uncontained_python')),
         prompt     TEXT NOT NULL,
         created_at TEXT NOT NULL,
         expires_at TEXT NOT NULL,

@@ -91,7 +91,7 @@ export const startRunSchema = z
     groundingEnabled: z.boolean().optional(),
     preferredRoute: z.string().optional(),
     selectedModel: z.string().optional(),
-    mode: z.enum(["chat", "agent"]).optional(),
+    mode: z.enum(["chat", "work", "agent"]).optional(),
   })
   .strict()
   .refine(
@@ -175,3 +175,5 @@ export type KbIngestDocInput = z.infer<typeof kbIngestDocSchema>;
 export type KbDeleteDocInput = z.infer<typeof kbDeleteDocSchema>;
 export type KbReindexInput = z.infer<typeof kbReindexSchema>;
 export type KbQueryInput = z.infer<typeof kbQuerySchema>;
+
+export const getRunSnapshotSchema = z.object({ chatId: z.string().uuid().optional(), runId: z.string().uuid().optional() }).strict().refine(value=>!!value.chatId !== !!value.runId,"Supply a chat or a run ID.");

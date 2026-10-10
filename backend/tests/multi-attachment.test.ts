@@ -1,147 +1,90 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { initDb, closeDb, getDb } from "../src/main/persistence/db.js";
 import { RunManager } from "../src/main/run/manager.js";
 import { startRunSchema } from "../src/main/ipc/validators.js";
 import { createChat } from "../src/main/persistence/chats.js";
+import { modeGateway, fixtureIntent } from './helpers/mode-gateway.js';
+import { resolveRunPath } from '../src/main/run/filesystem.js';
 import type { ModelRequest, RunEvent } from "../src/shared/contracts.js";
 
 describe("Multi-Attachment Support & Persistence", () => {
+
   let tempRoot: string;
+
   let manager: RunManager;
+
   let runEvents: RunEvent[];
+
   let capturedRequests: ModelRequest[];
 
+
   beforeEach(() => {
+
     tempRoot = mkdtempSync(path.join(os.tmpdir(), "wb-multi-att-test-"));
+
     process.env.WORKBENCH_DATA_ROOT = path.join(tempRoot, "data");
+
     initDb(path.join(tempRoot, "workbench.sqlite"));
 
+
     runEvents = [];
+
     capturedRequests = [];
 
-    const mockGateway = {
-      async execute(req: ModelRequest) {
-        capturedRequests.push(req);
-        if (req.taskType === "vision") {
-          return {
-            ok: true,
-            value: {
-              requestId: req.requestId,
-              runId: req.runId,
-              modelId: req.modelId,
-              taskType: "vision",
-              completedAt: new Date().toISOString(),
-              result: {
-                sourceText: "Inspection report contents",
-                findings: [
-                  {
-                    findingId: "finding-1",
-                    title: "Tube wall thickness below minimum allowable",
-                    value: "Rows 12–15 measured 3.8–4.2 mm; minimum allowable is 4.6 mm",
-                    pageReferenceIds: ["page-ref-1"],
-                    confidence: "high",
-                    evidence: "Measured 3.8-4.2mm",
-                  },
-                ],
-                pageReferences: [{ id: "page-ref-1", page: 1, text: "Rows 12–15: 3.8–4.2 mm" }],
-              },
-            },
-          };
-        }
-        if (req.taskType === "draft") {
-          return {
-            ok: true,
-            value: {
-              requestId: req.requestId,
-              runId: req.runId,
-              modelId: req.modelId,
-              taskType: "draft",
-              completedAt: new Date().toISOString(),
-              result: {
-                text: "### Approval Note — Heat Exchanger E-201\n\nConditional clearance citing [SOP-114 §3.2].",
-              },
-            },
-          };
-        }
-        if (req.taskType === "code") {
-          if (req.responseFormat === "code-result") {
-            return {
-              ok: true,
-              value: {
-                requestId: req.requestId,
-                runId: req.runId,
-                modelId: req.modelId,
-                taskType: "code",
-                completedAt: new Date().toISOString(),
-                result: {
-                  filename: "task.py",
-                  source: "import csv\nwith open('repaired-vendor-log.csv', 'w', newline='') as f:\n    f.write('status,count\\nok,4\\n')\nprint('ROWS 5; MALFORMED 1; ABOVE_LIMIT 1')",
-                  expectedResult: "ROWS 5; MALFORMED 1; ABOVE_LIMIT 1",
-                  inputFiles: ["vendor-maintenance-log.csv"],
-                  outputFiles: ["repaired-vendor-log.csv"],
-                  allowedImports: ["csv"],
-                  outputMode: "artifact",
-                  artifactFilename: "repaired-vendor-log.csv",
-                  artifactKind: "csv",
-                },
-              },
-            };
-          }
-          if (req.responseFormat === "code-summary") {
-            return {
-              ok: true,
-              value: {
-                requestId: req.requestId,
-                runId: req.runId,
-                modelId: req.modelId,
-                taskType: "code",
-                completedAt: new Date().toISOString(),
-                result: {
-                  summary: "Verified script execution: ROWS 5; MALFORMED 1; ABOVE_LIMIT 1",
-                  verified: true,
-                },
-              },
-            };
-          }
-        }
-        return { ok: false, error: { kind: "ai-error", code: "unsupported_task", message: "unsupported", retryable: false } };
-      },
-      async complete(req: ModelRequest) {
-        return this.execute(req);
-      },
-      health: async () => [],
-    } as any;
 
-    manager = new RunManager(mockGateway, (evt) => runEvents.push(evt));
+    const fixture = modeGateway(fixtureIntent('Prepare a review note', [{ type: 'md', filename: 'review-note.md' }]), messages => '# Review note\n\n' + String(messages[0].content).split('SOURCES:\n')[1]);
+
+    manager = new RunManager(fixture.gateway, event => runEvents.push(event));
+
   });
+
 
   afterEach(() => {
+
     closeDb();
+
     delete process.env.WORKBENCH_DATA_ROOT;
+
     rmSync(tempRoot, { recursive: true, force: true });
+
   });
+
 
   it("retains the full executed attachment group despite newer registration-only runs", () => {
+
     const chatId = createChat("Compare reports");
+
     const first = manager.registerAttachment({ chatId, filename: "first.txt", mediaType: "text/plain", sizeBytes: 12, base64OrBuffer: Buffer.from("first source") });
+
     const second = manager.registerAttachment({ chatId, filename: "second.txt", mediaType: "text/plain", sizeBytes: 13, base64OrBuffer: Buffer.from("second source") });
+
     const db = getDb();
+
     db.prepare("INSERT INTO run_attachments(run_id, attachment_id) VALUES (?, ?)").run(first.runId, second.attachment.attachmentId);
+
     db.prepare("UPDATE runs SET state='completed', completed_at=? WHERE id=?").run(new Date().toISOString(), first.runId);
+
     db.prepare("UPDATE runs SET created_at=? WHERE id=?").run("2099-01-01T00:00:00.000Z", second.runId);
+
     const retained = (manager as any).latestAttachments(chatId);
+
     expect(retained.map((file: any) => file.filename).sort()).toEqual(["first.txt", "second.txt"]);
+
   });
 
+
   it("validates startRunSchema with attachmentTokens array", () => {
+
     const validSingle = startRunSchema.safeParse({
       userText: "inspect report",
       attachmentToken: "123e4567-e89b-12d3-a456-426614174000",
     });
+
     expect(validSingle.success).toBe(true);
+
 
     const validMultiple = startRunSchema.safeParse({
       userText: "inspect multiple reports",
@@ -150,254 +93,110 @@ describe("Multi-Attachment Support & Persistence", () => {
         "223e4567-e89b-12d3-a456-426614174001",
       ],
     });
+
     expect(validMultiple.success).toBe(true);
 
     // Empty text without attachments should fail
+
     const invalidEmpty = startRunSchema.safeParse({
       userText: "",
     });
+
     expect(invalidEmpty.success).toBe(false);
+
   });
+
 
   it("rejects unsupported run fields; generation profiles are selected outside run payloads", () => {
+
     expect(startRunSchema.safeParse({ userText: "test", generationBudgetProfile: "demo_fast" }).success).toBe(false);
+
   });
 
-  it("persists multiple attachments in run_attachments join table", async () => {
-    const chatId = createChat("Multi-doc chat");
-    const buf1 = Buffer.from("pdf-1-content");
-    const buf2 = Buffer.from("pdf-2-content");
-    const att1 = manager.registerAttachment({
-      chatId,
-      filename: "inspection-report-E201-annotated.pdf",
-      mediaType: "application/pdf",
-      sizeBytes: buf1.length,
-      base64OrBuffer: buf1,
-    });
-    const att2 = manager.registerAttachment({
-      chatId,
-      filename: "inspection-report-E202-followup.pdf",
-      mediaType: "application/pdf",
-      sizeBytes: buf2.length,
-      base64OrBuffer: buf2,
-    });
 
-    const { runId } = await manager.start({
-      chatId,
-      userText: "Read these inspection reports and draft an approval note.",
-      attachmentTokens: [att1.attachment.attachmentId, att2.attachment.attachmentId],
-    });
+  function upload(chatId: string, filename: string, content: Buffer, mediaType = 'text/plain') {
 
-    const db = getDb();
-    const rows = db
-      .prepare("SELECT * FROM run_attachments WHERE run_id = ?")
-      .all(runId) as Array<{ run_id: string; attachment_id: string }>;
+    return manager.registerAttachment({ chatId, filename, mediaType, sizeBytes: content.length, base64OrBuffer: content }).attachment;
 
-    expect(rows.length).toBe(2);
-    expect(rows.map((r) => r.attachment_id)).toContain(att1.attachment.attachmentId);
-    expect(rows.map((r) => r.attachment_id)).toContain(att2.attachment.attachmentId);
+  }
 
-    // Wait for the async run to reach confirmation before afterEach tears down DB
-    await vi.waitFor(
-      () => {
-        expect(
-          runEvents.some(
-            (e) =>
-              e.type === "confirmation_required" ||
-              (e.type === "run_state" && (e.state === "completed" || e.state === "awaiting_confirmation")),
-          ),
-        ).toBe(true);
-      },
-      { timeout: 3000 },
-    );
+  async function completed(runId: string) {
+    await vi.waitFor(() => expect(runEvents.some(e => e.runId === runId && e.type === 'run_state' && e.state === 'completed'), JSON.stringify(runEvents.filter(e => e.type === 'error'))).toBe(true), { timeout: 5000 });
+  }
+
+  it('persists all source IDs and distinct aliases in the execution run', async () => {
+
+    const chatId = createChat('Multi-source');
+
+    const a = upload(chatId, 'report.txt', Buffer.from('Subject: ALPHA\nFinding: leak'));
+
+    const b = upload(chatId, 'report.txt', Buffer.from('Subject: BETA\nFinding: crack'));
+
+    const { runId } = await manager.start({ chatId, mode: 'work', userText: 'Read all sources and draft review-note.md', attachmentTokens: [a.attachmentId, b.attachmentId] });
+
+    await completed(runId);
+
+    const rows = getDb().prepare('SELECT attachment_id FROM run_attachments WHERE run_id=?').all(runId) as any[];
+
+    expect(rows.map(r => r.attachment_id).sort()).toEqual([a.attachmentId, b.attachmentId].sort());
+
+    const output = readFileSync(resolveRunPath(runId, 'output/review-note.md', 'output'), 'utf8');
+
+    expect(output).toContain('ALPHA');
+    expect(output).toContain('BETA');
+    expect(output).toContain('leak');
+    expect(output).toContain('crack');
+
   });
 
-  it("executes multi-document inspection without retrieving criteria when grounding is disabled", async () => {
-    const chatId = createChat("Flow A chat");
-    const buf1 = Buffer.from("Heat Exchanger E-201 Report ID: IR-E201-2026-08-20 RECHECK WELD JOINT 4B - field inspector");
-    const buf2 = Buffer.from("Heat Exchanger E-201 Followup Report Maximum pitting depth: 1.8 mm");
-    const att1 = manager.registerAttachment({
-      chatId,
-      filename: "inspection-report-E201-annotated.pdf",
-      mediaType: "application/pdf",
-      sizeBytes: buf1.length,
-      base64OrBuffer: buf1,
-    });
-    const att2 = manager.registerAttachment({
-      chatId,
-      filename: "inspection-report-E202-followup.pdf",
-      mediaType: "application/pdf",
-      sizeBytes: buf2.length,
-      base64OrBuffer: buf2,
-    });
+  it('reads both real PDFs without knowledge retrieval when that source control is off', async () => {
 
-    const { runId } = await manager.start({
-      chatId,
-      userText: "Read these inspection reports, pull out the key findings, and draft an approval note for the plant manager.",
-      attachmentTokens: [att1.attachment.attachmentId, att2.attachment.attachmentId],
-    });
+    const chatId = createChat('Two PDFs');
 
-    // Wait for confirmation_required or completion
-    await vi.waitFor(
-      () => {
-        expect(
-          runEvents.some(
-            (e) =>
-              e.type === "confirmation_required" ||
-              (e.type === "run_state" && (e.state === "completed" || e.state === "awaiting_confirmation")),
-          ),
-        ).toBe(true);
-      },
-      { timeout: 3000 },
-    );
+    const a = upload(chatId, 'first.pdf', readFileSync(path.resolve('demo/flow_a/inspection-report-E201.pdf')), 'application/pdf');
 
-    // Verify bundle routing reason
-    const visionRoute = runEvents.find((e) => e.type === "routing" && e.taskType === "vision");
-    expect(visionRoute).toBeDefined();
-    expect((visionRoute as any).reason).toBe("scanned inspection bundle");
+    const b = upload(chatId, 'second.pdf', readFileSync(path.resolve('demo/flow_a/inspection-report-E202-followup.pdf')), 'application/pdf');
 
-    // Grounding is opt-in. The run must not claim or emit criteria retrieval when disabled.
-    expect(runEvents.some((e) => e.type === "tool_result" && e.tool === "retrieve_sop")).toBe(false);
+    const { runId } = await manager.start({ chatId, mode: 'work', groundingEnabled: false, userText: 'Read these reports and draft review-note.md', attachmentTokens: [a.attachmentId, b.attachmentId] });
 
-    // Verify router transitioned to draft model
-    const draftRoute = runEvents.find((e) => e.type === "routing" && e.taskType === "draft");
-    expect(draftRoute).toBeDefined();
-    expect((draftRoute as any).reason).toBe("compose grounded approval note");
+    await completed(runId);
 
-    // Confirm DOCX artifact creation
-    const confirmationEvent = runEvents.find(
-      (e) => e.type === "confirmation_required",
-    ) as Extract<RunEvent, { type: "confirmation_required" }>;
-    expect(confirmationEvent).toBeDefined();
+    expect(runEvents.some(e => e.type === 'tool_call' && e.tool === 'retrieve_knowledge')).toBe(false);
 
-    await manager.confirm({
-      runId,
-      actionId: confirmationEvent.action.actionId,
-      approved: true,
-    });
+    const output = readFileSync(resolveRunPath(runId, 'output/review-note.md', 'output'), 'utf8');
 
-    await vi.waitFor(
-      () => {
-        expect(runEvents.some((e) => e.type === "artifact_ready")).toBe(true);
-      },
-      { timeout: 2000 },
-    );
+    expect(output).toContain('first.pdf');
+    expect(output).toContain('second.pdf');
+    expect(output).toContain('E-201');
+    expect(output).toContain('E-202');
 
-    const artifactEvent = runEvents.find((e) => e.type === "artifact_ready") as Extract<
-      RunEvent,
-      { type: "artifact_ready" }
-    >;
-    expect(artifactEvent.artifact.filename).toBe("approval-note-E201.docx");
   });
 
-  it("executes Flow B script repair with python + csv attachments and artifact generation", async () => {
-    const chatId = createChat("Flow B chat");
-    const pyCode = Buffer.from("import sys\nsys.exit(1)\n");
-    const csvData = Buffer.from("timestamp,temperature_c\n2026-08-20T00:00:00,320.0\n");
+  it('retains the executed input group and prior output for a follow-up in the same chat', async () => {
 
-    const att1 = manager.registerAttachment({
-      chatId,
-      filename: "broken-vendor-log-parser.py",
-      mediaType: "text/x-python",
-      sizeBytes: pyCode.length,
-      base64OrBuffer: pyCode,
-    });
-    const att2 = manager.registerAttachment({
-      chatId,
-      filename: "vendor-maintenance-log.csv",
-      mediaType: "text/csv",
-      sizeBytes: csvData.length,
-      base64OrBuffer: csvData,
+    const chatId = createChat('Follow-up');
+    const a = upload(chatId, 'source.txt', Buffer.from('Subject: MODULE\nFinding: inspect connector'));
+
+    const b = upload(chatId, 'values.csv', Buffer.from('item,value\na,10\nb,20\n'), 'text/csv');
+
+    const first = await manager.start({ chatId, mode: 'work', userText: 'Review all inputs as review-note.md', attachmentTokens: [a.attachmentId, b.attachmentId] });
+    await completed(first.runId);
+
+    const fixture = modeGateway(fixtureIntent('Summarize sources'), messages => {
+      const prompt = String(messages.at(-1).content);
+      expect(prompt).toContain('inspect connector');
+      expect(prompt).toContain('a,10');
+      expect(prompt).toContain('review-note.md');
+      return 'The connector requires inspection. Values are 10 and 20.';
     });
 
-    const { runId } = await manager.start({
-      chatId,
-      userText: "This is crashing on our vendor log files. Fix it and make sure it actually works.",
-      attachmentTokens: [att1.attachment.attachmentId, att2.attachment.attachmentId],
-    });
+    manager = new RunManager(fixture.gateway, event => runEvents.push(event));
 
-    // Wait for confirmation_required (for execute_python)
-    await vi.waitFor(
-      () => {
-        expect(
-          runEvents.some((e) => e.type === "confirmation_required"),
-        ).toBe(true);
-      },
-      { timeout: 3000 },
-    );
+    const second = await manager.start({ chatId, mode: 'chat', userText: 'Summarize review-note.md and the prior inputs' });
+    await completed(second.runId);
 
-    // Verify routing decision
-    const codeRoute = runEvents.find((e) => e.type === "routing" && e.taskType === "code");
-    expect(codeRoute).toBeDefined();
-    expect((codeRoute as any).reason).toBe("Python repair and verification");
+    expect(fixture.execute).not.toHaveBeenCalled();
+    expect(fixture.chat).toHaveBeenCalledTimes(1);
 
-    // Confirm Python execution
-    const confirmationEvent = runEvents.find(
-      (e) => e.type === "confirmation_required",
-    ) as Extract<RunEvent, { type: "confirmation_required" }>;
-    expect(confirmationEvent).toBeDefined();
-
-    await manager.confirm({
-      runId,
-      actionId: confirmationEvent.action.actionId,
-      approved: true,
-    });
-
-    // Wait for completion and artifacts
-    await vi.waitFor(
-      () => {
-        expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
-      },
-      { timeout: 10000 },
-    );
-
-    // Verify artifacts generated: both the CSV output and repaired python script
-    const artifacts = runEvents
-      .filter((e) => e.type === "artifact_ready")
-      .map((e: any) => e.artifact.filename);
-
-    expect(artifacts).toContain("repaired-vendor-log.csv");
-    expect(artifacts).toContain("repaired-broken-vendor-log-parser.py");
-
-    // Turn 2: Follow-up request to execute code and send the result file
-    const turn2StartIndex = runEvents.length;
-    const { runId: turn2RunId } = await manager.start({
-      chatId,
-      userText: "Execute the code and send me the result file",
-    });
-
-    // Wait for Turn 2 confirmation_required
-    await vi.waitFor(
-      () => {
-        expect(
-          runEvents.slice(turn2StartIndex).some((e) => e.type === "confirmation_required"),
-        ).toBe(true);
-      },
-      { timeout: 3000 },
-    );
-
-    const turn2Confirm = runEvents.slice(turn2StartIndex).find(
-      (e) => e.type === "confirmation_required",
-    ) as Extract<RunEvent, { type: "confirmation_required" }>;
-
-    await manager.confirm({
-      runId: turn2RunId,
-      actionId: turn2Confirm.action.actionId,
-      approved: true,
-    });
-
-    await vi.waitFor(
-      () => {
-        expect(runEvents.slice(turn2StartIndex).some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
-      },
-      { timeout: 3000 },
-    );
-
-    const turn2Artifacts = runEvents
-      .slice(turn2StartIndex)
-      .filter((e) => e.type === "artifact_ready")
-      .map((e: any) => e.artifact.filename);
-
-    expect(turn2Artifacts).toContain("repaired-vendor-log.csv");
   });
 });

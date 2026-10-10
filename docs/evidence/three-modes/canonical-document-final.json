@@ -1,0 +1,306 @@
+{
+  "model": "qwen2.5-coder-7b-instruct-mlx",
+  "profile": "Standard/default",
+  "byFamily": {
+    "document": 0,
+    "code": 0,
+    "inspection": 0
+  },
+  "fullPasses": 0,
+  "harnessFailures": 0,
+  "manualReviewRequired": true,
+  "subset": true,
+  "results": [
+    {
+      "id": "document-normal",
+      "family": "document",
+      "prompt": "Read these inspection reports, pull out the key findings, and draft an approval note for the plant manager.",
+      "runId": "2e809ef1-b17e-4d5a-a912-aad69200164a",
+      "terminalState": "partial",
+      "latencySec": 296.840526375,
+      "text": "**Partially complete**\n\n**Confirmed**\n\n- File saved: `approval_note.docx`.\n\n**Still to check**\n\n- Verification: Preserve requested source fact: E-202 Pressure Vessel.\n- Acceptance not yet verified: Read saved approval\\_note.docx.\n- Acceptance not yet verified: Read these inspection reports, pull out the key findings, and draft an approval note for the plant manager..\n- 7 additional items; see details.\n\n**Why it stopped:** Not all requested work was confirmed.\n\n**Details**\n\nSaved outputs: approval_note.docx. Required content is incomplete.",
+      "artifacts": [
+        {
+          "artifact_id": "396201d3-6525-4395-aebd-49d88dca4115",
+          "run_id": "2e809ef1-b17e-4d5a-a912-aad69200164a",
+          "kind": "docx",
+          "filename": "approval_note.docx",
+          "relative_path": "runs/2e809ef1-b17e-4d5a-a912-aad69200164a/output/approval_note.docx",
+          "size_bytes": 9381,
+          "sha256": "7022101dfaaa3fef79fab375daccd84c4769f1b4982fefdbd0e3318be0f22a06",
+          "created_at": "2026-10-10T16:14:50.065Z",
+          "relativePath": "runs/2e809ef1-b17e-4d5a-a912-aad69200164a/output/approval_note.docx"
+        }
+      ],
+      "telemetry": {
+        "runId": "2e809ef1-b17e-4d5a-a912-aad69200164a",
+        "outcome": "partial",
+        "totalDurationMs": 296751,
+        "calls": {
+          "workingTurns": 12,
+          "delegated": 0,
+          "classification": 1,
+          "total": 13
+        },
+        "inferenceDurationMs": 296111,
+        "tokens": {
+          "source": "provider",
+          "prompt": 17333,
+          "completion": 5386,
+          "reasoning": 0,
+          "reasoningShareOfCompletion": 0
+        },
+        "perCall": [
+          {
+            "purpose": "classification",
+            "durationMs": 5549,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 684,
+              "completionTokens": 59,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 931,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 156,
+              "completionTokens": 6,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 32467,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1401,
+              "completionTokens": 623,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 15620,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1143,
+              "completionTokens": 256,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 22117,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1123,
+              "completionTokens": 417,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 48330,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 2051,
+              "completionTokens": 932,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 17935,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1470,
+              "completionTokens": 331,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 33650,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1450,
+              "completionTokens": 716,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 12043,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 2209,
+              "completionTokens": 62,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 32721,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1442,
+              "completionTokens": 627,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 16014,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1178,
+              "completionTokens": 263,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 19514,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1158,
+              "completionTokens": 344,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          },
+          {
+            "purpose": "working_turn",
+            "durationMs": 39220,
+            "ttftMs": null,
+            "finishReason": "stop",
+            "usage": {
+              "source": "provider",
+              "promptTokens": 1868,
+              "completionTokens": 750,
+              "reasoningTokens": 0
+            },
+            "toolCallNames": []
+          }
+        ],
+        "modeMetrics": {
+          "mode": "work",
+          "engineVersion": "work-v1",
+          "requestReceivedAt": 1791648632603,
+          "modelCallCount": 13,
+          "embeddingCallCount": 1,
+          "preprocessingMs": 376,
+          "queueWaitMs": 0,
+          "toolTimeMs": 173336,
+          "inferenceMs": 296073,
+          "recoveryCount": 2,
+          "isolationStatus": "not_used"
+        }
+      },
+      "artifactText": "Inspection Findings:\nApproval Note for Plant Manager\nReport ID: IR-E201-2026-08-20 Equipment: E-201 Heat Exchanger\n\nInspection Findings:\nE-201 Heat Exchanger (IR-E201-2026-08-20):\nTube Wall Thickness: Rows 12-15 measured 3.8-4.2 mm (Minimum allowable tube wall thickness: 4.6 mm)\nLocalised Pitting Corrosion: At the shell inlet nozzle; maximum depth 1.8 mm\nAction Required: Recheck Weld Joint 4B\nE-202 Pressure Vessel (IR-E202-2026-08-21):\nTube Wall Thickness: Rows 12-15 measured 3.8-4.2 mm (Minimum allowable tube wall thickness: 4.6 mm)\nLocalised Pitting Corrosion: At the shell inlet nozzle; maximum depth 1.8 mm\nAction Required: Verify after repair\n\nRecommendations:\nE-201 Heat Exchanger (IR-E201-2026-08-20):\nRecommendation: Conditional clearance pending retubing of the affected tubes. (SOP-114 §3.2)\nE-202 Pressure Vessel (IR-E202-2026-08-21):\nRecommendation: Conditional clearance pending verification after repair. (SOP-114 §3.2)\n\nGrounding References:\nE-201 Heat Exchanger (IR-E201-2026-08-20): [SOP-114 §3.2]\nE-202 Pressure Vessel (IR-E202-2026-08-21): [SOP-114 §3.2]\n\nApproval Decision:\nE-201 Heat Exchanger (IR-E201-2026-08-20): Conditional clearance pending retubing of the affected tubes.\nE-202 Pressure Vessel (IR-E202-2026-08-21): Conditional clearance pending verification after repair.\n\nAction Items:\nE-201 Heat Exchanger (IR-E201-2026-08-20): Recheck Weld Joint 4B.\nE-202 Pressure Vessel (IR-E202-2026-08-21): Verify after repair.\n\nNote: The approval note must be reviewed and signed by the plant manager before returning the equipment to service.\nSource documents\ninspection-report-E201-annotated.pdf, page 1\ninspection-report-E201-annotated.pdf, page 2\ninspection-report-E202-followup.pdf, page 1\ninspection-report-E202-followup.pdf, page 2\n",
+      "requirements": [
+        {
+          "name": "Harness did not deadlock or violate integrity",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Task reached completion with a useful response",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Artifact exists: approval_note.docx",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Original supplied source files are unchanged",
+          "severity": "harness",
+          "passed": true
+        },
+        {
+          "name": "Real knowledge retrieval completed",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Requested artifact exists in the requested format",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Both reviewed subjects are included",
+          "severity": "major",
+          "passed": true
+        },
+        {
+          "name": "Important measurements and defect are preserved",
+          "severity": "major",
+          "passed": true
+        },
+        {
+          "name": "Core decision is grounded and conditional on required work",
+          "severity": "critical",
+          "passed": true
+        },
+        {
+          "name": "Source follow-up actions are included",
+          "severity": "major",
+          "passed": false,
+          "reason": "An important follow-up finding or action is absent"
+        },
+        {
+          "name": "Source annotation is carried through",
+          "severity": "minor",
+          "passed": true
+        }
+      ],
+      "classification": "PARTIAL",
+      "manualReviewRequired": true,
+      "toolPath": [
+        "retrieve_knowledge",
+        "generate_deliverable",
+        "generate_deliverable"
+      ]
+    }
+  ]
+}

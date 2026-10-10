@@ -16,7 +16,7 @@ import { transition } from "../src/main/run/store.js";
 describe("P1-C1 execution ledger", () => {
   let dir: string, runId: string;
   const intent = () => validateAndNormalizeIntent({
-    intentType: "code_modification", primaryGoal: "Repair parser behavior", driverModel: "code-qwen25coder", taskType: "code", isActionable: true,
+    intentType: "code_modification", primaryGoal: "Repair parser behavior", driverModel: "primary-model", taskType: "code", isActionable: true,
     chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: ["parser.py"], protectedPaths: [], restrictMutationsToTargets: true,
     workspaceOperations: [{ operation: "mutate", targetPath: "parser.py" }], expectedDeliverables: [{ filename: "report.md", type: "md" }],
   }, { hasWorkspace: true, workspaceFiles: ["parser.py"], userPrompt: "Repair parser and report" });
@@ -75,7 +75,7 @@ describe("P1-C1 execution ledger", () => {
   });
 
   it("reconstructs a crash as interrupted and blocks uncertain mutation replay", () => {
-    configureExecutionLedger(runId, { modelId: "code-qwen25coder", mode: "agent", workspaceRoot: dir, groundingEnabled: false });
+    configureExecutionLedger(runId, { modelId: "primary-model", mode: "agent", workspaceRoot: dir, groundingEnabled: false });
     recordExecutionToolStarted({ runId, callId: "mutation-1", tool: "write_file", args: { path: "parser.py" }, summary: "Write parser" });
     expect(reconcileInterruptedExecutions()).toBe(1);
     expect(getExecutionLedger(runId)?.operationAttempts[0].status).toBe("uncertain");
@@ -83,7 +83,7 @@ describe("P1-C1 execution ledger", () => {
   });
 
   it("allows explicit resumption after a completed operation and preserves result references", () => {
-    configureExecutionLedger(runId, { modelId: "code-qwen25coder", mode: "agent", workspaceRoot: dir, groundingEnabled: false });
+    configureExecutionLedger(runId, { modelId: "primary-model", mode: "agent", workspaceRoot: dir, groundingEnabled: false });
     const result = new RunResultStore(runId, undefined, dir).registerResult({ type: "text", status: "complete", origin: "source_extracted", producer: { tool: "read_file", callId: "read-resume" }, summary: "source", payload: "body" });
     recordExecutionToolStarted({ runId, callId: "read-resume", tool: "read_file", args: { path: "parser.py" }, summary: "Read parser" });
     recordExecutionToolOutcome({ runId, callId: "read-resume", tool: "read_file", args: { path: "parser.py" }, summary: "Read parser", ok: true, resultId: result.resultId });

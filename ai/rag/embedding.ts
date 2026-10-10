@@ -1,3 +1,5 @@
+import { localInferenceScheduler } from "../../backend/src/main/gateway/inference-scheduler.js";
+import { currentRuntimeScope, assertRuntimeActive } from "../../backend/src/main/run/runtime-scope.js";
 import { EmbeddingConfig } from "./types.js";
 
 interface EmbeddingRequest {
@@ -86,14 +88,21 @@ export class EmbeddingService {
       };
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
+      const scope = currentRuntimeScope();
+      assertRuntimeActive();
+      const queuedAt = Date.now();
+      scope?.observe?.({ queued: true });
+      const release = await localInferenceScheduler.acquire(scope?.mode ?? "maintenance", scope?.signal);
+      scope?.observe?.({ queued: false, queueWaitMs: Date.now() - queuedAt, embeddingCallCount: 1 });
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
       try {
+        assertRuntimeActive();
         const res = await fetch(url, {
           method: "POST",
           headers,
           body: JSON.stringify(payload),
-          signal: controller.signal,
+          signal: scope?.signal ? AbortSignal.any([controller.signal, scope.signal]) : controller.signal,
         });
 
         if (!res.ok) {
@@ -128,6 +137,7 @@ export class EmbeddingService {
         }
       } finally {
         clearTimeout(timeoutId);
+        release();
       }
     }
 

@@ -1,420 +1,121 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdirSync, rmSync } from "node:fs";
-import path from "node:path";
-import os from "node:os";
-import { RunManager } from "../src/main/run/manager.js";
-import { closeDb, initDb } from "../src/main/persistence/db.js";
-import { createChat } from "../src/main/persistence/chats.js";
-import { rankPagesByVisualDensity } from "../src/main/run/images.js";
-import type { ModelRequest, RunEvent, VisionResult } from "../src/shared/contracts.js";
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { createCanvas } from 'canvas';
+import { RunManager } from '../src/main/run/manager.js';
+import { closeDb, initDb } from '../src/main/persistence/db.js';
+import { createChat } from '../src/main/persistence/chats.js';
 
-describe("Vision Task Execution (Architecture Collapse)", () => {
-  let tempRoot: string;
-  let manager: RunManager;
-  let runEvents: RunEvent[];
-  let capturedRequests: ModelRequest[];
+import { modeGateway, fixtureIntent } from './helpers/mode-gateway.js';
+import type { ModelRequest, RunEvent } from '../src/shared/contracts.js';
+
+describe('Chat and Work visual source paths', () => {
+
+  let root: string, events: RunEvent[];
 
   beforeEach(() => {
-    tempRoot = path.join(
-      os.tmpdir(),
-      `wb-vision-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    );
-    mkdirSync(tempRoot, { recursive: true });
-    process.env.WORKBENCH_DATA_ROOT = path.join(tempRoot, "data");
-    initDb(path.join(tempRoot, "workbench.sqlite"));
-
-    runEvents = [];
-    capturedRequests = [];
+    root = mkdtempSync(path.join(os.tmpdir(), 'wb-vision-'));
+    process.env.WORKBENCH_DATA_ROOT = path.join(root, 'data');
+    initDb(path.join(root, 'db.sqlite'));
+    events = [];
   });
 
   afterEach(() => {
     closeDb();
     delete process.env.WORKBENCH_DATA_ROOT;
-    rmSync(tempRoot, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   });
 
-  function createMockGateway(visionResult: VisionResult) {
-    const fn = vi.fn().mockImplementation(async (req: ModelRequest) => {
-      capturedRequests.push(req);
-      if (req.taskType === "vision") {
-        return {
-          ok: true,
-          value: {
-            requestId: req.requestId,
-            runId: req.runId,
-            modelId: req.modelId,
-            taskType: "vision",
-            completedAt: new Date().toISOString(),
-            result: visionResult,
-          },
-        };
-      }
-      if (req.taskType === "draft") {
-        return {
-          ok: true,
-          value: {
-            requestId: req.requestId,
-            runId: req.runId,
-            modelId: req.modelId,
-            taskType: "draft",
-            completedAt: new Date().toISOString(),
-            result: { text: "Generated Approval Note for Inspection" },
-          },
-        };
-      }
-      return {
-        ok: false,
-        error: { kind: "ai-error", code: "unsupported_task", message: "unsupported" },
-      };
+  function setup(work = false) {
+
+    const requests: ModelRequest[] = [];
+
+    const fixture = modeGateway(fixtureIntent('Prepare approval note', work ? [{ type: 'docx', filename: 'approval-note.docx' }] : []), messages => '# Inspection review\nTube wall thickness below threshold. Minor glare on bottom margin.\n' + String(messages[0].content).split('SOURCES:\n')[1]);
+
+    fixture.execute.mockImplementation(async req => {
+
+      requests.push(req);
+
+      if (req.taskType === 'vision') return { ok: true, value: { result: { sourceText: 'Inspection Report 101. Tube wall thickness is 3.5mm.', findings: [{ findingId: 'f1', title: 'Tube wall thickness below threshold', value: '3.5mm', confidence: 'high', evidence: 'Visible reading: 3.5mm', pageReferenceIds: ['p1'] }], pageReferences: [{ id: 'p1', page: 1, text: 'wall thickness 3.5mm' }], warnings: ['Minor glare on bottom margin'] } } } as any;
+
+      return { ok: true, value: { result: fixtureIntent('Prepare approval note', [{ type: 'docx', filename: 'approval-note.docx' }]) } } as any;
+
     });
 
-    return {
-      registry: new Map(),
-      execute: fn,
-      complete: fn,
-    } as any;
+    const manager = new RunManager(fixture.gateway, event => events.push(event));
+    return { manager, requests, fixture };
+
   }
 
-  it("routes PDF/image attachments directly to executeVisionTask and outputs structured findings", async () => {
-    const mockFindings: VisionResult = {
-      sourceText: "Inspection Report 101. Tube wall thickness is 3.5mm.",
-      findings: [
-        {
-          findingId: "f-1",
-          title: "Tube wall thickness below threshold",
-          value: "Measured 3.5mm (minimum 4.2mm)",
-          pageReferenceIds: ["p-1"],
-          confidence: "high",
-          evidence: "Report section 4 specifies 4.2mm threshold.",
-        },
-      ],
-      pageReferences: [{ id: "p-1", page: 1, text: "wall thickness 3.5mm", location: "table 2" }],
-      warnings: ["Minor glare on bottom margin"],
-    };
+  function raster(color = 'red') {
+    const canvas = createCanvas(320, 240);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, 320, 240);
+    ctx.fillStyle = color;
+    ctx.fillRect(30, 40, 120, 130);
+    return canvas.toBuffer('image/png');
+  }
 
-    const mockGateway = createMockGateway(mockFindings);
-    manager = new RunManager(mockGateway, (evt) => runEvents.push(evt));
+  async function run(manager: RunManager, filename: string, bytes: Buffer, mediaType: string, mode: 'chat' | 'work', text: string) {
+    const chatId = createChat();
+    const { attachment } = manager.registerAttachment({ chatId, filename, mediaType, sizeBytes: bytes.length, base64OrBuffer: bytes });
+    const { runId } = await manager.start({ chatId, mode, userText: text, attachmentToken: attachment.attachmentId });
+    await vi.waitFor(() => expect(events.some(e => e.runId === runId && e.type === 'run_state' && e.state === 'completed'), JSON.stringify(events.filter(e => e.type === 'error'))).toBe(true), { timeout: 5000 });
+    return runId;
+  }
 
-    const chatId = createChat("Vision Run");
-    const buffer = Buffer.from("%PDF-1.4 mock content");
-    const { attachment } = manager.registerAttachment({
-      chatId,
-      filename: "inspection_report.pdf",
-      mediaType: "application/pdf",
-      sizeBytes: buffer.length,
-      base64OrBuffer: buffer,
-    });
-
-    await manager.start({
-      chatId,
-      userText: "Review this report and identify defects",
-      attachmentToken: attachment.attachmentId,
-    });
-
-    await vi.waitFor(
-      () => {
-        expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
-      },
-      { timeout: 3000, interval: 50 },
-    );
-
-    const routingEvt = runEvents.find((e) => e.type === "routing");
-    expect(routingEvt).toBeDefined();
-    expect((routingEvt as any).taskType).toBe("vision");
-    expect((routingEvt as any).modelId).toBe("vision-qwen25vl");
-
-    const msgEvt = runEvents.find((e) => e.type === "assistant_message") as any;
-    expect(msgEvt).toBeDefined();
-    expect(msgEvt.modelId).toBe("vision-qwen25vl");
-    expect(msgEvt.text).toContain("Tube wall thickness below threshold");
-    expect(msgEvt.text).toContain("Minor glare on bottom margin");
-
-    expect(capturedRequests.length).toBe(1);
-    expect(capturedRequests[0].taskType).toBe("vision");
+  it('uses configured vision fallback for raster input then answers in Chat', async () => {
+    const { manager, requests, fixture } = setup();
+    await run(manager, 'scan.png', raster(), 'image/png', 'chat', 'Review this scan');
+    expect(requests.filter(r => r.taskType === 'vision')).toHaveLength(1);
+    expect(requests[0].modelId).toBe('vision-fallback');
+    expect(fixture.chat).toHaveBeenCalledTimes(1);
+    expect(events.some(e => e.type === 'assistant_message' && e.text.includes('Tube wall thickness below threshold'))).toBe(true);
+    expect(events.some(e => e.type === 'assistant_message' && e.text.includes('Minor glare'))).toBe(true);
+    expect(events.some(e => e.type === 'artifact_ready')).toBe(false);
   });
 
-  it("chains vision findings seamlessly into draft when user requests an approval note in single turn", async () => {
-    const mockFindings: VisionResult = {
-      sourceText: "Reactor Pressure Vessel Inspection: crack detected.",
-      findings: [
-        {
-          findingId: "f-1",
-          title: "Stress crack on weld seam",
-          value: "Length 12mm",
-          pageReferenceIds: ["p-1"],
-          confidence: "high",
-          evidence: "Ultrasonic testing log entry 4",
-        },
-      ],
-      pageReferences: [{ id: "p-1", page: 1, text: "crack 12mm", location: "weld 3" }],
-      warnings: [],
-    };
-
-    const mockGateway = createMockGateway(mockFindings);
-    manager = new RunManager(mockGateway, (evt) => runEvents.push(evt));
-
-    const chatId = createChat("Vision Draft Chained Run");
-    const buffer = Buffer.from("mock png bytes");
-    const { attachment } = manager.registerAttachment({
-      chatId,
-      filename: "vessel_scan.png",
-      mediaType: "image/png",
-      sizeBytes: buffer.length,
-      base64OrBuffer: buffer,
-    });
-
-    await manager.start({
-      chatId,
-      userText: "Extract findings from this scan and draft an approval note docx",
-      attachmentToken: attachment.attachmentId,
-    });
-
-    await vi.waitFor(
-      () => {
-        expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
-      },
-      { timeout: 3000, interval: 50 },
-    );
-
-    expect(capturedRequests.length).toBe(2);
-    expect(capturedRequests[0].taskType).toBe("vision");
-    expect(capturedRequests[1].taskType).toBe("draft");
-
-    expect(capturedRequests[1].userPrompt).toContain("Stress crack on weld seam");
-
-    const artifactEvt = runEvents.find((e) => e.type === "artifact_ready");
-    expect(artifactEvt).toBeDefined();
-    expect((artifactEvt as any).artifact.filename).toBe("approval-note.docx");
+  it('carries visual findings into a saved and validated Work document', async () => {
+    const { manager, requests } = setup(true);
+    await run(manager, 'vessel.png', raster('blue'), 'image/png', 'work', 'Read this scan and create approval-note.docx');
+    expect(requests.filter(r => r.taskType === 'vision')).toHaveLength(1);
+    const artifact = events.find(e => e.type === 'artifact_ready');
+    expect(artifact?.type === 'artifact_ready' && artifact.artifact.filename).toBe('approval-note.docx');
+    expect(events.some(e => e.type === 'confirmation_required')).toBe(false);
   });
 
-  it("automatically uses Tier 1 Fast Text extraction for clean digital PDF, saving vision tokens", async () => {
-    const mockFindings: VisionResult = {
-      sourceText: "",
-      findings: [],
-      pageReferences: [],
-      warnings: [],
-    };
-    const mockGateway = createMockGateway(mockFindings);
-    manager = new RunManager(mockGateway, (evt) => runEvents.push(evt));
-
-    const chatId = createChat("Tier 1 Text Run");
-    // Synthetic PDF with text stream Tj operators (>= 150 chars)
-    const pdfContent = `%PDF-1.4
-1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj
-2 0 obj <</Type /Pages /Kids [3 0 R] /Count 1>> endobj
-3 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R>> endobj
-4 0 obj <</Length 200>>
-stream
-BT
-/F1 12 Tf
-(This is a clean typed digital engineering specification report detailing equipment parameters and operational limits for refinery steam boiler units across Section A and Section B.) Tj
-ET
-endstream
-endobj
-xref
-0 5
-trailer <</Root 1 0 R>>
-%%EOF`;
-
-    const buffer = Buffer.from(pdfContent);
-    const { attachment } = manager.registerAttachment({
-      chatId,
-      filename: "digital_spec.pdf",
-      mediaType: "application/pdf",
-      sizeBytes: buffer.length,
-      base64OrBuffer: buffer,
-    });
-
-    await manager.start({
-      chatId,
-      userText: "Summarize this boiler specification document",
-      attachmentToken: attachment.attachmentId,
-    });
-
-    await vi.waitFor(
-      () => {
-        expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
-      },
-      { timeout: 3000, interval: 50 },
-    );
-
-    // Should have routed to draft-qwen3 via Tier 1, burning ZERO vision tokens
-    const routingEvt = runEvents.find((e) => e.type === "routing") as any;
-    expect(routingEvt).toBeDefined();
-    expect(routingEvt.taskType).toBe("draft");
-    expect(routingEvt.modelId).toBe("draft-qwen3");
-    expect(routingEvt.tier).toBe("text");
-    expect(routingEvt.tokensSaved).toBeGreaterThan(1000);
-
-    // Gateway should only have received a draft request, NO vision model request
-    expect(capturedRequests.length).toBe(1);
-    expect(capturedRequests[0].taskType).toBe("draft");
-    expect(capturedRequests[0].userPrompt).toContain("clean typed digital engineering specification");
+  it('extracts digital PDF text without a vision call', async () => {
+    const { manager, requests, fixture } = setup();
+    await run(manager, 'report.pdf', readFileSync(path.resolve('demo/flow_a/inspection-report-E201.pdf')), 'application/pdf', 'chat', 'Read this report');
+    expect(requests).toHaveLength(0);
+    expect(fixture.turns[0].at(-1).content).toContain('4.6');
+    expect(fixture.chat).toHaveBeenCalledTimes(1);
   });
 
-  it("forces Tier 2 Vision model when user prompt specifically mentions engineering drawing / P&ID", async () => {
-    const mockFindings: VisionResult = {
-      sourceText: "Drawing schematic values: pump P-101 suction pressure 4.5 bar",
-      findings: [
-        {
-          findingId: "f-drawing-1",
-          title: "Pump suction line",
-          value: "4.5 bar",
-          pageReferenceIds: ["p-1"],
-          confidence: "high",
-          evidence: "P&ID tag P-101",
-        },
-      ],
-      pageReferences: [{ id: "p-1", page: 1, text: "P-101 4.5 bar", location: "suction line" }],
-      warnings: [],
-    };
-    const mockGateway = createMockGateway(mockFindings);
-    manager = new RunManager(mockGateway, (evt) => runEvents.push(evt));
-
-    const chatId = createChat("Tier 2 Drawing Run");
-    // Synthetic PDF with text stream, but prompt explicitly asks for drawing / P&ID
-    const pdfContent = `%PDF-1.4
-1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj
-2 0 obj <</Type /Pages /Kids [3 0 R] /Count 1>> endobj
-3 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R>> endobj
-4 0 obj <</Length 200>>
-stream
-BT
-/F1 12 Tf
-(Drawing label: P&ID layout for cooling water recirculation loop and pump skid system.) Tj
-ET
-endstream
-endobj
-xref
-0 5
-trailer <</Root 1 0 R>>
-%%EOF`;
-
-    const buffer = Buffer.from(pdfContent);
-    const { attachment } = manager.registerAttachment({
-      chatId,
-      filename: "pump_skid_pid.pdf",
-      mediaType: "application/pdf",
-      sizeBytes: buffer.length,
-      base64OrBuffer: buffer,
-    });
-
-    await manager.start({
-      chatId,
-      userText: "Inspect this engineering drawing and check the pump skid P&ID layout",
-      attachmentToken: attachment.attachmentId,
-    });
-
-    await vi.waitFor(
-      () => {
-        expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
-      },
-      { timeout: 3000, interval: 50 },
-    );
-
-    // Should have routed to vision-qwen25vl via Tier 2 because of visual keywords
-    const routingEvt = runEvents.find((e) => e.type === "routing") as any;
-    expect(routingEvt).toBeDefined();
-    expect(routingEvt.taskType).toBe("vision");
-    expect(routingEvt.modelId).toBe("vision-qwen25vl");
-    expect(routingEvt.tier).toBe("vision");
-
-    // Gateway should have received a vision request
-    expect(capturedRequests.length).toBe(1);
-    expect(capturedRequests[0].taskType).toBe("vision");
+  it('reads vector drawing labels deterministically even when the request mentions a drawing', async () => {
+    const { manager, requests, fixture } = setup();
+    await run(manager, 'drawing.svg', readFileSync(path.resolve('demo/flow_c/pump-skid-P204.svg')), 'image/svg+xml', 'chat', 'Inspect this engineering drawing P&ID');
+    expect(requests).toHaveLength(0);
+    expect(fixture.turns[0].at(-1).content).toContain('XV-204');
+    expect(fixture.turns[0].at(-1).content).toContain('DN80');
   });
 
-  it("selectively slices multi-page documents, sending only top visual pages and preserving text context", async () => {
-    const mockFindings: VisionResult = {
-      sourceText: "Extracted P&ID diagram findings for Feed Pump P-201",
-      findings: [
-        {
-          findingId: "f-p201",
-          title: "Pump P-201 bypass valve",
-          value: "Normally closed",
-          pageReferenceIds: ["p-2"],
-          confidence: "high",
-          evidence: "Schematic block on Page 2 shows valve NC",
-        },
-      ],
-      pageReferences: [{ id: "p-2", page: 2, text: "valve NC", location: "bypass line" }],
-      warnings: [],
-    };
-    const mockGateway = createMockGateway(mockFindings);
-    manager = new RunManager(mockGateway, (evt) => runEvents.push(evt));
-
-    const chatId = createChat("Selective Slicing Run");
-    // 3-page synthetic PDF: Page 1 is generic intro, Page 2 is P&ID drawing with pump P-201, Page 3 is warranty
-    const pdfContent = `%PDF-1.4
-1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj
-2 0 obj <</Type /Pages /Kids [3 0 R 5 0 R 7 0 R] /Count 3>> endobj
-3 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R>> endobj
-4 0 obj <</Length 120>>
-stream
-BT
-/F1 12 Tf
-(Introduction and general equipment overview. This vendor package describes feed pump systems.) Tj
-ET
-endstream
-endobj
-5 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 1191 842] /Contents 6 0 R>> endobj
-6 0 obj <</Length 180>>
-stream
-BT
-/F1 12 Tf
-(P&ID SCHEMATIC: PUMP P-201 SUCTION AND DISCHARGE PIPING LAYOUT WITH CONTROL VALVES AND BYPASS.) Tj
-ET
-endstream
-endobj
-7 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 8 0 R>> endobj
-8 0 obj <</Length 100>>
-stream
-BT
-/F1 12 Tf
-(Warranty terms and conditions. Maintenance schedule requires quarterly inspections.) Tj
-ET
-endstream
-endobj
-xref
-0 9
-trailer <</Root 1 0 R>>
-%%EOF`;
-
-    const buffer = Buffer.from(pdfContent);
-    const { attachment } = manager.registerAttachment({
-      chatId,
-      filename: "vendor_manual_p201.pdf",
-      mediaType: "application/pdf",
-      sizeBytes: buffer.length,
-      base64OrBuffer: buffer,
-    });
-
-    await manager.start({
-      chatId,
-      userText: "Inspect the drawing for pump P-201 and check bypass valve status",
-      attachmentToken: attachment.attachmentId,
-    });
-
-    await vi.waitFor(
-      () => {
-        expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true);
-      },
-      { timeout: 3000, interval: 50 },
-    );
-
-    // Verify vision request was generated
-    expect(capturedRequests.length).toBe(1);
-    const vReq = capturedRequests[0] as any;
-    expect(vReq.taskType).toBe("vision");
-
-    // Page 2 should be selected because it has landscape format (1191x842), P&ID keywords, and matches P-201!
-    expect(vReq.attachment.selectedPages).toBeDefined();
-    expect(vReq.attachment.selectedPages).toContain(2);
-
-    // Unselected pages text (Page 1 or 3) should be injected as context in userPrompt
-    expect(vReq.userPrompt).toContain("vendor_manual_p201.pdf");
-    expect(vReq.userPrompt).toContain("Context from other pages");
+  it('renders an image-only multi-page PDF and retains bounded visual evidence', async () => {
+    const { manager, requests } = setup();
+    const canvas = createCanvas(600, 400, 'pdf');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'red';
+    ctx.fillRect(10, 20, 100, 100);
+    (ctx as any).addPage();
+    ctx.fillStyle = 'blue';
+    ctx.beginPath();
+    ctx.arc(200, 150, 50, 0, 2 * Math.PI);
+    ctx.fill();
+    await run(manager, 'scanned.pdf', canvas.toBuffer(), 'application/pdf', 'chat', 'Describe these scanned pages');
+    expect(requests.filter(r => r.taskType === 'vision')).toHaveLength(1);
+    expect(events.some(e => e.type === 'tool_result' && e.tool === 'extract_document' && e.ok)).toBe(true);
+    expect((requests.find(r => r.taskType === 'vision') as any)?.attachment?.filename).toBe('scanned.pdf');
   });
 });
-
-

@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, chmodSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { createChat } from "../persistence/chats.js";
 import { addMessage, editMessage, listMessages, MAX_CONTENT_CHARS } from "../persistence/messages.js";
@@ -22,10 +22,15 @@ import type {
   ExecutionEnvelope,
   ExecutionMode,
   RunContract,
+  RunSnapshot,
   VisionModelRequest,
   VisionModelResponse,
   VisionResult,
 } from "../../shared/contracts.js";
+import { ChatResponder } from "./chat-responder.js";
+import { WorkOrchestrator } from "./work-orchestrator.js";
+import { withRuntimeScope, assertRuntimeActive, currentRuntimeScope } from "./runtime-scope.js";
+import { workspaceExecutionSlots } from "../gateway/inference-scheduler.js";
 import { buildExecutionEnvelope } from "./envelope.js";
 import { withTaskProgress, withTaskProgressSync } from "./task-progress.js";
 import { formatPartialResult, type PartialResultEvidence } from "./partial-result.js";
@@ -65,6 +70,7 @@ import {
   registerAttachment as saveAttachment,
   resolveRunPath,
   runRoot,
+  sha256File,
   writeRunFile,
 } from "./filesystem.js";
 import { createConfirmation, cancelPending, decide } from "../confirmation/store.js";
@@ -316,6 +322,11 @@ function isDestructiveCommand(cmd: string): boolean {
 }
 
 export class RunManager {
+  private readonly controllers = new Map<string, AbortController>();
+  private readonly pendingActions = new Map<string, PendingAction>();
+  private readonly approvalResolvers = new Map<string, (approved: boolean) => void>();
+  private readonly runMetrics = new Map<string, Record<string, unknown>>();
+  private readonly activeChats = new Map<string, string>();
   private readonly taskCheckpoints = new Map<string, Map<string, TaskProgressEvent>>();
   private readonly attachments = new Map<string, AttachmentRow>();
   private readonly continuations = new Map<string, Continuation>();
@@ -343,10 +354,21 @@ export class RunManager {
         checkpoints.delete(event.activityId);
         checkpoints.set(event.activityId, event);
         this.taskCheckpoints.set(event.runId, checkpoints);
+        const metrics=this.runMetrics.get(event.runId)??{};metrics.progress=[...checkpoints.values()];this.runMetrics.set(event.runId,metrics);
+        getDb().prepare("UPDATE run_mode_details SET metrics_json=? WHERE run_id=?").run(JSON.stringify(metrics),event.runId);
+      }
+      if (event.type === "assistant_message_chunk" && this.controllers.get(event.runId)?.signal.aborted) return;
+      if (event.type === "assistant_message_chunk") {
+        const metrics=this.runMetrics.get(event.runId);if(metrics&&metrics.firstVisibleTokenMs===undefined)metrics.firstVisibleTokenMs=Date.now()-Number(metrics.requestReceivedAt);
+        getDb().prepare("INSERT INTO run_drafts(run_id,message_id,model_id,text) VALUES (?,?,?,?) ON CONFLICT(run_id) DO UPDATE SET text=substr(run_drafts.text||excluded.text,1,32768)").run(event.runId,event.messageId,event.modelId,event.delta);
       }
       publish(event);
       if (event.type === "run_state" && ["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(event.state)) {
-        this.taskCheckpoints.delete(event.runId);
+        this.pendingActions.delete(event.runId);
+        const chatId=this.chatIdForRunIfPresent(event.runId);
+        if(chatId && this.activeChats.get(chatId)===event.runId)this.activeChats.delete(chatId);
+        const metrics=this.runMetrics.get(event.runId)??{}; metrics.outcome=event.state;metrics.queued=false;
+        getDb().prepare("UPDATE run_mode_details SET metrics_json=? WHERE run_id=?").run(JSON.stringify(metrics),event.runId);
       }
     };
     this.codeModel = new CodeModel(gateway);
@@ -378,6 +400,7 @@ export class RunManager {
   /** Explicitly resume a durable partial run. This never reclassifies its authority. */
   async resume(runId: string, largerGenerationAllowance = false): Promise<{ runId: string }> {
     const contract = getRunContract(runId);
+    if (!getDb().prepare("SELECT run_id FROM run_mode_details WHERE run_id=?").get(runId))throw new Error("Historical execution mode is unknown. Submit a new run.");
     if (!contract) throw new Error("Run has no persisted RunContract and cannot resume.");
     const currentLedger = getExecutionLedger(runId);
     const saved = currentLedger?.executionContext;
@@ -386,7 +409,7 @@ export class RunManager {
     if (!selection.ok || selection.modelId !== contract.routing.driverModel || selection.modelId !== saved.modelId) {
       throw new Error("The original model is unavailable. Resumption cannot change model selection.");
     }
-    const activeRoot = this.harness?.isWorkspaceActive() ? this.harness.requireActiveWorkspace().root : undefined;
+    const activeRoot = saved.mode==="agent" && this.harness?.isWorkspaceActive() ? this.harness.requireActiveWorkspace().root : undefined;
     if ((saved.workspaceRoot ?? undefined) !== activeRoot) throw new Error("The original workspace is not active. Restore it before resuming.");
     const { ledger, useLargerAllowance } = prepareExecutionResume(runId, largerGenerationAllowance);
     this.publishVerificationReport(runId);
@@ -395,7 +418,11 @@ export class RunManager {
     const attachments = getDb().prepare(`SELECT a.attachment_id as attachmentId,a.run_id as runId,a.chat_id as chatId,a.filename,a.media_type as mediaType,a.size_bytes as sizeBytes,a.relative_path as relativePath
       FROM attachments a JOIN run_attachments ra ON ra.attachment_id=a.attachment_id WHERE ra.run_id=?`).all(runId) as AttachmentRow[];
     for (const attachment of attachments) if (!existsSync(absoluteDataPath(attachment.relativePath))) throw new Error(`Original attachment is missing: ${attachment.filename}`);
+    if(saved.mode==="chat")throw new Error("Submit a new Chat request to continue.");
+    if(this.activeChats.has(row.chatId))throw new Error("This chat already has an active run.");
     reopenPartialRun(runId);
+    this.controllers.set(runId,new AbortController());this.activeChats.set(row.chatId,runId);
+    this.runMetrics.set(runId,this.getRunSnapshot({runId})?.metrics??{});
     this.runSelectedModels.set(runId, saved.modelId);
     this.runModes.set(runId, saved.mode);
     this.runGroundingEnabled.set(runId, saved.groundingEnabled);
@@ -427,11 +454,17 @@ export class RunManager {
       commandExecuted: completed.some((attempt) => attempt.tool === "run_command" || attempt.tool === "execute_python"),
       hasExecutedDiskMutations: completed.some((attempt) => attempt.mutating),
     };
-    setTimeout(() => void this.execute(runId, "Continue the original objective. Do not repeat completed operations. Recheck artifacts before claiming completion.", attachments,
+    setTimeout(() => void this.execute(runId, String(this.runMetrics.get(runId)?.originalRequest??contract.objective), attachments,
       { contract, extraTokens: useLargerAllowance ? 1024 : 0, resumeEvidence }).catch((error) => this.fail(runId, error)), 0);
     return { runId };
   }
 
+  workspaceChanged():void {
+    for(const [runId,mode] of this.runModes) {
+      if(mode!=="agent"||!this.activeChats.has(this.chatIdForRun(runId)))continue;
+      try{this.assertRunAuthority(runId);}catch{this.cancel(runId);}
+    }
+  }
   setHarness(harness: HarnessManager): void {
     this.harness = harness;
     (harness as any).policyGuard = this.policyGuard;
@@ -482,173 +515,83 @@ export class RunManager {
     return { runId, attachment };
   }
   async start(input: StartRunInput): Promise<{ runId: string }> {
-    const text = input.userText ?? "";
-    const requestedTokens: string[] = [];
-    if (input.attachmentTokens && input.attachmentTokens.length > 0) {
-      for (const t of input.attachmentTokens) {
-        if (t && !requestedTokens.includes(t)) requestedTokens.push(t);
-      }
-    } else if (input.attachmentToken) {
-      requestedTokens.push(input.attachmentToken);
-    }
-
-    if (
-      text.length > 8000 ||
-      /(?:^[A-Za-z]:[\\/]|^\/|\\.\.)/.test(text) ||
-      (!text.trim() && requestedTokens.length === 0)
-    )
-      throw new Error("invalid run input");
-
-    const requestedAttachments = requestedTokens.map((token) => this.attachment(token));
-    const effectiveChatId =
-      input.chatId ??
-      requestedAttachments[0]?.chatId ??
-      this.chatIdForRunIfPresent(input.runId) ??
-      createChat("New run");
-
-    // Follow-up questions in the same chat retain prior uploaded files.
-    // A newly uploaded attachment always takes precedence.
-    let attachments: AttachmentRow[] =
-      requestedAttachments.length > 0
-        ? requestedAttachments
-        : this.latestAttachments(effectiveChatId);
-
-    const primaryAttachment = attachments[0];
-    const runId = createRun(
-      effectiveChatId,
-      input.userText ?? "",
-      primaryAttachment?.attachmentId,
-      input.runId ?? requestedAttachments[0]?.runId,
-    );
+    const text=input.userText??"";
+    const mode=input.mode??"chat";
+    if(!["chat","work","agent"].includes(mode)) throw new Error("Invalid execution mode.");
+    if(text.length>8000 || (!text.trim()&&!input.attachmentToken&&!input.attachmentTokens?.length)) throw new Error("Invalid run input.");
+    const root=mode==="agent"&&this.harness?.isWorkspaceActive()?this.harness.requireActiveWorkspace().root:undefined;
+    if(mode==="agent"&&(!root||!existsSync(root)||!statSync(root).isDirectory()))throw new Error("Agent requires an active workspace.");
+    if(process.env[`WORKBENCH_${mode.toUpperCase()}_ENGINE`]==="false" || (mode==="agent"&&process.env.WORKBENCH_AGENT_V2==="false"))throw new Error(`${mode} engine is unavailable.`);
+    const requested=[...new Set(input.attachmentTokens??(input.attachmentToken?[input.attachmentToken]:[]))].map(id=>this.attachment(id));
+    const chatId=input.chatId??requested[0]?.chatId??this.chatIdForRunIfPresent(input.runId)??createChat("New run");
+    if(requested.some(a=>a.chatId!==chatId))throw new Error("Attachment belongs to another chat.");
+    if(input.runId && this.chatIdForRunIfPresent(input.runId) && this.chatIdForRunIfPresent(input.runId)!==chatId)throw new Error("Run belongs to another chat.");
+    const db=getDb();
+    if(this.activeChats.has(chatId)||db.prepare("SELECT r.id FROM runs r JOIN run_mode_details m ON m.run_id=r.id WHERE r.chat_id=? AND r.state NOT IN ('completed','partial','failed','cancelled','limit_exceeded')").get(chatId))throw new Error("This chat already has an active run.");
+    const stagedId=input.runId??requested[0]?.runId;
+    if(stagedId && this.chatIdForRunIfPresent(stagedId) && (getState(stagedId)!=="created"||db.prepare("SELECT run_id FROM run_mode_details WHERE run_id=?").get(stagedId)))throw new Error("An executing or finished run cannot be started again or change mode.");
+    const runId=createRun(chatId,text,requested[0]?.attachmentId,stagedId);
     createRunDirectories(runId);
-
-    const db = getDb();
-    const insertRunAtt = db.prepare(
-      "INSERT OR IGNORE INTO run_attachments(run_id, attachment_id) VALUES (?, ?)",
-    );
-    for (const att of attachments) {
-      insertRunAtt.run(runId, att.attachmentId);
-      const sourcePath = absoluteDataPath(att.relativePath);
-      const targetFilename = path.basename(att.relativePath);
-      const destPath = path.join(runRoot(runId), "input", targetFilename);
-      if (sourcePath !== destPath && existsSync(sourcePath) && !existsSync(destPath)) {
-        copyFileSync(sourcePath, destPath);
+    db.prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,?,?,?)").run(runId,mode,`${mode}-v1`,root??null);
+    this.activeChats.set(chatId,runId);this.controllers.set(runId,new AbortController());this.runModes.set(runId,mode);
+    this.runMetrics.set(runId,{requestReceivedAt:Date.now(),mode,engineVersion:`${mode}-v1`,modelCallCount:0,originalRequest:text,queueWaitMs:0,toolTimeMs:0,recoveryCount:0,isolationStatus:"not_used"});
+    if(input.temperature!==undefined)this.runTemperatures.set(runId,input.temperature);
+    this.runGroundingEnabled.set(runId,input.groundingEnabled===true);
+    if(input.selectedModel??input.preferredRoute)this.runSelectedModels.set(runId,(input.selectedModel??input.preferredRoute)!);
+    const originals=requested.length?requested:this.latestAttachments(chatId);
+    db.transaction(() => {
+      for (const attachment of originals) {
+        if (attachment.chatId !== chatId) throw new Error("Attachment belongs to another chat.");
+        db.prepare("INSERT OR IGNORE INTO run_attachments(run_id,attachment_id) VALUES (?,?)").run(runId, attachment.attachmentId);
       }
-      if (att.filename && att.filename !== targetFilename) {
-        const cleanDestPath = path.join(runRoot(runId), "input", att.filename);
-        if (existsSync(sourcePath) && !existsSync(cleanDestPath)) {
-          try {
-            copyFileSync(sourcePath, cleanDestPath);
-          } catch {}
-        }
-      }
-    }
-
-    // In multi-turn chat, also copy prior chat attachments and prior artifacts into input/
-    // so subsequent analysis, comparison, or tool runs can access all files produced in this chat.
-    const priorChatAtts = this.allChatAttachments(effectiveChatId);
-    for (const prior of priorChatAtts) {
-      const sourcePath = absoluteDataPath(prior.relativePath);
-      const targetFilename = path.basename(prior.relativePath);
-      const destPath = path.join(runRoot(runId), "input", targetFilename);
-      if (existsSync(sourcePath) && !existsSync(destPath)) {
-        try {
-          copyFileSync(sourcePath, destPath);
-        } catch {}
-      }
-      if (prior.filename && prior.filename !== targetFilename) {
-        const cleanDestPath = path.join(runRoot(runId), "input", prior.filename);
-        if (existsSync(sourcePath) && !existsSync(cleanDestPath)) {
-          try {
-            copyFileSync(sourcePath, cleanDestPath);
-          } catch {}
-        }
-      }
-    }
-
-    const priorArtifacts = this.allChatArtifacts(effectiveChatId);
-    for (const art of priorArtifacts) {
-      const sourcePath = absoluteDataPath(art.relativePath);
-      const targetFilename = art.filename;
-      const destPath = path.join(runRoot(runId), "input", targetFilename);
-      if (existsSync(sourcePath) && !existsSync(destPath)) {
-        try {
-          copyFileSync(sourcePath, destPath);
-        } catch {}
-      }
-    }
-
-    const temp = typeof input.temperature === "number" ? input.temperature : getSetting<number>("temperature");
-    if (typeof temp === "number" && !isNaN(temp)) {
-      this.runTemperatures.set(runId, temp);
-    }
-    if (typeof input.groundingEnabled === "boolean") {
-      this.runGroundingEnabled.set(runId, input.groundingEnabled);
-    }
-    const selectedModel = input.selectedModel ?? input.preferredRoute;
-    if (selectedModel) {
-      this.runSelectedModels.set(runId, selectedModel);
-    }
-    if (input.mode) {
-      this.runModes.set(runId, input.mode);
-    }
-    if (attachments.length > 0 && requestedAttachments.length === 0) {
-      // A follow-up gets a fresh run workspace. Copy the prior attachments into
-      // that workspace so tools and sandbox can resolve filenames.
-      const newAttachments: AttachmentRow[] = [];
-      for (const att of attachments) {
-        try {
-          const fullPath = absoluteDataPath(att.relativePath);
-          if (!existsSync(fullPath)) {
-            console.warn(`[run:${runId.slice(0, 8)}] attachment file not found on disk, skipping: ${att.relativePath}`);
-            continue;
-          }
-          const bytes = readFileSync(fullPath);
-          const copied = saveAttachment(runId, {
-            filename: att.filename,
-            mediaType: att.mediaType,
-            sizeBytes: bytes.length,
-            base64OrBuffer: bytes,
-          });
-          const fullCopied: AttachmentRow = { ...copied, runId, chatId: effectiveChatId };
-          this.attachments.set(fullCopied.attachmentId, fullCopied);
-          db.prepare(
-            "INSERT INTO attachments(attachment_id, chat_id, run_id, filename, media_type, size_bytes, relative_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-          ).run(
-            fullCopied.attachmentId,
-            effectiveChatId,
-            runId,
-            fullCopied.filename,
-            fullCopied.mediaType,
-            fullCopied.sizeBytes,
-            fullCopied.relativePath,
-            new Date().toISOString(),
-          );
-          insertRunAtt.run(runId, fullCopied.attachmentId);
-          newAttachments.push(fullCopied);
-        } catch (copyErr) {
-          console.warn(`[run:${runId.slice(0, 8)}] failed copying attachment ${att.filename}:`, copyErr);
-        }
-      }
-      attachments = newAttachments;
-      if (attachments[0]) {
-        db.prepare("UPDATE runs SET attachment_id=? WHERE id=?").run(attachments[0].attachmentId, runId);
-      }
-    }
-    setTimeout(() => {
-      void this.execute(runId, input.userText, attachments).catch((error) => this.fail(runId, error));
-    }, 0);
-    return { runId };
+    })();
+    this.emit({type:"run_registered",runId,chatId,mode});
+    setTimeout(()=>void this.execute(runId,text,originals).catch(error=>this.fail(runId,error)),0);
+    return {runId};
   }
+
+  getRunSnapshot(input: { chatId?:string; runId?:string }): RunSnapshot | undefined {
+    const row=getDb().prepare(`SELECT r.id as runId,r.chat_id as chatId,m.mode,m.engine_version as engineVersion,m.metrics_json as metrics FROM runs r LEFT JOIN run_mode_details m ON m.run_id=r.id WHERE ${input.runId?"r.id=?":"r.chat_id=? AND (m.run_id IS NOT NULL OR r.state<>'created')"} ORDER BY r.created_at DESC LIMIT 1`).get(input.runId??input.chatId) as any;
+    if(!row)return undefined;
+    const metrics=this.runMetrics.get(row.runId)??JSON.parse(row.metrics??"{}");
+    const artifacts=getDb().prepare("SELECT artifact_id as artifactId,run_id as runId,kind,filename,relative_path as relativePath,size_bytes as sizeBytes,sha256,created_at as createdAt FROM artifacts WHERE run_id=?").all(row.runId) as RunSnapshot["artifacts"];
+    const draft=getDb().prepare("SELECT message_id as messageId,model_id as modelId,text FROM run_drafts WHERE run_id=?").get(row.runId) as RunSnapshot["draft"];
+    return {runId:row.runId,chatId:row.chatId,mode:row.mode??null,engineVersion:row.engineVersion??null,state:getState(row.runId),queued:metrics.queued===true,progress:[...(this.taskCheckpoints.get(row.runId)?.values()??(Array.isArray(metrics.progress)?metrics.progress:[]))],pendingAction:this.pendingActions.get(row.runId),artifacts,verification:getVerificationReport(row.runId),metrics,draft};
+  }
+
+  private async askPythonApproval(runId:string,code:string,inputs:string[],digest:string):Promise<boolean> {
+    assertRuntimeActive();
+    const scope=currentRuntimeScope()!;
+    const action=createConfirmation(runId,"uncontained_python",code,`Approve Python without OS isolation? Filesystem and network isolation are not enforced. Run ${runId}; source SHA-256 ${digest}; inputs ${inputs.join(", ")}.`);
+    this.pendingActions.set(runId,action);this.state(runId,"awaiting_confirmation");
+    return new Promise<boolean>(resolve=>{
+      let done=false;
+      const finish=(approved:boolean)=>{if(done)return;done=true;clearTimeout(timer);scope.signal.removeEventListener("abort",abort);this.approvalResolvers.delete(action.actionId);this.pendingActions.delete(runId);resolve(approved);};
+      const abort=()=>finish(false);
+      const timer=setTimeout(()=>{cancelPending(runId);this.cancel(runId);finish(false);},Math.max(0,Date.parse(action.expiresAt)-Date.now()));
+      this.approvalResolvers.set(action.actionId,finish);scope.signal.addEventListener("abort",abort,{once:true});
+      this.emit({type:"confirmation_required",runId,action});
+    });
+  }
+
   async confirm(input: ConfirmInput): Promise<void> {
+    const approval=this.approvalResolvers.get(input.actionId);
+    if(approval){
+      if(this.pendingActions.get(input.runId)?.actionId!==input.actionId)throw new Error("Approval belongs to another run.");
+      try { decide(input.runId,input.actionId,input.approved); this.assertRunAuthority(input.runId);this.state(input.runId,"acting");approval(true); }
+      catch(error){approval(false);this.cancel(input.runId);if(input.approved)throw error;}
+      return;
+    }
     const existing = this.confirming.get(input.actionId);
     if (existing) return existing;
     const operation = (async () => {
       const continuation = this.continuations.get(input.actionId);
       try {
         decide(input.runId, input.actionId, input.approved);
+        this.assertRunAuthority(input.runId);
         if (!continuation) throw new Error("confirmation continuation not found");
         this.continuations.delete(input.actionId);
+        this.pendingActions.delete(input.runId);
         if (input.approved) {
           this.state(input.runId, "acting");
         }
@@ -673,7 +616,12 @@ export class RunManager {
   }
   cancel(runId: string): void {
     if (["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(getState(runId))) return;
-    finalizeRunTelemetry(runId, "cancelled");
+    this.controllers.get(runId)?.abort(Object.assign(new Error("Run cancelled."),{cancelledAt:Date.now()}));
+    const pending=this.pendingActions.get(runId);
+    if(pending){const continuation=this.continuations.get(pending.actionId);this.continuations.delete(pending.actionId);this.pendingActions.delete(runId);void continuation?.();}
+    const draft=getDb().prepare("SELECT message_id as id,model_id as modelId,text FROM run_drafts WHERE run_id=?").get(runId) as any;
+    if(draft?.text && !getDb().prepare("SELECT id FROM messages WHERE id=?").get(draft.id))this.persistAssistant(runId,draft.text,draft.modelId,draft.id);
+    finalizeRunTelemetry(runId, "cancelled", this.runMetrics.get(runId));
     this.policyGuard.revokeRunScopes(runId);
     cancelPending(runId);
     transition(runId, "cancelled");
@@ -701,67 +649,17 @@ export class RunManager {
         }
       | undefined;
 
-    if (!row) {
-      // Fallback 1: Query by artifactId only
-      row = getDb()
-        .prepare(
-          "SELECT artifact_id as artifactId, run_id as runId, kind, filename, relative_path as relativePath, size_bytes as sizeBytes, sha256, created_at as createdAt FROM artifacts WHERE artifact_id=?",
-        )
-        .get(artifactId) as any;
-    }
-
-    if (!row && /^[0-9a-f-]{36}$/i.test(runId)) {
-      // Fallback 2: Check if any output file exists in the run's output directory
-      try {
-        const outputDir = path.join(runRoot(runId), "output");
-        if (existsSync(outputDir)) {
-          const files = readdirSync(outputDir).filter((f) => !f.startsWith("."));
-          if (files.length > 0) {
-            const firstFile = files[0];
-            const rel = `runs/${runId}/output/${firstFile}`;
-            const kind = inferArtifactKind(firstFile);
-            const size = statSync(path.join(outputDir, firstFile)).size;
-            row = {
-              artifactId,
-              runId,
-              kind,
-              filename: firstFile,
-              relativePath: rel,
-              sizeBytes: size,
-              createdAt: new Date().toISOString(),
-            };
-            this.persistArtifact(row);
-          }
-        }
-      } catch {}
-    }
-
-    if (!row && this.harness?.isWorkspaceActive() && /^[0-9a-f-]{36}$/i.test(runId)) {
-      // Fallback 3: Active workspace self-heal
-      try {
-        const tree = this.harness.getDirectoryTree();
-        const candidate = tree.find((e) => e.type === "file" && !e.name.startsWith("."));
-        if (candidate) {
-          const generated = this.harness.createWorkspaceArtifact(runId, candidate.name);
-          row = {
-            artifactId,
-            runId,
-            kind: generated.kind,
-            filename: generated.filename,
-            relativePath: generated.relativePath,
-            sizeBytes: generated.sizeBytes,
-            createdAt: generated.createdAt,
-          };
-        }
-      } catch {}
-    }
-
     if (!row) throw new Error("artifact not found");
+
+    const prefix = `runs/${runId}/`;
+    if (!row.relativePath.startsWith(prefix)) throw new Error("Artifact belongs to another run.");
+    const abs = resolveRunPath(runId, row.relativePath.slice(prefix.length), "output");
+    if (!existsSync(abs)) throw new Error("Artifact file is missing.");
+    if (row.sha256 && sha256File(abs) !== row.sha256) throw new Error("Artifact file has changed since verification.");
 
     let content: string | undefined;
     let isBinary = false;
     try {
-      const abs = absoluteDataPath(row.relativePath);
       if (existsSync(abs)) {
         const ext = path.extname(row.filename).toLowerCase();
         const textExtensions = [
@@ -920,6 +818,7 @@ export class RunManager {
     return row?.chatId;
   }
   private state(runId: string, state: RunState) {
+    if (["completed","partial","failed","cancelled","limit_exceeded"].includes(getState(runId))) return;
     transition(runId, state);
     updateExecutionLedgerState(runId, state, state === "partial" ? "Run ended before all known work was confirmed." : undefined);
     logRunTransition(runId, state);
@@ -1010,12 +909,103 @@ export class RunManager {
     }
   }
 
-  private async execute(
+  private assertRunAuthority(runId:string):void {
+    const row=getDb().prepare("SELECT mode,workspace_root FROM run_mode_details WHERE run_id=?").get(runId) as {mode:ExecutionMode;workspace_root:string|null}|undefined;
+    if(!row)throw new Error("Run has no persisted mode authority.");
+    this.controllers.get(runId)?.signal.throwIfAborted();
+    if(["completed","partial","failed","cancelled","limit_exceeded"].includes(getState(runId)))throw new Error("Run execution is closed.");
+    if(row.mode==="agent" && (!this.harness?.isWorkspaceActive() || this.harness.requireActiveWorkspace().root!==row.workspace_root)) {
+      this.policyGuard.revokeRunScopes(runId);throw new Error("Agent workspace binding changed. Authority was revoked.");
+    }
+  }
+  private async execute(runId:string,text:string,attachmentOrList?:AttachmentRow|AttachmentRow[],resume?:Parameters<RunManager["executeAgent"]>[3]):Promise<void> {
+    if(this.controllers.get(runId)?.signal.aborted)return;
+    const mode=this.runModes.get(runId)??"chat";
+    if(process.env[`WORKBENCH_${mode.toUpperCase()}_ENGINE`]==="false"||(mode==="agent"&&process.env.WORKBENCH_AGENT_V2==="false"))throw new Error(`${mode} engine is unavailable.`);
+    const controller=this.controllers.get(runId)??new AbortController();this.controllers.set(runId,controller);
+    const priorMetrics=this.runMetrics.get(runId)??{};
+    const scope={runId,mode,remainingModelCalls:mode==="work"?Math.max(0,24-Number(priorMetrics.modelCallCount??0)):undefined,remainingRecoveryAttempts:mode==="work"?Math.max(0,2-Number(priorMetrics.recoveryCount??0)):undefined,signal:controller.signal,assertAuthority:()=>this.assertRunAuthority(runId),approveUncontainedPython:(code:string,inputs:string[],digest:string)=>this.askPythonApproval(runId,code,inputs,digest),observe:(values:Record<string,unknown>)=>{
+      const metrics=this.runMetrics.get(runId)??{};
+      for(const [key,value] of Object.entries(values))metrics[key]=key==="cancellationResourceMs"?Math.max(Number(metrics[key])||0,Number(value)) : typeof value==="number"?(Number(metrics[key])||0)+value:value;
+      this.runMetrics.set(runId,metrics);
+      getDb().prepare("UPDATE run_mode_details SET metrics_json=? WHERE run_id=?").run(JSON.stringify(metrics),runId);
+      if("queued" in values)this.emit({type:"run_queue",runId,queued:values.queued===true,queueWaitMs:Number(metrics.queueWaitMs)||0});
+    }};
+    await withRuntimeScope(scope,async()=>{
+      markRunStart(runId);assertRuntimeActive();
+      const stagingStarted=Date.now();
+      const originals=Array.isArray(attachmentOrList)?attachmentOrList:attachmentOrList?[attachmentOrList]:[];
+      const chatId=this.chatIdForRun(runId);
+      const aliases=resume&&Array.isArray(this.runMetrics.get(runId)?.sourceAliases)?this.runMetrics.get(runId)!.sourceAliases as Array<{id:string;filename:string;relativePath:string;sha256?:string;mediaType?:string;sizeBytes?:number}>:[];
+      const files=originals.map(file=>{
+        const alias=aliases.find(a=>a.id===file.attachmentId);if(!alias)return file;
+        if(!alias.relativePath.startsWith(`runs/${runId}/input/`))throw new Error("Resume input is outside run storage.");
+        const source=resolveSafe(path.join(runRoot(runId),"input"),alias.relativePath.slice(`runs/${runId}/input/`.length));
+        if(!alias.sha256||createHash('sha256').update(readFileSync(source)).digest('hex')!==alias.sha256)throw new Error("Original run input changed. Submit a new request.");
+        return {...file,runId,filename:alias.filename,relativePath:alias.relativePath};
+      });
+      // Prior output references are immutable snapshots from this chat only.
+      const prior=this.allChatArtifacts(chatId).filter(a=>a.runId!==runId && text.includes(a.filename));
+      if(resume && aliases.length){
+        files.length=0;
+        for(const alias of aliases){
+          if(!alias.relativePath.startsWith(`runs/${runId}/input/`))throw new Error("Resume input is outside run storage.");
+          const source=resolveSafe(path.join(runRoot(runId),"input"),alias.relativePath.slice(`runs/${runId}/input/`.length));
+          if(!alias.sha256||createHash('sha256').update(readFileSync(source)).digest('hex')!==alias.sha256)throw new Error("Original run input changed. Submit a new request.");
+          files.push({attachmentId:alias.id,runId,chatId,filename:alias.filename,relativePath:alias.relativePath,mediaType:alias.mediaType??originals.find(file=>file.attachmentId===alias.id)?.mediaType??"application/octet-stream",sizeBytes:alias.sizeBytes??statSync(source).size});
+        }
+      }else for(const artifact of prior)files.push({attachmentId:artifact.artifactId,runId:artifact.runId,chatId,filename:artifact.filename,mediaType:"application/octet-stream",sizeBytes:artifact.sizeBytes,relativePath:artifact.relativePath});
+      const filenameKey=(name:string)=>process.platform==="linux"?name:name.normalize("NFC").toLowerCase();
+      const counts=new Map<string,number>();for(const file of files)counts.set(filenameKey(file.filename),(counts.get(filenameKey(file.filename))??0)+1);
+      const attachments:AttachmentRow[]=[];
+      for(const file of files){
+        assertRuntimeActive();if(file.chatId!==chatId)throw new Error("Source belongs to another chat.");
+        const prefix=`runs/${file.runId}/`;if(!file.relativePath.startsWith(prefix))throw new Error("Source is outside its registered run.");
+        const source=resolveSafe(runRoot(file.runId),file.relativePath.slice(prefix.length));
+        if(!statSync(source).isFile())throw new Error("Source is not a file.");
+        const ext=path.extname(file.filename);const filename=counts.get(filenameKey(file.filename))!>1?`${path.basename(file.filename,ext).slice(0,170)}-${file.attachmentId}${ext}`:file.filename;
+        const destination=resolveSafe(path.join(runRoot(runId),"input"),filename);
+        if(source!==destination && (!existsSync(destination)||!readFileSync(source).equals(readFileSync(destination)))){if(existsSync(destination))chmodSync(destination,0o600);copyFileSync(source,destination);}
+        if(mode==="work")chmodSync(destination,0o444);
+        attachments.push({...file,filename,relativePath:`runs/${runId}/input/${filename}`});
+        if(getDb().prepare("SELECT attachment_id FROM attachments WHERE attachment_id=?").get(file.attachmentId))getDb().prepare("INSERT OR IGNORE INTO run_attachments(run_id,attachment_id) VALUES (?,?)").run(runId,file.attachmentId);
+      }
+      scope.observe({sourceAliases:attachments.map(a=>({id:a.attachmentId,filename:a.filename,relativePath:a.relativePath,mediaType:a.mediaType,sizeBytes:a.sizeBytes,sha256:createHash("sha256").update(readFileSync(absoluteDataPath(a.relativePath))).digest("hex")}))});
+      scope.observe({preprocessingMs:Date.now()-stagingStarted});
+      if(mode==="agent"){
+        const root=this.harness!.requireActiveWorkspace().root;
+        await workspaceExecutionSlots.run("agent",()=>this.executeAgent(runId,text,attachments,resume),controller.signal,root);return;
+      }
+      const selection=resolveModelSelection({explicitSelection:resume?.contract.routing.driverModel??this.runSelectedModels.get(runId),gateway:this.gateway});
+      if(!selection.ok)throw new Error(selection.error);
+      if(typeof this.gateway.chatWithTools!=="function")throw new Error(`${mode} engine requires the shared gateway.`);
+      const modelId=selection.modelId;
+      this.emit({type:"routing",runId,taskType:"draft",modelId,reason:mode==="chat"?"Direct Chat response":"Work stages"});
+      const grounding=this.groundingForRun(runId);
+      const envelope=buildExecutionEnvelope({runId,mode,modelId,hasWorkspace:false,attachments,hasKnowledgeBaseDocs:!!grounding,computationRequested:mode==="work",deliverableRequested:mode==="work"});
+      const context={runId,signal:controller.signal,assertAuthority:scope.assertAuthority,workspaceRoot:path.join(runRoot(runId),"input"),gateway:this.gateway,envelope,indexedKnowledgeSources:grounding?this.ragService?.listDocuments().map(doc=>({docId:doc.doc_id,filename:path.basename(doc.source_path)})):undefined,grounding:grounding as any,resultStore:new RunResultStore(runId),isCancelled:()=>controller.signal.aborted,emitRunEvent:(event:RunEvent)=>{assertRuntimeActive();if(event.type==="artifact_ready")this.persistArtifact(event.artifact);this.emit(event);}};
+      const history=this.getRecentChatHistory(chatId,text);
+      if(mode==="chat"){
+        if(!getRunContract(runId))persistRunContract({schemaVersion:1,runId,createdAt:new Date().toISOString(),objective:text.slice(0,500)||"Inspect attachments",resolution:{status:"resolved"},routing:{intentType:"pure_chat",taskType:"draft",driverModel:modelId,actionable:false},response:{required:true,chatOnly:true},workspace:{requested:false,operations:[]},deliverables:[],constraints:{protectedPaths:[],restrictMutationsToTargets:false,userConstraints:[]},acceptance:{validateWrittenCode:false,validatedPythonDeliverables:[],artifactChecks:[]}});
+        this.state(runId,"acting");
+        const result=await new ChatResponder().respond({text,modelId,history,attachments,context,emit:e=>this.emit(e),temperature:this.runTemperatures.get(runId)});
+        this.persistAssistant(runId,result.text,modelId,result.messageId);
+        if(result.truncated)this.partial(runId,["The response reached the generation limit."]);else this.complete(runId,true);
+      }else{
+        const result=await new WorkOrchestrator().run({text,modelId,history,attachments,context,resume:resume?.contract,temperature:this.runTemperatures.get(runId),state:state=>this.state(runId,state)});
+        assertRuntimeActive();this.persistAssistant(runId,result.text,modelId);this.publishVerificationReport(runId);
+        if(result.outcome==="completed")this.complete(runId,true);else if(result.outcome==="partial")this.partial(runId);else this.fail(runId,new Error(result.text));
+      }
+    });
+  }
+
+  private async executeAgent(
     runId: string,
     text: string,
     attachmentOrList?: AttachmentRow | AttachmentRow[],
     resume?: { contract: RunContract; extraTokens: number; resumeEvidence: { writtenPaths: string[]; deletedPaths: string[]; artifactFilenames: string[]; commandExecuted: boolean; hasExecutedDiskMutations: boolean } },
   ): Promise<void> {
+    assertRuntimeActive();
     markRunStart(runId);
     const attachments: AttachmentRow[] = Array.isArray(attachmentOrList)
       ? attachmentOrList
@@ -1130,7 +1120,7 @@ export class RunManager {
       const executionMode: ExecutionMode =
         explicitMode !== undefined
           ? explicitMode
-          : (isMutationRequested || semanticIntent.workspaceMutationRequested ? "agent" : "chat");
+          : "agent";
       this.runModes.set(runId, executionMode);
 
       if (!resume && executionLedger) configureExecutionLedger(runId, { modelId: driverModelId, mode: executionMode,
@@ -1188,6 +1178,8 @@ export class RunManager {
 
       const toolContext = {
         runId,
+        signal: currentRuntimeScope()?.signal,
+        assertAuthority: () => this.assertRunAuthority(runId),
         isCancelled: () => getState(runId) === "cancelled",
         runContract,
         executionLedger,
@@ -1498,6 +1490,8 @@ ${referencedFilesSection}`;
         return;
       }
     }
+
+    throw new Error("Agent engine is unavailable; legacy execution is disabled.");
 
     // ── Legacy Multi-Branch Path (Kept for Phase 4 strangler verification) ──
     const intent = classifyIntent({
@@ -3660,6 +3654,8 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
   ): Promise<void> {
     const action = createConfirmation(runId, kind, preview, customPrompt);
     this.continuations.set(action.actionId, continuation);
+    this.pendingActions.set(runId,action);
+    const timer=setTimeout(()=>{if(this.continuations.has(action.actionId))this.cancel(runId);},Math.max(0,Date.parse(action.expiresAt)-Date.now()));timer.unref();
     this.state(runId, "awaiting_confirmation");
     this.emit({ type: "confirmation_required", runId, action });
   }
@@ -3671,12 +3667,12 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
     });
     if (report) {
       this.emit({ type: "verification_report", runId, report });
-      if (report.checks.some((item) => item.mandatory && item.status === "failed")) {
+      if (report.checks.some((item) => item.mandatory && (item.status === "failed" || (this.runModes.get(runId)==="work" && item.status === "unverified")))) {
         this.partial(runId);
         return;
       }
     }
-    finalizeRunTelemetry(runId, "completed");
+    finalizeRunTelemetry(runId, "completed", this.runMetrics.get(runId));
     this.policyGuard.revokeRunScopes(runId);
     this.runTemperatures.delete(runId);
     this.state(runId, "completed");
@@ -3725,20 +3721,29 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
         }
       }
     } catch { /* Keep the original partial answer if its evidence cannot be read. */ }
-    finalizeRunTelemetry(runId, "partial");
+    finalizeRunTelemetry(runId, "partial", this.runMetrics.get(runId));
     this.policyGuard.revokeRunScopes(runId);
     this.runTemperatures.delete(runId);
     this.state(runId, "partial");
   }
   private limitExceeded(runId: string) {
-    finalizeRunTelemetry(runId, "limit_exceeded");
+    finalizeRunTelemetry(runId, "limit_exceeded", this.runMetrics.get(runId));
     this.policyGuard.revokeRunScopes(runId);
     this.runTemperatures.delete(runId);
     updateExecutionLedgerState(runId, "limit_exceeded", "Execution stopped at its configured limit.");
     this.state(runId, "limit_exceeded");
   }
   private fail(runId: string, error: unknown) {
-    finalizeRunTelemetry(runId, "failed");
+    if(this.controllers.get(runId)?.signal.aborted)return;
+    const mode=getDb().prepare("SELECT mode FROM run_mode_details WHERE run_id=?").get(runId) as {mode:string}|undefined;
+    if(mode?.mode==="work"&&!['completed','partial','failed','cancelled','limit_exceeded'].includes(getState(runId))&&getDb().prepare("SELECT artifact_id FROM artifacts WHERE run_id=? LIMIT 1").get(runId)) {
+      const message=error instanceof Error?error.message:"Work stopped before all checks passed.";
+      if(!getDb().prepare("SELECT id FROM messages WHERE run_id=? AND role='assistant'").get(runId))this.persistAssistant(runId,`Saved outputs remain available. Required work is incomplete: ${message}`,getRunContract(runId)?.routing.driverModel??"primary-model");
+      this.partial(runId,[message]);return;
+    }
+    const draft=getDb().prepare("SELECT message_id as id,model_id as modelId,text FROM run_drafts WHERE run_id=?").get(runId) as {id:string;modelId:string;text:string}|undefined;
+    if(draft?.text&&!getDb().prepare("SELECT id FROM messages WHERE id=?").get(draft.id))this.persistAssistant(runId,draft.text,draft.modelId,draft.id);
+    finalizeRunTelemetry(runId, "failed", this.runMetrics.get(runId));
     this.policyGuard.revokeRunScopes(runId);
     this.runTemperatures.delete(runId);
     try {
@@ -3762,6 +3767,9 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
     sha256?: string | null;
     createdAt: string;
   }) {
+    const artifactPath=resolveSafe(runRoot(artifact.runId),artifact.relativePath.slice(`runs/${artifact.runId}/`.length));
+    if(!artifact.relativePath.startsWith(`runs/${artifact.runId}/output/`))throw new Error("Artifact must be inside run output storage.");
+    artifact.sha256=createHash("sha256").update(readFileSync(artifactPath)).digest("hex");
     logArtifactReady(artifact);
     const db = getDb();
     const existing = db.prepare("SELECT artifact_id FROM artifacts WHERE run_id = ? AND relative_path = ? ORDER BY created_at DESC LIMIT 1")

@@ -1,0 +1,58 @@
+
+> local-workbench@0.1.0 package:dir
+> npm run build && electron-builder --config electron/electron-builder.json5 --dir --mac --arm64
+
+
+> local-workbench@0.1.0 build
+> npm run build:frontend && npm run build:electron
+
+
+> local-workbench@0.1.0 build:frontend
+> vite build --config frontend/vite.config.ts
+
+vite v5.4.21 building for production...
+transforming...
+✓ 64 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.72 kB │ gzip:  0.40 kB
+dist/assets/index-CK_RIWJm.css   59.91 kB │ gzip: 11.37 kB
+dist/assets/index-DB5Bnw16.js   367.33 kB │ gzip: 98.69 kB
+✓ built in 1.66s
+
+> local-workbench@0.1.0 build:electron
+> node scripts/build-electron.cjs
+
+▲ [WARNING] "import.meta" is not available with the "cjs" output format and will be empty [empty-import-meta]
+
+    backend/src/main/tools/file-worker.ts:133:94:
+      133 │ ...name === "string" ? __filename : fileURLToPath(import.meta.url));
+          ╵                                                   ~~~~~~~~~~~
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+1 warning
+
+  electron/dist-electron/main.cjs  17.8mb ⚠️
+
+⚡ Done in 272ms
+
+  electron/dist-electron/preload.cjs  5.2kb
+
+⚡ Done in 2ms
+  • electron-builder  version=26.17.0 os=25.6.0
+  • loaded configuration  file=/Users/krishay/projects/agent/electron/electron-builder.json5
+  • executing @electron/rebuild  electronVersion=44.7.0 arch=arm64 buildFromSource=false workspaceRoot=/Users/krishay/projects/agent projectDir=./ appDir=./
+  • installing native dependencies  arch=arm64
+  • preparing       moduleName=better-sqlite3 arch=arm64
+  • finished        moduleName=better-sqlite3 arch=arm64
+  • preparing       moduleName=canvas arch=arm64
+  • finished        moduleName=canvas arch=arm64
+  • completed installing native dependencies
+  • packaging       platform=darwin arch=arm64 electron=44.7.0 appOutDir=release/0.1.0/mac-arm64
+  • downloaded      label=electron progress=100%
+  • downloaded electron zip extracted successfully  output=/Users/krishay/projects/agent/release/0.1.0/mac-arm64
+  • searching for node modules  pm=npm searchDir=/Users/krishay/projects/agent
+  • duplicate dependency references  dependencies=["once@1.4.0","once@1.4.0","pump@3.0.4","tar-stream@2.2.0","jszip@3.10.2","once@1.4.0","once@1.4.0","readable-stream@3.6.2","readable-stream@3.6.2","end-of-stream@1.4.5","readable-stream@3.6.2","glob@7.2.3","lazystream@1.0.1","readable-stream@3.6.2","readable-stream@3.6.2","readable-stream@3.6.2","readable-stream@3.6.2","jszip@3.10.2","saxes@5.0.1","glob@7.2.3","react@18.3.1","loose-envify@1.4.0","loose-envify@1.4.0","@grpc/proto-loader@0.8.1","string-width@4.2.3","string-width@4.2.3","strip-ansi@6.0.1","strip-ansi@6.0.1","domhandler@5.0.3","domutils@3.2.2","domhandler@5.0.3","domutils@3.2.2","domhandler@5.0.3","dom-serializer@2.0.0","domhandler@5.0.3","iconv-lite@0.6.3","domhandler@5.0.3","domutils@3.2.2","domhandler@5.0.3","parse5@7.3.0","parse5@7.3.0","strip-ansi@7.2.0","strip-ansi@7.2.0","strip-ansi@7.2.0","strip-ansi@7.2.0"]
+  • default Electron icon is used  reason=application icon is not set
+  • skipped macOS application code signing  reason=, see https://electron.build/code-signing CSC_IDENTITY_AUTO_DISCOVERY=false

@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS execution_results (
 CREATE TABLE IF NOT EXISTS confirmations (
   action_id  TEXT PRIMARY KEY,            -- uuid4
   run_id     TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-  kind       TEXT NOT NULL CHECK (kind IN ('generate_docx','execute_python','generate_xlsx','plan_approval')),
+  kind       TEXT NOT NULL CHECK (kind IN ('generate_docx','execute_python','generate_xlsx','plan_approval','uncontained_python')),
   prompt     TEXT NOT NULL,               -- locked strings: 'Generate the approval-note DOCX?' etc.
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,               -- +5 min
@@ -213,3 +213,15 @@ CREATE TABLE IF NOT EXISTS intermediate_results (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_intermediate_results_run ON intermediate_results(run_id, created_at, result_id);
+
+-- Three-mode run identity. Historical runs have no row and retain unknown mode.
+CREATE TABLE IF NOT EXISTS run_mode_details (
+  run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+  mode TEXT NOT NULL CHECK(mode IN ('chat','work','agent')),
+  engine_version TEXT NOT NULL,
+  workspace_root TEXT,
+  metrics_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS run_artifact_validations (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, checks_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS run_drafts (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, message_id TEXT NOT NULL, model_id TEXT NOT NULL, text TEXT NOT NULL);

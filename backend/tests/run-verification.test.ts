@@ -21,7 +21,7 @@ describe("P1-D durable outcome verification", () => {
   let contract: ReturnType<typeof normalizeRunContract>;
 
   const makeIntent = (overrides: Record<string, unknown> = {}) => validateAndNormalizeIntent({
-    intentType: "document_drafting", primaryGoal: "Create report", driverModel: "draft-qwen3", taskType: "draft", isActionable: true,
+    intentType: "document_drafting", primaryGoal: "Create report", driverModel: "primary-model", taskType: "draft", isActionable: true,
     chatResponseOnly: false, workspaceMutationRequested: false, targetFiles: [], protectedPaths: [], restrictMutationsToTargets: false,
     expectedDeliverables: [{ filename: "report.md", filenameRequired: true, type: "md" }], ...overrides,
   } as any, { hasWorkspace: false, workspaceFiles: [], userPrompt: "Create report" });
@@ -50,6 +50,7 @@ describe("P1-D durable outcome verification", () => {
   it("checks a matching artifact digest and supported structure", () => {
     const artifact = registerMarkdown();
     const report = verifyRunEvidence(runId)!;
+    expect(report).toBeDefined();
     expect(report.checks.find((item) => item.criterionId === `artifact-integrity:${artifact.artifactId}`)?.status).toBe("passed");
     expect(report.checks.find((item) => item.criterionId === `artifact-format:${artifact.artifactId}`)?.status).toBe("passed");
     expect(report.checks.find((item) => item.criterionId === "deliverable:deliverable-1")?.status).toBe("passed");
@@ -79,6 +80,7 @@ describe("P1-D durable outcome verification", () => {
     const artifact = registerMarkdown();
     getDb().prepare("UPDATE artifacts SET sha256=NULL WHERE artifact_id=?").run(artifact.artifactId);
     const report = verifyRunEvidence(runId)!;
+    expect(report).toBeDefined();
     const integrity = report.checks.find((item) => item.criterionId === `artifact-integrity:${artifact.artifactId}`)!;
     expect(integrity.status).toBe("unverified");
     expect(integrity.reason).toContain("Legacy artifact");
@@ -87,6 +89,7 @@ describe("P1-D durable outcome verification", () => {
   it("does not accept a successful generation call without the required deliverable", () => {
     recordExecutionToolOutcome({ runId, callId: "generation-1", tool: "generate_deliverable", args: { filename: "report.md", type: "md" }, summary: "Generated report", ok: true });
     const report = verifyRunEvidence(runId)!;
+    expect(report).toBeDefined();
     expect(report.checks.find((item) => item.criterionId === "deliverable:deliverable-1")?.status).toBe("failed");
   });
 
@@ -113,6 +116,7 @@ describe("P1-D durable outcome verification", () => {
   it("reconstructs the verification report after database restart", () => {
     registerMarkdown();
     const report = verifyRunEvidence(runId)!;
+    expect(report).toBeDefined();
     closeDb();
     initDb(path.join(dir, "workbench.sqlite"));
     expect(getVerificationReport(runId)).toEqual(report);
@@ -125,6 +129,7 @@ describe("P1-D durable outcome verification", () => {
     const payload = absoluteDataPath(`runs/${runId}/${result.storage.relativePath}`);
     writeFileSync(payload, "tampered");
     const report = verifyRunEvidence(runId)!;
+    expect(report).toBeDefined();
     const check = report.checks.find((item) => item.criterionId === `result-integrity:${result.resultId}`)!;
     expect(check.status).toBe("failed");
     expect(check.evidence).toEqual([{ kind: "result", id: result.resultId }]);

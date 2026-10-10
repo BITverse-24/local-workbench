@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "runId": "8d036e43-b420-41a2-b44a-c70487a786c2",
+  "status": "unverified",
+  "checks": [
+    {
+      "criterionId": "artifact-integrity:3d8ddf6b-bf33-4e40-a687-38c285141c42",
+      "requirement": "Integrity of artifact approval_note.docx",
+      "status": "passed",
+      "method": "sha256",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "3d8ddf6b-bf33-4e40-a687-38c285141c42"
+        }
+      ],
+      "reason": "SHA-256 matches the registered digest.",
+      "verifiedAt": "2026-10-10T20:49:50.319Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "artifact-format:3d8ddf6b-bf33-4e40-a687-38c285141c42",
+      "requirement": "Structural format of approval_note.docx",
+      "status": "passed",
+      "method": "format_parser",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "3d8ddf6b-bf33-4e40-a687-38c285141c42"
+        }
+      ],
+      "reason": "ZIP package contains word/document.xml.",
+      "verifiedAt": "2026-10-10T20:49:50.319Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "deliverable:deliverable-1",
+      "requirement": "approval_note.docx",
+      "status": "passed",
+      "method": "filesystem",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "3d8ddf6b-bf33-4e40-a687-38c285141c42"
+        }
+      ],
+      "reason": "A registered artifact matches the RunContract deliverable. Its format and integrity have separate checks.",
+      "verifiedAt": "2026-10-10T20:49:50.319Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "independent:3d8ddf6b-bf33-4e40-a687-38c285141c42",
+      "requirement": "Read saved approval_note.docx",
+      "status": "passed",
+      "method": "independent_reader",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "3d8ddf6b-bf33-4e40-a687-38c285141c42"
+        }
+      ],
+      "reason": "The independent reader parsed the saved output.",
+      "verifiedAt": "2026-10-10T20:49:34.587Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "content:requirements_unverified",
+      "requirement": "Can you put together a Word approval note for the plant manager from these two reports? Include the findings and any conditions from our SOP.",
+      "status": "unverified",
+      "method": "content_check",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "3d8ddf6b-bf33-4e40-a687-38c285141c42"
+        }
+      ],
+      "reason": "This required interpretation has no independent content proof.",
+      "verifiedAt": "2026-10-10T20:49:34.587Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "content:complete_request",
+      "requirement": "Can you put together a Word approval note for the plant manager from these two reports? Include the findings and any conditions from our SOP.",
+      "status": "unverified",
+      "method": "content_check",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "3d8ddf6b-bf33-4e40-a687-38c285141c42"
+        }
+      ],
+      "reason": "This required interpretation has no independent content proof.",
+      "verifiedAt": "2026-10-10T20:49:34.587Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:0",
+      "requirement": "Preserve requested source fact: IR-E201-2026-08-20",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:49:34.587Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:1",
+      "requirement": "Preserve requested source fact: E-201 Heat Exchanger",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:49:34.587Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:2",
+      "requirement": "Preserve requested source fact: IR-E202-2026-08-21",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:49:34.587Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:3",
+      "requirement": "Preserve requested source fact: E-202 Pressure Vessel",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:49:34.587Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:4",
+      "requirement": "Preserve requested source fact: 2026-08-20",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:49:34.587Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:5",
+      "requirement": "Preserve requested source fact: 2026-08-21",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:49:34.587Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:6",
+      "requirement": "Preserve requested source fact: RECHECK WELD JOINT 4B",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:49:34.587Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "source:coverage:7",
+      "requirement": "Preserve requested source fact: verify after repair",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The source fact occurs in the saved output, with equivalent date formatting allowed.",
+      "verifiedAt": "2026-10-10T20:49:34.587Z",
+      "mandatory": true
+    }
+  ],
+  "updatedAt": "2026-10-10T20:49:50.318Z"
+}

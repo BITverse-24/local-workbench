@@ -89,7 +89,7 @@ export type ToolName =
   | "request_capability"
   | (string & {});
 
-export type ExecutionMode = "chat" | "agent";
+export type ExecutionMode = "chat" | "work" | "agent";
 
 export type CapabilityGroup =
   | "source_access"
@@ -142,6 +142,31 @@ export interface OutputExpectation {
 }
 
 // P1: interpreted expectations, never an authorization grant. No raw prompt copy.
+export interface ArtifactAcceptanceCheck {
+  id: string;
+  filename?: string;
+  kind: "contains_text" | "heading" | "columns" | "json_key" | "row_count" | "sheet" | "semantic";
+  expected: string | number;
+  mandatory: boolean;
+  /** Exact request or source excerpt that establishes the requirement. */
+  basis: string;
+}
+
+export interface RunSnapshot {
+  runId: string;
+  chatId: string;
+  mode: ExecutionMode | null;
+  engineVersion: string | null;
+  state: RunState;
+  queued: boolean;
+  progress: TaskProgressEvent[];
+  pendingAction?: PendingAction;
+  artifacts: ArtifactRef[];
+  verification?: RunVerificationReport;
+  metrics: Record<string, unknown>;
+  draft?: { messageId:string; modelId:string; text:string };
+}
+
 export interface RunContract {
   schemaVersion: 1;
   runId: string;
@@ -153,7 +178,7 @@ export interface RunContract {
   workspace: { requested: boolean; operations: ExpectedWorkspaceOperation[] };
   deliverables: Array<ExpectedDeliverableSpec & { id: string }>;
   constraints: { protectedPaths: string[]; restrictMutationsToTargets: boolean; userConstraints: string[] };
-  acceptance: { validateWrittenCode: boolean; validatedPythonDeliverables: string[]; successMarker?: string };
+  acceptance: { validateWrittenCode: boolean; validatedPythonDeliverables: string[]; successMarker?: string; artifactChecks?: ArtifactAcceptanceCheck[] };
 }
 
 export interface ExpectedWorkspaceOperation {
@@ -231,7 +256,7 @@ export type RunState =
   | "failed"
   | "cancelled"
   | "limit_exceeded";
-export interface PendingAction { actionId: string; runId: string; kind: "generate_docx" | "execute_python" | "generate_xlsx" | "plan_approval"; prompt: string; createdAt: string; expiresAt: string; preview?: string; }
+export interface PendingAction { actionId: string; runId: string; kind: "generate_docx" | "execute_python" | "generate_xlsx" | "plan_approval" | "uncontained_python"; prompt: string; createdAt: string; expiresAt: string; preview?: string; }
 export interface ArtifactRef { artifactId: string; runId: string; kind: ArtifactKind; filename: string; relativePath: string; sizeBytes: number; sha256?: string; createdAt: string; content?: string; isBinary?: boolean; verified?: boolean; verificationDetails?: Record<string, unknown>; }
 export type VerificationStatus = "passed" | "failed" | "unverified" | "not_applicable";
 export interface VerificationEvidenceRef { kind: "result" | "artifact" | "execution"; id: string; }
@@ -239,7 +264,7 @@ export interface VerificationCheck {
   criterionId: string;
   requirement: string;
   status: VerificationStatus;
-  method: "sha256" | "result_store_checksum" | "format_parser" | "filesystem" | "execution_record" | "agent_loop_completion";
+  method: "sha256" | "result_store_checksum" | "format_parser" | "filesystem" | "execution_record" | "agent_loop_completion" | "content_check" | "independent_reader";
   evidence: VerificationEvidenceRef[];
   reason: string;
   verifiedAt: string;
@@ -276,6 +301,8 @@ export interface CompactionMetadata {
 export type RunEvent =
   | ModelProgressEvent
   | TaskProgressEvent
+  | { type: "run_registered"; runId: string; chatId: string; mode: ExecutionMode }
+  | { type: "run_queue"; runId: string; queued: boolean; queueWaitMs?: number }
   | { type: "run_state"; runId: string; state: RunState }
   | { type: "verification_report"; runId: string; report: RunVerificationReport }
   | { type: "routing"; runId: string; taskType?: TaskType; modelId: ModelId; reason: string; tier?: "text" | "vision"; tokensSaved?: number; providerEndpoint?: string }
@@ -298,7 +325,7 @@ export interface TaskProgressEvent {
   type: "task_progress";
   runId: string;
   activityId: string;
-  stage: "source_inspection" | "repair_generation" | "draft_generation" | "pre_execution_review" | "post_execution_review" | "source_coverage_review" | "correction" | "result_verification";
+  stage: "source_inspection" | "repair_generation" | "draft_generation" | "pre_execution_review" | "post_execution_review" | "source_coverage_review" | "correction" | "result_verification" | "requirements" | "input_preparation" | "artifact_generation" | "delivery";
   status: "active" | "completed" | "blocked";
   target?: string;
   parentCallId?: string;

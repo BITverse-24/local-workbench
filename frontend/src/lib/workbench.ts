@@ -112,7 +112,7 @@ export async function startRun(input: {
   groundingEnabled?: boolean;
   preferredRoute?: string;
   selectedModel?: string;
-  mode?: "chat" | "agent";
+  mode?: "chat" | "work" | "agent";
 }): Promise<{ runId: string }> {
   return bridge().startRun(input);
 }
@@ -271,3 +271,5 @@ export async function testModelEndpoint(input: {
 export async function resetOnboarding(): Promise<{ ok: boolean }> {
   return bridge().resetOnboarding();
 }
+
+export async function getRunSnapshot(input:{chatId?:string;runId?:string}):Promise<RunSnapshot|undefined>{return bridge().getRunSnapshot(input);}

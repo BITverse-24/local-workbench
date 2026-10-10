@@ -42,7 +42,7 @@ export const CAPABILITY_GROUPS: Record<CapabilityGroup, CapabilityMetadata> = {
   artifact_generation: {
     name: "artifact_generation",
     label: "Artifact Generation",
-    description: "Generation of formal publication-ready deliverable documents (.docx, .xlsx, .pdf, .md)",
+    description: "Generation of formal publication-ready deliverable documents (.docx, .xlsx tables, .csv, .json, .md, .txt)",
     tools: ["generate_deliverable"],
     requiresAgentMode: false,
   },
@@ -135,7 +135,7 @@ export const requestCapabilityTool: AgentTool = {
     if (context.envelope && !isCapabilityPermitted(context.envelope, capability)) {
       const mode = context.envelope.mode;
       const errorMsg = meta.requiresAgentMode
-        ? `Permission denied: Capability "${capability}" requires Agent mode. Current execution is running in Chat mode, which prohibits workspace mutations and system commands.`
+        ? `Permission denied: Capability "${capability}" requires Agent mode. Current execution mode is ${mode}. Workspace actions require Agent authority.`
         : `Permission denied: Capability "${capability}" is not permitted under the current execution envelope.`;
 
       return {

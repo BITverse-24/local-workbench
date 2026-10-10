@@ -11,6 +11,7 @@ export const IPC_CHAT = {
 } as const;
 
 export const IPC_RUN = {
+  GET_SNAPSHOT: "workbench:getRunSnapshot",
   START_RUN: "workbench:startRun",
   RESUME_RUN: "workbench:resumeRun",
   CONFIRM: "workbench:confirmAction",

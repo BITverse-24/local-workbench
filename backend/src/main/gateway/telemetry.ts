@@ -155,10 +155,12 @@ export function summarizeRunTelemetry(runId: string, outcome: string): RunTeleme
 }
 
 /** Persist the aggregate once a run reaches a terminal state. */
-export function finalizeRunTelemetry(runId: string, outcome: string): void {
+export function finalizeRunTelemetry(runId: string, outcome: string, modeMetrics?:Record<string,unknown>): void {
   try {
     const summary = summarizeRunTelemetry(runId, outcome);
-    writeFileSync(path.join(path.dirname(telemetryPath(runId)), "run-telemetry-summary.json"), JSON.stringify(summary, null, 2));
+    const keys=["mode","engineVersion","requestReceivedAt","modelCallCount","embeddingCallCount","preprocessingMs","queueWaitMs","toolTimeMs","inferenceMs","recoveryCount","isolationStatus","firstVisibleTokenMs","cancellationResourceMs","outcomeEvidence"];
+    modeMetrics=modeMetrics?Object.fromEntries(keys.filter(key=>modeMetrics![key]!==undefined).map(key=>[key,modeMetrics![key]])):undefined;
+    writeFileSync(path.join(path.dirname(telemetryPath(runId)), "run-telemetry-summary.json"), JSON.stringify({...summary,modeMetrics}, null, 2));
   } catch (e) {
     console.warn("[telemetry] failed to finalize run summary:", e instanceof Error ? e.message : String(e));
   }

@@ -147,7 +147,7 @@ export const SEMANTIC_ROUTER_SYSTEM_PROMPT = `Interpret the latest user request.
 Required keys: requestedAction, responseMode, primaryGoal (six words), workspaceMutationRequested, expectedDeliverables.
 requestedAction: inspect = read, compare or assess existing sources; modify_software = change executable software; draft = author new document content; execute = run a command; explain = discuss without inspecting sources.
 A request to identify problems or recommend corrections is inspect. Recommendations do not authorize software changes. modify_software requires a request to change software itself. An attachment alone does not determine the action.
-responseMode: chat, files, or chat_and_files. An answer, table, review or recommendations can be given in chat; do not invent a downloadable file. Authoring a requested document or returning repaired source requires files. Use chat_and_files unless the user requests files only.
+responseMode: chat, files, or chat_and_files. Default to chat. Implementation help, tutorials, walkthroughs, sample code and text drafts belong in chat unless the user asks for a document or saved file. "Help me implement it myself" is explain + chat, not software modification or document drafting. A technical topic does not request an artifact. An answer, table, review or recommendations can be given in chat; do not invent a downloadable file. Authoring a requested document or returning repaired source requires files. For requested files use chat_and_files unless the user requests files only.
 expectedDeliverables: [] for chat; otherwise [{filename,type}]. type records the explicitly requested format: docx/xlsx/csv/pdf/md/json/file. For an authored document with no specified format use type=null; the runtime supplies its Word default. Do not infer Markdown from chat display. Use file for returned source code. filenameRequired=true only for an explicitly requested name.
 Attached software repair returns a corrected source file, separate from workspace edits. Set validationRequested=true when execution or testing is requested. Preserve the existing interface.
 workspaceMutationRequested=true ONLY for requested workspace edits. An active workspace grants no edit permission. Then populate targetFiles and workspaceOperations [{operation:write/delete/execute/mutate,targetPath}]. Otherwise omit them.
@@ -168,6 +168,18 @@ export function validateAndNormalizeIntent(
     attachments?: AttachmentReference[];
   },
 ): ValidatedSemanticIntent {
+  // An explicit request to do the work oneself limits the interpreter's scope.
+  // This guard can only remove operations; it never grants new permissions.
+  const selfDirectedHelp = /\b(?:help|teach|guide|show|walk)\b[\s\S]*\b(?:myself|on\s+my\s+own)\b/i.test(context.userPrompt);
+  const explicitOutputOrOperation = /\b(?:save|export|download|attach)\b/i.test(context.userPrompt) ||
+    /\b(?:create|generate|write|draft|produce|return|provide)\b[^?!\n]*\b(?:files?|documents?|reports?|notes?|memos?|letters?|workbooks?|spreadsheets?|artifacts?|word|excel|docx|xlsx|pdf|csv|markdown|[\w/-]+\.[a-z0-9]{1,10})\b/i.test(context.userPrompt) ||
+    /\b(?:edit|modify|patch|update|delete|run|execute)\b[^?!\n]*\b(?:workspace|repository|repo|files?|commands?|tests?|[\w/-]+\.[a-z0-9]{1,10})\b/i.test(context.userPrompt);
+  if (raw && typeof raw === "object" && selfDirectedHelp && !explicitOutputOrOperation) {
+    raw = { ...raw, requestedAction: "explain", responseMode: "chat", intentType: "general_qa", taskType: "draft",
+      isActionable: false, chatResponseOnly: true, responseRequired: true,
+      workspaceMutationRequested: false, targetFiles: [], workspaceOperations: [], expectedDeliverables: [],
+      validationRequested: false, successMarker: undefined };
+  }
   // The live interpreter selects one action and one response mode. Derive the
   // redundant legacy flags once; caller-supplied older intents remain supported.
   if (raw && typeof raw === "object" && "requestedAction" in raw) {

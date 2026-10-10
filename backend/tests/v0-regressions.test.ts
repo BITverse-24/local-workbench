@@ -1,10 +1,11 @@
+import { approvedPythonTool as executePythonTool } from "./helpers/approved-python.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AgentLoop } from "../src/main/agent/agent-loop.js";
-import { executePythonTool } from "../src/main/tools/specialist-tools.js";
+import { AgentLoop } from "./helpers/agent-loop-fixture.js";
+
 import { createRunDirectories, resolveRunPath } from "../src/main/run/filesystem.js";
 import { closeDb, getDb, initDb } from "../src/main/persistence/db.js";
 import { normalizeRunContract } from "../src/main/run/contract.js";
@@ -15,6 +16,7 @@ import { RunManager } from "../src/main/run/manager.js";
 import { getState } from "../src/main/run/store.js";
 import { listMessages } from "../src/main/persistence/messages.js";
 import { getVerificationReport } from "../src/main/run/verification.js";
+import { createChat } from "../src/main/persistence/chats.js";
 
 describe("V0 attached-source transport and execution integrity", () => {
   let root: string;
@@ -104,7 +106,8 @@ describe("V0 attached-source transport and execution integrity", () => {
       async chatWithTools(_model: string, _messages: any[], _tools: any[], options: any) {
         requests.push(options);
         const schema = options?.responseSchema?.name;
-        const content = schema === "software_repair_review" ? JSON.stringify({ defects: [], checks: ["Preserve the supplied CLI input."], preservedBehavior: [] })
+        const content = schema === "work_requirements" ? JSON.stringify({checks:[]})
+          : schema === "software_repair_review" ? JSON.stringify({ defects: [], checks: ["Preserve the supplied CLI input."], preservedBehavior: [] })
           : schema === "proposed_source_behavior_review" ? JSON.stringify({ gaps: [] })
           : schema === "source_derived_code_behavior_review" ? "[]" : `\`\`\`python\n${source}\`\`\``;
         return { ok: true, value: { content, finishReason: "stop" } };
@@ -114,13 +117,14 @@ describe("V0 attached-source transport and execution integrity", () => {
       events.push(event);
       if (event.type === "confirmation_required") void manager.confirm({ runId: event.runId, actionId: event.action.actionId, approved: true });
     });
-    const uploaded = manager.registerAttachment({ filename: "original.py", mediaType: "text/x-python", sizeBytes: Buffer.byteLength(source), base64OrBuffer: Buffer.from(source) });
+    const chatId=createChat();
+    const uploaded = manager.registerAttachment({ chatId, filename: "original.py", mediaType: "text/x-python", sizeBytes: Buffer.byteLength(source), base64OrBuffer: Buffer.from(source) });
     const input = Buffer.from("actual supplied text\n");
-    const data = manager.registerAttachment({ filename: "input.txt", mediaType: "text/plain", sizeBytes: input.length, base64OrBuffer: input });
+    const data = manager.registerAttachment({ chatId, filename: "input.txt", mediaType: "text/plain", sizeBytes: input.length, base64OrBuffer: input });
     const previousV2 = process.env.WORKBENCH_AGENT_V2;
     process.env.WORKBENCH_AGENT_V2 = "true";
     try {
-      const started = await manager.start({ userText: "Repair and execute the attached source on input.txt. Return corrected.py.", attachmentTokens: [uploaded.attachment.attachmentId, data.attachment.attachmentId], groundingEnabled: false });
+      const started = await manager.start({ chatId, mode:'work', userText: "Repair and execute the attached source on input.txt. Return corrected.py.", attachmentTokens: [uploaded.attachment.attachmentId, data.attachment.attachmentId], groundingEnabled: false });
       await vi.waitFor(() => expect(["completed", "partial", "failed", "cancelled"]).toContain(getState(started.runId)), { timeout: 10000 });
       expect(getState(started.runId)).toBe("partial");
       expect(events.some(event => event.type === "error")).toBe(false);
@@ -132,14 +136,15 @@ describe("V0 attached-source transport and execution integrity", () => {
       expect(finalMessage.content).toContain("File saved: `corrected.py`");
       expect(finalMessage.content).toContain("Execution succeeded (exit code 0)");
       expect(finalMessage.content).toContain("Complete behavior coverage");
-      expect(finalMessage.content).toContain("0 of 1 checks assessed");
+      expect(finalMessage.content).toContain("0 of 2 checks assessed");
       expect(events.filter(event => event.type === "task_progress" && event.stage === "post_execution_review").at(-1))
-        .toMatchObject({ status: "blocked", assessedChecks: 0, totalChecks: 1 });
+        .toMatchObject({ status: "blocked", assessedChecks: 0, totalChecks: 2 });
       expect(events.filter(event => event.type === "assistant_message").at(-1)).toMatchObject({ messageId: finalMessage.id, text: finalMessage.content });
       expect(finalMessage.content).toContain("Behavior validation is incomplete");
       expect(finalMessage.content).toContain("actual supplied text");
       expect(finalMessage.artifacts?.map(artifact => artifact.filename)).toEqual(["corrected.py"]);
-      expect(requests).toHaveLength(5);
+      expect(requests).toHaveLength(7);
+      expect(events.filter(event=>event.type==='tool_call'&&event.tool==='execute_python')).toHaveLength(1);
       expect(requests.filter(options => options.responseSchema?.name === "source_derived_code_behavior_review").map(options => options.maxTokens)).toEqual([1536, 1536]);
       closeDb();
       initDb(path.join(root, "workbench.sqlite"));

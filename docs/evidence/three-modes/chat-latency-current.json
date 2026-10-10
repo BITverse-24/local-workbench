@@ -1,0 +1,237 @@
+{
+  "hardware": {
+    "cpu": "Apple M4",
+    "memoryBytes": 17179869184
+  },
+  "model": "config/models.json",
+  "coldMeasurement": "Not measured. No model residency control was used.",
+  "quality": "Answers retained for manual review; speed does not establish answer quality.",
+  "samples": [
+    {
+      "runId": "3c8f919b-7046-443a-9d55-25bb557671a1",
+      "state": "completed",
+      "visibleTtftMs": 789,
+      "totalMs": 2411,
+      "condition": "initial-residency-unknown",
+      "prompt": "Explain thermal expansion in fewer than 60 words.",
+      "calls": 1,
+      "providerTtftMs": [
+        782
+      ],
+      "queueWaitMs": 0,
+      "answer": "Thermal expansion is the increase in size of a material due to an increase in temperature. This phenomenon occurs because as temperature rises, the particles within materials move faster and occupy more space, causing the material to expand."
+    },
+    {
+      "runId": "0e182649-f329-4d2e-ac99-63544063f5b3",
+      "state": "completed",
+      "visibleTtftMs": 381,
+      "totalMs": 1109,
+      "condition": "warm-idle",
+      "prompt": "What is the difference between mass and weight? Use fewer than 60 words.",
+      "calls": 1,
+      "providerTtftMs": [
+        375
+      ],
+      "queueWaitMs": 1,
+      "answer": "Mass is the amount of matter in an object, while weight is the force due to gravity acting on that mass."
+    },
+    {
+      "runId": "f1a9ea46-0d17-406f-bf35-cecd77323c23",
+      "state": "completed",
+      "visibleTtftMs": 304,
+      "totalMs": 1073,
+      "condition": "warm-idle",
+      "prompt": "Explain why unit tests are useful in fewer than 60 words.",
+      "calls": 1,
+      "providerTtftMs": [
+        297
+      ],
+      "queueWaitMs": 0,
+      "answer": "Unit tests help ensure code works as expected by testing individual components in isolation, reducing bugs and improving maintainability."
+    },
+    {
+      "runId": "3a724f2c-4248-496b-9f2f-0dcabc0f3589",
+      "state": "completed",
+      "visibleTtftMs": 382,
+      "totalMs": 1630,
+      "condition": "warm-idle",
+      "prompt": "Give three checks for reading a CSV file. Use fewer than 60 words.",
+      "calls": 1,
+      "providerTtftMs": [
+        375
+      ],
+      "queueWaitMs": 1,
+      "answer": "1. Verify the file extension is `.csv`.\n2. Check if the delimiter (usually comma) is correct.\n3. Ensure there are no missing or extra commas in rows."
+    },
+    {
+      "runId": "45d4e4eb-4fc8-482d-aae5-3509758378f0",
+      "state": "completed",
+      "visibleTtftMs": 301,
+      "totalMs": 1907,
+      "condition": "warm-idle",
+      "prompt": "Explain thermal expansion in fewer than 60 words.",
+      "calls": 1,
+      "providerTtftMs": [
+        296
+      ],
+      "queueWaitMs": 0,
+      "answer": "Thermal expansion is the increase in size of a material due to an increase in temperature. This phenomenon occurs because as temperature rises, the particles within materials move faster and occupy more space, causing the material to expand."
+    },
+    {
+      "runId": "23328748-480e-4977-abbf-89bf1ad014f1",
+      "state": "completed",
+      "visibleTtftMs": 384,
+      "totalMs": 1109,
+      "condition": "warm-idle",
+      "prompt": "What is the difference between mass and weight? Use fewer than 60 words.",
+      "calls": 1,
+      "providerTtftMs": [
+        377
+      ],
+      "queueWaitMs": 0,
+      "answer": "Mass is the amount of matter in an object, while weight is the force due to gravity acting on that mass."
+    },
+    {
+      "runId": "04096a06-3b55-4f21-ae1c-9e7cd2e697be",
+      "state": "completed",
+      "visibleTtftMs": 300,
+      "totalMs": 1072,
+      "condition": "warm-idle",
+      "prompt": "Explain why unit tests are useful in fewer than 60 words.",
+      "calls": 1,
+      "providerTtftMs": [
+        295
+      ],
+      "queueWaitMs": 0,
+      "answer": "Unit tests help ensure code works as expected by testing individual components in isolation, reducing bugs and improving maintainability."
+    },
+    {
+      "runId": "67722f42-d136-4605-bcfc-a19d6a05e9a8",
+      "state": "completed",
+      "visibleTtftMs": 381,
+      "totalMs": 1628,
+      "condition": "warm-idle",
+      "prompt": "Give three checks for reading a CSV file. Use fewer than 60 words.",
+      "calls": 1,
+      "providerTtftMs": [
+        375
+      ],
+      "queueWaitMs": 1,
+      "answer": "1. Verify the file extension is `.csv`.\n2. Check if the delimiter (usually comma) is correct.\n3. Ensure there are no missing or extra commas in rows."
+    },
+    {
+      "runId": "d7792b75-c810-45ff-978d-e3c9662ab21b",
+      "state": "completed",
+      "visibleTtftMs": 6058,
+      "totalMs": 7658,
+      "condition": "warm-busy",
+      "prompt": "Explain thermal expansion in fewer than 60 words.",
+      "calls": 1,
+      "providerTtftMs": [
+        712
+      ],
+      "queueWaitMs": 5340,
+      "answer": "Thermal expansion is the increase in size of a material due to an increase in temperature. This phenomenon occurs because as temperature rises, the particles within materials move faster and occupy more space, causing the material to expand."
+    },
+    {
+      "runId": "07c734b6-7839-4297-b471-111201dcef81",
+      "state": "completed",
+      "visibleTtftMs": 6150,
+      "totalMs": 6872,
+      "condition": "warm-busy",
+      "prompt": "What is the difference between mass and weight? Use fewer than 60 words.",
+      "calls": 1,
+      "providerTtftMs": [
+        793
+      ],
+      "queueWaitMs": 5351,
+      "answer": "Mass is the amount of matter in an object, while weight is the force due to gravity acting on that mass."
+    },
+    {
+      "runId": "fe511bad-6e9b-4dae-adc4-9dbb572c4f27",
+      "state": "completed",
+      "visibleTtftMs": 6087,
+      "totalMs": 6850,
+      "condition": "warm-busy",
+      "prompt": "Explain why unit tests are useful in fewer than 60 words.",
+      "calls": 1,
+      "providerTtftMs": [
+        718
+      ],
+      "queueWaitMs": 5363,
+      "answer": "Unit tests help ensure code works as expected by testing individual components in isolation, reducing bugs and improving maintainability."
+    },
+    {
+      "runId": "0f78fcd5-87ef-4f08-a67a-193a53b7a32e",
+      "state": "cancelled",
+      "visibleTtftMs": 379,
+      "totalMs": 383,
+      "condition": "active-cancellation",
+      "prompt": "Explain thermodynamics in 1000 words.",
+      "calls": 1,
+      "providerTtftMs": [],
+      "queueWaitMs": 0,
+      "cancellationResourceMs": 7,
+      "answer": "Th",
+      "nextResponseMs": 719,
+      "nextVisibleMs": 707
+    },
+    {
+      "runId": "c8487608-9f76-4293-9de7-01bb35cd5f10",
+      "state": "completed",
+      "visibleTtftMs": 707,
+      "totalMs": 712,
+      "condition": "after-cancellation",
+      "prompt": "Reply with OK.",
+      "calls": 1,
+      "providerTtftMs": [
+        703
+      ],
+      "queueWaitMs": 0,
+      "answer": "OK."
+    }
+  ],
+  "summary": {
+    "initial-residency-unknown": {
+      "count": 1,
+      "visibleTtftP50": 789,
+      "visibleTtftP95": 789,
+      "totalP50": 2411,
+      "totalP95": 2411,
+      "queueP50": 0
+    },
+    "warm-idle": {
+      "count": 7,
+      "visibleTtftP50": 381,
+      "visibleTtftP95": 384,
+      "totalP50": 1109,
+      "totalP95": 1907,
+      "queueP50": 0
+    },
+    "warm-busy": {
+      "count": 3,
+      "visibleTtftP50": 6087,
+      "visibleTtftP95": 6150,
+      "totalP50": 6872,
+      "totalP95": 7658,
+      "queueP50": 5351
+    },
+    "active-cancellation": {
+      "count": 1,
+      "visibleTtftP50": 379,
+      "visibleTtftP95": 379,
+      "totalP50": 383,
+      "totalP95": 383,
+      "queueP50": 0
+    },
+    "after-cancellation": {
+      "count": 1,
+      "visibleTtftP50": 707,
+      "visibleTtftP95": 707,
+      "totalP50": 712,
+      "totalP95": 712,
+      "queueP50": 0
+    }
+  },
+  "root": "/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/workbench-mode-benchmark-izAelI"
+}

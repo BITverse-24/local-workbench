@@ -1,11 +1,10 @@
-import { execFile } from "node:child_process";
+import { executeProcess } from "../../tools/child-process.js";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { promisify } from "node:util";
 import { resolveSafe, PermissionError } from "../path-guard.js";
 import { clearListDirCache } from "./list-dir.js";
 
-const exec = promisify(execFile);
+const exec = executeProcess;
 
 export interface CommandResult {
   stdout: string;

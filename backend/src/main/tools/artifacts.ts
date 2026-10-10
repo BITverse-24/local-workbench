@@ -133,7 +133,7 @@ export async function verifyArtifactFile(
     csv: ["csv"],
     json: ["json"],
     pdf: ["pdf"],
-    txt: ["txt", "py", "sh", "sql", "log"],
+    txt: ["txt", "py", "sh", "sql", "log", "ts", "tsx", "js", "jsx", "c", "cpp", "h", "java", "rs"],
   };
 
   const allowedExts = expectedExts[kind] || [kind];

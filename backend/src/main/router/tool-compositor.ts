@@ -59,15 +59,16 @@ export function filterToolsForTurn(
 ): AgentTool[] {
   return allTools.filter((tool) => {
     // 1. request_capability is always visible so model can request expansion
-    if (tool.name === "request_capability") return true;
+    if (tool.name === "request_capability") return envelope.mode !== "chat";
 
     // 2. Chat mode server-side restriction: workspace mutations and system commands never visible
     if (envelope.mode === "chat") {
-      if (tool.name === "write_file" || tool.name === "delete_file" || tool.name === "run_command") {
+      if (!["extract_document", "retrieve_result", "retrieve_knowledge"].includes(tool.name)) {
         return false;
       }
     }
 
+    if (envelope.mode === "work" && ["write_file", "delete_file", "run_command"].includes(tool.name)) return false;
     // 3. Dynamic result retrieval: only visible when results actually exist
     if (tool.name === "retrieve_result") {
       const resultsExist = options?.hasRetrievableResults ?? envelope.hasRetrievableResults;
@@ -86,9 +87,9 @@ export function filterToolsForTurn(
 
     // 6. Check if tool belongs to an active capability group
     const cap = getCapabilityForTool(tool.name);
-    if (!cap) return true; // If not mapped to a group, expose if permitted
+    if (!cap) return false; // If not mapped to a group, expose if permitted
 
-    return activeCapabilities.has(cap);
+    return envelope.permittedCapabilities.includes(cap) && activeCapabilities.has(cap);
   });
 }
 

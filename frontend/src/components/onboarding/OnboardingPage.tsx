@@ -528,7 +528,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
               </h3>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                 Ensure an approved local server (Ollama, vLLM, LM Studio, or
-                llama-server) is listening. Sovereign Workbench communicates via
+                llama-server) is listening. Local Workbench communicates via
                 standard HTTP JSON payloads.
               </p>
             </div>
@@ -1117,7 +1117,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
 
       {/* Industrial Footer Notice */}
       <div className="pt-4 pb-1 text-center text-xs text-[var(--text-tertiary)] font-sans">
-        Sovereign Workbench · defence & PSU mission-critical intelligence
+        Local Workbench · defence & PSU mission-critical intelligence
         platform · air-gapped verified
       </div>
     </div>

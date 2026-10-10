@@ -104,7 +104,7 @@ export async function runScenario(input: Scenario, options: RunOptions): Promise
       if ("run" in action && !runId) throw new Error("Run binding unavailable");
       if (action.type === "send") {
         for (const decision of client.changes) if (decision.workspaceBefore && !decision.workspaceAfter) { decision.workspaceAfter = snapshot(box.workspace); decision.endSequence = client.events.length; }
-        const result = await client.call<{ runId: string }>("send", { chat: action.chat, text: action.text, files: action.attachments, temperature: action.temperature, groundingEnabled: action.groundingEnabled, preferredRoute: action.preferredRoute }, remaining);
+        const result = await client.call<{ runId: string }>("send", { mode: action.mode, chat: action.chat, text: action.text, files: action.attachments, temperature: action.temperature, groundingEnabled: action.groundingEnabled, preferredRoute: action.preferredRoute }, remaining);
         bindings.set(action.bind, result.runId);
       } else if (action.type === "settle") await client.settle(runId!, action.approvals, remaining);
       else if (action.type === "wait") await client.call("wait", { runId, type: action.event, state: action.state, timeoutMs: Math.min(action.timeoutMs, remaining) }, Math.min(action.timeoutMs, remaining) + 1000);

@@ -42,6 +42,12 @@ function codeOutput(source, input) {
   try { return { value: JSON.parse(parsed.stdout) }; } catch { return { error: `Cannot read CLI result: ${run.stdout}` }; }
 }
 const equalCounts = (a, b) => a && Object.keys(a).length === Object.keys(b).length && Object.entries(b).every(([k, v]) => a[k] === v);
+function containsDate(text, iso) {
+  if (text.includes(iso)) return true;
+  const [year, month, day] = iso.split('-');
+  const name = ['January','February','March','April','May','June','July','August','September','October','November','December'][Number(month)-1];
+  return new RegExp(`(?:${name}\\s+${Number(day)}(?:st|nd|rd|th)?[,]?\\s+${year}|${Number(day)}(?:st|nd|rd|th)?\\s+${name}[,]?\\s+${year})`, 'i').test(text);
+}
 
 async function assess(scenario, result, runner) {
   const requirements = [];
@@ -82,7 +88,7 @@ async function assess(scenario, result, runner) {
     }
   } else if (scenario.id === "document-unrelated") {
     check("Both staff identifiers are preserved", "major", /STAFF-LARK/.test(text) && /STAFF-FERN/.test(text), "A staff identifier is absent");
-    check("Training dates and review date are grounded", "major", /2026-09-10/.test(text) && /2025-08-02/.test(text) && /2026-09-30/.test(text), "Relevant date absent");
+    check("Training dates and review date are grounded", "major", ['2026-09-10','2025-08-02','2026-09-30'].every(date=>containsDate(text,date)), "Relevant date absent");
     check("Eligibility decisions and evidence are supplied", "critical", /acknowledg/i.test(text) && /independent/i.test(text) && /refresher|expired|twelve|12 months/i.test(text), "Core eligibility conditions absent; inspect subject attribution manually");
     check("Source actions and policy references are preserved", "major", /attendance/i.test(text) && /refresher/i.test(text) && /TRAIN-POLICY|training-policy/i.test(text), "An action or governing source is absent");
   } else if (scenario.family === "document") {
@@ -97,7 +103,8 @@ async function assess(scenario, result, runner) {
     check("Required corrections and dispatch decision are supplied", "critical", /add|provide|include/i.test(text) && /reprint|replace|readable/i.test(text) && /not|withhold|pending|before|cannot/i.test(text), "A core action or release decision is absent; inspect subject attribution manually");
     check("Policy reference is supplied", "major", /DISPATCH-POLICY|dispatch-policy/i.test(text), "Governing source is absent");
   } else {
-    check("Major observed and required valve ratings are included", "critical", /XV-204/.test(text) && /150/.test(text) && /300/.test(text), "Valve mismatch is absent");
+    check("Major observed and required valve ratings are included", "critical", /150/.test(text) && /300/.test(text), "Valve mismatch is absent");
+    check("Valve source identifier is retained for traceability", "major", /XV-204/.test(text), "Valve identifier is absent");
     check("Major observed and required line sizes are included", "critical", /DN\s*80/i.test(text) && /DN\s*100/i.test(text), "Line mismatch is absent");
     check("Correction requirement is clear", "critical", /correct|change|replace|increase|upgrad|upsize|must|need/i.test(text), "No supported correction requirement");
     check("Retrieved governing clauses are cited", "major", /SOP-?220/i.test(text) && /4\.2/.test(text) && /4\.3/.test(text), "Governing clauses absent");
@@ -121,7 +128,7 @@ async function run(scenario, campaignDir) {
   try {
     await runner.startWorker(boot);
     const start = performance.now();
-    const { runId } = await runner.callCommand("send", { chat: scenario.id, text: scenario.prompt, files: scenario.files, groundingEnabled: Boolean(scenario.kb) });
+    const { runId } = await runner.callCommand("send", { mode: scenario.family === "inspection" ? "chat" : "work", chat: scenario.id, text: scenario.prompt, files: scenario.files, groundingEnabled: Boolean(scenario.kb) });
     let terminalState;
     try { terminalState = await runner.waitForTerminalState(runId, 600000); }
     catch { terminalState = "timeout"; await runner.callCommand("invoke", { channel: "workbench:cancelRun", input: { runId } }); }

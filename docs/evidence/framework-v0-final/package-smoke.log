@@ -1,0 +1,9 @@
+▲ [WARNING] "import.meta" is not available with the "cjs" output format and will be empty [empty-import-meta]
+
+    backend/src/main/tools/file-worker.ts:133:94:
+      133 │ ...name === "string" ? __filename : fileURLToPath(import.meta.url));
+          ╵                                                   ~~~~~~~~~~~
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+Packaged PDF, DOCX, XLSX readers and native canvas passed.

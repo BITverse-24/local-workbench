@@ -315,6 +315,7 @@ export class MutationPolicyGuard {
     runId: string | undefined,
     operation: MutationOperation,
     args?: Record<string, unknown>,
+    requireRunBound = false,
   ): boolean {
     const targetPath = args
       ? extractPathArg(args) || (typeof args.path === "string" ? args.path : undefined)
@@ -342,6 +343,7 @@ export class MutationPolicyGuard {
       : undefined;
 
     const active = this.scopes.filter((s) => {
+      if (requireRunBound && s.runId !== runId) return false;
       if (s.expiresAt && Date.parse(s.expiresAt) <= now) return false;
       if (runId && s.runId && s.runId !== runId) return false;
       return true;

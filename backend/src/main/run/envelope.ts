@@ -35,8 +35,10 @@ const CHAT_PERMITTED_CAPABILITIES: readonly CapabilityGroup[] = [
   "source_access",
   "document_processing",
   "result_retrieval",
-  "structured_computation",
-  "artifact_generation",
+ ];
+
+const WORK_PERMITTED_CAPABILITIES: readonly CapabilityGroup[] = [
+  ...CHAT_PERMITTED_CAPABILITIES, "structured_computation", "artifact_generation",
 ];
 
 const AGENT_PERMITTED_CAPABILITIES: readonly CapabilityGroup[] = [
@@ -69,7 +71,7 @@ export function buildExecutionEnvelope(params: BuildEnvelopeParams): ExecutionEn
   const mode: ExecutionMode =
     params.mode !== undefined
       ? params.mode
-      : (mutationExplicit || commandExplicit ? "agent" : "chat");
+      : "chat";
 
   const hasVisualAttachments = attachments.some((a) =>
     /\.(?:pdf|svg|png|jpe?g|bmp|tiff?)$/i.test(a.filename),
@@ -82,7 +84,7 @@ export function buildExecutionEnvelope(params: BuildEnvelopeParams): ExecutionEn
   const permittedCapabilities: CapabilityGroup[] =
     mode === "chat"
       ? [...CHAT_PERMITTED_CAPABILITIES]
-      : [...AGENT_PERMITTED_CAPABILITIES];
+      : mode === "work" ? [...WORK_PERMITTED_CAPABILITIES] : [...AGENT_PERMITTED_CAPABILITIES];
   if (params.pythonSourceRepair) {
     const artifactIndex = permittedCapabilities.indexOf("artifact_generation");
     if (artifactIndex >= 0) permittedCapabilities.splice(artifactIndex, 1);
@@ -92,7 +94,7 @@ export function buildExecutionEnvelope(params: BuildEnvelopeParams): ExecutionEn
   const active = new Set<CapabilityGroup>();
 
   // 1. Source access: active if workspace is mounted, workspaceRoot exists, or files are attached
-  if (params.hasWorkspace || Boolean(params.workspaceRoot) || attachments.length > 0 || params.hasKnowledgeBaseDocs) {
+  if ((mode === "agent" && (params.hasWorkspace || Boolean(params.workspaceRoot))) || attachments.length > 0 || params.hasKnowledgeBaseDocs) {
     active.add("source_access");
   }
 
@@ -142,8 +144,8 @@ export function buildExecutionEnvelope(params: BuildEnvelopeParams): ExecutionEn
     runId: params.runId,
     mode,
     modelId: params.modelId,
-    hasWorkspace: params.hasWorkspace,
-    workspaceRoot: params.workspaceRoot,
+    hasWorkspace: mode === "agent" && params.hasWorkspace,
+    workspaceRoot: mode === "agent" ? params.workspaceRoot : undefined,
     attachments,
     hasVisualAttachments,
     hasKnowledgeBaseDocs: Boolean(params.hasKnowledgeBaseDocs),

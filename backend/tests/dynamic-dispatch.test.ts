@@ -79,8 +79,8 @@ describe("Dynamic Progressive Capability Dispatch (Phase 2)", () => {
 
     it("grants permitted capability expansion and emits capability_expanded event", async () => {
       const envelope = buildExecutionEnvelope({
-        runId: "run-chat-grant",
-        mode: "chat",
+        runId: "run-work-grant",
+        mode: "work",
         modelId: "draft-qwen3",
         hasWorkspace: true,
       });
@@ -127,7 +127,7 @@ describe("Dynamic Progressive Capability Dispatch (Phase 2)", () => {
   });
 
   describe("3. Progressive Tool Exposure & Context Token Savings", () => {
-    it("exposes only request_capability on turn 1 for pure chat, saving >1500 tokens of tool schemas", () => {
+    it("exposes no autonomous tools for pure Chat, saving >1500 tokens of tool schemas", () => {
       const envelope = buildExecutionEnvelope({
         runId: "run-pure-chat-budget",
         mode: "chat",
@@ -139,9 +139,9 @@ describe("Dynamic Progressive Capability Dispatch (Phase 2)", () => {
       const allTools = getAllAvailableTools("draft-qwen3", true);
       const turn1Tools = filterToolsForTurn(allTools, envelope, new Set(envelope.activeCapabilities));
 
-      // In pure chat, turn 1 exposes only request_capability!
-      expect(turn1Tools.map((t) => t.name)).toEqual(["request_capability"]);
-      expect(turn1Tools.length).toBe(1);
+      // Chat has no autonomous tool surface.
+      expect(turn1Tools.map((t) => t.name)).toEqual([]);
+      expect(turn1Tools.length).toBe(0);
 
       // Comparing token footprint:
       const fullSchemaJson = JSON.stringify(allTools.map((t) => t.definition));
@@ -152,7 +152,7 @@ describe("Dynamic Progressive Capability Dispatch (Phase 2)", () => {
     it("progressively expands tool surface turn-by-turn as capabilities are activated", () => {
       const envelope = buildExecutionEnvelope({
         runId: "run-progressive",
-        mode: "chat",
+        mode: "agent",
         modelId: "draft-qwen3",
         hasWorkspace: true,
         userPrompt: "Analyze log data",
@@ -194,7 +194,7 @@ describe("Dynamic Progressive Capability Dispatch (Phase 2)", () => {
       // Step A: Initialize envelope with source access and document processing (due to PDF attachment)
       const envelope = buildExecutionEnvelope({
         runId: "run-chained-flow",
-        mode: "chat",
+        mode: "work",
         modelId: "draft-qwen3",
         hasWorkspace: true,
         attachments: [{
@@ -281,7 +281,7 @@ describe("Dynamic Progressive Capability Dispatch (Phase 2)", () => {
       expect(writeResults[0].result.ok).toBe(false);
       if (!writeResults[0].result.ok) {
         expect(writeResults[0].result.error.code).toBe("permission_denied");
-        expect(writeResults[0].result.error.message).toContain("Workspace mutation is prohibited in Chat mode");
+        expect(writeResults[0].result.error.message).toContain("Chat cannot use this tool");
       }
       expect(fakeWriteTool.execute).not.toHaveBeenCalled();
 
@@ -294,7 +294,7 @@ describe("Dynamic Progressive Capability Dispatch (Phase 2)", () => {
       expect(cmdResults[0].result.ok).toBe(false);
       if (!cmdResults[0].result.ok) {
         expect(cmdResults[0].result.error.code).toBe("permission_denied");
-        expect(cmdResults[0].result.error.message).toContain("Command execution is prohibited in Chat mode");
+        expect(cmdResults[0].result.error.message).toContain("Chat cannot use this tool");
       }
       expect(fakeRunCmdTool.execute).not.toHaveBeenCalled();
     });

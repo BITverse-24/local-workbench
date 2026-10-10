@@ -1,3 +1,4 @@
+import { approvedPythonTool as executePythonTool } from "./helpers/approved-python.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -11,7 +12,7 @@ import { createRunDirectories } from "../src/main/run/filesystem.js";
 import { RunResultStore } from "../src/main/run/result-store.js";
 import { ToolDispatcher } from "../src/main/agent/tool-dispatcher.js";
 import { compactConversationHistory, compactToolObservation, type AgentMessage } from "../src/main/agent/context-manager.js";
-import { extractDocumentTool, executePythonTool } from "../src/main/tools/specialist-tools.js";
+import { extractDocumentTool } from "../src/main/tools/specialist-tools.js";
 import { readFileTool, listDirTool, writeFileTool } from "../src/main/tools/workspace-tools.js";
 import { retrieveResultTool } from "../src/main/tools/result-retrieval.js";
 import { normalizeRunContract } from "../src/main/run/contract.js";
@@ -156,7 +157,7 @@ describe("P1 production result registration and retrieval integration", () => {
     context.runContract = normalizeRunContract(runId, validateAndNormalizeIntent({ intentType: "general_qa", primaryGoal: "Compute in chat", isActionable: false, chatResponseOnly: true, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [] }, { hasWorkspace: false, workspaceFiles: [], userPrompt: "Compute in chat" }));
     const tail = ":tail-original";
     const [execution] = await new ToolDispatcher([executePythonTool]).dispatchConcurrent([{ id: "real-python", name: "execute_python", arguments: { code: `print("prefix:" + "x" * 9000 + ${JSON.stringify(tail)})` } }], context);
-    expect(execution.result.ok).toBe(true);
+    expect(execution.result.ok,JSON.stringify(execution.result)).toBe(true);
     expect(execution.result.resultRef?.status).toBe("complete");
     expect(execution.result.output.length).toBeLessThanOrEqual(4000);
     expect(execution.result.artifacts).toBeUndefined();

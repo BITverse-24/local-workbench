@@ -39,12 +39,12 @@ describe("Phase 2 Benchmark: Context Budget & Schema Token Savings", () => {
 
     console.log("\n================ PHASE 2 TOKEN BENCHMARK ================");
     console.log(`Baseline (all tools):             ${baselineTokens} tokens (${baselineDefinitions.length} tools)`);
-    console.log(`Pure Chat Turn 1:                 ${chatTokens} tokens (${exposedDefinitions.length} tool: request_capability)`);
+    console.log(`Pure Chat Turn 1:                 ${chatTokens} tokens (${exposedDefinitions.length} tools)`);
     console.log(`Token Reduction:                  ${reductionPercent.toFixed(1)}% savings`);
     console.log("=========================================================\n");
 
-    // Pure chat should only expose request_capability
-    expect(exposedTools.map((t) => t.name)).toEqual(["request_capability"]);
+    // Chat has no autonomous tools
+    expect(exposedTools.map((t) => t.name)).toEqual([]);
     // Must achieve >70% reduction from baseline
     expect(reductionPercent).toBeGreaterThan(70);
     // Absolute token footprint should be very small (< 200 tokens)

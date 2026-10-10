@@ -19,6 +19,7 @@ import { useDropdownPosition } from "./lib/hooks/useDropdownPosition";
 import { useCamera } from "./lib/hooks/useCamera";
 import { useVoice } from "./lib/hooks/useVoice";
 import { useUpload } from "./lib/hooks/useUpload";
+import { RunSessions } from "./lib/run-sessions";
 import { updateRunEvents } from "./lib/run-progress";
 
 const MAX_SIZE = 10 * 1024 * 1024;
@@ -50,7 +51,12 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   const [history, setHistory] = useState<SidebarChat[]>([]);
-  const [chatId, setChatId] = useState<string | null>(null);
+  const chatIdRef=useRef<string|null>(null);
+  const [,setRunRevision]=useState(0);
+  const sessions=useRef(new RunSessions());
+  const pendingSubmissions=useRef(new Set<string>());
+  const [chatId, updateChatId] = useState<string | null>(null);
+  const setChatId=useCallback((id:string|null)=>{chatIdRef.current=id;updateChatId(id);},[]);
   const [persistent, setPersistent] = useState(false);
 
   // Run state
@@ -67,22 +73,14 @@ export default function App() {
   const [healthLoading, setHealthLoading] = useState(false);
   const [groundingEnabled, setGroundingEnabled] = useState(false);
   const [, setGroundingStatus] = useState<{ status: "retrieving" | "injected" | "skipped"; chunkCount?: number } | null>(null);
-  const [executionMode, setExecutionMode] = useState<"chat" | "agent">(() => {
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("workbench:execution_mode");
-      if (saved === "chat" || saved === "agent") return saved;
+      if (saved === "chat" || saved === "work" || saved === "agent") return saved;
     }
     return "chat";
   });
-  const handleToggleMode = () => {
-    setExecutionMode((prev) => {
-      const next = prev === "chat" ? "agent" : "chat";
-      if (typeof window !== "undefined") {
-        localStorage.setItem("workbench:execution_mode", next);
-      }
-      return next;
-    });
-  };
+  const handleModeChange=(next:ExecutionMode)=>{setExecutionMode(next);localStorage.setItem("workbench:execution_mode",next);};
 
   const activeRunRef = useRef<string | null>(null);
   activeRunRef.current = activeRunId;
@@ -92,7 +90,7 @@ export default function App() {
   const activeRouteRef = useRef<{ taskType?: string; tier?: "text" | "vision"; modelId: string; reason: string } | null>(null);
   activeRouteRef.current = activeRoute;
   const runStartTimeRef = useRef<number | null>(null);
-  const isRunning = runState !== null && !["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(runState);
+  const isRunning = pendingSubmissions.current.has(chatId??"new-chat") || (runState !== null && !["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(runState));
 
   useEffect(() => {
     let active = true;
@@ -126,6 +124,8 @@ export default function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceInfo | null>(null);
   const [workspaceTree, setWorkspaceTree] = useState<HarnessDirEntry[]>([]);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
+
+  useEffect(()=>{if(!activeWorkspace&&executionMode==="agent")setExecutionMode("chat");},[activeWorkspace,executionMode]);
 
   // Launch: restore history, last chat, temperature, workspace, onboarding
   useEffect(() => {
@@ -215,6 +215,7 @@ export default function App() {
       setMessages((previous) => {
         let next = previous;
         for (const event of chunks) {
+          if(!sessions.current.belongsTo(event.runId,chatIdRef.current))continue;
           const last = next[next.length - 1];
           if (last?.id === event.messageId) next = [...next.slice(0, -1), { ...last, text: last.text + event.delta }];
           else if (last?.role === "assistant" && (!last.text || last.id.startsWith("artifact-msg-"))) {
@@ -226,18 +227,12 @@ export default function App() {
     };
     try {
       unsub = wb.onRunEvent((event: RunEvent) => {
-        // Ignore events for other runs when we have an active run filter
-        // but never drop assistant_message or routing for chat coherence.
-        const rid = (event as { runId?: string }).runId;
-        if (event.type !== "assistant_message" && event.type !== "assistant_message_chunk") {
-          if (activeRunRef.current && rid && rid !== activeRunRef.current) {
-            return;
-          }
-        }
-        if (rid && !activeRunRef.current) {
-          activeRunRef.current = rid;
-          setActiveRunId(rid);
-        }
+        const rid = (event as {runId?:string}).runId;
+        sessions.current.record(event);
+        if(event.type==="run_state"||event.type==="confirmation_required")setRunRevision(value=>value+1);
+        if(rid && !sessions.current.belongsTo(rid,chatIdRef.current))return;
+        if(event.type==="run_registered") {activeRunRef.current=event.runId;setActiveRunId(event.runId);return;}
+        if(rid && rid!==activeRunRef.current)return;
         // Drain earlier tokens before resets, final messages, and tool transitions.
         if (event.type !== "assistant_message_chunk" && event.type !== "model_progress") flushChunks();
         if (event.type !== "assistant_message_chunk") {
@@ -264,6 +259,7 @@ export default function App() {
                     updated[lastIdx] = {
                       ...updated[lastIdx]!,
                       execution: {
+                        mode:rid?sessions.current.modes.get(rid):undefined,
                         state: event.state,
                         modelId: activeRouteRef.current?.modelId,
                         taskType: activeRouteRef.current?.taskType,
@@ -348,6 +344,7 @@ export default function App() {
             setMessages((prev) => {
               const currentEvents = runEventsRef.current.filter((item) => item.type !== "model_progress");
               const executionData = currentEvents.length > 0 ? {
+                mode:rid?sessions.current.modes.get(rid):undefined,
                 modelId: event.modelId || activeRouteRef.current?.modelId,
                 taskType: activeRouteRef.current?.taskType,
                 tier: activeRouteRef.current?.tier,
@@ -524,7 +521,19 @@ export default function App() {
   const loadMessages = useCallback(async (id: string) => {
     try {
       const rows = await wb.getMessages(id);
-      setMessages(toChatMessages(rows));
+      const snapshot=await wb.getRunSnapshot({chatId:id});
+      if(chatIdRef.current!==id)return;
+      const loaded=toChatMessages(rows);
+      if(snapshot){
+        sessions.current.register(snapshot.runId,id,snapshot.mode??undefined);sessions.current.states.set(snapshot.runId,snapshot.state);
+        activeRunRef.current=snapshot.runId;setActiveRunId(snapshot.runId);setRunState(snapshot.state);
+        setPendingConfirmation(snapshot.pendingAction??null);setVerificationReport(snapshot.verification??null);
+        runArtifactsRef.current=snapshot.artifacts;setRunArtifacts(snapshot.artifacts);
+        const events=[...(sessions.current.events.get(snapshot.runId)??snapshot.progress),{type:"run_queue" as const,runId:snapshot.runId,queued:snapshot.queued}];
+        runEventsRef.current=events;setRunEvents(events);
+        if(snapshot.draft?.text&&!loaded.some(m=>m.id===snapshot.draft!.messageId))loaded.push({id:snapshot.draft.messageId,runId:snapshot.runId,role:"assistant",text:snapshot.draft.text,artifacts:snapshot.artifacts});
+      }
+      setMessages(loaded);
     } catch {
       setPersistent(false);
     }
@@ -533,6 +542,7 @@ export default function App() {
   const handleSelectChat = useCallback(
     async (id: string) => {
       setChatId(id);
+      activeRunRef.current=null;
       // Reset run UI when switching chats
       setActiveRunId(null);
       setRunState(null);
@@ -626,7 +636,7 @@ export default function App() {
       try {
         const title = firstText.trim().slice(0, 40) || "New chat";
         const id = await wb.createChat(title);
-        setChatId(id);
+        if(chatIdRef.current===chatId)setChatId(id);
         setHistory((prev) => [{ id, title, updated_at: new Date().toISOString() }, ...prev]);
         await wb.setSetting("lastChatId", id);
         return id;
@@ -709,6 +719,11 @@ export default function App() {
       setRunError({ code: "too_many_attachments", message: "Maximum 10 attachments per run supported." });
       return;
     }
+    const submissionKey=chatIdRef.current??"new-chat";
+    if(pendingSubmissions.current.has(submissionKey))return;
+    pendingSubmissions.current.add(submissionKey);setRunRevision(value=>value+1);
+    let submittedChatId:string|null=null;
+    try {
     const text = input;
     const currentFiles = [...attachedFiles];
     if (currentFiles.length === 0) setInput("");
@@ -717,6 +732,7 @@ export default function App() {
     if (persistent) {
       const cid = await ensureChatId(text);
       if (cid) {
+        submittedChatId=cid;pendingSubmissions.current.add(cid);
         try {
           const attachmentTokens: string[] = [];
           let runIdForAttachment: string | undefined;
@@ -726,10 +742,9 @@ export default function App() {
               attachmentTokens.push(reg.attachment.attachmentId);
               if (!runIdForAttachment) runIdForAttachment = reg.runId;
             }
-            setInput("");
-            setAttachedFiles([]);
+            if(chatIdRef.current===cid){setInput("");setAttachedFiles([]);}
           } else {
-            setAttachedFiles([]);
+            if(chatIdRef.current===cid)setAttachedFiles([]);
           }
 
           // Persist user message linked with attachment IDs (visible immediately)
@@ -739,7 +754,7 @@ export default function App() {
             text,
             attachmentTokens.length > 0 ? attachmentTokens : undefined,
           );
-          setMessages((prev) => [
+          if(chatIdRef.current===cid)setMessages((prev) => [
             ...prev,
             {
               id: messageId,
@@ -750,7 +765,8 @@ export default function App() {
           ]);
           setHistory((prev) => prev.map((c) => (c.id === cid ? { ...c, updated_at: new Date().toISOString() } : c)));
 
-          // Reset run UI
+          // Only update the chat that owns this submission.
+          if(chatIdRef.current===cid){
           runStartTimeRef.current = Date.now();
           runEventsRef.current = [];
           setRunEvents([]);
@@ -761,10 +777,11 @@ export default function App() {
           setPendingConfirmation(null);
           setGroundingStatus(null);
           setRunState("created");
+          }
 
           const clientRunId = runIdForAttachment ?? crypto.randomUUID();
-          activeRunRef.current = clientRunId;
-          setActiveRunId(clientRunId);
+          sessions.current.register(clientRunId,cid,executionMode);
+          if(chatIdRef.current===cid){activeRunRef.current = clientRunId;setActiveRunId(clientRunId);}
 
           const { runId } = await wb.startRun({
             userText: text,
@@ -778,13 +795,12 @@ export default function App() {
             selectedModel: selectedModel?.id,
             mode: executionMode,
           });
-          setActiveRunId(runId);
-          activeRunRef.current = runId;
+          if(chatIdRef.current===cid){setActiveRunId(runId);activeRunRef.current = runId;}
 
           // Re-sync messages from SQLite in case fast background run finished
           try {
             const latest = await wb.getMessages(cid);
-            if (latest && latest.length > 0) {
+            if (chatIdRef.current===cid && latest && latest.length > 0) {
               setMessages((prev) => {
                 const loaded = toChatMessages(latest);
                 return loaded.map((m) => {
@@ -798,7 +814,7 @@ export default function App() {
           // Chat stays on cid; run is linked via DB.
           return;
         } catch (e) {
-          setRunError({ code: "send_failed", message: e instanceof Error ? e.message : String(e) });
+          if(chatIdRef.current===cid)setRunError({ code: "send_failed", message: e instanceof Error ? e.message : String(e) });
           // keep composer content if register/start failed
           if (currentFiles.length > 0) {
             // do not clear on failure — keep file for retry
@@ -821,6 +837,7 @@ export default function App() {
     window.setTimeout(() => {
       setMessages((prev) => [...prev, { id: (Date.now() + 1).toString(), role: "assistant", text: "Backend unavailable — response is local only. Launch inside Electron to enable AI runs." }]);
     }, 200);
+    }finally{pendingSubmissions.current.delete(submissionKey);if(submittedChatId)pendingSubmissions.current.delete(submittedChatId);setRunRevision(value=>value+1);}
   };
 
   const handleEditMessage = useCallback(
@@ -899,7 +916,7 @@ export default function App() {
         <LeftSidebar
           collapsed={leftCollapsed}
           onCollapse={() => setLeftCollapsed(true)}
-          chats={history}
+          chats={history.map(chat=>({...chat,runState:sessions.current.states.get(sessions.current.latest.get(chat.id)??"")}))}
           activeId={chatId}
           onSelect={handleSelectChat}
           onNewChat={handleNewChat}
@@ -915,6 +932,7 @@ export default function App() {
         />
 
         <ChatPanel title={activeTitle} leftCollapsed={leftCollapsed} rightCollapsed={rightCollapsed} onToggleLeft={() => setLeftCollapsed(!leftCollapsed)} onToggleRight={() => setRightCollapsed(!rightCollapsed)}>
+          {runState==="partial"&&activeRunId&&["work","agent"].includes(sessions.current.modes.get(activeRunId)??"")&&<button className="mx-4 mt-2 text-sm text-[var(--accent)]" onClick={()=>{const id=activeRunId;void wb.resumeRun({runId:id}).then(()=>{if(activeRunRef.current===id)setRunState("created");}).catch(error=>setRunError({code:"resume_failed",message:String(error)}));}}>Resume from saved evidence</button>}
           {activeRoute && <RouteBadge route={activeRoute} state={runState} />}
           {runError && (
             <div className="mx-4 mt-2 px-3.5 py-2.5 rounded-[var(--radius-sm)] bg-[var(--status-error)]/15 border border-[var(--status-error)]/30 text-sm text-[var(--status-error)] flex flex-col gap-1 select-text">
@@ -947,7 +965,9 @@ export default function App() {
             groundingEnabled={groundingEnabled}
             setGroundingEnabled={setGroundingEnabled}
             mode={executionMode}
-            onToggleMode={handleToggleMode}
+            onModeChange={handleModeChange}
+            hasWorkspace={Boolean(activeWorkspace)}
+            onEnableWorkspace={handlePickWorkspace}
           />
         </ChatPanel>
 

@@ -3,10 +3,11 @@ import { RunManager, shouldResolveMutationIntent } from "../src/main/run/manager
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { initDb, closeDb } from "../src/main/persistence/db.js";
 import type { RunEvent } from "../src/shared/contracts.js";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { getRunContract } from "../src/main/run/contract.js";
-import { writeRunFile } from "../src/main/run/filesystem.js";
+import { HarnessManager } from "../src/main/harness/harness-manager.js";
+const workspaceFor = (dir: string) => { const root=path.join(dir,"workspace");mkdirSync(root,{recursive:true});const harness=new HarnessManager();harness.registerWorkspace(root);return harness; };
 
 describe("Unified Agent Loop v2 RunManager Integration", () => {
   let tempDir = "";
@@ -49,7 +50,8 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     } as unknown as ModelGateway;
 
     const manager = new RunManager(mockGateway, (event) => events.push(event));
-    const started = await manager.start({ userText: "Calculate thermal efficiency" });
+    manager.setHarness(workspaceFor(tempDir));
+    const started = await manager.start({ mode:"agent", userText: "Calculate thermal efficiency" });
 
     // Wait for completed state
     await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true), { timeout: 2000 });
@@ -74,12 +76,14 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     let resultId = "";
     const events: RunEvent[] = [];
     const gateway = {
+      registry: new Map([["primary-model", { ...new ModelGateway().registry.get("primary-model")!, contextLength: 32768 }]]),
       async execute() { classifications++; return { ok: true, value: { result: { intentType: "file_inspection", primaryGoal: "Explain stored facts", isActionable: false, chatResponseOnly: true, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [] } } }; },
       async chatWithTools(_model: unknown, messages: any[], tools: any[], options: { runId: string }) {
+        if(String(messages[0].content).startsWith("Check this candidate"))return {ok:true,value:{content:JSON.stringify({sourceCoverage:[{subject:"facts",sourceQuote:"fact 350: preserved-350",status:"covered",candidateQuote:"fact 350: preserved-350"}],edits:[],coverageGaps:[],unresolvedIssues:[]})}};
         turns++;
         if (turns === 1) {
           expect(tools.some((t) => t.function.name === "retrieve_result")).toBe(false);
-          writeRunFile(options.runId, "intermediate", "facts.txt", Array.from({ length: 700 }, (_, line) => `fact ${line}: preserved-${line}`).join("\n"));
+          writeFileSync(path.join(tempDir,"workspace","facts.txt"), Array.from({ length: 700 }, (_, line) => `fact ${line}: preserved-${line}`).join("\n"));
           return { ok: true, value: { content: null, tool_calls: [{ id: "read", name: "read_file", arguments: { path: "facts.txt" } }] } };
         }
         if (turns === 2) {
@@ -89,13 +93,15 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
           expect(observation).not.toContain("fact 350:");
           return { ok: true, value: { content: null, tool_calls: [{ id: "recover", name: "retrieve_result", arguments: { result_id: resultId, mode: "lines", start_line: 351, count: 1 } }] } };
         }
-        expect(messages.find((m) => m.tool_call_id === "recover").content).toContain("fact 350: preserved-350");
+        const recovered=messages.find((m)=>m.tool_call_id==="recover");
+        expect(recovered?.content).toContain("fact 350: preserved-350");
         return { ok: true, value: { content: "The stored source says fact 350: preserved-350.", tool_calls: null } };
       }, health: async () => [],
     } as unknown as ModelGateway;
     const manager = new RunManager(gateway, (e) => events.push(e));
-    const { runId } = await manager.start({ userText: "Explain the source facts in chat; do not create deliverables." });
-    await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true), { timeout: 3000 });
+    manager.setHarness(workspaceFor(tempDir));
+    const { runId } = await manager.start({ mode:"agent", userText: "Explain the source facts in chat; do not create deliverables." });
+    await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && e.state === "completed"), JSON.stringify(events.filter(e=>e.type === "error" || e.type === "tool_result"))).toBe(true), { timeout: 3000 });
     expect(classifications).toBe(1);
     expect(turns).toBe(3);
     expect(resultId).toMatch(/^[0-9a-f-]{36}$/);
@@ -149,7 +155,8 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     } as unknown as ModelGateway;
 
     const manager = new RunManager(mockGateway, (event) => events.push(event));
-    const started = await manager.start({ userText: "Write temp.txt in the current workspace" });
+    manager.setHarness(workspaceFor(tempDir));
+    const started = await manager.start({ mode:"agent", userText: "Write temp.txt in the current workspace" });
 
     // Wait for confirmation_required event
     let confirmationEvent: any = null;
@@ -232,7 +239,8 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     } as unknown as ModelGateway;
 
     const manager = new RunManager(mockGateway, (event) => events.push(event));
-    await manager.start({ userText: "Search for syntax errors" });
+    manager.setHarness(workspaceFor(tempDir));
+    await manager.start({ mode:"agent", userText: "Search for syntax errors" });
 
     // Wait for completed state
     await vi.waitFor(() => expect(events.some((e) => e.type === "run_state" && e.state === "completed")).toBe(true), { timeout: 2000 });

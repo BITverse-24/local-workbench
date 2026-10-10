@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { modeGateway, fixtureIntent } from './helpers/mode-gateway.js';
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { RunManager } from "../src/main/run/manager.js";
 import { createChat } from "../src/main/persistence/chats.js";
@@ -91,56 +92,9 @@ describe("Flow C End-to-End: Engineering Drawing Compliance Review", () => {
     const groundingProvider = new RAGGroundingProvider(ragService);
 
     // 2. Set up ModelGateway with reasoning model mock
-    let capturedPrompt = "";
-    const gateway = new ModelGateway(
-      {
-        async request(_url, init) {
-          const body = JSON.parse(init?.body as string);
-          const userMsg = body.messages?.find((m: any) => m.role === "user")?.content || "";
-          capturedPrompt = typeof userMsg === "string" ? userMsg : JSON.stringify(userMsg);
-
-          const complianceOutput = {
-            text: `# Engineering Compliance Review: P-204 Pump Skid\n\n` +
-              `## Drawing Reference\nPID-P204-REV-C (Hydrocarbon service)\n\n` +
-              `## Findings & Compliance Assessment\n` +
-              `1. **Discharge Isolation Valve (XV-204)**: Observed **Class 150**. Required minimum **Class 300** for hydrocarbon service per [SOP-220 §4.2]. Status: **NON-COMPLIANT**.\n` +
-              `2. **Discharge Line Diameter**: Observed **DN80**. Required minimum **DN100** per [SOP-220 §4.3]. Status: **NON-COMPLIANT**.\n\n` +
-              `## Disposition\n` +
-              `**DRAWING NOT APPROVED**. The pump skid drawing contains 2 safety discrepancies that must be revised before manufacturing sign-off.\n\n` +
-              `## Corrective Actions\n` +
-              `- Replace valve specification XV-204 from Class 150 to Class 300.\n` +
-              `- Upsize discharge line from DN80 to DN100.`,
-          };
-
-          return {
-            status: 200,
-            async text() {
-              return JSON.stringify({
-                id: "chatcmpl-mock",
-                choices: [{ message: { content: JSON.stringify(complianceOutput) } }],
-              });
-            },
-          };
-        },
-      },
-      new Map([
-        [
-          "draft-qwen3",
-          {
-            id: "draft-qwen3",
-            taskTypes: ["draft"],
-            runtime: "llama-server",
-            baseUrl: "http://localhost:8000/v1",
-            model: "draft-model",
-            capabilities: ["text", "structured-output"],
-            requestTimeoutMs: 10000,
-            healthPath: "/models",
-            enabled: true,
-          },
-        ],
-      ] as any),
-    );
-
+    const note='# Engineering Compliance Review: P-204 Pump Skid\n\nPID-P204-REV-C. DRAWING NOT APPROVED.\nXV-204: Class 150 observed; minimum Class 300 required. NON-COMPLIANT [SOP-220 §4.2].\nDN80 discharge line: minimum DN100 required. NON-COMPLIANT [SOP-220 §4.3].\nReplace XV-204 with Class 300 and upsize discharge line to DN100 before sign-off.';
+    const fixture=modeGateway(fixtureIntent('Review drawing',[{type:'md',filename:'corrective-action-note.md'}]),()=>note);
+    const gateway=fixture.gateway;
     const runEvents: RunEvent[] = [];
     const manager = new RunManager(gateway, (evt) => runEvents.push(evt));
     manager.setGrounding(groundingProvider);
@@ -161,6 +115,8 @@ describe("Flow C End-to-End: Engineering Drawing Compliance Review", () => {
     // 4. Start run with the exact Flow C user prompt
     const { runId } = await manager.start({
       chatId,
+      mode:'work',
+      groundingEnabled:true,
       userText: "Check this against our piping spec and draft a corrective action note if anything's non-compliant.",
       attachmentToken: attachment.attachmentId,
     });
@@ -189,22 +145,13 @@ describe("Flow C End-to-End: Engineering Drawing Compliance Review", () => {
     const routingEvt = runEvents.find((e) => e.type === "routing");
     expect(routingEvt).toBeDefined();
     expect(routingEvt?.taskType).toBe("draft");
-    expect(routingEvt?.modelId).toBe("draft-qwen3");
-    expect((routingEvt as any).reason).toBe("engineering drawing compliance review");
+    expect(routingEvt?.modelId).toBe("primary-model");
+    expect(routingEvt?.reason).toContain('Work');
 
-    // 6. Verify Visual Extraction tool execution on SVG drawing
-    const inspectTool = runEvents.find((e) => e.type === "tool_result" && e.tool === "inspect_drawing");
-    expect(inspectTool).toBeDefined();
-    expect((inspectTool as any).summary).toContain("P-204");
-
-    // 7. Verify Dynamic RAG Grounding tool execution and context injection
-    const ragTool = runEvents.find((e) => e.type === "tool_result" && e.tool === "retrieve_sop");
-    expect(ragTool).toBeDefined();
-
-    const groundingContextEvt = runEvents.find((e) => e.type === "grounding_context" && e.status === "injected");
-    expect(groundingContextEvt).toBeDefined();
-    expect((groundingContextEvt as any).chunkCount).toBeGreaterThan(0);
-
+    // The deterministic source reader and real RAG feed the Work generator.
+    const ragTool=runEvents.find(e=>e.type==='tool_result'&&e.tool==='retrieve_knowledge');
+    expect(ragTool?.type==='tool_result'&&ragTool.ok).toBe(true);
+    const capturedPrompt=JSON.stringify(fixture.turns);
     // 8. Verify Prompt fed to reasoning model contains extracted drawing parameters and RAG criteria
     expect(capturedPrompt).toContain("XV-204");
     expect(capturedPrompt).toContain("CLASS 150");

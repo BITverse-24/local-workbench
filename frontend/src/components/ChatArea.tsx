@@ -16,6 +16,7 @@ export type ChatMessage = {
   artifacts?: ArtifactRef[];
   runId?: string;
   execution?: {
+    mode?:ExecutionMode;
     state?: RunState;
     modelId?: string;
     taskType?: string;
@@ -612,7 +613,7 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
                 msg.text && <p className="text-[15px] sm:text-base leading-relaxed whitespace-pre-wrap break-words select-text">{msg.text}</p>
               ) : (
                 <>
-                  {msg.execution && msg.execution.events && msg.execution.events.length > 0 && (
+                  {msg.execution && msg.execution.mode!=="chat" && msg.execution.events && msg.execution.events.length > 0 && (
                     <div className="w-full mb-2">
                       <AgentExecutionTimeline
                         events={msg.execution.events}

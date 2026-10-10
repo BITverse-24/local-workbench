@@ -8,6 +8,7 @@ import {
   isMarkdownDeliverableRequested,
   deriveMarkdownFilename,
 } from "../src/main/run/manager.js";
+import { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { createChat } from "../src/main/persistence/chats.js";
 import type { ModelRequest, RunEvent } from "../src/shared/contracts.js";
 
@@ -25,73 +26,26 @@ describe("Generic Markdown Deliverable Generation", () => {
     runEvents = [];
     capturedRequests = [];
 
-    const mockGateway = {
-      async execute(req: ModelRequest) {
-        capturedRequests.push(req);
-        if (req.taskType === "vision") {
-          return {
-            ok: true,
-            value: {
-              requestId: req.requestId,
-              runId: req.runId,
-              modelId: req.modelId,
-              taskType: "vision",
-              completedAt: new Date().toISOString(),
-              result: {
-                sourceText: "Inspection report contents for E-201",
-                findings: [
-                  {
-                    findingId: "f-1",
-                    title: "Wall thickness below minimum limit",
-                    value: "2.8mm observed, limit is 3.2mm",
-                    pageReferenceIds: ["p-1"],
-                    confidence: "high",
-                    evidence: "Ultrasonic thickness measurement: 2.8mm",
-                  },
-                ],
-                pageReferences: [{ id: "p-1", page: 1, text: "2.8mm measured" }],
-              },
-            },
-          };
-        }
-        if (req.taskType === "draft") {
-          return {
-            ok: true,
-            value: {
-              requestId: req.requestId,
-              runId: req.runId,
-              modelId: req.modelId,
-              taskType: "draft",
-              completedAt: new Date().toISOString(),
-              result: {
-                text: `# Engineering Compliance Review Note\n\n| Item | Observed | Required | Status |\n|---|---|---|---|\n| Wall Thickness | 2.8mm | >= 3.2mm | REJECTED |\n\n### Findings\nWall thickness does not meet governing criteria.`,
-              },
-            },
-          };
-        }
-        return {
-          ok: true,
-          value: {
-            requestId: req.requestId,
-            runId: req.runId,
-            modelId: req.modelId,
-            taskType: "code",
-            completedAt: new Date().toISOString(),
-            result: { text: "ok" },
-          },
-        };
-      },
-      async complete(req: ModelRequest) {
-        return this.execute(req);
-      },
-      health: async () => [],
-      models: () => [],
-    };
-
-    manager = new RunManager(
-      mockGateway as never,
-      (evt) => runEvents.push(evt),
-    );
+    const mockGateway=new ModelGateway();
+    const names=[['Draft a compliance note for E-201','E201-compliance-note.md'],['Please draft an audit memo','audit-memo.md'],['custom-review-note.md','custom-review-note.md'],['word document','approval-note.docx'],['Read these inspection reports','E201-compliance-note.md']];
+    vi.spyOn(mockGateway,'execute').mockImplementation(async req=>{
+      capturedRequests.push(req);
+      const filename=names.find(([fragment])=>req.userPrompt.includes(fragment))?.[1];
+      if(!filename)throw new Error('Unexpected fixture request');
+      return {ok:true,value:{result:{intentType:'document_drafting',driverModel:'primary-model',taskType:'draft',primaryGoal:'Prepare the requested note',isActionable:true,chatResponseOnly:false,workspaceMutationRequested:false,expectedDeliverables:[{filename,type:filename.endsWith('.docx')?'docx':'md'}]}}} as any;
+    });
+    vi.spyOn(mockGateway,'chatWithTools').mockImplementation(async (_model,messages,_tools,options)=>{
+      const schema=options?.responseSchema?.name;
+      let content='';
+      if(schema==='work_requirements')content='{"checks":[]}';
+      else if(schema==='work_content_review'){
+        const sourceQuote=/Source ID:[^\n]+/.exec(messages[1].content)?.[0];
+        content=JSON.stringify({checks:[{id:'content:complete_request',status:'passed',reason:'The requested note is saved.',outputQuotes:['Engineering Compliance Review Note'],sourceQuotes:sourceQuote?[sourceQuote]:[]}],coverageGaps:[]});
+      }
+      else content='# Engineering Compliance Review Note\n\n| Item | Observed | Required | Status |\n|---|---|---|---|\n| Wall Thickness | 3.8-4.2 mm | 4.6 mm | REJECTED |\n\nWall thickness does not meet governing criteria.\n\n'+String(messages[0].content).split('SOURCES:\n')[1];
+      return {ok:true,value:{content,tool_calls:[],finishReason:'stop'}} as any;
+    });
+    manager=new RunManager(mockGateway,event=>runEvents.push(event));
   });
 
   afterEach(() => {
@@ -131,17 +85,18 @@ describe("Generic Markdown Deliverable Generation", () => {
     });
   });
 
-  describe("executeChatTask Deliverable Generation", () => {
+  describe("Work Deliverable Generation", () => {
     it("creates <item>-compliance-note.md artifact in output/ when compliance note requested", async () => {
       const chatId = createChat("Chat 1");
       const { runId } = await manager.start({
+        mode:"work",
         chatId,
         userText: "Draft a compliance note for E-201 based on recent inspection findings",
       });
 
       await vi.waitFor(
         () => {
-          expect(runEvents.some((e) => e.type === "artifact_ready")).toBe(true);
+          expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed"),JSON.stringify(getDb().prepare('SELECT checks_json FROM run_artifact_validations').all())).toBe(true);
         },
         { timeout: 2000 },
       );
@@ -178,13 +133,14 @@ describe("Generic Markdown Deliverable Generation", () => {
     it("creates audit-memo.md artifact when audit memo requested without item", async () => {
       const chatId = createChat("Chat 2");
       const { runId } = await manager.start({
+        mode:"work",
         chatId,
         userText: "Please draft an audit memo for the maintenance outage",
       });
 
       await vi.waitFor(
         () => {
-          expect(runEvents.some((e) => e.type === "artifact_ready")).toBe(true);
+          expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed"),JSON.stringify(getDb().prepare('SELECT checks_json FROM run_artifact_validations').all())).toBe(true);
         },
         { timeout: 2000 },
       );
@@ -201,13 +157,14 @@ describe("Generic Markdown Deliverable Generation", () => {
     it("respects explicit .md deliverable filename from prompt", async () => {
       const chatId = createChat("Chat 3");
       const { runId } = await manager.start({
+        mode:"work",
         chatId,
         userText: "Review the reactor logs and save as custom-review-note.md",
       });
 
       await vi.waitFor(
         () => {
-          expect(runEvents.some((e) => e.type === "artifact_ready")).toBe(true);
+          expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed"),JSON.stringify(getDb().prepare('SELECT checks_json FROM run_artifact_validations').all())).toBe(true);
         },
         { timeout: 2000 },
       );
@@ -224,13 +181,14 @@ describe("Generic Markdown Deliverable Generation", () => {
     it("continues generating docx without regression when Word document requested", async () => {
       const chatId = createChat("Chat 4");
       const { runId } = await manager.start({
+        mode:"work",
         chatId,
         userText: "Draft an approval note and save as a word document",
       });
 
       await vi.waitFor(
         () => {
-          expect(runEvents.some((e) => e.type === "artifact_ready")).toBe(true);
+          expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed"),JSON.stringify(getDb().prepare('SELECT checks_json FROM run_artifact_validations').all())).toBe(true);
         },
         { timeout: 2000 },
       );
@@ -245,10 +203,10 @@ describe("Generic Markdown Deliverable Generation", () => {
     });
   });
 
-  describe("executeVisionTask Multi-Doc Chaining to Markdown Deliverable", () => {
+  describe("Work Multi-Document Deliverables", () => {
     it("generates markdown deliverable for multi-attachment bundle when compliance note requested", async () => {
       const chatId = createChat("Chat Vision");
-      const pdfBuffer = Buffer.from("%PDF-1.4 mock pdf content");
+      const pdfBuffer = readFileSync(path.resolve("demo/flow_a/inspection-report-E201.pdf"));
 
       const att1 = manager.registerAttachment({
         chatId,
@@ -267,6 +225,7 @@ describe("Generic Markdown Deliverable Generation", () => {
       });
 
       const { runId } = await manager.start({
+        mode:"work",
         chatId,
         attachmentTokens: [att1.attachment.attachmentId, att2.attachment.attachmentId],
         userText: "Read these inspection reports and draft a compliance note for E-201",
@@ -274,7 +233,7 @@ describe("Generic Markdown Deliverable Generation", () => {
 
       await vi.waitFor(
         () => {
-          expect(runEvents.some((e) => e.type === "artifact_ready")).toBe(true);
+          expect(runEvents.some((e) => e.type === "run_state" && e.state === "completed"),JSON.stringify(getDb().prepare('SELECT checks_json FROM run_artifact_validations').all())).toBe(true);
         },
         { timeout: 2500 },
       );

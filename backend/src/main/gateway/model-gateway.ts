@@ -1,3 +1,5 @@
+import { localInferenceScheduler } from "./inference-scheduler.js";
+import { currentRuntimeScope, assertRuntimeActive } from "../run/runtime-scope.js";
 import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -101,15 +103,17 @@ function redactTraceContent(value: unknown, key = ""): unknown {
 }
 
 export interface GatewayTransport {
+  inferenceStartedAt?: () => number | undefined;
+  queueWaitMs?: () => number;
   request(
     url: string,
-    init: { method: string; headers: Record<string, string>; body?: string },
+    init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
     timeoutMs: number,
   ): Promise<{ status: number; text(): Promise<string> }>;
 
   streamRequest?(
     url: string,
-    init: { method: string; headers: Record<string, string>; body?: string },
+    init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
     timeoutMs: number,
     onChunk: (delta: string) => void,
     onActivity?: (activity: StreamActivity) => void,
@@ -121,7 +125,7 @@ const nativeTransport: GatewayTransport = {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url, { ...init, signal: controller.signal });
+      const response = await fetch(url, { ...init, signal: init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal });
       // Headers may arrive before inference finishes. Keep the deadline active
       // while receiving the body, not just until fetch resolves its headers.
       const body = await response.text();
@@ -135,7 +139,7 @@ const nativeTransport: GatewayTransport = {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url, { ...init, signal: controller.signal });
+      const response = await fetch(url, { ...init, signal: init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal });
       return await readCompletionStream(response, onChunk, onActivity);
     } finally {
       clearTimeout(timer);
@@ -315,7 +319,7 @@ export function parseToolCallArguments(raw: unknown): Record<string, unknown> {
   return { raw: str };
 }
 
-export function extractEmbeddedToolCalls(rawContent: string): { toolCalls: AgentToolCall[]; cleanedContent: string | null } {
+export function extractEmbeddedToolCalls(rawContent: string, allowFencedEnvelope = false): { toolCalls: AgentToolCall[]; cleanedContent: string | null } {
   const toolCalls: AgentToolCall[] = [];
   let cleaned = rawContent;
 
@@ -351,6 +355,24 @@ export function extractEmbeddedToolCalls(rawContent: string): { toolCalls: Agent
   if (toolCalls.length > 0) {
     cleaned = cleaned.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "").trim();
     return { toolCalls, cleanedContent: cleaned.length > 0 ? cleaned : null };
+  }
+
+  // Prompt-based tool responses can contain narration around the complete JSON
+  // envelope. Decode only that envelope, never fragments of executable strings
+  // or ordinary code examples. Dispatch still enforces tool scope and approvals.
+  if (allowFencedEnvelope) {
+    for (const fence of rawContent.matchAll(/```json\s*\n([\s\S]*?)\n```/gi)) {
+      try {
+        const envelope = parseStructuredData(fence[1]) as any;
+        if (!Array.isArray(envelope?.tool_calls) || !envelope.tool_calls.length) continue;
+        const decoded = extractEmbeddedToolCalls(fence[1]);
+        if (!decoded.toolCalls.length) continue;
+        toolCalls.push(...decoded.toolCalls);
+        cleaned = cleaned.replace(fence[0], "");
+        if (decoded.cleanedContent) cleaned += `\n${decoded.cleanedContent}`;
+      } catch { /* An incomplete envelope cannot become an executable call. */ }
+    }
+    if (toolCalls.length) return { toolCalls, cleanedContent: cleaned.trim() || null };
   }
 
   // 2. Match JSON object with name & arguments or tool_calls
@@ -565,8 +587,10 @@ export class ModelGateway implements ModelClient {
   private inferenceTransport(
     metadata: Pick<ModelProgressEvent, "runId" | "modelId" | "purpose" | "parentCallId">,
     structured: boolean,
+    signal?: AbortSignal,
   ): GatewayTransport {
-    const perform = async (url: string, init: { method: string; headers: Record<string, string>; body?: string },
+    let startedAt:number|undefined;let queueWait=0;
+    const perform = async (url: string, init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
       timeoutMs: number, onChunk?: (delta: string) => void, onActivity?: (activity: StreamActivity) => void) => {
       const snapshot: ModelProgressEvent = { type: "model_progress", ...metadata, requestId: randomUUID(),
         status: "waiting", channel: structured ? "structured" : "text", outputChars: 0 };
@@ -591,12 +615,26 @@ export class ModelGateway implements ModelClient {
         snapshot.outputChars += chars;
         publish(firstOutput);
       };
+      const scope = currentRuntimeScope();
+      const requestSignal = signal ?? scope?.signal;
+      assertRuntimeActive();
+      if (scope?.remainingModelCalls !== undefined) {
+        if(scope.remainingModelCalls<=0)throw new Error("Work reached its 24 model-call limit.");
+        scope.remainingModelCalls--;
+      }
+      const queuedAt = Date.now();
+      scope?.observe?.({ queued: true });
+      const release = await localInferenceScheduler.acquire(scope?.mode ?? "work", requestSignal);
+      const queueWaitMs = Date.now() - queuedAt;queueWait=queueWaitMs;startedAt=Date.now();
+      scope?.observe?.({ queued: false, queueWaitMs, modelCallCount: 1 });
+      const inferenceStarted = Date.now();
       try {
+        assertRuntimeActive();
         const stream = Boolean(this.transport.streamRequest && (onChunk || this.progressListeners.size));
         const payload = JSON.parse(init.body ?? "{}");
         if (stream) { payload.stream = true; payload.stream_options = { include_usage: true }; }
         else { delete payload.stream; delete payload.stream_options; }
-        const outbound = { ...init, body: JSON.stringify(payload) };
+        const outbound = { ...init, signal: requestSignal, body: JSON.stringify(payload) };
         const response = stream
           ? await this.transport.streamRequest!(url, outbound, timeoutMs, delta => {
               previewFilter?.process(delta);
@@ -613,9 +651,13 @@ export class ModelGateway implements ModelClient {
         snapshot.status = "failed";
         publish(true);
         throw error;
+      } finally {
+        scope?.observe?.({ inferenceMs: Date.now() - inferenceStarted, ...(requestSignal?.aborted ? {cancellationResourceMs:Date.now()-((requestSignal.reason as any)?.cancelledAt??Date.now())} : {}) });
+        release();
       }
     };
     return {
+      inferenceStartedAt:()=>startedAt,queueWaitMs:()=>queueWait,
       request: (url, init, timeoutMs) => perform(url, init, timeoutMs),
       ...(this.transport.streamRequest ? { streamRequest: perform } : {}),
     };
@@ -932,7 +974,7 @@ export class ModelGateway implements ModelClient {
       this.externalRequestCount += isLocal ? 0 : 1;
       const t0 = inferenceStartedAt = Date.now();
       const onInferenceChunk = (delta: string) => {
-        if (inferenceTtftMs === null && delta.length > 0) inferenceTtftMs = Date.now() - t0;
+        if (inferenceTtftMs === null && delta.length > 0) inferenceTtftMs = Date.now() - (transport.inferenceStartedAt?.()??t0);
         request.onChunk?.(delta);
       };
       let response: { status: number; text(): Promise<string> };
@@ -1324,13 +1366,14 @@ export class ModelGateway implements ModelClient {
       maxTokens?: number;
       timeoutMs?: number;
       onChunk?: (delta: string) => void;
+      signal?: AbortSignal;
       purpose?: InferencePurpose;
       responseSchema?: { name: string; schema: Record<string, unknown> };
       toolChoice?: "auto" | "required";
     },
   ): Promise<AIResult<AgentTurnResponse>> {
     const transport = this.inferenceTransport({ runId: options?.runId ?? "run-agent-loop", modelId,
-      purpose: options?.purpose ?? "working_turn" }, Boolean(options?.responseSchema));
+      purpose: options?.purpose ?? "working_turn" }, Boolean(options?.responseSchema), options?.signal);
     const model = this.resolveNextEndpoint(modelId);
     if (!model) {
       return {
@@ -1391,7 +1434,7 @@ export class ModelGateway implements ModelClient {
         const t0 = Date.now();
         let ttftMs: number | null = null;
         const onStreamChunk = (delta: string) => {
-          if (ttftMs === null && delta.length > 0) ttftMs = Date.now() - t0;
+          if (ttftMs === null && delta.length > 0) ttftMs = Date.now() - (transport.inferenceStartedAt?.()??t0);
           options?.onChunk?.(delta);
         };
         let response: { status: number; text(): Promise<string> };
@@ -1653,8 +1696,8 @@ export class ModelGateway implements ModelClient {
         }
 
         let finalContent = typeof parsedJson?.content === "string" ? parsedJson.content : toolCalls.length ? null : (typeof rawContent === "string" ? rawContent : null);
-        if (toolCalls.length === 0 && finalContent) {
-          const embedded = extractEmbeddedToolCalls(finalContent);
+        if (toolCalls.length === 0 && finalContent && tools.length > 0) {
+          const embedded = extractEmbeddedToolCalls(finalContent, true);
           if (embedded.toolCalls.length > 0) {
             toolCalls.push(...embedded.toolCalls);
             finalContent = embedded.cleanedContent;

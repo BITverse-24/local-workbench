@@ -19,7 +19,7 @@ import { createDocxBuffer } from "../src/main/tools/artifacts.js";
 import ExcelJS from "exceljs";
 import { absoluteDataPath } from "../src/main/run/filesystem.js";
 import { generateDeliverableTool } from "../src/main/tools/specialist-tools.js";
-import { AgentLoop } from "../src/main/agent/agent-loop.js";
+import { AgentLoop } from "./helpers/agent-loop-fixture.js";
 
 describe("Tool Argument Parsing Resilience", () => {
   describe("parseToolCallArguments", () => {
@@ -204,7 +204,7 @@ describe("Tool Argument Parsing Resilience", () => {
       const runId = randomUUID(), events: any[] = [], approvals: any[] = [];
       const turns = [
         { content: null, tool_calls: [{ id: "write", name: "write_file", arguments: { path: "module.py", content: "import csv, io\ndef read_csv(text): return list(csv.DictReader(io.StringIO(text)))\n" } }] },
-        { content: null, tool_calls: [{ id: "validate", name: "run_command", arguments: { command: "python3 -B", python_module: "module", python_function: "read_csv", python_text_rows: ["field,value", '"quoted, field",17', "", "missing"] } }] },
+        { content: null, tool_calls: [{ id: "validate", name: "run_command", arguments: { command: "python3 -B", python_module: "module", python_function: "read_csv", python_reference_pipeline: ["io:StringIO", "csv:DictReader", "builtins:list"], success_marker: "CHECK_OK", python_text_rows: ["field,value", '"quoted, field",17', "", "missing"] } }] },
         { content: "Verified.", tool_calls: null },
       ];
       let turn = 0;

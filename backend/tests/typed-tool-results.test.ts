@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { ToolDispatcher, classifyToolError } from "../src/main/agent/tool-dispatcher.js";
-import { AgentLoop } from "../src/main/agent/agent-loop.js";
+import { AgentLoop } from "./helpers/agent-loop-fixture.js";
 import { PermissionError } from "../src/main/harness/path-guard.js";
 import { readFileTool, writeFileTool } from "../src/main/tools/workspace-tools.js";
 import type { AgentTool, ToolExecutionContext, ToolResult, ToolErrorCode } from "../src/main/tools/types.js";

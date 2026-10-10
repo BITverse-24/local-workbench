@@ -6,6 +6,7 @@ export type SidebarChat = {
   id: string;
   title: string;
   updated_at: string;
+  runState?: RunState;
 };
 
 type Props = {
@@ -305,7 +306,7 @@ export default function ChatsPanel({
                           </span>
                         </span>
                         <span className="text-xs leading-tight text-[var(--text-tertiary)] ml-3.5 font-mono mt-0.5">
-                          {formatRelativeTime(chat.updated_at)}
+                          {chat.runState && !["completed","partial","failed","cancelled","limit_exceeded"].includes(chat.runState) ? chat.runState==="awaiting_confirmation"?"Needs approval":"Running" : formatRelativeTime(chat.updated_at)}
                         </span>
                       </button>
                     )}

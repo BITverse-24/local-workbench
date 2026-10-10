@@ -1,0 +1,3133 @@
+
+> local-workbench@0.1.0 test
+> node scripts/test.cjs
+
+
+ RUN  v3.2.7 /Users/krishay/projects/agent
+
+stdout | backend/tests/model-selection.test.ts > Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Simple Chat request -> direct response without classification
+[run:fabdcbf8] ➜ acting
+
+stdout | backend/tests/model-selection.test.ts > Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Simple Chat request -> direct response without classification
+[run:fabdcbf8] ➜ completed
+
+stdout | backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > routes, executes after approval, and summarizes in chat by default
+[run:7a542d5b] ➜ failed
+
+stdout | backend/tests/vision-run.test.ts > Vision Task Execution (Architecture Collapse) > routes PDF/image attachments directly to executeVisionTask and outputs structured findings
+[run:238bf9f7] ➜ failed
+
+stdout | backend/tests/generic-markdown-deliverable.test.ts > Generic Markdown Deliverable Generation > executeChatTask Deliverable Generation > creates <item>-compliance-note.md artifact in output/ when compliance note requested
+[run:8e325b6e] ➜ failed
+
+stdout | backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > requests an artifact only when the user asks for an Excel export
+[run:4790e1a0] ➜ failed
+
+stdout | backend/tests/multi-attachment.test.ts > Multi-Attachment Support & Persistence > persists multiple attachments in run_attachments join table
+[run:7d841368] ➜ failed
+
+stdout | backend/tests/model-selection.test.ts > Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Multi-model setup with explicit selection -> interprets and executes with selected model
+[run:ff51ce0c] ➜ acting
+
+stdout | backend/tests/model-selection.test.ts > Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Multi-model setup with explicit selection -> interprets and executes with selected model
+[run:ff51ce0c] ➜ failed
+
+ ❯ backend/tests/local-model-flow-regressions.test.ts (11 tests | 2 failed) 319ms
+   ✓ Local model flow regressions > preserves the exact argv interface when source and data are attached 114ms
+   ✓ Local model flow regressions > renders escaped document line breaks as real table rows 24ms
+   ✓ Local model flow regressions > rejects an unknown artifact type before writing files 1ms
+   ✓ Local model flow regressions > keeps signed document annotations as source text with their real page 0ms
+   ✓ Local model flow regressions > keeps SVG tags with aligned source labels without adding observed values 1ms
+   ✓ Local model flow regressions > retains slightly offset drawing labels in their source columns 0ms
+   × Local model flow regressions > applies statement edits relative to source indentation without changing the input 91ms
+     → expected false not to be false // Object.is equality
+   × Local model flow regressions > requires all source pages and preserves inspector notes in a real Word table 3ms
+     → expected Error: Cannot generate deliverable "deliv… to match object { code: 'invalid_arguments' }
+   ✓ Local model flow regressions > does not decode intentional backslashes in executable source twice 71ms
+   ✓ Local model flow regressions > uses semantic flags instead of prompt keywords for capability exposure 0ms
+   ✓ Local model flow regressions > keeps tool rules and ends tool exposure after a verified export 12ms
+ ❯ backend/tests/tool-argument-resilience.test.ts (32 tests | 1 failed) 551ms
+   ✓ Tool Argument Parsing Resilience > parseToolCallArguments > parses valid JSON string arguments 0ms
+   ✓ Tool Argument Parsing Resilience > parseToolCallArguments > unwraps double-stringified JSON 0ms
+   ✓ Tool Argument Parsing Resilience > parseToolCallArguments > decodes complete single-quoted data without changing literal source escapes 1ms
+   ✓ Tool Argument Parsing Resilience > parseToolCallArguments > repairs and parses raw unescaped newlines and tabs inside string literals 0ms
+   ✓ Tool Argument Parsing Resilience > parseToolCallArguments > rejects truncated executable strings instead of recovering partial code 0ms
+   ✓ Tool Argument Parsing Resilience > parseToolCallArguments > rejects Python triple quoted tool arguments 0ms
+   ✓ Tool Argument Parsing Resilience > parseToolCallArguments > preserves literal source escapes and command escapes exactly 0ms
+   ✓ Tool Argument Parsing Resilience > workspace tool extractors > extracts path across common parameter aliases 0ms
+   ✓ Tool Argument Parsing Resilience > workspace tool extractors > unwraps nested parameters and arguments wrappers 0ms
+   ✓ Tool Argument Parsing Resilience > workspace tool extractors > extracts path and content from raw JSON strings 0ms
+   ✓ Tool Argument Parsing Resilience > workspace tool extractors > extracts command across aliases 0ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > rejects text writes to docx documents before creating or corrupting them 1ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > rejects text writes to xlsx documents before creating or corrupting them 0ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > rejects text writes to pdf documents before creating or corrupting them 0ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > writeFileTool succeeds with filePath alias and nested parameters 1ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > readFileTool succeeds with filename alias 1ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > reads an exact indexed source when its workspace file is absent without substituting unrelated evidence 3ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > deleteFileTool succeeds with file_path alias 1ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > searchTool succeeds with search_query alias 16ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > rejects malformed structured checks without executing a fallback shell command 1ms
+   × Tool Argument Parsing Resilience > tool executions with aliased arguments > binds requested CSV validation defaults before approval and executes real assertions 14ms
+     → Cannot read properties of undefined (reading 'finishReason')
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > runs structured function checks and prints success only after all assertions pass  384ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > runs typed Python validation with quoted CSV fields preserved and no helper files 39ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > createDocxBuffer parses bulleted markdown tables into valid docx without errors 16ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > generateDeliverableTool rejects template outline placeholders when no completed table exists 1ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > generateDeliverableTool enriches template placeholder when context.lastAssistantContent has real table 10ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > generateDeliverableTool creates styled Excel deliverable from markdown table content 23ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > keeps the requested document filename and rejects extra artifacts 6ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > preserves prose citations and absent measurements alongside Excel tables 13ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > compiles real Markdown field lists into Excel without requiring a table 11ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > readFileTool returns friendly advice when reading binary image files instead of crashing 0ms
+   ✓ Tool Argument Parsing Resilience > tool executions with aliased arguments > generateDeliverableTool automatically substitutes [insert table] placeholder with real assistant table 6ms
+ ❯ backend/tests/attached-code-repair.test.ts (12 tests | 4 failed) 577ms
+   ✓ Attached code repair scope and validation > uses semantic classification for a clear attached repair 2ms
+   ✓ Attached code repair scope and validation > preserves validated workspace scope without matching prompt keywords 1ms
+   × Attached code repair scope and validation > uses semantic classification for constraints and keeps attachment repair isolated 4ms
+     → expected { Object (code, input_files, ...) } to not have property "validation_code"
+   ✓ Attached code repair scope and validation > executes assertions against the exact repaired source and exports only the source 143ms
+   ✓ Attached code repair scope and validation > preserves Python subscription assignments and argv indexing for ordinary execution 86ms
+   × Attached code repair scope and validation > allows direct execution without invented assertions and rejects helper scripts 1ms
+     → expected true to be false // Object.is equality
+   ✓ Attached code repair scope and validation > treats successful execution on the supplied inputs as execution evidence 79ms
+   ✓ Attached code repair scope and validation > returns real assertion failures without publishing a successful repaired artifact 184ms
+   ✓ Attached code repair scope and validation > supports custom filename-based tests without an unrelated reference pipeline 44ms
+   ✓ Attached code repair scope and validation > writes source deliverables exactly within run output and rejects escaping filenames 2ms
+   × Attached code repair scope and validation > does not complete an attached Python repair before assertions succeed 12ms
+     → expected false to be true // Object.is equality
+   × Attached code repair scope and validation > keeps a mounted workspace unchanged throughout a RunManager attachment repair 18ms
+     → Attachment belongs to another chat.
+stdout | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > dynamically ingests governing spec into RAG and retrieves exact clause citations
+[rag:embedding] Dispatching embedBatch (4 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stderr | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > dynamically ingests governing spec into RAG and retrieves exact clause citations
+[rag:ingestion] Embedding generation skipped/failed (offline fallback to FTS5): [TypeError: fetch failed] {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:11434
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 11434
+  }
+}
+
+stdout | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > dynamically ingests governing spec into RAG and retrieves exact clause citations
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stderr | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > dynamically ingests governing spec into RAG and retrieves exact clause citations
+[rag:retrieval] Vectra semantic query failed (is embedding model available?): [TypeError: fetch failed] {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:11434
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 11434
+  }
+}
+
+stdout | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > dynamically evaluates compliance against custom specification without hardcoded functions
+[rag:embedding] Dispatching embedBatch (3 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stderr | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > dynamically evaluates compliance against custom specification without hardcoded functions
+[rag:ingestion] Embedding generation skipped/failed (offline fallback to FTS5): [TypeError: fetch failed] {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:11434
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 11434
+  }
+}
+
+stdout | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > dynamically evaluates compliance against custom specification without hardcoded functions
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stderr | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > dynamically evaluates compliance against custom specification without hardcoded functions
+[rag:retrieval] Vectra semantic query failed (is embedding model available?): [TypeError: fetch failed] {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:11434
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16) {
+    errno: -61,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 11434
+  }
+}
+
+stdout | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > dynamically evaluates compliance against custom specification without hardcoded functions
+[model-gateway:draft:primary-model:30ba442b] DB ENDPOINT: Dispatching to http://localhost:8000/v1 (draft-model, role: draft)
+
+┌─ [AI Request: DRAFT] (req:30ba442b)
+│ Model:   draft-model (primary-model)
+│ Params:  max_tokens=2048 │ temp=0.1
+│ Prompt:  "## Source: DWG-HP-990 (High Pressure Bypass Diagram) Service: High pressure service ### Observed Att..."
+└───────────────────────────────────────────────────────
+
+stderr | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > dynamically evaluates compliance against custom specification without hardcoded functions
+[model-gateway] failed to persist trace for 30ba442b-86f5-43c5-b9a8-1603582d565f: invalid run id
+
+stdout | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > dynamically evaluates compliance against custom specification without hardcoded functions
+┌─ [AI Response: DRAFT] (req:30ba442b)
+│ Status:  HTTP 200 in 0ms (finish: stop, 909 chars)
+└───────────────────────────────────────────────────────
+
+stderr | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > dynamically evaluates compliance against custom specification without hardcoded functions
+[model-gateway] failed to persist trace for 30ba442b-86f5-43c5-b9a8-1603582d565f: invalid run id
+[model-gateway] failed to persist trace for 30ba442b-86f5-43c5-b9a8-1603582d565f: invalid run id
+[model-gateway] failed to persist trace for 30ba442b-86f5-43c5-b9a8-1603582d565f: invalid run id
+[model-gateway] failed to persist trace for 30ba442b-86f5-43c5-b9a8-1603582d565f: invalid run id
+[telemetry] failed to persist inference record: invalid run id
+[model-gateway] failed to persist trace for 30ba442b-86f5-43c5-b9a8-1603582d565f: invalid run id
+
+stdout | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > executes complete drawing compliance review flow via RunManager
+[run:cb9875fa] ➜ acting
+
+stdout | backend/tests/gateway.test.ts > vision attachment payloads > sends PDFs as file parts, not image_url
+[model-gateway:vision:vision-qwen25vl:00000000] DB ENDPOINT: Dispatching to https://example.test/v1 (test-vision, role: vision)
+
+stdout | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > executes complete drawing compliance review flow via RunManager
+[run:cb9875fa] ➜ failed
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > writes a file into the workspace directory when user says 'Write a txt file in the directory saying hello'
+[run:b642981f] ➜ failed
+
+stdout | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > does not generate deliverable artifact when user only asks for in-chat compliance check
+[run:c95878f7] ➜ acting
+
+stdout | backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > does not generate deliverable artifact when user only asks for in-chat compliance check
+[run:c95878f7] ➜ failed
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > nudges model to call write_file if it lazily returns text without writing the file
+[run:17847b4f] ➜ failed
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > falls back to standard chat execution when no workspace is active
+[run:a5c33db3] ➜ failed
+
+ ❯ backend/tests/drawing-compliance.test.ts (5 tests | 3 failed) 181ms
+   × Dynamic Spec Compliance via RAG & Reasoning > extracts component tags, ratings, and diameters from SVG engineering drawing 14ms
+     → expected undefined to be defined
+   ✓ Dynamic Spec Compliance via RAG & Reasoning > dynamically ingests governing spec into RAG and retrieves exact clause citations 15ms
+   ✓ Dynamic Spec Compliance via RAG & Reasoning > dynamically evaluates compliance against custom specification without hardcoded functions 17ms
+   × Dynamic Spec Compliance via RAG & Reasoning > executes complete drawing compliance review flow via RunManager 68ms
+     → Run failed: [
+  {
+    "code": "too_small",
+    "minimum": 1,
+    "type": "string",
+    "inclusive": true,
+    "exact": false,
+    "message": "String must contain at least 1 character(s)",
+    "path": [
+      "content"
+    ]
+  }
+]
+   × Dynamic Spec Compliance via RAG & Reasoning > does not generate deliverable artifact when user only asks for in-chat compliance check 66ms
+     → Run failed: [
+  {
+    "code": "too_small",
+    "minimum": 1,
+    "type": "string",
+    "inclusive": true,
+    "exact": false,
+    "message": "String must contain at least 1 character(s)",
+    "path": [
+      "content"
+    ]
+  }
+]
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > intercepts Python with open(...) code emitted by model and writes the file to disk
+[run:28c6863f] ➜ failed
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > creates a downloadable artifact when file write is requested without an active workspace
+[run:28977185] ➜ failed
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > creates a standalone artifact without touching the active workspace when user specifies negative workspace constraint
+[run:136eef27] ➜ failed
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > handles model returning action as tool name (e.g. action: list_dir) without dumping raw JSON
+[run:8e439ed7] ➜ failed
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > routes approval note drafting with Word document request to draft model and creates document artifact
+[run:a50a8393] ➜ failed
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > handles multi-turn conversation: drafting approval note then saving it to active workspace on follow-up turn
+[run:83705401] ➜ failed
+
+stderr | backend/tests/gateway.test.ts > vision attachment payloads > sends PDFs as file parts, not image_url
+Warning: Indexing all PDF objects
+
+stderr | backend/tests/gateway.test.ts > vision attachment payloads > sends PDFs as file parts, not image_url
+PDF source rendering failed: Invalid PDF structure.
+
+stdout | backend/tests/gateway.test.ts > vision attachment payloads > keeps images as image_url parts
+[model-gateway:vision:vision-qwen25vl:00000000] DB ENDPOINT: Dispatching to https://example.test/v1 (test-vision, role: vision)
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > preserves multi-turn conversation history across consecutive runs
+[run:69a6f5c0] ➜ failed
+
+stdout | backend/tests/gateway.test.ts > vision attachment payloads > keeps images as image_url parts
+
+┌─ [AI Request: VISION] (req:00000000)
+│ Model:   test-vision (vision-qwen25vl)
+│ Params:  max_tokens=2048 │ temp=0.2
+│ Prompt:  "[multipart vision]"
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/gateway.test.ts > vision attachment payloads > keeps images as image_url parts
+┌─ [AI Response: VISION] (req:00000000)
+│ Status:  HTTP 200 in 0ms (finish: stop, 100 chars)
+└───────────────────────────────────────────────────────
+┌── [Vision Findings: 0 item(s)] ──────────────────────────────────
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > handles start with client-provided runId and executes cleanly
+[run:11111111] ➜ failed
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > chat drafting disables structured output and passes raw prompt without forcing JSON
+[model-gateway:draft:draft-qwen3:req-draf] DB ENDPOINT: Dispatching to https://example.test/v1 (test-draft, role: draft)
+
+┌─ [AI Request: DRAFT] (req:req-draf)
+│ Model:   test-draft (draft-qwen3)
+│ Params:  max_tokens=1536 │ temp=0.2
+│ Prompt:  "Draft compliance note."
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > chat drafting disables structured output and passes raw prompt without forcing JSON
+┌─ [AI Response: DRAFT] (req:req-draf)
+│ Status:  HTTP 200 in 0ms (finish: stop, 104 chars)
+└───────────────────────────────────────────────────────
+┌── [Model Summary] ────────────────────────────────────
+│ # Engineering Note
+│ 
+│ Direct markdown output.
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > chat drafting with onChunk enables stream: true and receives streamed chunks
+[model-gateway:draft:draft-qwen3:req-draf] DB ENDPOINT: Dispatching to https://example.test/v1 (test-draft, role: draft)
+
+┌─ [AI Request: DRAFT] (req:req-draf)
+│ Model:   test-draft (draft-qwen3)
+│ Params:  max_tokens=1536 │ temp=0.2
+│ Prompt:  "Hi"
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > chat drafting with onChunk enables stream: true and receives streamed chunks
+┌─ [AI Response: DRAFT] (req:req-draf)
+│ Status:  HTTP 200 in 0ms (finish: stop, 93 chars)
+└───────────────────────────────────────────────────────
+┌── [Model Summary] ────────────────────────────────────
+│ Hello World
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > code-summary disables structured output and streams execution summary
+[model-gateway:code:code-qwen25coder:req-summ] DB ENDPOINT: Dispatching to https://example.test/v1 (test-coder, role: code)
+
+┌─ [AI Request: CODE] (req:req-summ)
+│ Model:   test-coder (code-qwen25coder)
+│ Params:  max_tokens=1536 │ temp=0.2
+│ Prompt:  "Task: fix script"
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > code-summary disables structured output and streams execution summary
+┌─ [AI Response: CODE] (req:req-summ)
+│ Status:  HTTP 200 in 1ms (finish: stop, 124 chars)
+└───────────────────────────────────────────────────────
+┌── [Model Summary] (verified)────────────────────────────────────
+│ The script has been repaired and executed.
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > applies json_object and greedy 0.0 temperature for local structured tasks
+[model-gateway:vision:vision-qwen25vl:req-loca] DB ENDPOINT: Dispatching to http://127.0.0.1:11434/v1 (test-vision, role: vision)
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > applies json_object and greedy 0.0 temperature for local structured tasks
+
+┌─ [AI Request: VISION] (req:req-loca)
+│ Model:   test-vision (vision-qwen25vl)
+│ Params:  max_tokens=2048 │ temp=0.2
+│ Prompt:  "[multipart vision]"
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > applies json_object and greedy 0.0 temperature for local structured tasks
+┌─ [AI Response: VISION] (req:req-loca)
+│ Status:  HTTP 200 in 0ms (finish: stop, 121 chars)
+└───────────────────────────────────────────────────────
+┌── [Vision Findings: 0 item(s)] ──────────────────────────────────
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > executes 'Give me the solution for LC: Two Sum Problem in C++' cleanly
+[run:206e6f44] ➜ failed
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > retries with json_schema when provider rejects json_object with 'must be json_schema or text'
+[model-gateway:vision:vision-qwen25vl:req-lmst] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: vision)
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > retries with json_schema when provider rejects json_object with 'must be json_schema or text'
+
+┌─ [AI Request: VISION] (req:req-lmst)
+│ Model:   qwen2.5-coder-7b-instruct-mlx (vision-qwen25vl)
+│ Params:  max_tokens=2048 │ temp=0.2
+│ Prompt:  "[multipart vision]"
+└───────────────────────────────────────────────────────
+
+stderr | backend/tests/gateway.test.ts > model gateway health checks > retries with json_schema when provider rejects json_object with 'must be json_schema or text'
+┌── [AI Gateway Error: VISION] (req:req-lmst) ────────────────────────
+│ Message: provider rejected response_format, retrying with json_schema
+│ Detail:  {"error":"'response_format.type' must be 'json_schema' or 'text'"}
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > retries with json_schema when provider rejects json_object with 'must be json_schema or text'
+┌─ [AI Response: VISION] (req:req-lmst)
+│ Status:  HTTP 200 in 0ms (finish: stop, 100 chars)
+└───────────────────────────────────────────────────────
+┌── [Vision Findings: 0 item(s)] ──────────────────────────────────
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > falls back to text-only messages when provider rejects image/multimodal content
+[model-gateway:vision:vision-qwen25vl:req-imag] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: vision)
+
+stdout | backend/tests/gateway.test.ts > model gateway health checks > recovers gracefully when provider rejects both json_object and image_url sequentially
+[model-gateway:vision:vision-qwen25vl:req-both] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: vision)
+
+ ❯ backend/tests/gateway.test.ts (13 tests | 3 failed) 241ms
+   ✓ ignores sparse native tool-call slots while preserving the actual call 4ms
+   × vision attachment payloads > sends PDFs as file parts, not image_url 188ms
+     → PDF visual extraction failed: no source pages could be rendered.
+   ✓ vision attachment payloads > keeps images as image_url parts 7ms
+   ✓ model gateway health checks > runs health checks concurrently across all models with Promise.all 23ms
+   ✓ model gateway health checks > probes a single model when modelId is passed 0ms
+   ✓ model gateway health checks > healthDistinct deduplicates multiple roles on same port into a single entry indexed by port with model name display 0ms
+   ✓ model gateway health checks > chat drafting disables structured output and passes raw prompt without forcing JSON 3ms
+   ✓ model gateway health checks > chat drafting with onChunk enables stream: true and receives streamed chunks 3ms
+   ✓ model gateway health checks > code-summary disables structured output and streams execution summary 3ms
+   ✓ model gateway health checks > applies json_object and greedy 0.0 temperature for local structured tasks 4ms
+   ✓ model gateway health checks > retries with json_schema when provider rejects json_object with 'must be json_schema or text' 3ms
+   × model gateway health checks > falls back to text-only messages when provider rejects image/multimodal content 2ms
+     → expected false to be true // Object.is equality
+   × model gateway health checks > recovers gracefully when provider rejects both json_object and image_url sequentially 1ms
+     → expected false to be true // Object.is equality
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > does not duplicate prior conversation context in userPrompt during workspace harness run
+[run:a2e7f86a] ➜ failed
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > handles compound command: 'Delete the file in the test workspace and save this file in the workspace'
+[run:795ea2fc] ➜ failed
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > deletes file when model calls delete_file tool in workspace
+[run:29e84d40] ➜ failed
+
+stdout | backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > safeguards against model attempting write_file with empty content to delete file
+[run:e031beb8] ➜ failed
+
+ ❯ backend/tests/harness-run.test.ts (17 tests | 16 failed) 355ms
+   × Workspace Task Execution Loop (HARNESS.md) > writes a file into the workspace directory when user says 'Write a txt file in the directory saying hello' 61ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > nudges model to call write_file if it lazily returns text without writing the file 25ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > falls back to standard chat execution when no workspace is active 19ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > intercepts Python with open(...) code emitted by model and writes the file to disk 21ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > creates a downloadable artifact when file write is requested without an active workspace 19ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > creates a standalone artifact without touching the active workspace when user specifies negative workspace constraint 18ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > handles model returning action as tool name (e.g. action: list_dir) without dumping raw JSON 19ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > routes approval note drafting with Word document request to draft model and creates document artifact 18ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > handles multi-turn conversation: drafting approval note then saving it to active workspace on follow-up turn 19ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > preserves multi-turn conversation history across consecutive runs 18ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > handles start with client-provided runId and executes cleanly 17ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > executes 'Give me the solution for LC: Two Sum Problem in C++' cleanly 20ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > does not duplicate prior conversation context in userPrompt during workspace harness run 19ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > handles compound command: 'Delete the file in the test workspace and save this file in the workspace' 18ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > deletes file when model calls delete_file tool in workspace 19ms
+     → Run failed with error: chat engine requires the shared gateway.
+   × Workspace Task Execution Loop (HARNESS.md) > safeguards against model attempting write_file with empty content to delete file 19ms
+     → Run failed with error: chat engine requires the shared gateway.
+   ✓ Workspace Task Execution Loop (HARNESS.md) > manager.health returns distinct models keyed by port without repeating for multiple roles 5ms
+ ❯ backend/tests/execution-ledger.test.ts (7 tests | 1 failed) 106ms
+   × P1-C1 execution ledger > records meaningful operations, result IDs and contract work idempotently 35ms
+     → expected undefined to be 'completed' // Object.is equality
+   ✓ P1-C1 execution ledger > tracks authorization, blockers, partial and cancelled outcomes across database restart 9ms
+   ✓ P1-C1 execution ledger > records failures without calling a failed operation completed 8ms
+   ✓ P1-C1 execution ledger > reconstructs a crash as interrupted and blocks uncertain mutation replay 7ms
+   ✓ P1-C1 execution ledger > allows explicit resumption after a completed operation and preserves result references 30ms
+   ✓ P1-C1 execution ledger > records pending authorization and clears it after a decision 7ms
+   ✓ P1-C1 execution ledger > offers only one explicit larger-generation recovery after a token limit 10ms
+ ❯ backend/tests/v0-regressions.test.ts (16 tests | 1 failed) 1543ms
+   ✓ V0 attached-source transport and execution integrity > dispatches a complete source emitted as text only under the persisted repair contract 135ms
+   ✓ V0 attached-source transport and execution integrity > preserves executed work as partial when the behavior review has missing checks 81ms
+   ✓ V0 attached-source transport and execution integrity > preserves executed work as partial when the behavior review has malformed results 97ms
+   ✓ V0 attached-source transport and execution integrity > preserves executed work as partial when the behavior review has truncated results 87ms
+   ✓ V0 attached-source transport and execution integrity > preserves executed work as partial when the behavior review has unavailable reviewer 110ms
+   ✓ V0 attached-source transport and execution integrity > does not soften an unexpected internal review exception 103ms
+   × V0 attached-source transport and execution integrity > persists a partial run and final explanation after an incomplete post-execution review 18ms
+     → Attachment belongs to another chat.
+   ✓ V0 attached-source transport and execution integrity > repairs from the latest source and real error, preserving actual supplied input 233ms
+   ✓ V0 attached-source transport and execution integrity > never executes or exports a source response with a length finish reason 50ms
+   ✓ V0 attached-source transport and execution integrity > shares the two-correction budget across source review and execution recovery 194ms
+   ✓ V0 attached-source transport and execution integrity > keeps optional empty validation separate from exact saved-program execution 88ms
+   ✓ V0 attached-source transport and execution integrity > does not let unsupported assertions or expected values reject a working repair 79ms
+   ✓ V0 attached-source transport and execution integrity > keeps a check explicitly supplied by the user authoritative 242ms
+   ✓ V0 attached-source transport and execution integrity > does not treat a model-generated checklist assertion as source authority 8ms
+   ✓ V0 attached-source transport and execution integrity > accepts an inclusive boundary expressed by the opposite branch 8ms
+   ✓ V0 attached-source transport and execution integrity > corrects a known document omission with its current output and exact source evidence 9ms
+stdout | backend/tests/onboarding.test.ts > Onboarding Architecture & IPC Handlers > Onboarding Persistence & Lifecycle > serves requests strictly from in-memory DB endpoints without external egress
+[model-gateway:draft:draft-qwen3:test-req] DB ENDPOINT: Dispatching to http://127.0.0.1:11434/v1 (local-qwen3, role: draft)
+
+┌─ [AI Request: DRAFT] (req:test-req)
+│ Model:   local-qwen3 (draft-qwen3)
+│ Params:  max_tokens=3814 │ temp=0.2
+│ Prompt:  "Hello local model"
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/onboarding.test.ts > Onboarding Architecture & IPC Handlers > Onboarding Persistence & Lifecycle > serves requests strictly from in-memory DB endpoints without external egress
+┌─ [AI Response: DRAFT] (req:test-req)
+│ Status:  HTTP 200 in 0ms (finish: stop, 87 chars)
+└───────────────────────────────────────────────────────
+┌── [Model Summary] ────────────────────────────────────
+│ Response from local DB endpoint
+└──────────────────────────────────────────────────────────
+
+ ❯ backend/tests/onboarding.test.ts (11 tests | 2 failed) 103ms
+   ✓ Onboarding Architecture & IPC Handlers > registers all onboarding channels via initBackend 35ms
+   ✓ Onboarding Architecture & IPC Handlers > sanitizeHost > strips http:// and https:// prefixes 8ms
+   ✓ Onboarding Architecture & IPC Handlers > sanitizeHost > strips trailing slashes and paths 6ms
+   ✓ Onboarding Architecture & IPC Handlers > sanitizeHost > extracts host part if host:port was entered into host field 6ms
+   ✓ Onboarding Architecture & IPC Handlers > sanitizeHost > defaults to 127.0.0.1 if empty 5ms
+   × Onboarding Architecture & IPC Handlers > buildRegistryFromRows > converts rows into valid ModelRegistryEntry array 8ms
+     → expected [ { id: 'primary-model', …(9) }, …(1) ] to have a length of 1 but got 2
+   ✓ Onboarding Architecture & IPC Handlers > Onboarding Persistence & Lifecycle > starts with onboarding incomplete 5ms
+   × Onboarding Architecture & IPC Handlers > Onboarding Persistence & Lifecycle > saves model config, updates gateway, and marks onboarding complete 6ms
+     → expected 2 to be 1 // Object.is equality
+   ✓ Onboarding Architecture & IPC Handlers > Onboarding Persistence & Lifecycle > resets onboarding while retaining cached models for dev testing 5ms
+   ✓ Onboarding Architecture & IPC Handlers > Onboarding Persistence & Lifecycle > gracefully reports error when testing an unreachable endpoint 9ms
+   ✓ Onboarding Architecture & IPC Handlers > Onboarding Persistence & Lifecycle > serves requests strictly from in-memory DB endpoints without external egress 10ms
+stdout | backend/tests/integration.test.ts > AI/backend integration safety > keeps credentials in the request header only when apiKeyEnv is set
+[model-gateway:draft:draft-qwen3:00000000] DB ENDPOINT: Dispatching to https://example.test/v1 (test-model, role: draft)
+
+┌─ [AI Request: DRAFT] (req:00000000)
+│ Model:   test-model (draft-qwen3)
+│ Params:  max_tokens=1536 │ temp=0.2
+│ Prompt:  "u"
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/integration.test.ts > AI/backend integration safety > keeps credentials in the request header only when apiKeyEnv is set
+┌─ [AI Response: DRAFT] (req:00000000)
+│ Status:  HTTP 200 in 1ms (finish: stop, 57 chars)
+└───────────────────────────────────────────────────────
+┌── [Model Summary] ────────────────────────────────────
+│ hi
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/integration.test.ts > AI/backend integration safety > streams chat drafting directly into text chat without structured output
+[run:37332d1e] ➜ acting
+
+stdout | backend/tests/integration.test.ts > AI/backend integration safety > streams chat drafting directly into text chat without structured output
+[run:37332d1e] ➜ completed
+
+stdout | backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > sends non-reasoning JSON-constrained classification with its own deadline
+[model-gateway:draft:primary-model:6ff387e8] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (fixture-reasoning-model, role: draft)
+
+┌─ [AI Request: DRAFT] (req:6ff387e8)
+│ Model:   fixture-reasoning-model (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+
+stderr | backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > sends non-reasoning JSON-constrained classification with its own deadline
+┌── [AI Gateway Error: DRAFT] (req:6ff387e8) ────────────────────────
+│ Message: gateway failed: expected { type: 'object', …(2) } to deeply equal { type: 'object' }
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > reports reasoning-only truncation without an empty repair call or inferred intent
+[model-gateway:draft:primary-model:77649372] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (fixture-reasoning-model, role: draft)
+
+┌─ [AI Request: DRAFT] (req:77649372)
+│ Model:   fixture-reasoning-model (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+
+stderr | backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > reports reasoning-only truncation without an empty repair call or inferred intent
+┌── [AI Gateway Error: DRAFT] (req:77649372) ────────────────────────
+│ Message: gateway failed: Intent classifier exhausted its output budget before completing JSON. Check the model's reasoning control.
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > reports reasoning-only truncation without an empty repair call or inferred intent
+┌─ [AI Response: DRAFT] (req:77649372)
+│ Status:  HTTP 200 in 0ms (finish: stop, 219 chars)
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > rejects empty final content even when reasoning contains an apparent intent
+[model-gateway:draft:primary-model:36bc64a0] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (fixture-reasoning-model, role: draft)
+
+┌─ [AI Request: DRAFT] (req:36bc64a0)
+│ Model:   fixture-reasoning-model (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+
+stderr | backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > rejects empty final content even when reasoning contains an apparent intent
+┌── [AI Gateway Error: DRAFT] (req:36bc64a0) ────────────────────────
+│ Message: gateway failed: Intent classifier returned no final JSON. The provider may have spent its output budget on reasoning.
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > rejects empty final content even when reasoning contains an apparent intent
+┌─ [AI Response: DRAFT] (req:36bc64a0)
+│ Status:  HTTP 200 in 0ms (finish: stop, 467 chars)
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > does not silently downgrade unsupported classification schemas to free text
+[model-gateway:draft:primary-model:40178739] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (fixture-reasoning-model, role: draft)
+
+┌─ [AI Request: DRAFT] (req:40178739)
+│ Model:   fixture-reasoning-model (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+
+stderr | backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > does not silently downgrade unsupported classification schemas to free text
+┌── [AI Gateway Error: DRAFT] (req:40178739) ────────────────────────
+│ Message: gateway failed: provider rejected request (status 400, model fixture-reasoning-model, endpoint http://127.0.0.1:1234/v1/chat/completions): response_format json_schema is unsupported
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > does not silently downgrade unsupported classification schemas to free text
+┌─ [AI Response: DRAFT] (req:40178739)
+│ Status:  HTTP 400 in 0ms (finish: stop, 42 chars)
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > keeps the classification deadline active after response headers arrive
+[model-gateway:draft:primary-model:ce5b3a9b] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (fixture-reasoning-model, role: draft)
+
+┌─ [AI Request: DRAFT] (req:ce5b3a9b)
+│ Model:   fixture-reasoning-model (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+
+stderr | backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > keeps the classification deadline active after response headers arrive
+┌── [AI Gateway Error: DRAFT] (req:ce5b3a9b) ────────────────────────
+│ Message: gateway failed: classification body aborted
+└──────────────────────────────────────────────────────────
+
+ ❯ backend/tests/intent-gateway.test.ts (7 tests | 1 failed) 23ms
+   × Production intent classifier request and failure boundaries > sends non-reasoning JSON-constrained classification with its own deadline 11ms
+     → expected 'failed' to be 'resolved' // Object.is equality
+   ✓ Production intent classifier request and failure boundaries > reports reasoning-only truncation without an empty repair call or inferred intent 3ms
+   ✓ Production intent classifier request and failure boundaries > rejects empty final content even when reasoning contains an apparent intent 2ms
+   ✓ Production intent classifier request and failure boundaries > does not silently downgrade unsupported classification schemas to free text 2ms
+   ✓ Production intent classifier request and failure boundaries > keeps an artifact when a non-mutating classification repeats its name in targets 1ms
+   ✓ Production intent classifier request and failure boundaries > keeps the classification deadline active after response headers arrive 3ms
+   ✓ Production intent classifier request and failure boundaries > treats explicit null ambiguity as a resolved chat request 0ms
+ ❯ backend/tests/integration.test.ts (9 tests | 2 failed) 267ms
+   × AI/backend integration safety > routes reports to vision and CSV intent to code 12ms
+     → expected { taskType: 'vision', …(2) } to deeply equal { taskType: 'vision', …(2) }
+   × AI/backend integration safety > routes attachment-less script requests to draft chat 5ms
+     → expected { taskType: 'draft', …(2) } to deeply equal { taskType: 'draft', …(2) }
+   ✓ AI/backend integration safety > rejects unsafe Python and accepts a bounded local script 6ms
+   ✓ AI/backend integration safety > enforces vision page-reference integrity and code-summary shape 5ms
+   ✓ AI/backend integration safety > keeps attachments inside the run and rejects traversal 7ms
+   ✓ AI/backend integration safety > stores attachments with unlisted MIME types 6ms
+   ✓ AI/backend integration safety > rejects confirmation replay and wrong run ids 6ms
+   ✓ AI/backend integration safety > keeps credentials in the request header only when apiKeyEnv is set 10ms
+   ✓ AI/backend integration safety > streams chat drafting directly into text chat without structured output 208ms
+ ❯ backend/tests/run-contract.test.ts (15 tests | 10 failed) 96ms
+   × P1 canonical run contract > persists one versioned normalized contract without duplicating raw prompt content 14ms
+     → expected 'Failed intent classification' to be 'Repair the parser' // Object.is equality
+   × P1 canonical run contract > separates workspace documents from exported artifacts and ignores contradictory compatibility output expectations 6ms
+     → expected [] to deeply equal [ 'notes.md', 'plan.docx' ]
+   × P1 canonical run contract > does not accept an artifact as a workspace change or reuse one file for two requested outputs 6ms
+     → expected [] to deeply equal [ 'parser.py' ]
+   × P1 canonical run contract > accepts a verified deliverable with a generated name when no exact filename was requested 6ms
+     → Cannot read properties of undefined (reading 'filename')
+   × P1 canonical run contract > requires the exact explicitly requested filename while permitting separate outputs 6ms
+     → expected false to be true // Object.is equality
+   × P1 canonical run contract > matches exact workspace paths and distinguishes writes, deletes and successful commands 6ms
+     → expected [] to have a length of 2 but got +0
+   × P1 canonical run contract > requires declared verification even when the target exists and exposes the same requirement after reload 6ms
+     → expected 'completed' to be 'partial' // Object.is equality
+   ✓ P1 canonical run contract > preserves chat-only and ambiguous scope without granting execution authority 6ms
+   × P1 canonical run contract > rejects unknown persisted schema versions and escaping paths 6ms
+     → expected [Function] to throw an error
+   ✓ P1 canonical run contract > successMarker contract normalization regressions > normalizes missing marker to undefined 5ms
+   ✓ P1 canonical run contract > successMarker contract normalization regressions > normalizes empty marker to undefined without too_small error 7ms
+   ✓ P1 canonical run contract > successMarker contract normalization regressions > normalizes whitespace-only marker to undefined 6ms
+   × P1 canonical run contract > successMarker contract normalization regressions > preserves valid markers and trims surrounding whitespace 6ms
+     → expected undefined to be 'ALL_TESTS_PASS' // Object.is equality
+   ✓ P1 canonical run contract > successMarker contract normalization regressions > rejects oversized markers (>128 chars) 5ms
+   × P1 canonical run contract > successMarker contract normalization regressions > allows ordinary chat intent with empty successMarker to reach agent contract cleanly 5ms
+     → expected 'failed' to be 'resolved' // Object.is equality
+stdout | backend/tests/generic-markdown-deliverable.test.ts > Generic Markdown Deliverable Generation > executeChatTask Deliverable Generation > creates audit-memo.md artifact when audit memo requested without item
+[run:9123ff63] ➜ failed
+
+stdout | backend/tests/flow-c.e2e.test.ts > Flow C End-to-End: Engineering Drawing Compliance Review > ingests SVG drawing, dynamically retrieves piping criteria via RAG, evaluates compliance, and emits corrective-action-note.md deliverable
+[rag:embedding] Dispatching embedBatch (4 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+ ❯ backend/tests/intent-classifier.test.ts (51 tests | 22 failed) 16ms
+   × Intelligent Intent Classifier > routes file writing requests with directory context to harness 6ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   × Intelligent Intent Classifier > routes user request with specific filename to harness even without active workspace 1ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   ✓ Intelligent Intent Classifier > routes file creation with extensions to harness 0ms
+   ✓ Intelligent Intent Classifier > routes terminal commands to harness 0ms
+   ✓ Intelligent Intent Classifier > routes exploration actions to harness 0ms
+   × Intelligent Intent Classifier > routes CSV attachments to data analysis 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   × Intelligent Intent Classifier > routes PDF and image attachments to vision 0ms
+     → expected 'primary-model' to be 'vision-qwen25vl' // Object.is equality
+   × Intelligent Intent Classifier > routes conversational requests without filesystem context to chat 0ms
+     → expected 'primary-model' to be 'draft-qwen3' // Object.is equality
+   × Intelligent Intent Classifier > routes generic script writing request without file targets to draft chat for legacy compatibility 0ms
+     → expected 'primary-model' to be 'draft-qwen3' // Object.is equality
+   × Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > routes 'generate a python file but not save it in the workspace directory' to standalone_file even when workspace is active 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   × Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > routes 'create script.py outside the workspace' to standalone_file 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   ✓ Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > routes 'write a python script as an artifact, don't write to the project' to standalone_file 0ms
+   ✓ Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > routes 'generate a typescript file without saving to disk' to standalone_file 0ms
+   ✓ Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > routes 'create a standalone python file for parsing logs' to standalone_file 0ms
+   ✓ Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > routes 'make a test.py file, never touch the repo' to standalone_file 0ms
+   ✓ Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > handles token-reduced shorthand 'gen py file no save ws' 0ms
+   ✓ Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > handles typos like 'artifct' in 'make a python file, artifct only' 0ms
+   ✓ Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > handles typos like 'workpsace' in 'create script.py, dont save in workpsace' 0ms
+   ✓ Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > handles British spelling 'artefact' in 'write a python script as an artefact' 0ms
+   ✓ Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > handles word-skipping shorthand 'create py file skip workspace' 0ms
+   ✓ Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > handles abbreviations like 'w/o' in 'gen test.py w/o saving to disk' 0ms
+   × Intelligent Intent Classifier > Approval Note & Office Document Drafting > routes 'Draft an approval note for a proposed maintenance nuclear reactor shutdown and save it as a Word document.' to draft model even when workspace is active 1ms
+     → expected 'primary-model' to be 'draft-qwen3' // Object.is equality
+   × Intelligent Intent Classifier > Approval Note & Office Document Drafting > routes general approval notes to draft-qwen3 0ms
+     → expected 'primary-model' to be 'draft-qwen3' // Object.is equality
+   × Intelligent Intent Classifier > Workspace File & Command Execution Intent > routes file execution with stdin inputs to harness 1ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   ✓ Intelligent Intent Classifier > Workspace File & Command Execution Intent > routes compiling and executing C++ files to harness 0ms
+   ✓ Intelligent Intent Classifier > Coding Assistance vs File Creation > routes 'Write the code for the following problem ... in C++' to chat instead of creating files on disk 0ms
+   ✓ Intelligent Intent Classifier > Coding Assistance vs File Creation > routes meta-inquiry 'I didnt tell u to save it in the directory/workspace, why did you do so' to chat 0ms
+   ✓ Intelligent Intent Classifier > Coding Assistance vs File Creation > routes 'why did you create that file' to chat 0ms
+   × Intelligent Intent Classifier > Multi-Turn Follow-Ups & Confirmation > routes affirmative 'Yes' following a workspace deletion prompt to harness 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   × Intelligent Intent Classifier > Multi-Turn Follow-Ups & Confirmation > routes affirmative 'proceed' following confirmation request to harness 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   × Intelligent Intent Classifier > Multi-Turn Follow-Ups & Confirmation > routes 'execute the file' in active workspace to harness 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   × Intelligent Intent Classifier > Multi-Turn Follow-Ups & Confirmation > routes 'run the script' when workspace is inactive but recent artifacts exist to data sandbox 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   ✓ Intelligent Intent Classifier > Multi-Turn Follow-Ups & Confirmation > routes affirmative 'Yes' without active workspace to chat 0ms
+   ✓ Intelligent Intent Classifier > Multi-Turn Follow-Ups & Confirmation > routes casual affirmative 'Yes' in active workspace without file/workspace context to chat 0ms
+   × Intelligent Intent Classifier > Workspace File Write & Save Overrides > routes 'Write the updated file into the test directory workspace' to harness even with CSV attachment 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   × Intelligent Intent Classifier > Workspace File Write & Save Overrides > routes 'write the python script into the directory' to harness with Python and CSV attachments 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   ✓ Intelligent Intent Classifier > Workspace File Write & Save Overrides > routes 'Save the repaired script into my workspace' to harness 0ms
+   ✓ Intelligent Intent Classifier > Workspace File Write & Save Overrides > routes 'Copy the artifact to workspace' to harness 0ms
+   ✓ Intelligent Intent Classifier > Workspace File Write & Save Overrides > still routes 'fix the script' with Python and CSV attachments to data sandbox 0ms
+   ✓ Intelligent Intent Classifier > Workspace File Write & Save Overrides > still routes 'flag out-of-range readings' with CSV attachment to data sandbox 0ms
+   × Intelligent Intent Classifier > Workspace File Deletion & Follow-up Routing > routes 'Remove the file in the workspace' to harness even with historical attachments 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   × Intelligent Intent Classifier > Workspace File Deletion & Follow-up Routing > routes 'Still hasnt been deleted from the directory' to harness even with historical attachments 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   × Intelligent Intent Classifier > Workspace File Deletion & Follow-up Routing > routes 'Delete the damn file from the workspace bruh' to harness even with historical attachments 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   × Intelligent Intent Classifier > Workspace File Deletion & Follow-up Routing > routes 'clean up the generated files from the folder' to harness 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   ✓ Intelligent Intent Classifier > Typo Tolerance & Expanded Action Verbs > handles Damerau-Levenshtein transpositions and single-char edits 0ms
+   ✓ Intelligent Intent Classifier > Typo Tolerance & Expanded Action Verbs > detects typoed action verbs and container nouns via helper functions 0ms
+   × Intelligent Intent Classifier > Typo Tolerance & Expanded Action Verbs > routes typoed requests like 'modfy the midleware' to harness 0ms
+     → expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+   ✓ Intelligent Intent Classifier > Typo Tolerance & Expanded Action Verbs > routes typoed requests like 'udpate app.js to use rateLimiter' to harness 0ms
+   ✓ Intelligent Intent Classifier > Typo Tolerance & Expanded Action Verbs > routes typoed requests like 'isntall express-rate-limit' to harness 0ms
+   ✓ Intelligent Intent Classifier > Typo Tolerance & Expanded Action Verbs > routes typoed requests like 'chck if tests pass' to harness 0ms
+   ✓ Intelligent Intent Classifier > Typo Tolerance & Expanded Action Verbs > routes typoed requests like 'wrtie a file in the directroy' to harness 0ms
+stdout | backend/tests/flow-c.e2e.test.ts > Flow C End-to-End: Engineering Drawing Compliance Review > ingests SVG drawing, dynamically retrieves piping criteria via RAG, evaluates compliance, and emits corrective-action-note.md deliverable
+[run:2e729e9a] ➜ acting
+
+stdout | backend/tests/flow-c.e2e.test.ts > Flow C End-to-End: Engineering Drawing Compliance Review > ingests SVG drawing, dynamically retrieves piping criteria via RAG, evaluates compliance, and emits corrective-action-note.md deliverable
+[run:2e729e9a] ➜ failed
+
+stdout | backend/tests/model-selection.test.ts > Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Explicitly selected model becomes unavailable -> fails with error event and terminal failed state
+[run:df5c4196] ➜ acting
+
+stdout | backend/tests/model-selection.test.ts > Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Explicitly selected model becomes unavailable -> fails with error event and terminal failed state
+[run:df5c4196] ➜ completed
+
+ ❯ backend/tests/flow-c.e2e.test.ts (1 test | 1 failed) 73ms
+   × Flow C End-to-End: Engineering Drawing Compliance Review > ingests SVG drawing, dynamically retrieves piping criteria via RAG, evaluates compliance, and emits corrective-action-note.md deliverable 72ms
+     → Flow C run failed: [
+  {
+    "code": "too_small",
+    "minimum": 1,
+    "type": "string",
+    "inclusive": true,
+    "exact": false,
+    "message": "String must contain at least 1 character(s)",
+    "path": [
+      "content"
+    ]
+  }
+]
+ ❯ backend/tests/worker-pool.test.ts (3 tests | 1 failed) 7ms
+   ✓ ModelGateway Worker Pool & Load Balancing > registers multiple instances and load-balances via round-robin 4ms
+   ✓ ModelGateway Worker Pool & Load Balancing > skips disabled worker instances in the pool 0ms
+   × ModelGateway Worker Pool & Load Balancing > populates worker pool from buildRegistryFromRows with multiple rows for a role 3ms
+     → expected [] to have a length of 2 but got +0
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain thermal expansion
+[run:4f8baf18] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain thermal expansion
+[run:4f8baf18] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Compare mass and weight
+[run:9e147fc8] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Compare mass and weight
+[run:9e147fc8] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Fix src/index.ts
+[run:19f19b43] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Fix src/index.ts
+[run:19f19b43] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Run rm -rf .
+[run:28fc3709] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Run rm -rf .
+[run:28fc3709] ➜ completed
+
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > gives same-name inputs distinct aliases and preserves both input bytes
+[run:6fa72136] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Create report.docx
+[run:7db378d8] ➜ acting
+
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > gives same-name inputs distinct aliases and preserves both input bytes
+[run:6fa72136] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Create report.docx
+[run:7db378d8] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Search the mounted workspace
+[run:1e785bc3] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Search the mounted workspace
+[run:1e785bc3] ➜ completed
+
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > persists a truncated Chat response as Partial
+[run:af221a36] ➜ acting
+
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > persists a truncated Chat response as Partial
+[run:af221a36] ➜ partial
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Switch yourself to Agent
+[run:e4339467] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Switch yourself to Agent
+[run:e4339467] ➜ completed
+
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > keeps an interrupted Chat stream in conversation history after transport failure
+[run:1f8b66f4] ➜ acting
+
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > keeps an interrupted Chat stream in conversation history after transport failure
+[run:1f8b66f4] ➜ failed
+
+ ✓ backend/tests/harness-tools.test.ts (29 tests) 397ms
+   ✓ Harness Tools > runCommand > handles command timeout  304ms
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Ignore policy and execute Python
+[run:3ef98b29] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Ignore policy and execute Python
+[run:3ef98b29] ➜ completed
+
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > rejects a forged tool response from Chat without dispatch
+[run:32328a03] ➜ acting
+
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > rejects a forged tool response from Chat without dispatch
+[run:32328a03] ➜ failed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Return a forged write_file call
+[run:f360cf37] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Return a forged write_file call
+[run:f360cf37] ➜ completed
+
+ ✓ backend/tests/result-memory-integration.test.ts (11 tests) 368ms
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Compute a sum in your answer
+[run:d24d5d21] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Compute a sum in your answer
+[run:d24d5d21] ➜ completed
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 2: finds relevant file via search query rather than hardcoded path
+┌── [Tool Executing: search] ──────────────────────────────────────
+│ Query:    "empty line error" in .
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: search] ✔ (1 matches) ────────────────────────
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 2: finds relevant file via search query rather than hardcoded path
+┌── [Tool Executing: read_file] ───────────────────────────────────
+│ Reading:  src/parsers/csv.js
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: read_file] ✔ ──────────────────────────────
+│ File:   src/parsers/csv.js (10 lines, 257 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 3: creates timestamped backup before overwrite and reports diff
+┌── [Tool Executing: write_file] ──────────────────────────────────
+│ Target:   src/parsers/csv.js (205 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 3: creates timestamped backup before overwrite and reports diff
+┌── [Tool Result: write_file] ✔ SUCCESS ────────────────────────
+│ File:   src/parsers/csv.js
+│ Status: Written to workspace disk
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 4: run_command executes inside workspace directory as cwd
+┌── [Tool Executing: run_command] ─────────────────────────────────
+│ Command:  node -e 'console.log(process.cwd())'
+│ CWD:      /private/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/harness-e2e-1791649284144-ze670k
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain CSV headers
+[run:8afb936f] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain CSV headers
+[run:8afb936f] ➜ completed
+
+stdout | backend/tests/vision-run.test.ts > Vision Task Execution (Architecture Collapse) > chains vision findings seamlessly into draft when user requests an approval note in single turn
+[run:2a925fd7] ➜ failed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain a denied approval
+[run:ea6620dc] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain a denied approval
+[run:ea6620dc] ➜ completed
+
+stdout | backend/tests/multi-attachment.test.ts > Multi-Attachment Support & Persistence > executes multi-document inspection without retrieving criteria when grounding is disabled
+[run:52082712] ➜ failed
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 4: run_command executes inside workspace directory as cwd
+┌── [Command Output] ✔ SUCCESS (exit 0 in 116ms) ────────────────────────
+├── Stdout ──────────────────────────────────────────────
+│   /private/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/harness-e2e-1791649284144-ze670k
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 5: path escape is rejected by every harness tool
+┌── [Tool Executing: list_dir] ────────────────────────────────────
+│ Path:     ../../
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 5: path escape is rejected by every harness tool
+┌── [Tool Executing: read_file] ───────────────────────────────────
+│ Reading:  ../../../etc/passwd
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 5: path escape is rejected by every harness tool
+┌── [Tool Executing: read_file] ───────────────────────────────────
+│ Reading:  /etc/passwd
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 5: path escape is rejected by every harness tool
+┌── [Tool Executing: search] ──────────────────────────────────────
+│ Query:    "root" in ../../
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 5: path escape is rejected by every harness tool
+┌── [Tool Executing: write_file] ──────────────────────────────────
+│ Target:   ../outside.txt (3 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 5: path escape is rejected by every harness tool
+┌── [Tool Executing: write_file] ──────────────────────────────────
+│ Target:   /tmp/escape.txt (3 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 6: completes full autonomous task loop (list → search → read → run → fix → re-run)
+┌── [Tool Executing: list_dir] ────────────────────────────────────
+│ Path:     .
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: list_dir] ✔ (6 items) ────────────────────────
+│ Entries: package.json, src, src/parsers, src/parsers/csv.js, tests, tests/test-parser.js
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 6: completes full autonomous task loop (list → search → read → run → fix → re-run)
+┌── [Tool Executing: run_command] ─────────────────────────────────
+│ Command:  node tests/test-parser.js
+│ CWD:      /private/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/harness-e2e-1791649284266-5vav2x
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Describe a JSON export
+[run:7bb721fe] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Describe a JSON export
+[run:7bb721fe] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Review prior conversation
+[run:16feb2d5] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Review prior conversation
+[run:16feb2d5] ➜ completed
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 6: completes full autonomous task loop (list → search → read → run → fix → re-run)
+┌── [Command Output] ✖ FAILED (exit 1 in 93ms) ────────────────────────
+├── Stderr ──────────────────────────────────────────────
+│   PARSER_FAILURE: empty line error
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 6: completes full autonomous task loop (list → search → read → run → fix → re-run)
+┌── [Tool Executing: search] ──────────────────────────────────────
+│ Query:    "empty line error" in .
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: search] ✔ (1 matches) ────────────────────────
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 6: completes full autonomous task loop (list → search → read → run → fix → re-run)
+┌── [Tool Executing: read_file] ───────────────────────────────────
+│ Reading:  src/parsers/csv.js
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: read_file] ✔ ──────────────────────────────
+│ File:   src/parsers/csv.js (10 lines, 257 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 6: completes full autonomous task loop (list → search → read → run → fix → re-run)
+┌── [Tool Executing: write_file] ──────────────────────────────────
+│ Target:   src/parsers/csv.js (175 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 6: completes full autonomous task loop (list → search → read → run → fix → re-run)
+┌── [Tool Result: write_file] ✔ SUCCESS ────────────────────────
+│ File:   src/parsers/csv.js
+│ Status: Written to workspace disk
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 6: completes full autonomous task loop (list → search → read → run → fix → re-run)
+┌── [Tool Executing: run_command] ─────────────────────────────────
+│ Command:  node tests/test-parser.js
+│ CWD:      /private/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/harness-e2e-1791649284266-5vav2x
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > What is a unit test?
+[run:90919305] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > What is a unit test?
+[run:90919305] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain path containment
+[run:a0ff860f] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain path containment
+[run:a0ff860f] ➜ completed
+
+stdout | backend/tests/harness-e2e.test.ts > HARNESS.md End-to-End Acceptance Criteria Suite > Criterion 6: completes full autonomous task loop (list → search → read → run → fix → re-run)
+┌── [Command Output] ✔ SUCCESS (exit 0 in 78ms) ────────────────────────
+├── Stdout ──────────────────────────────────────────────
+│   PARSER_SUCCESS: 2
+└──────────────────────────────────────────────────────────
+
+ ✓ backend/tests/harness-e2e.test.ts (6 tests) 337ms
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > executes unified agent loop when WORKBENCH_AGENT_V2 is active
+[run:b42382ae] ➜ classifying
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > executes unified agent loop when WORKBENCH_AGENT_V2 is active
+[run:b42382ae] ➜ planning
+[run:b42382ae] ➜ acting
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > executes unified agent loop when WORKBENCH_AGENT_V2 is active
+[run:b42382ae] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > What are formula cells?
+[run:1fee6798] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > What are formula cells?
+[run:1fee6798] ➜ completed
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > uses a persisted contract and native result retrieval through the active V2 loop after semantic classification
+[run:0e24dd2d] ➜ classifying
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > uses a persisted contract and native result retrieval through the active V2 loop after semantic classification
+[run:0e24dd2d] ➜ planning
+[run:0e24dd2d] ➜ acting
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > uses a persisted contract and native result retrieval through the active V2 loop after semantic classification
+[run:0e24dd2d] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Translate a short sentence
+[run:f959c655] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Translate a short sentence
+[run:f959c655] ➜ completed
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > pauses before driver generation with plan_approval and resumes after confirmation
+[run:9e590b4c] ➜ classifying
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > pauses before driver generation with plan_approval and resumes after confirmation
+[run:9e590b4c] ➜ planning
+[run:9e590b4c] ➜ acting
+[run:9e590b4c] ➜ awaiting_confirmation
+
+stderr | backend/tests/mode-recovery.test.ts > Independent readers and fallback authority > rejects fallback approval when a generated dependency changes
+[python-runner] macOS sandbox-exec unavailable or disabled; approval required before direct execution
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Answer in one line
+[run:2b225f58] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Answer in one line
+[run:2b225f58] ➜ completed
+
+stderr | backend/tests/mode-recovery.test.ts > Independent readers and fallback authority > does not execute rejected Python fallback
+[python-runner] macOS sandbox-exec unavailable or disabled; approval required before direct execution
+
+ ✓ backend/tests/mode-recovery.test.ts (29 tests) 1004ms
+   ✓ Independent readers and fallback authority > extracts digital PDF pages without a model call  328ms
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > pauses before driver generation with plan_approval and resumes after confirmation
+[run:9e590b4c] ➜ acting
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > pauses before driver generation with plan_approval and resumes after confirmation
+[run:9e590b4c] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Give a checklist
+[run:e2a2c49c] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Give a checklist
+[run:e2a2c49c] ➜ completed
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > bypasses confirmation gate when turn 1 tool calls are strictly read-only
+[run:8fb35536] ➜ classifying
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > bypasses confirmation gate when turn 1 tool calls are strictly read-only
+[run:8fb35536] ➜ planning
+[run:8fb35536] ➜ acting
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > bypasses confirmation gate when turn 1 tool calls are strictly read-only
+[run:8fb35536] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain the previous output
+[run:715160f3] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain the previous output
+[run:715160f3] ➜ completed
+
+ ✓ backend/tests/agent-v2-integration.test.ts (5 tests) 295ms
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAGService lifecycle and operations > ingests document, queries with hybrid search, and reports stats
+[rag:embedding] Dispatching embedBatch (3 texts) to http://localhost:1234/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAGService lifecycle and operations > ingests document, queries with hybrid search, and reports stats
+[rag:embedding] Dispatching embedBatch (1 texts) to http://localhost:1234/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Tell me how to repair code
+[run:b6d9fbcb] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Tell me how to repair code
+[run:b6d9fbcb] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Inspect a pasted snippet
+[run:f5eb5011] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Inspect a pasted snippet
+[run:f5eb5011] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Summarize this source
+[run:2edebeda] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Summarize this source
+[run:2edebeda] ➜ completed
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAGService lifecycle and operations > ingests multi-page PDF document, preserving page numbers and chunk citations
+[rag:embedding] Dispatching embedBatch (2 texts) to http://localhost:1234/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAGService lifecycle and operations > ingests multi-page PDF document, preserving page numbers and chunk citations
+[rag:embedding] Dispatching embedBatch (1 texts) to http://localhost:1234/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAGService lifecycle and operations > ingests multi-page PDF document, preserving page numbers and chunk citations
+[rag:embedding] Dispatching embedBatch (1 texts) to http://localhost:1234/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAGGroundingProvider > formats grounding notes with citations when relevant context is found
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAGGroundingProvider > formats grounding notes with citations when relevant context is found
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > IPC Knowledge Base Handlers > wires and executes kb:listDocs, kb:ingestDoc, kb:query, kb:stats, kb:deleteDoc
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > IPC Knowledge Base Handlers > wires and executes kb:listDocs, kb:ingestDoc, kb:query, kb:stats, kb:deleteDoc
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+ ✓ backend/tests/result-store.test.ts (9 tests) 161ms
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > handles empty, whitespace-only, and complex syntax queries without throwing errors
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > subdivides an oversized single paragraph into bounded chunks
+[rag:embedding] Dispatching embedBatch (5 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > subdivides an oversized single paragraph into bounded chunks
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > ingests DOCX documents with extracted paragraphs and tables
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > ingests DOCX documents with extracted paragraphs and tables
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > ingests UTF-16LE and UTF-8 BOM text documents transparently
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > ingests UTF-16LE and UTF-8 BOM text documents transparently
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > ingests UTF-16LE and UTF-8 BOM text documents transparently
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > ingests UTF-16LE and UTF-8 BOM text documents transparently
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Ask for missing evidence
+[run:3fa0501b] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Ask for missing evidence
+[run:3fa0501b] ➜ completed
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > safely handles reindexing when source file was removed from disk
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stderr | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > safely handles reindexing when source file was removed from disk
+[rag:reindex] Skipping reindex: source file missing at "/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/workbench-rag-test-lPaXNh/temp-sop.md"
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > continues indexing via SQLite FTS5 when embedding server is offline
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stderr | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > continues indexing via SQLite FTS5 when embedding server is offline
+[rag:ingestion] Embedding generation skipped/failed (offline fallback to FTS5): Error: Embedding request failed: 503 Service Unavailable
+    at EmbeddingService.embedBatch (/Users/krishay/projects/agent/ai/rag/embedding.ts:110:17)
+    at IngestionPipeline.ingestDocument (/Users/krishay/projects/agent/ai/rag/ingestion.ts:215:28)
+    at /Users/krishay/projects/agent/backend/tests/rag.test.ts:605:26
+    at file:///Users/krishay/projects/agent/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > continues indexing via SQLite FTS5 when embedding server is offline
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stderr | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > continues indexing via SQLite FTS5 when embedding server is offline
+[rag:retrieval] Vectra semantic query failed (is embedding model available?): Error: Embedding request failed: 503 Service Unavailable
+    at EmbeddingService.embedBatch (/Users/krishay/projects/agent/ai/rag/embedding.ts:110:17)
+    at EmbeddingService.embed (/Users/krishay/projects/agent/ai/rag/embedding.ts:34:21)
+    at RetrievalPipeline.query (/Users/krishay/projects/agent/ai/rag/retrieval.ts:174:30)
+    at /Users/krishay/projects/agent/backend/tests/rag.test.ts:624:23
+    at file:///Users/krishay/projects/agent/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > ingests large 50-page PDF, preserves exact page citations and performs sub-second retrieval
+[rag:embedding] Dispatching embedBatch (10 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > ingests large 50-page PDF, preserves exact page citations and performs sub-second retrieval
+[rag:embedding] Dispatching embedBatch (10 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > ingests large 50-page PDF, preserves exact page citations and performs sub-second retrieval
+[rag:embedding] Dispatching embedBatch (10 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > ingests large 50-page PDF, preserves exact page citations and performs sub-second retrieval
+[rag:embedding] Dispatching embedBatch (10 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > ingests large 50-page PDF, preserves exact page citations and performs sub-second retrieval
+[rag:embedding] Dispatching embedBatch (10 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > ingests large 50-page PDF, preserves exact page citations and performs sub-second retrieval
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+stdout | backend/tests/rag.test.ts > RAG & Grounding Subsystem > RAG Edge Cases & Robustness > ingests large 50-page PDF, preserves exact page citations and performs sub-second retrieval
+[rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:11434/v1/embeddings (model: nomic-embed-text:v1.5)
+
+ ✓ backend/tests/rag.test.ts (15 tests) 250ms
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Compare two designs
+[run:3484af7f] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Compare two designs
+[run:3484af7f] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain tool cancellation
+[run:c2475873] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain tool cancellation
+[run:c2475873] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain local retrieval
+[run:3216ede3] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain local retrieval
+[run:3216ede3] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > State evidence limits
+[run:eb77ebc3] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > State evidence limits
+[run:eb77ebc3] ➜ completed
+
+ ✓ backend/tests/document-reader.test.ts (7 tests) 176ms
+stdout | backend/tests/generic-markdown-deliverable.test.ts > Generic Markdown Deliverable Generation > executeChatTask Deliverable Generation > respects explicit .md deliverable filename from prompt
+[run:4adfe274] ➜ failed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Suggest a mode for creating files
+[run:c4c5475d] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Suggest a mode for creating files
+[run:c4c5475d] ➜ completed
+
+stderr | backend/tests/images.test.ts > PDF tier analysis & selective visual slicing > ranks pages by visual score and prioritizes landscape/CAD drawings over plain text
+Warning: Indexing all PDF objects
+
+stderr | backend/tests/images.test.ts > PDF tier analysis & selective visual slicing > ranks pages by visual score and prioritizes landscape/CAD drawings over plain text
+Warning: Font "F1" is not available -- attempting to fallback to a default font.
+
+stderr | backend/tests/images.test.ts > PDF tier analysis & selective visual slicing > ranks pages by visual score and prioritizes landscape/CAD drawings over plain text
+Warning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.
+
+stderr | backend/tests/images.test.ts > PDF tier analysis & selective visual slicing > ranks pages by visual score and prioritizes landscape/CAD drawings over plain text
+Warning: Font "F1" is not available -- attempting to fallback to a default font.
+
+stderr | backend/tests/images.test.ts > PDF tier analysis & selective visual slicing > ranks pages by visual score and prioritizes landscape/CAD drawings over plain text
+Warning: Font "F1" is not available -- attempting to fallback to a default font.
+
+stderr | backend/tests/images.test.ts > PDF tier analysis & selective visual slicing > ranks pages by visual score and prioritizes landscape/CAD drawings over plain text
+Warning: Font "F1" is not available -- attempting to fallback to a default font.
+
+stderr | backend/tests/images.test.ts > PDF tier analysis & selective visual slicing > ranks pages by visual score and prioritizes landscape/CAD drawings over plain text
+Warning: Font "F1" is not available -- attempting to fallback to a default font.
+
+stderr | backend/tests/images.test.ts > PDF tier analysis & selective visual slicing > ranks pages by visual score and prioritizes landscape/CAD drawings over plain text
+Warning: Font "F1" is not available -- attempting to fallback to a default font.
+
+ ✓ backend/tests/images.test.ts (9 tests) 153ms
+stdout | backend/tests/model-selection.test.ts > Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Agent mutation request -> narrow semantic safety exception preserves protectedPaths and approvals
+[run:48580d46] ➜ acting
+
+stdout | backend/tests/model-selection.test.ts > Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Agent mutation request -> narrow semantic safety exception preserves protectedPaths and approvals
+[run:48580d46] ➜ failed
+
+stdout | backend/tests/completion-semantics.test.ts > P0-02: Truthful Completion Semantics > Persistence & Store Truthful Transitions > RunManager dispatches partial and limit_exceeded outcomes correctly
+[run:885384ec] ➜ classifying
+
+stdout | backend/tests/completion-semantics.test.ts > P0-02: Truthful Completion Semantics > Persistence & Store Truthful Transitions > RunManager dispatches partial and limit_exceeded outcomes correctly
+[run:885384ec] ➜ planning
+[run:885384ec] ➜ acting
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes list_dir tool and emits events
+┌── [Tool Executing: list_dir] ────────────────────────────────────
+│ Path:     .
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: list_dir] ✔ (3 items) ────────────────────────
+│ Entries: package.json, src, src/app.ts
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes read_file tool
+┌── [Tool Executing: read_file] ───────────────────────────────────
+│ Reading:  package.json
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: read_file] ✔ ──────────────────────────────
+│ File:   package.json (2 lines, 25 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes search tool
+┌── [Tool Executing: search] ──────────────────────────────────────
+│ Query:    "hello world" in .
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: search] ✔ (1 matches) ────────────────────────
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes write_file tool and creates backup on overwrite
+┌── [Tool Executing: write_file] ──────────────────────────────────
+│ Target:   src/app.ts (24 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes write_file tool and creates backup on overwrite
+┌── [Tool Result: write_file] ✔ SUCCESS ────────────────────────
+│ File:   src/app.ts
+│ Status: Written to workspace disk
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes delete_file tool and emits workspace_tree event
+┌── [Tool Executing: delete_file] ─────────────────────────────────
+│ Args:     {"path":"src/app.ts"}
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes run_command tool
+┌── [Tool Executing: run_command] ─────────────────────────────────
+│ Command:  node src/app.ts
+│ CWD:      /private/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/hm-test-1791649285424-e3f2fr
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/completion-semantics.test.ts > P0-02: Truthful Completion Semantics > Persistence & Store Truthful Transitions > RunManager dispatches partial and limit_exceeded outcomes correctly
+┌── [Artifact Ready: DOCX] ────────────────────────────────────
+│ File:     approval-note.docx (8.4 KB)
+│ Location: runs/885384ec-242c-4f39-b510-5e69c9f0c6b7/output/approval-note.docx
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/completion-semantics.test.ts > P0-02: Truthful Completion Semantics > Persistence & Store Truthful Transitions > RunManager dispatches partial and limit_exceeded outcomes correctly
+[run:885384ec] ➜ partial
+
+ ✓ backend/tests/completion-semantics.test.ts (24 tests) 193ms
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes run_command tool
+┌── [Command Output] ✔ SUCCESS (exit 0 in 109ms) ────────────────────────
+├── Stdout ──────────────────────────────────────────────
+│   hello world
+└──────────────────────────────────────────────────────────
+
+ ✓ backend/tests/harness-manager.test.ts (10 tests) 138ms
+ ✓ backend/tests/docx-generator.test.ts (8 tests) 131ms
+stdout | backend/tests/harness-ipc.test.ts > Harness IPC Handlers > lists directory via IPC
+┌── [Tool Executing: list_dir] ────────────────────────────────────
+│ Path:     .
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: list_dir] ✔ (3 items) ────────────────────────
+│ Entries: README.md, src, src/main.ts
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-ipc.test.ts > Harness IPC Handlers > reads file via IPC
+┌── [Tool Executing: read_file] ───────────────────────────────────
+│ Reading:  README.md
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: read_file] ✔ ──────────────────────────────
+│ File:   README.md (2 lines, 11 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-ipc.test.ts > Harness IPC Handlers > searches via IPC
+┌── [Tool Executing: search] ──────────────────────────────────────
+│ Query:    "ipc works" in .
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: search] ✔ (1 matches) ────────────────────────
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-ipc.test.ts > Harness IPC Handlers > writes file via IPC
+┌── [Tool Executing: write_file] ──────────────────────────────────
+│ Target:   new.txt (7 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-ipc.test.ts > Harness IPC Handlers > writes file via IPC
+┌── [Tool Result: write_file] ✔ SUCCESS ────────────────────────
+│ File:   new.txt
+│ Status: Written to workspace disk
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-ipc.test.ts > Harness IPC Handlers > runs command via IPC
+┌── [Tool Executing: run_command] ─────────────────────────────────
+│ Command:  node src/main.ts
+│ CWD:      /private/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/harness-ipc-1791649285718-zxozl4
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-ipc.test.ts > Harness IPC Handlers > runs command via IPC
+┌── [Command Output] ✔ SUCCESS (exit 0 in 111ms) ────────────────────────
+├── Stdout ──────────────────────────────────────────────
+│   ipc works
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-ipc.test.ts > Harness IPC Handlers > rejects path escape via IPC
+┌── [Tool Executing: read_file] ───────────────────────────────────
+│ Reading:  ../../../etc/passwd
+└──────────────────────────────────────────────────────────
+
+ ✓ backend/tests/harness-ipc.test.ts (8 tests) 134ms
+stdout | backend/tests/run-verification.test.ts > P1-D durable outcome verification > keeps a failed mandatory deterministic check partial
+[run:a9fc90ab] ➜ partial
+
+stdout | backend/tests/run-verification.test.ts > P1-D durable outcome verification > does not let an unsupported optional semantic constraint block completion
+[run:029c69db] ➜ completed
+
+ ✓ backend/tests/run-verification.test.ts (12 tests) 102ms
+stdout | backend/tests/mutation-guard.test.ts > P0-06: Mutation Approvals and Containment Guard > Tool-Level and IPC Consistency > HarnessManager.executeTool enforces the same policy guard constraints
+┌── [Tool Executing: write_file] ──────────────────────────────────
+│ Target:   unauthorized.txt (5 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/mutation-guard.test.ts > P0-06: Mutation Approvals and Containment Guard > Tool-Level and IPC Consistency > HarnessManager.executeTool enforces the same policy guard constraints
+┌── [Tool Executing: write_file] ──────────────────────────────────
+│ Target:   allowed.txt (18 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/mutation-guard.test.ts > P0-06: Mutation Approvals and Containment Guard > Tool-Level and IPC Consistency > HarnessManager.executeTool enforces the same policy guard constraints
+┌── [Tool Result: write_file] ✔ SUCCESS ────────────────────────
+│ File:   allowed.txt
+│ Status: Written to workspace disk
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/mutation-guard.test.ts > P0-06: Mutation Approvals and Containment Guard > Tool-Level and IPC Consistency > HarnessManager.executeTool enforces the same policy guard constraints
+┌── [Tool Executing: delete_file] ─────────────────────────────────
+│ Args:     {"path":"allowed.txt"}
+└──────────────────────────────────────────────────────────
+
+ ✓ backend/tests/mutation-guard.test.ts (19 tests) 100ms
+ ✓ backend/tests/agent-loop.test.ts (34 tests) 80ms
+stdout | backend/tests/three-modes.test.ts > Lifecycle and scheduling > does not complete cancelled transport callbacks
+[run:de297725] ➜ acting
+
+ ✓ backend/tests/db.test.ts (12 tests) 76ms
+ ✓ backend/tests/artifact-verification-lifecycle.test.ts (17 tests) 71ms
+stderr | backend/tests/three-modes.test.ts > Lifecycle and scheduling > requires digest-bound approval when Python isolation is unavailable
+[python-runner] macOS sandbox-exec unavailable or disabled; approval required before direct execution
+
+ ✓ backend/tests/run-waiting-render.test.ts (2 tests) 57ms
+stderr | backend/tests/three-modes.test.ts > Lifecycle and scheduling > rejects changed executed source after Python approval
+[python-runner] macOS sandbox-exec unavailable or disabled; approval required before direct execution
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'md'
+[run:56b1660a] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'md'
+[run:56b1660a] ➜ planning
+[run:56b1660a] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'md'
+┌── [Artifact Ready: MD] ────────────────────────────────────
+│ File:     report.md (0.0 KB)
+│ Location: runs/56b1660a-265f-4733-8e5f-74ed49041cf0/output/report.md
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'md'
+[run:56b1660a] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'txt'
+[run:2742bc6c] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'txt'
+[run:2742bc6c] ➜ planning
+[run:2742bc6c] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'txt'
+┌── [Artifact Ready: TXT] ────────────────────────────────────
+│ File:     report.txt (0.0 KB)
+│ Location: runs/2742bc6c-4090-4dab-ac76-57695a78cc61/output/report.txt
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'txt'
+[run:2742bc6c] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'json'
+[run:d3f79506] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'json'
+[run:d3f79506] ➜ planning
+[run:d3f79506] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'json'
+┌── [Artifact Ready: JSON] ────────────────────────────────────
+│ File:     report.json (0.0 KB)
+│ Location: runs/d3f79506-4137-4ec1-98f7-3b5192d413b3/output/report.json
+└──────────────────────────────────────────────────────────
+
+ ✓ backend/tests/implementation-guidance.test.ts (8 tests) 12ms
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'json'
+[run:d3f79506] ➜ completed
+
+ ✓ backend/tests/ipc.test.ts (7 tests) 53ms
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'csv'
+[run:ff9ec976] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'csv'
+[run:ff9ec976] ➜ planning
+[run:ff9ec976] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'csv'
+┌── [Artifact Ready: CSV] ────────────────────────────────────
+│ File:     report.csv (0.0 KB)
+│ Location: runs/ff9ec976-30b7-4ad5-ad14-7dea3f40ada1/output/report.csv
+└──────────────────────────────────────────────────────────
+
+ ✓ backend/tests/typed-tool-results.test.ts (19 tests) 17ms
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'csv'
+[run:ff9ec976] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'docx'
+[run:5cd629a9] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'docx'
+[run:5cd629a9] ➜ planning
+[run:5cd629a9] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'docx'
+┌── [Artifact Ready: DOCX] ────────────────────────────────────
+│ File:     report.docx (8.4 KB)
+│ Location: runs/5cd629a9-2962-48b1-b593-187676d0ed3a/output/report.docx
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/model-progress.test.ts > streams structured specialist output for progress without publishing its payload
+[model-gateway:code:local:request] DB ENDPOINT: Dispatching to http://localhost:8080/v1 (local, role: code)
+
+┌─ [AI Request: CODE] (req:request)
+│ Model:   local (local)
+│ Params:  max_tokens=2048 │ temp=0.2
+│ Prompt:  "Write code"
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/model-progress.test.ts > streams structured specialist output for progress without publishing its payload
+┌─ [AI Response: CODE] (req:request)
+│ Status:  HTTP 200 in 400ms (finish: stop, 199 chars)
+└───────────────────────────────────────────────────────
+┌── [Generated Script: task.py] ─────────────────────────────────────────────
+│   1 │ print(1)
+├── Details ──────────────────────────────────────────────
+│   Output Mode: chat
+│   Expected:    one
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/model-progress.test.ts > shows bounded plain specialist drafts without promoting them to final chat
+[model-gateway:draft:local:draft] DB ENDPOINT: Dispatching to http://localhost:8080/v1 (local, role: draft)
+
+┌─ [AI Request: DRAFT] (req:draft)
+│ Model:   local (local)
+│ Params:  max_tokens=1536 │ temp=0.2
+│ Prompt:  "Draft the report"
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/model-progress.test.ts > shows bounded plain specialist drafts without promoting them to final chat
+┌─ [AI Response: DRAFT] (req:draft)
+│ Status:  HTTP 200 in 1ms (finish: stop, 1378 chars)
+└───────────────────────────────────────────────────────
+┌── [Model Summary] ────────────────────────────────────
+│ Draft section. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text. Useful text.
+└──────────────────────────────────────────────────────────
+
+ ✓ backend/tests/model-progress.test.ts (5 tests) 14ms
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'docx'
+[run:5cd629a9] ➜ completed
+
+ ✓ backend/tests/agent-tools.test.ts (6 tests) 21ms
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'xlsx'
+[run:0afac199] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'xlsx'
+[run:0afac199] ➜ planning
+[run:0afac199] ➜ acting
+
+ ✓ backend/tests/agent-plan-cleaning.test.ts (4 tests) 15ms
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'xlsx'
+┌── [Artifact Ready: XLSX] ────────────────────────────────────
+│ File:     report.xlsx (6.5 KB)
+│ Location: runs/0afac199-056a-424c-8416-a89db5a96b4a/output/report.xlsx
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'xlsx'
+[run:0afac199] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > preserves a useful file and reports Partial when required content is unverified
+[run:8cfc41d4] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > preserves a useful file and reports Partial when required content is unverified
+[run:8cfc41d4] ➜ planning
+[run:8cfc41d4] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > preserves a useful file and reports Partial when required content is unverified
+┌── [Artifact Ready: MD] ────────────────────────────────────
+│ File:     decision.md (0.0 KB)
+│ Location: runs/8cfc41d4-18e3-402d-82c6-0264ff6f79ed/output/decision.md
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > preserves a useful file and reports Partial when required content is unverified
+[run:8cfc41d4] ➜ partial
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > converts an explicit CSV to JSON without model calls
+[run:dd0a543f] ➜ classifying
+
+ ✓ backend/tests/prompt-runtime-alignment.test.ts (7 tests) 17ms
+ ✓ backend/tests/task-progress.test.ts (8 tests) 14ms
+stdout | backend/tests/three-modes.test.ts > Work engine integration > converts an explicit CSV to JSON without model calls
+[run:dd0a543f] ➜ acting
+
+ ✓ backend/tests/output-expectation.test.ts (11 tests) 13ms
+stdout | backend/tests/vision-run.test.ts > Vision Task Execution (Architecture Collapse) > automatically uses Tier 1 Fast Text extraction for clean digital PDF, saving vision tokens
+[run:70b2755d] ➜ failed
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > converts an explicit CSV to JSON without model calls
+┌── [Artifact Ready: JSON] ────────────────────────────────────
+│ File:     data.json (0.0 KB)
+│ Location: runs/dd0a543f-2ef5-469d-a604-a68bf7765e46/output/data.json
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/generic-markdown-deliverable.test.ts > Generic Markdown Deliverable Generation > executeChatTask Deliverable Generation > continues generating docx without regression when Word document requested
+[run:930b9f08] ➜ failed
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > converts an explicit CSV to JSON without model calls
+[run:dd0a543f] ➜ completed
+
+stdout | backend/tests/multi-attachment.test.ts > Multi-Attachment Support & Persistence > executes Flow B script repair with python + csv attachments and artifact generation
+[run:48ecca74] ➜ failed
+
+ ❯ backend/tests/model-selection.test.ts (12 tests | 3 failed) 6120ms
+   ✓ Phase 1: Model Selection & Classification Removal > does not use task categories to gate access to the configured model endpoint 0ms
+   ✓ Phase 1: Model Selection & Classification Removal > resolveModelSelection contract logic > Scenario: One model configured -> automatically uses it, marks isSingleModel=true 1ms
+   ✓ Phase 1: Model Selection & Classification Removal > resolveModelSelection contract logic > Scenario: Multiple models configured, no explicit selection -> uses configured primary model (primary-model) 0ms
+   ✓ Phase 1: Model Selection & Classification Removal > resolveModelSelection contract logic > Scenario: Multiple models configured, explicit selection -> uses selected model 0ms
+   ✓ Phase 1: Model Selection & Classification Removal > resolveModelSelection contract logic > Scenario: Code-related or Vision-related request does NOT override explicit user selection 0ms
+   ✓ Phase 1: Model Selection & Classification Removal > resolveModelSelection contract logic > Scenario: Explicitly selected model becomes unavailable -> clear error, NO silent substitution 0ms
+   ✓ Phase 1: Model Selection & Classification Removal > resolveModelSelection contract logic > Scenario: Zero usable models configured -> returns model_unavailable error 0ms
+   ✓ Phase 1: Model Selection & Classification Removal > resolveModelSelection contract logic > Scenario: Model configuration changes dynamically -> resolves updated models 0ms
+   ✓ Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Simple Chat request -> direct response without classification 65ms
+   × Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Multi-model setup with explicit selection -> interprets and executes with selected model 2026ms
+     → expected false to be true // Object.is equality
+   × Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Explicitly selected model becomes unavailable -> fails with error event and terminal failed state 2020ms
+     → expected false to be true // Object.is equality
+   × Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Agent mutation request -> narrow semantic safety exception preserves protectedPaths and approvals 2006ms
+     → expected false to be true // Object.is equality
+ ✓ backend/tests/path-guard.test.ts (13 tests) 11ms
+ ✓ backend/tests/source-review.test.ts (18 tests) 10ms
+ ✓ backend/tests/three-modes.test.ts (130 tests) 3900ms
+ ✓ backend/tests/chat-with-tools.test.ts (9 tests) 8ms
+ ✓ backend/tests/completion-stream.test.ts (11 tests) 8ms
+ ✓ backend/tests/workspace-manager.test.ts (8 tests) 7ms
+ ✓ backend/tests/code-extractor.test.ts (19 tests) 5ms
+ ✓ backend/tests/dynamic-dispatch.test.ts (9 tests) 7ms
+ ✓ backend/tests/agent-execution-events.test.ts (2 tests) 5ms
+ ✓ backend/tests/responses.test.ts (17 tests) 4ms
+stdout | backend/tests/benchmark-phase2.test.ts > Phase 2 Benchmark: Context Budget & Schema Token Savings > demonstrates >70% token savings in Pure Chat mode on turn 1
+
+================ PHASE 2 TOKEN BENCHMARK ================
+Baseline (all tools):             1907 tokens (12 tools)
+Pure Chat Turn 1:                 0 tokens (0 tools)
+Token Reduction:                  100.0% savings
+=========================================================
+
+
+stdout | backend/tests/benchmark-phase2.test.ts > Phase 2 Benchmark: Context Budget & Schema Token Savings > benchmarks tool surfaces across execution modes and states
+
+| Execution Scenario | Tools Exposed | Tool Names | Tokens | Savings vs Baseline |
+|---|---|---|---|---|
+| 1. Pure Chat (Turn 1) | 0 |  | 0 | 100.0% |
+| 2. Chat with Document Attachment (Turn 1) | 1 | extract_document | 87 | 95.4% |
+| 3. Chat with Mounted Workspace (Read-Only) | 0 |  | 0 | 100.0% |
+| 4. Agent Mode with Workspace (Turn 1) | 4 | request_capability, list_dir, read_file, search | 345 | 81.9% |
+| 5. Agent after Python Computation Expanded (Turn 2) | 7 | request_capability, list_dir, read_file, search, write_file, delete_file, execute_python | 846 | 55.6% |
+| 6. Agent with Deliverables & Results (Turn 3) | 9 | request_capability, list_dir, read_file, search, write_file, delete_file, execute_python, generate_deliverable, retrieve_result | 1364 | 28.5% |
+
+
+
+ ✓ backend/tests/benchmark-phase2.test.ts (3 tests) 5ms
+ ✓ backend/tests/contextual-router.test.ts (10 tests) 4ms
+ ✓ backend/tests/python.test.ts (1 test) 4ms
+ ✓ backend/tests/run-progress.test.ts (12 tests) 3ms
+ ✓ backend/tests/execution-envelope.test.ts (9 tests) 3ms
+ ✓ backend/tests/context-compaction.test.ts (8 tests) 3ms
+ ✓ ai/vision/vision-contract.test.ts (4 tests) 2ms
+ ✓ backend/tests/streaming-filter.test.ts (6 tests) 2ms
+ ✓ backend/tests/no-preset-grounding.test.ts (4 tests) 2ms
+ ✓ backend/tests/workspace-referenced-files.test.ts (1 test) 3ms
+ ✓ ai/code/code-mock.test.ts (4 tests) 2ms
+ ✓ backend/tests/partial-result.test.ts (6 tests) 2ms
+ ✓ backend/tests/harness-prompt.test.ts (4 tests) 2ms
+ ✓ backend/tests/images-svg.test.ts (2 tests) 2ms
+ ✓ backend/tests/run-sessions.test.ts (2 tests) 1ms
+ ✓ backend/tests/gateway-telemetry.test.ts (3 tests) 1ms
+ ✓ backend/tests/compositor-router.test.ts (7 tests) 2ms
+ ✓ backend/tests/prompts.test.ts (1 test) 1ms
+ ↓ backend/tests/live-result-retrieval.test.ts (1 test | 1 skipped)
+ ↓ backend/tests/live-intention-verification.test.ts (5 tests | 5 skipped)
+stdout | backend/tests/generic-markdown-deliverable.test.ts > Generic Markdown Deliverable Generation > executeVisionTask Multi-Doc Chaining to Markdown Deliverable > generates markdown deliverable for multi-attachment bundle when compliance note requested
+[run:9b0ac014] ➜ failed
+
+stdout | backend/tests/vision-run.test.ts > Vision Task Execution (Architecture Collapse) > forces Tier 2 Vision model when user prompt specifically mentions engineering drawing / P&ID
+[run:ebede427] ➜ failed
+
+ ❯ backend/tests/multi-attachment.test.ts (6 tests | 3 failed) 9063ms
+   ✓ Multi-Attachment Support & Persistence > retains the full executed attachment group despite newer registration-only runs 14ms
+   ✓ Multi-Attachment Support & Persistence > validates startRunSchema with attachmentTokens array 5ms
+   ✓ Multi-Attachment Support & Persistence > rejects unsupported run fields; generation profiles are selected outside run payloads 7ms
+   × Multi-Attachment Support & Persistence > persists multiple attachments in run_attachments join table 3016ms
+     → expected false to be true // Object.is equality
+   × Multi-Attachment Support & Persistence > executes multi-document inspection without retrieving criteria when grounding is disabled 3011ms
+     → expected false to be true // Object.is equality
+   × Multi-Attachment Support & Persistence > executes Flow B script repair with python + csv attachments and artifact generation 3010ms
+     → expected false to be true // Object.is equality
+ ❯ backend/tests/generic-markdown-deliverable.test.ts (7 tests | 5 failed) 10576ms
+   ✓ Generic Markdown Deliverable Generation > Helper Functions > identifies markdown deliverable requests accurately 12ms
+   ✓ Generic Markdown Deliverable Generation > Helper Functions > derives descriptive markdown filenames dynamically 8ms
+   × Generic Markdown Deliverable Generation > executeChatTask Deliverable Generation > creates <item>-compliance-note.md artifact in output/ when compliance note requested 2015ms
+     → expected false to be true // Object.is equality
+   × Generic Markdown Deliverable Generation > executeChatTask Deliverable Generation > creates audit-memo.md artifact when audit memo requested without item 2011ms
+     → expected false to be true // Object.is equality
+   × Generic Markdown Deliverable Generation > executeChatTask Deliverable Generation > respects explicit .md deliverable filename from prompt 2010ms
+     → expected false to be true // Object.is equality
+   × Generic Markdown Deliverable Generation > executeChatTask Deliverable Generation > continues generating docx without regression when Word document requested 2010ms
+     → expected false to be true // Object.is equality
+   × Generic Markdown Deliverable Generation > executeVisionTask Multi-Doc Chaining to Markdown Deliverable > generates markdown deliverable for multi-attachment bundle when compliance note requested 2509ms
+     → expected false to be true // Object.is equality
+stdout | backend/tests/vision-run.test.ts > Vision Task Execution (Architecture Collapse) > selectively slices multi-page documents, sending only top visual pages and preserving text context
+[run:0ccbfa1f] ➜ failed
+
+ ❯ backend/tests/vision-run.test.ts (5 tests | 5 failed) 15061ms
+   × Vision Task Execution (Architecture Collapse) > routes PDF/image attachments directly to executeVisionTask and outputs structured findings 3018ms
+     → expected false to be true // Object.is equality
+   × Vision Task Execution (Architecture Collapse) > chains vision findings seamlessly into draft when user requests an approval note in single turn 3010ms
+     → expected false to be true // Object.is equality
+   × Vision Task Execution (Architecture Collapse) > automatically uses Tier 1 Fast Text extraction for clean digital PDF, saving vision tokens 3010ms
+     → expected false to be true // Object.is equality
+   × Vision Task Execution (Architecture Collapse) > forces Tier 2 Vision model when user prompt specifically mentions engineering drawing / P&ID 3008ms
+     → expected false to be true // Object.is equality
+   × Vision Task Execution (Architecture Collapse) > selectively slices multi-page documents, sending only top visual pages and preserving text context 3014ms
+     → expected false to be true // Object.is equality
+stdout | backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > copies the prior attachment into a follow-up run workspace
+[run:d94a57cd] ➜ failed
+
+stdout | backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > generates and registers a txt artifact when requested without prompting for xlsx
+[run:1d8282db] ➜ failed
+
+stdout | backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > generates and registers a csv artifact when requested without prompting for xlsx
+[run:24c04ab2] ➜ failed
+
+stdout | backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > generates and registers a markdown artifact when requested without prompting for xlsx
+[run:39fded0b] ➜ failed
+
+stdout | backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > recovers and completes when initial Python execution fails with an error
+[run:1a920d7d] ➜ failed
+
+ ❯ backend/tests/flow-b.e2e.test.ts (8 tests | 8 failed) 120160ms
+   × Flow B end-to-end > routes, executes after approval, and summarizes in chat by default 25ms
+     → Run failed with error event: chat engine requires the shared gateway.
+   × Flow B end-to-end > requests an artifact only when the user asks for an Excel export 30016ms
+     → Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   × Flow B end-to-end > copies the prior attachment into a follow-up run workspace 20ms
+     → Run failed with error event: chat engine requires the shared gateway.
+   × Flow B end-to-end > generates and registers a txt artifact when requested without prompting for xlsx 30014ms
+     → Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   × Flow B end-to-end > generates and registers a csv artifact when requested without prompting for xlsx 30018ms
+     → Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   × Flow B end-to-end > generates and registers a markdown artifact when requested without prompting for xlsx 30029ms
+     → Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   × Flow B end-to-end > recovers and completes when initial Python execution fails with an error 20ms
+     → Run failed with error event: chat engine requires the shared gateway.
+   × Flow B end-to-end > handles and sanitizes multiline with statements during script self-repair 18ms
+     → Attachment belongs to another chat.
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 94 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  backend/tests/attached-code-repair.test.ts > Attached code repair scope and validation > uses semantic classification for constraints and keeps attachment repair isolated
+AssertionError: expected { Object (code, input_files, ...) } to not have property "validation_code"
+
+- Expected: 
+undefined
+
++ Received: 
+{
+  "description": "Optional separate Python assertions, run after the repaired script succeeds. Public source functions are available by name or through repaired['function']. Invoke assertions; uncalled test definitions do not validate behavior. Input files are available by filename. Derive expectations from the request and original evidence. Checks are not included in the exported source.",
+  "format": "multiline",
+  "type": "string",
+}
+
+ ❯ backend/tests/attached-code-repair.test.ts:80:70
+     78|     const pythonTool = constrainToolsToIntent(composeTools({ hasWorksp…
+     79|       .find((tool) => tool.name === "execute_python")!;
+     80|     expect(pythonTool.definition.function.parameters.properties).not.t…
+       |                                                                      ^
+     81|   });
+     82| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/94]⎯
+
+ FAIL  backend/tests/attached-code-repair.test.ts > Attached code repair scope and validation > allows direct execution without invented assertions and rejects helper scripts
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ backend/tests/attached-code-repair.test.ts:120:23
+    118|     const helper = await tool.execute({ filename: "validate.py", code:…
+    119|     expect(direct.ok).toBe(true);
+    120|     expect(helper.ok).toBe(false);
+       |                       ^
+    121|     expect(execute).toHaveBeenCalledTimes(1);
+    122|     expect(execute.mock.calls[0][0]).not.toHaveProperty("validation_co…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/94]⎯
+
+ FAIL  backend/tests/attached-code-repair.test.ts > Attached code repair scope and validation > does not complete an attached Python repair before assertions succeed
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ backend/tests/attached-code-repair.test.ts:185:32
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/94]⎯
+
+ FAIL  backend/tests/attached-code-repair.test.ts > Attached code repair scope and validation > keeps a mounted workspace unchanged throughout a RunManager attachment repair
+Error: Attachment belongs to another chat.
+ ❯ RunManager.start backend/src/main/run/manager.ts:527:51
+    525|     const requested=[...new Set(input.attachmentTokens??(input.attachm…
+    526|     const chatId=input.chatId??requested[0]?.chatId??this.chatIdForRun…
+    527|     if(requested.some(a=>a.chatId!==chatId))throw new Error("Attachmen…
+       |                                                   ^
+    528|     if(input.runId && this.chatIdForRunIfPresent(input.runId) && this.…
+    529|     const db=getDb();
+ ❯ backend/tests/attached-code-repair.test.ts:226:37
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/94]⎯
+
+ FAIL  backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > extracts component tags, ratings, and diameters from SVG engineering drawing
+AssertionError: expected undefined to be defined
+ ❯ backend/tests/drawing-compliance.test.ts:59:23
+     57| 
+     58|     const valveComp = extraction.observedComponents.find((c) => c.attr…
+     59|     expect(valveComp).toBeDefined();
+       |                       ^
+     60|     expect(valveComp?.tag).toBe("XV-204");
+     61|     expect(valveComp?.observedValue).toMatch(/Class 150/i);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/94]⎯
+
+ FAIL  backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > executes complete drawing compliance review flow via RunManager
+Error: Run failed: [
+  {
+    "code": "too_small",
+    "minimum": 1,
+    "type": "string",
+    "inclusive": true,
+    "exact": false,
+    "message": "String must contain at least 1 character(s)",
+    "path": [
+      "content"
+    ]
+  }
+]
+ ❯ Timeout.<anonymous> backend/tests/drawing-compliance.test.ts:339:18
+    337|         if (err) {
+    338|           clearInterval(interval);
+    339|           reject(new Error(`Run failed: ${(err as any).message}`));
+       |                  ^
+    340|         }
+    341|         if (Date.now() - start > 5000) {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/94]⎯
+
+ FAIL  backend/tests/drawing-compliance.test.ts > Dynamic Spec Compliance via RAG & Reasoning > does not generate deliverable artifact when user only asks for in-chat compliance check
+Error: Run failed: [
+  {
+    "code": "too_small",
+    "minimum": 1,
+    "type": "string",
+    "inclusive": true,
+    "exact": false,
+    "message": "String must contain at least 1 character(s)",
+    "path": [
+      "content"
+    ]
+  }
+]
+ ❯ Timeout.<anonymous> backend/tests/drawing-compliance.test.ts:459:18
+    457|         if (err) {
+    458|           clearInterval(interval);
+    459|           reject(new Error(`Run failed: ${(err as any).message}`));
+       |                  ^
+    460|         }
+    461|         if (Date.now() - start > 5000) {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/94]⎯
+
+ FAIL  backend/tests/execution-ledger.test.ts > P1-C1 execution ledger > records meaningful operations, result IDs and contract work idempotently
+AssertionError: expected undefined to be 'completed' // Object.is equality
+
+- Expected: 
+"completed"
+
++ Received: 
+undefined
+
+ ❯ backend/tests/execution-ledger.test.ts:41:88
+     39|     expect(ledger.completedOperations).toHaveLength(2);
+     40|     expect(ledger.completedOperations[0].resultIds).toEqual([result.re…
+     41|     expect(ledger.knownWork.find((item) => item.label === "mutate pars…
+       |                                                                                        ^
+     42|     expect(ledger.progress).toEqual({ completedWork: 1, totalKnownWork…
+     43|     expect(ledger.knownWork.find((item) => item.label.includes("report…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/94]⎯
+
+ FAIL  backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > routes, executes after approval, and summarizes in chat by default
+ FAIL  backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > copies the prior attachment into a follow-up run workspace
+ FAIL  backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > recovers and completes when initial Python execution fails with an error
+Error: Run failed with error event: chat engine requires the shared gateway.
+ ❯ Timeout.poll [as _onTimeout] backend/tests/flow-b.e2e.test.ts:59:16
+     57|       const errEvent = events.find((candidate) => candidate.type === "…
+     58|       if (errEvent && state !== "failed") {
+     59|         reject(new Error(`Run failed with error event: ${(errEvent as …
+       |                ^
+     60|         return;
+     61|       }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/94]⎯
+
+ FAIL  backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > requests an artifact only when the user asks for an Excel export
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ backend/tests/flow-b.e2e.test.ts:114:3
+    112|   });
+    113| 
+    114|   it("requests an artifact only when the user asks for an Excel export…
+       |   ^
+    115|     const events: RunEvent[] = [];
+    116|     const source = [
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/94]⎯
+
+ FAIL  backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > generates and registers a txt artifact when requested without prompting for xlsx
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ backend/tests/flow-b.e2e.test.ts:186:3
+    184|   });
+    185| 
+    186|   it("generates and registers a txt artifact when requested without pr…
+       |   ^
+    187|     vi.mocked(pythonModule.executePython).mockResolvedValueOnce({
+    188|       exitCode: 0,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/94]⎯
+
+ FAIL  backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > generates and registers a csv artifact when requested without prompting for xlsx
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ backend/tests/flow-b.e2e.test.ts:248:3
+    246|   });
+    247| 
+    248|   it("generates and registers a csv artifact when requested without pr…
+       |   ^
+    249|     vi.mocked(pythonModule.executePython).mockResolvedValueOnce({
+    250|       exitCode: 0,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/94]⎯
+
+ FAIL  backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > generates and registers a markdown artifact when requested without prompting for xlsx
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ backend/tests/flow-b.e2e.test.ts:310:3
+    308|   });
+    309| 
+    310|   it("generates and registers a markdown artifact when requested witho…
+       |   ^
+    311|     vi.mocked(pythonModule.executePython).mockResolvedValueOnce({
+    312|       exitCode: 0,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/94]⎯
+
+ FAIL  backend/tests/flow-b.e2e.test.ts > Flow B end-to-end > handles and sanitizes multiline with statements during script self-repair
+Error: Attachment belongs to another chat.
+ ❯ RunManager.start backend/src/main/run/manager.ts:527:51
+    525|     const requested=[...new Set(input.attachmentTokens??(input.attachm…
+    526|     const chatId=input.chatId??requested[0]?.chatId??this.chatIdForRun…
+    527|     if(requested.some(a=>a.chatId!==chatId))throw new Error("Attachmen…
+       |                                                   ^
+    528|     if(input.runId && this.chatIdForRunIfPresent(input.runId) && this.…
+    529|     const db=getDb();
+ ❯ backend/tests/flow-b.e2e.test.ts:494:35
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/94]⎯
+
+ FAIL  backend/tests/flow-c.e2e.test.ts > Flow C End-to-End: Engineering Drawing Compliance Review > ingests SVG drawing, dynamically retrieves piping criteria via RAG, evaluates compliance, and emits corrective-action-note.md deliverable
+Error: Flow C run failed: [
+  {
+    "code": "too_small",
+    "minimum": 1,
+    "type": "string",
+    "inclusive": true,
+    "exact": false,
+    "message": "String must contain at least 1 character(s)",
+    "path": [
+      "content"
+    ]
+  }
+]
+ ❯ Timeout.<anonymous> backend/tests/flow-c.e2e.test.ts:175:18
+    173|         if (err) {
+    174|           clearInterval(interval);
+    175|           reject(new Error(`Flow C run failed: ${(err as any).message}…
+       |                  ^
+    176|         }
+    177|         if (Date.now() - start > 5000) {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/94]⎯
+
+ FAIL  backend/tests/gateway.test.ts > vision attachment payloads > sends PDFs as file parts, not image_url
+Error: PDF visual extraction failed: no source pages could be rendered.
+ ❯ backend/src/main/gateway/model-gateway.ts:853:19
+    851|               return parts;
+    852|             }
+    853|             throw new Error("PDF visual extraction failed: no source p…
+       |                   ^
+    854|           }
+    855|           throw new Error(`Visual extraction does not support ${att.me…
+ ❯ ModelGateway.execute backend/src/main/gateway/model-gateway.ts:801:9
+ ❯ backend/tests/gateway.test.ts:93:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/94]⎯
+
+ FAIL  backend/tests/gateway.test.ts > model gateway health checks > falls back to text-only messages when provider rejects image/multimodal content
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ backend/tests/gateway.test.ts:626:23
+    624|     });
+    625| 
+    626|     expect(result.ok).toBe(true);
+       |                       ^
+    627|     expect(callCount).toBe(2);
+    628|     // Verifies messages[1].content is converted to pure text string w…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/94]⎯
+
+ FAIL  backend/tests/gateway.test.ts > model gateway health checks > recovers gracefully when provider rejects both json_object and image_url sequentially
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ backend/tests/gateway.test.ts:705:23
+    703|     });
+    704| 
+    705|     expect(result.ok).toBe(true);
+       |                       ^
+    706|     expect(callCount).toBe(3);
+    707|     // Verifies final call had both valid json_schema and text-only co…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/94]⎯
+
+ FAIL  backend/tests/generic-markdown-deliverable.test.ts > Generic Markdown Deliverable Generation > executeChatTask Deliverable Generation > creates <item>-compliance-note.md artifact in output/ when compliance note requested
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/generic-markdown-deliverable.test.ts:144:70
+    142|       await vi.waitFor(
+    143|         () => {
+    144|           expect(runEvents.some((e) => e.type === "artifact_ready")).t…
+       |                                                                      ^
+    145|         },
+    146|         { timeout: 2000 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/94]⎯
+
+ FAIL  backend/tests/generic-markdown-deliverable.test.ts > Generic Markdown Deliverable Generation > executeChatTask Deliverable Generation > creates audit-memo.md artifact when audit memo requested without item
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/generic-markdown-deliverable.test.ts:187:70
+    185|       await vi.waitFor(
+    186|         () => {
+    187|           expect(runEvents.some((e) => e.type === "artifact_ready")).t…
+       |                                                                      ^
+    188|         },
+    189|         { timeout: 2000 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/94]⎯
+
+ FAIL  backend/tests/generic-markdown-deliverable.test.ts > Generic Markdown Deliverable Generation > executeChatTask Deliverable Generation > respects explicit .md deliverable filename from prompt
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/generic-markdown-deliverable.test.ts:210:70
+    208|       await vi.waitFor(
+    209|         () => {
+    210|           expect(runEvents.some((e) => e.type === "artifact_ready")).t…
+       |                                                                      ^
+    211|         },
+    212|         { timeout: 2000 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/94]⎯
+
+ FAIL  backend/tests/generic-markdown-deliverable.test.ts > Generic Markdown Deliverable Generation > executeChatTask Deliverable Generation > continues generating docx without regression when Word document requested
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/generic-markdown-deliverable.test.ts:233:70
+    231|       await vi.waitFor(
+    232|         () => {
+    233|           expect(runEvents.some((e) => e.type === "artifact_ready")).t…
+       |                                                                      ^
+    234|         },
+    235|         { timeout: 2000 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/94]⎯
+
+ FAIL  backend/tests/generic-markdown-deliverable.test.ts > Generic Markdown Deliverable Generation > executeVisionTask Multi-Doc Chaining to Markdown Deliverable > generates markdown deliverable for multi-attachment bundle when compliance note requested
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/generic-markdown-deliverable.test.ts:277:70
+    275|       await vi.waitFor(
+    276|         () => {
+    277|           expect(runEvents.some((e) => e.type === "artifact_ready")).t…
+       |                                                                      ^
+    278|         },
+    279|         { timeout: 2500 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/94]⎯
+
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > writes a file into the workspace directory when user says 'Write a txt file in the directory saying hello'
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > nudges model to call write_file if it lazily returns text without writing the file
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > falls back to standard chat execution when no workspace is active
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > intercepts Python with open(...) code emitted by model and writes the file to disk
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > creates a downloadable artifact when file write is requested without an active workspace
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > creates a standalone artifact without touching the active workspace when user specifies negative workspace constraint
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > handles model returning action as tool name (e.g. action: list_dir) without dumping raw JSON
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > routes approval note drafting with Word document request to draft model and creates document artifact
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > handles multi-turn conversation: drafting approval note then saving it to active workspace on follow-up turn
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > preserves multi-turn conversation history across consecutive runs
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > handles start with client-provided runId and executes cleanly
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > executes 'Give me the solution for LC: Two Sum Problem in C++' cleanly
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > does not duplicate prior conversation context in userPrompt during workspace harness run
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > handles compound command: 'Delete the file in the test workspace and save this file in the workspace'
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > deletes file when model calls delete_file tool in workspace
+ FAIL  backend/tests/harness-run.test.ts > Workspace Task Execution Loop (HARNESS.md) > safeguards against model attempting write_file with empty content to delete file
+Error: Run failed with error: chat engine requires the shared gateway.
+ ❯ Timeout.check [as _onTimeout] backend/tests/harness-run.test.ts:92:18
+     90|         const error = events.find((e) => e.type === "error");
+     91|         if (error) {
+     92|           reject(new Error(`Run failed with error: ${(error as any).me…
+       |                  ^
+     93|           return;
+     94|         }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/94]⎯
+
+ FAIL  backend/tests/integration.test.ts > AI/backend integration safety > routes reports to vision and CSV intent to code
+AssertionError: expected { taskType: 'vision', …(2) } to deeply equal { taskType: 'vision', …(2) }
+
+- Expected
++ Received
+
+  {
+-   "modelId": "vision-qwen25vl",
++   "modelId": "primary-model",
+    "reason": "scanned report",
+    "taskType": "vision",
+  }
+
+ ❯ backend/tests/integration.test.ts:22:133
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/94]⎯
+
+ FAIL  backend/tests/integration.test.ts > AI/backend integration safety > routes attachment-less script requests to draft chat
+AssertionError: expected { taskType: 'draft', …(2) } to deeply equal { taskType: 'draft', …(2) }
+
+- Expected
++ Received
+
+  {
+-   "modelId": "draft-qwen3",
++   "modelId": "primary-model",
+    "reason": "fallback drafting",
+    "taskType": "draft",
+  }
+
+ ❯ backend/tests/integration.test.ts:23:115
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > routes file writing requests with directory context to harness
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:20:30
+     18|     expect(decision.actionTarget).toBe("harness");
+     19|     expect(decision.taskType).toBe("code");
+     20|     expect(decision.modelId).toBe("code-qwen25coder");
+       |                              ^
+     21|     expect(decision.isWorkspaceAction).toBe(true);
+     22|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > routes user request with specific filename to harness even without active workspace
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:31:30
+     29|     expect(decision.actionTarget).toBe("harness");
+     30|     expect(decision.taskType).toBe("code");
+     31|     expect(decision.modelId).toBe("code-qwen25coder");
+       |                              ^
+     32|     expect(decision.isWorkspaceAction).toBe(true);
+     33|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > routes CSV attachments to data analysis
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:71:30
+     69|     expect(decision.actionTarget).toBe("data");
+     70|     expect(decision.taskType).toBe("code");
+     71|     expect(decision.modelId).toBe("code-qwen25coder");
+       |                              ^
+     72|     expect(decision.reason).toBe("CSV/code intent");
+     73|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[29/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > routes PDF and image attachments to vision
+AssertionError: expected 'primary-model' to be 'vision-qwen25vl' // Object.is equality
+
+Expected: "vision-qwen25vl"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:82:33
+     80|     expect(pdfDecision.actionTarget).toBe("vision");
+     81|     expect(pdfDecision.taskType).toBe("vision");
+     82|     expect(pdfDecision.modelId).toBe("vision-qwen25vl");
+       |                                 ^
+     83| 
+     84|     const imgDecision = classifyIntent({
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[30/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > routes conversational requests without filesystem context to chat
+AssertionError: expected 'primary-model' to be 'draft-qwen3' // Object.is equality
+
+Expected: "draft-qwen3"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:99:30
+     97|     expect(decision.actionTarget).toBe("chat");
+     98|     expect(decision.taskType).toBe("draft");
+     99|     expect(decision.modelId).toBe("draft-qwen3");
+       |                              ^
+    100|     expect(decision.isWorkspaceAction).toBe(false);
+    101|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[31/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > routes generic script writing request without file targets to draft chat for legacy compatibility
+AssertionError: expected 'primary-model' to be 'draft-qwen3' // Object.is equality
+
+Expected: "draft-qwen3"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:109:30
+    107|     expect(decision.actionTarget).toBe("chat");
+    108|     expect(decision.taskType).toBe("draft");
+    109|     expect(decision.modelId).toBe("draft-qwen3");
+       |                              ^
+    110|   });
+    111| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[32/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > routes 'generate a python file but not save it in the workspace directory' to standalone_file even when workspace is active
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:120:32
+    118|       expect(decision.actionTarget).toBe("standalone_file");
+    119|       expect(decision.taskType).toBe("code");
+    120|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    121|       expect(decision.isWorkspaceAction).toBe(false);
+    122|       expect(decision.isNegativeWorkspaceConstraint).toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[33/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Negative Workspace Constraints & Standalone Deliverables > routes 'create script.py outside the workspace' to standalone_file
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:133:32
+    131|       expect(decision.actionTarget).toBe("standalone_file");
+    132|       expect(decision.taskType).toBe("code");
+    133|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    134|       expect(decision.isWorkspaceAction).toBe(false);
+    135|       expect(decision.extractedFilename).toBe("script.py");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[34/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Approval Note & Office Document Drafting > routes 'Draft an approval note for a proposed maintenance nuclear reactor shutdown and save it as a Word document.' to draft model even when workspace is active
+AssertionError: expected 'primary-model' to be 'draft-qwen3' // Object.is equality
+
+Expected: "draft-qwen3"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:259:32
+    257|       expect(decision.actionTarget).toBe("chat");
+    258|       expect(decision.taskType).toBe("draft");
+    259|       expect(decision.modelId).toBe("draft-qwen3");
+       |                                ^
+    260|       expect(decision.isWorkspaceAction).toBe(false);
+    261|       expect(decision.reason).toBe("approval note drafting");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[35/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Approval Note & Office Document Drafting > routes general approval notes to draft-qwen3
+AssertionError: expected 'primary-model' to be 'draft-qwen3' // Object.is equality
+
+Expected: "draft-qwen3"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:271:32
+    269|       expect(decision.actionTarget).toBe("chat");
+    270|       expect(decision.taskType).toBe("draft");
+    271|       expect(decision.modelId).toBe("draft-qwen3");
+       |                                ^
+    272|     });
+    273|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[36/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Workspace File & Command Execution Intent > routes file execution with stdin inputs to harness
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:283:32
+    281|       expect(decision.actionTarget).toBe("harness");
+    282|       expect(decision.taskType).toBe("code");
+    283|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    284|       expect(decision.isWorkspaceAction).toBe(true);
+    285|       expect(decision.reason).toBe("workspace command execution");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[37/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Multi-Turn Follow-Ups & Confirmation > routes affirmative 'Yes' following a workspace deletion prompt to harness
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:345:32
+    343|       expect(decision.actionTarget).toBe("harness");
+    344|       expect(decision.taskType).toBe("code");
+    345|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    346|       expect(decision.isWorkspaceAction).toBe(true);
+    347|       expect(decision.reason).toBe("affirmative follow-up in active wo…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[38/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Multi-Turn Follow-Ups & Confirmation > routes affirmative 'proceed' following confirmation request to harness
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:361:32
+    359|       expect(decision.actionTarget).toBe("harness");
+    360|       expect(decision.isWorkspaceAction).toBe(true);
+    361|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    362|     });
+    363| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Multi-Turn Follow-Ups & Confirmation > routes 'execute the file' in active workspace to harness
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:371:32
+    369|       expect(decision.actionTarget).toBe("harness");
+    370|       expect(decision.isWorkspaceAction).toBe(true);
+    371|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    372|       expect(decision.reason).toBe("script/file execution follow-up in…
+    373|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[40/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Multi-Turn Follow-Ups & Confirmation > routes 'run the script' when workspace is inactive but recent artifacts exist to data sandbox
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:383:32
+    381|       expect(decision.actionTarget).toBe("data");
+    382|       expect(decision.isWorkspaceAction).toBe(false);
+    383|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    384|     });
+    385| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[41/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Workspace File Write & Save Overrides > routes 'Write the updated file into the test directory workspace' to harness even with CSV attachment
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:418:32
+    416|       expect(decision.actionTarget).toBe("harness");
+    417|       expect(decision.taskType).toBe("code");
+    418|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    419|       expect(decision.isWorkspaceAction).toBe(true);
+    420|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[42/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Workspace File Write & Save Overrides > routes 'write the python script into the directory' to harness with Python and CSV attachments
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:433:32
+    431|       expect(decision.actionTarget).toBe("harness");
+    432|       expect(decision.taskType).toBe("code");
+    433|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    434|       expect(decision.isWorkspaceAction).toBe(true);
+    435|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[43/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Workspace File Deletion & Follow-up Routing > routes 'Remove the file in the workspace' to harness even with historical attachments
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:495:32
+    493|       expect(decision.actionTarget).toBe("harness");
+    494|       expect(decision.isWorkspaceAction).toBe(true);
+    495|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    496|     });
+    497| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[44/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Workspace File Deletion & Follow-up Routing > routes 'Still hasnt been deleted from the directory' to harness even with historical attachments
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:506:32
+    504|       expect(decision.actionTarget).toBe("harness");
+    505|       expect(decision.isWorkspaceAction).toBe(true);
+    506|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    507|     });
+    508| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[45/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Workspace File Deletion & Follow-up Routing > routes 'Delete the damn file from the workspace bruh' to harness even with historical attachments
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:517:32
+    515|       expect(decision.actionTarget).toBe("harness");
+    516|       expect(decision.isWorkspaceAction).toBe(true);
+    517|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    518|     });
+    519| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[46/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Workspace File Deletion & Follow-up Routing > routes 'clean up the generated files from the folder' to harness
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:528:32
+    526|       expect(decision.actionTarget).toBe("harness");
+    527|       expect(decision.isWorkspaceAction).toBe(true);
+    528|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    529|     });
+    530|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[47/94]⎯
+
+ FAIL  backend/tests/intent-classifier.test.ts > Intelligent Intent Classifier > Typo Tolerance & Expanded Action Verbs > routes typoed requests like 'modfy the midleware' to harness
+AssertionError: expected 'primary-model' to be 'code-qwen25coder' // Object.is equality
+
+Expected: "code-qwen25coder"
+Received: "primary-model"
+
+ ❯ backend/tests/intent-classifier.test.ts:559:32
+    557|       expect(decision.actionTarget).toBe("harness");
+    558|       expect(decision.taskType).toBe("code");
+    559|       expect(decision.modelId).toBe("code-qwen25coder");
+       |                                ^
+    560|       expect(decision.isWorkspaceAction).toBe(true);
+    561|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[48/94]⎯
+
+ FAIL  backend/tests/intent-gateway.test.ts > Production intent classifier request and failure boundaries > sends non-reasoning JSON-constrained classification with its own deadline
+AssertionError: expected 'failed' to be 'resolved' // Object.is equality
+
+Expected: "resolved"
+Received: "failed"
+
+ ❯ backend/tests/intent-gateway.test.ts:38:27
+     36|     }) };
+     37|     const intent = await resolveSemanticIntent({ userPrompt: "Repair t…
+     38|     expect(intent.status).toBe("resolved");
+       |                           ^
+     39|     expect(intent.workspaceMutationRequested).toBe(false);
+     40|     expect(intent.expectedDeliverables[0].filename).toBe("fixed-reader…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[49/94]⎯
+
+ FAIL  backend/tests/local-model-flow-regressions.test.ts > Local model flow regressions > applies statement edits relative to source indentation without changing the input
+AssertionError: expected false not to be false // Object.is equality
+ ❯ backend/tests/local-model-flow-regressions.test.ts:83:27
+     81|     const result = await executePythonTool.execute({ source_file: "ori…
+     82|       edits: [{ old: "total += int(row['value'])", new: "try:\n    tot…
+     83|     expect(result.ok).not.toBe(false);
+       |                           ^
+     84|     expect(JSON.parse(result.output).stdout.trim()).toBe("10");
+     85|     expect(readFileSync(sourcePath, "utf8")).toBe(source);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[50/94]⎯
+
+ FAIL  backend/tests/local-model-flow-regressions.test.ts > Local model flow regressions > requires all source pages and preserves inspector notes in a real Word table
+AssertionError: expected Error: Cannot generate deliverable "deliv… to match object { code: 'invalid_arguments' }
+
+- Expected
++ Received
+
+- {
+-   "code": "invalid_arguments",
++ Error {
++   "message": "Cannot generate deliverable \"deliverable.docx\" with placeholder or empty content. You must first inspect input files (using read_file or extract_document), synthesize the findings, and call generate_deliverable with complete, comprehensive, publication-ready markdown or text content.",
+  }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[51/94]⎯
+
+ FAIL  backend/tests/model-selection.test.ts > Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Multi-model setup with explicit selection -> interprets and executes with selected model
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/model-selection.test.ts:281:93
+    279| 
+    280|       await vi.waitFor(
+    281|         () => expect(events.some((e) => e.type === "run_state" && e.st…
+       |                                                                                             ^
+    282|         { timeout: 2000 },
+    283|       );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[52/94]⎯
+
+ FAIL  backend/tests/model-selection.test.ts > Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Explicitly selected model becomes unavailable -> fails with error event and terminal failed state
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/model-selection.test.ts:317:90
+    315| 
+    316|       await vi.waitFor(
+    317|         () => expect(events.some((e) => e.type === "run_state" && e.st…
+       |                                                                                          ^
+    318|         { timeout: 2000 },
+    319|       );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[53/94]⎯
+
+ FAIL  backend/tests/model-selection.test.ts > Phase 1: Model Selection & Classification Removal > RunManager Execution Lifecycles (V2) > Scenario: Agent mutation request -> narrow semantic safety exception preserves protectedPaths and approvals
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/model-selection.test.ts:392:105
+    390| 
+    391|       await vi.waitFor(
+    392|         () => expect(events.some((e) => e.type === "run_state" && e.st…
+       |                                                                                                         ^
+    393|         { timeout: 2000 },
+    394|       );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[54/94]⎯
+
+ FAIL  backend/tests/multi-attachment.test.ts > Multi-Attachment Support & Persistence > persists multiple attachments in run_attachments join table
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/multi-attachment.test.ts:209:11
+    207|               (e.type === "run_state" && (e.state === "completed" || e…
+    208|           ),
+    209|         ).toBe(true);
+       |           ^
+    210|       },
+    211|       { timeout: 3000 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[55/94]⎯
+
+ FAIL  backend/tests/multi-attachment.test.ts > Multi-Attachment Support & Persistence > executes multi-document inspection without retrieving criteria when grounding is disabled
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/multi-attachment.test.ts:249:11
+    247|               (e.type === "run_state" && (e.state === "completed" || e…
+    248|           ),
+    249|         ).toBe(true);
+       |           ^
+    250|       },
+    251|       { timeout: 3000 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[56/94]⎯
+
+ FAIL  backend/tests/multi-attachment.test.ts > Multi-Attachment Support & Persistence > executes Flow B script repair with python + csv attachments and artifact generation
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/multi-attachment.test.ts:324:11
+    322|         expect(
+    323|           runEvents.some((e) => e.type === "confirmation_required"),
+    324|         ).toBe(true);
+       |           ^
+    325|       },
+    326|       { timeout: 3000 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[57/94]⎯
+
+ FAIL  backend/tests/onboarding.test.ts > Onboarding Architecture & IPC Handlers > buildRegistryFromRows > converts rows into valid ModelRegistryEntry array
+AssertionError: expected [ { id: 'primary-model', …(9) }, …(1) ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ backend/tests/onboarding.test.ts:125:23
+    123|     it("converts rows into valid ModelRegistryEntry array", () => {
+    124|       const entries = buildRegistryFromRows(rows);
+    125|       expect(entries).toHaveLength(1);
+       |                       ^
+    126|       const primary = entries[0];
+    127|       expect(primary.id).toBe("primary-model");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[58/94]⎯
+
+ FAIL  backend/tests/onboarding.test.ts > Onboarding Architecture & IPC Handlers > Onboarding Persistence & Lifecycle > saves model config, updates gateway, and marks onboarding complete
+AssertionError: expected 2 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ backend/tests/onboarding.test.ts:190:37
+    188|       // Old role-based model settings migrate to the former general e…
+    189|       const gateway = manager.getGateway();
+    190|       expect(gateway.registry.size).toBe(1);
+       |                                     ^
+    191|       const primary = gateway.registry.get("primary-model");
+    192|       expect(primary).toBeDefined();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[59/94]⎯
+
+ FAIL  backend/tests/run-contract.test.ts > P1 canonical run contract > persists one versioned normalized contract without duplicating raw prompt content
+AssertionError: expected 'Failed intent classification' to be 'Repair the parser' // Object.is equality
+
+Expected: "Repair the parser"
+Received: "Failed intent classification"
+
+ ❯ backend/tests/run-contract.test.ts:23:32
+     21|     const contract = persistRunContract(normalizeRunContract(runId, in…
+     22|     expect(contract.schemaVersion).toBe(1);
+     23|     expect(contract.objective).toBe("Repair the parser");
+       |                                ^
+     24|     expect(contract.acceptance.validateWrittenCode).toBe(true);
+     25|     expect(JSON.stringify(contract)).not.toContain("raw prompt");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[60/94]⎯
+
+ FAIL  backend/tests/run-contract.test.ts > P1 canonical run contract > separates workspace documents from exported artifacts and ignores contradictory compatibility output expectations
+AssertionError: expected [] to deeply equal [ 'notes.md', 'plan.docx' ]
+
+- Expected
++ Received
+
+- [
+-   "notes.md",
+-   "plan.docx",
+- ]
++ []
+
+ ❯ backend/tests/run-contract.test.ts:36:32
+     34|     const contract = normalizeRunContract(runId, resolved);
+     35|     const output = outputExpectationFromContract(contract);
+     36|     expect(output.targetFiles).toEqual(["notes.md", "plan.docx"]);
+       |                                ^
+     37|     expect(output.expectedFiles).toEqual(["report.docx"]);
+     38|     expect(evaluateRunContractCompletion(contract, evidence({ written:…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[61/94]⎯
+
+ FAIL  backend/tests/run-contract.test.ts > P1 canonical run contract > does not accept an artifact as a workspace change or reuse one file for two requested outputs
+AssertionError: expected [] to deeply equal [ 'parser.py' ]
+
+- Expected
++ Received
+
+- [
+-   "parser.py",
+- ]
++ []
+
+ ❯ backend/tests/run-contract.test.ts:43:37
+     41|     const contract = normalizeRunContract(runId, intent({ expectedDeli…
+     42|     const result = evaluateRunContractCompletion(contract, evidence({ …
+     43|     expect(result.missingMutations).toEqual(["parser.py"]);
+       |                                     ^
+     44|     expect(result.missingDeliverables).toEqual(["reconciliation workbo…
+     45|     expect(result.outcome).toBe("partial");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[62/94]⎯
+
+ FAIL  backend/tests/run-contract.test.ts > P1 canonical run contract > accepts a verified deliverable with a generated name when no exact filename was requested
+TypeError: Cannot read properties of undefined (reading 'filename')
+ ❯ backend/tests/run-contract.test.ts:49:37
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[63/94]⎯
+
+ FAIL  backend/tests/run-contract.test.ts > P1 canonical run contract > requires the exact explicitly requested filename while permitting separate outputs
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ backend/tests/run-contract.test.ts:56:75
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[64/94]⎯
+
+ FAIL  backend/tests/run-contract.test.ts > P1 canonical run contract > matches exact workspace paths and distinguishes writes, deletes and successful commands
+AssertionError: expected [] to have a length of 2 but got +0
+
+- Expected
++ Received
+
+- 2
++ 0
+
+ ❯ backend/tests/run-contract.test.ts:66:123
+     64|   it("matches exact workspace paths and distinguishes writes, deletes …
+     65|     const contract = normalizeRunContract(runId, intent({ targetFiles:…
+     66|     expect(evaluateRunContractCompletion(contract, evidence({ deleted:…
+       |                                                                                                                           ^
+     67|     expect(evaluateRunContractCompletion(contract, evidence({ deleted:…
+     68|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[65/94]⎯
+
+ FAIL  backend/tests/run-contract.test.ts > P1 canonical run contract > requires declared verification even when the target exists and exposes the same requirement after reload
+AssertionError: expected 'completed' to be 'partial' // Object.is equality
+
+Expected: "partial"
+Received: "completed"
+
+ ❯ backend/tests/run-contract.test.ts:72:29
+     70|     const contract = persistRunContract(normalizeRunContract(runId, in…
+     71|     const pending = evaluateRunContractCompletion(getRunContract(runId…
+     72|     expect(pending.outcome).toBe("partial");
+       |                             ^
+     73|     expect(pending.missingAcceptance).toContain("validation against th…
+     74|     expect(evaluateRunContractCompletion(contract, evidence({ written:…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[66/94]⎯
+
+ FAIL  backend/tests/run-contract.test.ts > P1 canonical run contract > rejects unknown persisted schema versions and escaping paths
+AssertionError: expected [Function] to throw an error
+
+- Expected: 
+null
+
++ Received: 
+undefined
+
+ ❯ backend/tests/run-contract.test.ts:90:94
+     88|     getDb().prepare("UPDATE run_contracts SET schema_version=99 WHERE …
+     89|     expect(() => getRunContract(runId)).toThrow("Unsupported");
+     90|     expect(() => normalizeRunContract(runId, { ...intent(), targetFile…
+       |                                                                                              ^
+     91|   });
+     92| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[67/94]⎯
+
+ FAIL  backend/tests/run-contract.test.ts > P1 canonical run contract > successMarker contract normalization regressions > preserves valid markers and trims surrounding whitespace
+AssertionError: expected undefined to be 'ALL_TESTS_PASS' // Object.is equality
+
+- Expected: 
+"ALL_TESTS_PASS"
+
++ Received: 
+undefined
+
+ ❯ backend/tests/run-contract.test.ts:117:49
+    115|     it("preserves valid markers and trims surrounding whitespace", () …
+    116|       const contract = normalizeRunContract(runId, intent({ successMar…
+    117|       expect(contract.acceptance.successMarker).toBe("ALL_TESTS_PASS");
+       |                                                 ^
+    118|       const persisted = persistRunContract(contract);
+    119|       expect(persisted.acceptance.successMarker).toBe("ALL_TESTS_PASS"…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[68/94]⎯
+
+ FAIL  backend/tests/run-contract.test.ts > P1 canonical run contract > successMarker contract normalization regressions > allows ordinary chat intent with empty successMarker to reach agent contract cleanly
+AssertionError: expected 'failed' to be 'resolved' // Object.is equality
+
+Expected: "resolved"
+Received: "failed"
+
+ ❯ backend/tests/run-contract.test.ts:170:33
+    168|         userPrompt: "Explain Bourdon tube safety",
+    169|       });
+    170|       expect(chatIntent.status).toBe("resolved");
+       |                                 ^
+    171|       expect(chatIntent.successMarker).toBeUndefined();
+    172|       const contract = normalizeRunContract(runId, chatIntent);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[69/94]⎯
+
+ FAIL  backend/tests/tool-argument-resilience.test.ts > Tool Argument Parsing Resilience > tool executions with aliased arguments > binds requested CSV validation defaults before approval and executes real assertions
+TypeError: Cannot read properties of undefined (reading 'finishReason')
+ ❯ backend/src/main/agent/agent-loop.ts:1029:33
+    1027|         const response = await requestTurn();
+    1028|         if (!response.ok) activity.block(response.error.message);
+    1029|         else if (response.value.finishReason === "length") activity.bl…
+       |                                 ^
+    1030|         return response;
+    1031|       }) : await requestTurn();
+ ❯ Module.withTaskProgress backend/src/main/run/task-progress.ts:43:20
+ ❯ AgentLoop.run backend/src/main/agent/agent-loop.ts:1026:46
+ ❯ backend/tests/tool-argument-resilience.test.ts:212:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[70/94]⎯
+
+ FAIL  backend/tests/v0-regressions.test.ts > V0 attached-source transport and execution integrity > persists a partial run and final explanation after an incomplete post-execution review
+Error: Attachment belongs to another chat.
+ ❯ RunManager.start backend/src/main/run/manager.ts:527:51
+    525|     const requested=[...new Set(input.attachmentTokens??(input.attachm…
+    526|     const chatId=input.chatId??requested[0]?.chatId??this.chatIdForRun…
+    527|     if(requested.some(a=>a.chatId!==chatId))throw new Error("Attachmen…
+       |                                                   ^
+    528|     if(input.runId && this.chatIdForRunIfPresent(input.runId) && this.…
+    529|     const db=getDb();
+ ❯ backend/tests/v0-regressions.test.ts:124:37
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[71/94]⎯
+
+ FAIL  backend/tests/vision-run.test.ts > Vision Task Execution (Architecture Collapse) > routes PDF/image attachments directly to executeVisionTask and outputs structured findings
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/vision-run.test.ts:116:90
+    114|     await vi.waitFor(
+    115|       () => {
+    116|         expect(runEvents.some((e) => e.type === "run_state" && e.state…
+       |                                                                                          ^
+    117|       },
+    118|       { timeout: 3000, interval: 50 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[72/94]⎯
+
+ FAIL  backend/tests/vision-run.test.ts > Vision Task Execution (Architecture Collapse) > chains vision findings seamlessly into draft when user requests an approval note in single turn
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/vision-run.test.ts:174:90
+    172|     await vi.waitFor(
+    173|       () => {
+    174|         expect(runEvents.some((e) => e.type === "run_state" && e.state…
+       |                                                                                          ^
+    175|       },
+    176|       { timeout: 3000, interval: 50 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[73/94]⎯
+
+ FAIL  backend/tests/vision-run.test.ts > Vision Task Execution (Architecture Collapse) > automatically uses Tier 1 Fast Text extraction for clean digital PDF, saving vision tokens
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/vision-run.test.ts:236:90
+    234|     await vi.waitFor(
+    235|       () => {
+    236|         expect(runEvents.some((e) => e.type === "run_state" && e.state…
+       |                                                                                          ^
+    237|       },
+    238|       { timeout: 3000, interval: 50 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[74/94]⎯
+
+ FAIL  backend/tests/vision-run.test.ts > Vision Task Execution (Architecture Collapse) > forces Tier 2 Vision model when user prompt specifically mentions engineering drawing / P&ID
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/vision-run.test.ts:310:90
+    308|     await vi.waitFor(
+    309|       () => {
+    310|         expect(runEvents.some((e) => e.type === "run_state" && e.state…
+       |                                                                                          ^
+    311|       },
+    312|       { timeout: 3000, interval: 50 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[75/94]⎯
+
+ FAIL  backend/tests/vision-run.test.ts > Vision Task Execution (Architecture Collapse) > selectively slices multi-page documents, sending only top visual pages and preserving text context
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ vi.waitFor.timeout backend/tests/vision-run.test.ts:400:90
+    398|     await vi.waitFor(
+    399|       () => {
+    400|         expect(runEvents.some((e) => e.type === "run_state" && e.state…
+       |                                                                                          ^
+    401|       },
+    402|       { timeout: 3000, interval: 50 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[76/94]⎯
+
+ FAIL  backend/tests/worker-pool.test.ts > ModelGateway Worker Pool & Load Balancing > populates worker pool from buildRegistryFromRows with multiple rows for a role
+AssertionError: expected [] to have a length of 2 but got +0
+
+- Expected
++ Received
+
+- 2
++ 0
+
+ ❯ backend/tests/worker-pool.test.ts:74:28
+     72| 
+     73|     const draftInstances = gateway.getModelInstances("draft-qwen3");
+     74|     expect(draftInstances).toHaveLength(2);
+       |                            ^
+     75|     expect(draftInstances[0].baseUrl).toBe("http://127.0.0.1:11434/v1"…
+     76|     expect(draftInstances[1].baseUrl).toBe("http://192.168.1.50:11434/…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[77/94]⎯
+
+
+ Test Files  20 failed | 56 passed | 2 skipped (78)
+      Tests  94 failed | 818 passed | 6 skipped (918)
+   Start at  21:51:20
+   Duration  121.07s (transform 1.47s, setup 0ms, collect 11.86s, tests 173.84s, environment 5ms, prepare 1.79s)
+

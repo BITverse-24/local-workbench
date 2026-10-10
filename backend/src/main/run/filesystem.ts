@@ -1,4 +1,6 @@
 import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { resolveSafe } from "../harness/path-guard.js";
+import { lstatSync } from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { assertSafeRelativePath } from "../persistence/paths.js";
@@ -30,12 +32,31 @@ export function sha256File(filePath: string): string {
 }
 export function absoluteDataPath(relativePath: string): string { assertSafeRelativePath(relativePath); const root = path.resolve(dataRoot()); const target = path.resolve(root, relativePath); if (!target.startsWith(`${root}${path.sep}`)) throw new Error("data path escapes root"); return target; }
 export function runRoot(runId: string): string { if (!/^[0-9a-f-]{36}$/i.test(runId)) throw new Error("invalid run id"); return path.join(dataRoot(), "runs", runId); }
-export function createRunDirectories(runId: string): string { const root = runRoot(runId); for (const name of ["input", "intermediate", "output", "logs"]) mkdirSync(path.join(root, name), { recursive: true }); return root; }
-export function resolveRunPath(runId: string, relativePath: string, area?: "input" | "intermediate" | "output" | "logs"): string { assertSafeRelativePath(relativePath); const root = runRoot(runId); const target = path.resolve(root, relativePath); if (!target.startsWith(`${root}${path.sep}`)) throw new Error("path escapes run"); if (area) { const areaRoot = path.join(root, area); if (target !== areaRoot && !target.startsWith(`${areaRoot}${path.sep}`)) throw new Error("path outside permitted run area"); } return target; }
-export function registerAttachment(runId: string, input: { filename: string; mediaType: string; sizeBytes: number; base64OrBuffer: string | Buffer }): AttachmentReference { const bytes = typeof input.base64OrBuffer === "string" ? Buffer.from(input.base64OrBuffer, "base64") : input.base64OrBuffer; if (input.sizeBytes !== bytes.length || bytes.length > MAX_ATTACHMENT) throw new Error("attachment size rejected"); const filename = path.basename(input.filename); if (!filename || filename !== input.filename || /[\0]/.test(filename)) throw new Error("invalid attachment filename"); createRunDirectories(runId); const relativePath = `runs/${runId}/input/${randomUUID()}-${filename}`; writeFileSync(absoluteDataPath(relativePath), bytes, { flag: "wx" }); try { writeFileSync(absoluteDataPath(`runs/${runId}/input/${filename}`), bytes, { flag: "w" }); } catch {} return { attachmentId: randomUUID(), filename, mediaType: input.mediaType, sizeBytes: bytes.length, relativePath }; }
+function rejectStorageSymlinks(directories: string[]): void {
+  for (const directory of directories) {
+    // lstat also finds a dangling symlink, which existsSync does not find.
+    try {
+      if (lstatSync(directory).isSymbolicLink()) throw new Error("Run storage directory cannot be a symlink.");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+}
+export function createRunDirectories(runId: string): string {
+  const root = runRoot(runId);
+  const areas = ["input", "intermediate", "output", "logs"].map(name => path.join(root, name));
+  rejectStorageSymlinks([path.join(dataRoot(), "runs"), root, ...areas]);
+  for (const directory of areas) mkdirSync(directory, { recursive: true });
+  return root;
+}
+export function resolveRunPath(runId: string, relativePath: string, area?: "input" | "intermediate" | "output" | "logs"): string { assertSafeRelativePath(relativePath); const root = runRoot(runId); const target = path.resolve(root, relativePath); if (!target.startsWith(`${root}${path.sep}`)) throw new Error("path escapes run"); if (area) { const areaRoot = path.join(root, area); if (target !== areaRoot && !target.startsWith(`${areaRoot}${path.sep}`)) throw new Error("path outside permitted run area"); }
+  rejectStorageSymlinks([path.join(dataRoot(), "runs"), root, ...(area ? [path.join(root, area)] : [])]);
+  resolveSafe(area?path.join(root,area):root,(area?path.relative(path.join(root,area),target):relativePath)||"."); return target; }
+export function registerAttachment(runId: string, input: { filename: string; mediaType: string; sizeBytes: number; base64OrBuffer: string | Buffer }): AttachmentReference { const bytes = typeof input.base64OrBuffer === "string" ? Buffer.from(input.base64OrBuffer, "base64") : input.base64OrBuffer; if (input.sizeBytes !== bytes.length || bytes.length > MAX_ATTACHMENT) throw new Error("attachment size rejected"); const filename = path.basename(input.filename); if (!filename || filename !== input.filename || /[\0]/.test(filename)) throw new Error("invalid attachment filename"); createRunDirectories(runId); const alias = `${randomUUID()}-${filename}`; const relativePath = `runs/${runId}/input/${alias}`; writeFileSync(resolveRunPath(runId, `input/${alias}`, "input"), bytes, { flag: "wx" }); try { writeFileSync(resolveRunPath(runId, `input/${filename}`, "input"), bytes, { flag: "wx" }); } catch {} return { attachmentId: randomUUID(), filename, mediaType: input.mediaType, sizeBytes: bytes.length, relativePath }; }
 export function readRunFile(runId: string, relativePath: string, area: "input" | "intermediate" | "output" = "input"): Buffer { const expected = resolveRunPath(runId, relativePath.replace(`runs/${runId}/`, ""), area); return readFileSync(expected); }
 export function writeRunFile(runId: string, area: "intermediate" | "output" | "logs", filename: string, content: string | Buffer, overwrite = false): string {
   assertSafeRelativePath(filename);
+  createRunDirectories(runId);
   const target = resolveRunPath(runId, `${area}/${filename}`, area);
   mkdirSync(path.dirname(target), { recursive: true });
   writeFileSync(target, content, { flag: overwrite ? "w" : "wx" });

@@ -33,6 +33,8 @@ const RunWaitingIndicator = memo(function RunWaitingIndicator({
   const state = useMemo(() => getRunProgress(runEvents, runState), [runEvents, runState]);
   const activity = useMemo(() => runEvents.filter(event => event.type !== "model_progress"), [runEvents]);
   const results = activity.filter((event): event is Extract<RunEvent, { type: "tool_result" }> => event.type === "tool_result");
+  const queued=[...runEvents].reverse().find(event=>event.type==='run_queue') as Extract<RunEvent,{type:'run_queue'}>|undefined;
+  const isQueued=queued?.queued===true;
   const preview = state.paused ? undefined : state.progress?.preview?.trim();
   const showSkeleton = !state.paused && !preview && !(hasStreamingText && !state.task && !state.tool && (!state.progress || state.progress.channel === "text"));
   const kind = state.kind === "text" && activeRoute?.taskType === "code" ? "code" : state.kind;
@@ -43,9 +45,9 @@ const RunWaitingIndicator = memo(function RunWaitingIndicator({
       <div className="flex items-center gap-3">
         <span className={`run-activity-mark ${state.paused ? "is-paused" : ""}`} aria-hidden="true"><span /><span /><span /></span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-[var(--text-primary)]" role="status" aria-live="polite">{state.title}</p>
+          <p className="text-sm font-medium text-[var(--text-primary)]" role="status" aria-live="polite">{isQueued?"Waiting for local inference":state.title}</p>
           <p className="mt-0.5 break-words text-xs text-[var(--text-tertiary)]">
-            {state.paused ? "Review the proposed action to continue." : state.reasoning ? "Reasoning output received" : state.task ? "Progress from the current task" : state.tool?.summary || (state.progress?.status === "receiving" ? "Receiving model output" : "Waiting for the model response")}
+            {isQueued?"Another request is using the local model. You can stop this queued request.":state.paused ? "Review the proposed action to continue." : state.reasoning ? "Reasoning output received" : state.task ? "Progress from the current task" : state.tool?.summary || (state.progress?.status === "receiving" ? "Receiving model output" : "Waiting for the model response")}
           </p>
         </div>
         {onCancel && <button type="button" onClick={onCancel} className="rounded-[var(--radius-sm)] border border-[var(--border-subtle)] px-2.5 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]" aria-label="Stop task">Stop</button>}

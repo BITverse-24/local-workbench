@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "runId": "3cfaf5e4-8338-4123-bb98-4dee234f9bbd",
+  "status": "unverified",
+  "checks": [
+    {
+      "criterionId": "artifact-integrity:ab835c58-c56d-443f-8790-0499f48e9a1c",
+      "requirement": "Integrity of artifact broken-vendor-log-parser.py",
+      "status": "passed",
+      "method": "sha256",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "ab835c58-c56d-443f-8790-0499f48e9a1c"
+        }
+      ],
+      "reason": "SHA-256 matches the registered digest.",
+      "verifiedAt": "2026-10-10T20:52:54.330Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "artifact-format:ab835c58-c56d-443f-8790-0499f48e9a1c",
+      "requirement": "Structural format of broken-vendor-log-parser.py",
+      "status": "passed",
+      "method": "format_parser",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "ab835c58-c56d-443f-8790-0499f48e9a1c"
+        }
+      ],
+      "reason": "Text is valid UTF-8 and the extension matches the registered format.",
+      "verifiedAt": "2026-10-10T20:52:54.330Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "result-integrity:8869ca68-9eee-43a5-8e12-6fa30cfcd90c",
+      "requirement": "Integrity of stored result 8869ca68-9eee-43a5-8e12-6fa30cfcd90c",
+      "status": "passed",
+      "method": "result_store_checksum",
+      "evidence": [
+        {
+          "kind": "result",
+          "id": "8869ca68-9eee-43a5-8e12-6fa30cfcd90c"
+        }
+      ],
+      "reason": "Stored result SHA-256 matches the manifest.",
+      "verifiedAt": "2026-10-10T20:52:54.331Z",
+      "mandatory": false
+    },
+    {
+      "criterionId": "deliverable:deliverable-1",
+      "requirement": "broken-vendor-log-parser.py",
+      "status": "passed",
+      "method": "filesystem",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "ab835c58-c56d-443f-8790-0499f48e9a1c"
+        }
+      ],
+      "reason": "A registered artifact matches the RunContract deliverable. Its format and integrity have separate checks.",
+      "verifiedAt": "2026-10-10T20:52:54.331Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "acceptance:validated-python:broken-vendor-log-parser.py",
+      "requirement": "Validate source broken-vendor-log-parser.py",
+      "status": "unverified",
+      "method": "agent_loop_completion",
+      "evidence": [],
+      "reason": "The existing completion evaluator has not recorded acceptance for this criterion.",
+      "verifiedAt": "2026-10-10T20:52:54.331Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "acceptance:response",
+      "requirement": "Provide a response to the user",
+      "status": "unverified",
+      "method": "agent_loop_completion",
+      "evidence": [],
+      "reason": "The existing completion evaluator has not recorded acceptance for this criterion.",
+      "verifiedAt": "2026-10-10T20:52:54.331Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "independent:ab835c58-c56d-443f-8790-0499f48e9a1c",
+      "requirement": "Read saved broken-vendor-log-parser.py",
+      "status": "passed",
+      "method": "independent_reader",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "ab835c58-c56d-443f-8790-0499f48e9a1c"
+        }
+      ],
+      "reason": "The independent reader parsed the saved output.",
+      "verifiedAt": "2026-10-10T20:52:54.328Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "content:complete_request",
+      "requirement": "Can you repair this parser and check it with the attached CSV? Keep the same interface and give me the corrected Python file.",
+      "status": "unverified",
+      "method": "content_check",
+      "evidence": [
+        {
+          "kind": "artifact",
+          "id": "ab835c58-c56d-443f-8790-0499f48e9a1c"
+        }
+      ],
+      "reason": "This required interpretation has no independent content proof.",
+      "verifiedAt": "2026-10-10T20:52:44.078Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "work:executed_source",
+      "requirement": "Saved repair matches the executed revision",
+      "status": "passed",
+      "method": "sha256",
+      "evidence": [],
+      "reason": "Saved source bytes match the successful execution source digest.",
+      "verifiedAt": "2026-10-10T20:52:54.329Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "work:source_behavior",
+      "requirement": "Source-derived repair behavior",
+      "status": "passed",
+      "method": "content_check",
+      "evidence": [],
+      "reason": "The shared behavior review assessed all source-derived checks.",
+      "verifiedAt": "2026-10-10T20:52:54.329Z",
+      "mandatory": true
+    },
+    {
+      "criterionId": "work:python_behavior",
+      "requirement": "Successful execution of repaired source",
+      "status": "passed",
+      "method": "execution_record",
+      "evidence": [],
+      "reason": "The saved execution result has exit code zero.",
+      "verifiedAt": "2026-10-10T20:52:54.329Z",
+      "mandatory": true
+    }
+  ],
+  "updatedAt": "2026-10-10T20:52:54.330Z"
+}

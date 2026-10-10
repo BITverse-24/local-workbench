@@ -23,7 +23,7 @@ async function main(): Promise<void> {
   let closing = false;
   const pending = new Set<number>();
   const rl = createInterface({ input: process.stdin });
-  const send = z.object({ chat: z.string(), text: z.string(), files: z.array(z.string()).default([]), temperature: z.number().optional(), groundingEnabled: z.boolean().optional(), preferredRoute: z.string().optional() }).strict();
+  const send = z.object({ mode: z.enum(["chat","work","agent"]).optional(), chat: z.string(), text: z.string(), files: z.array(z.string()).default([]), temperature: z.number().optional(), groundingEnabled: z.boolean().optional(), preferredRoute: z.string().optional() }).strict();
   const invokable = new Set(["workbench:confirmAction", "workbench:cancelRun", "workbench:getMessages", "workbench:getArtifact", "workbench:getChatHistory"]);
   for await (const line of rl) {
     let raw: unknown;

@@ -158,6 +158,7 @@ export const listDirTool: AgentTool = {
  * Resolves a file across run storage directories ('output', 'intermediate', 'input').
  */
 export function findFileInRunDirectories(runId: string, relPath: string): string | null {
+  if(path.isAbsolute(relPath)||relPath.includes("\0")||relPath.split(/[\\/]/).includes(".."))throw new PermissionError("Run source path is not contained.");
   const areas: Array<"output" | "intermediate" | "input"> = ["output", "intermediate", "input"];
   const base = path.basename(relPath);
 
@@ -165,7 +166,7 @@ export function findFileInRunDirectories(runId: string, relPath: string): string
   for (const area of areas) {
     if (relPath.startsWith(`${area}/`) || relPath.startsWith(`${area}\\`)) {
       try {
-        const candidate = resolveRunPath(runId, relPath, area);
+        const candidate = resolveSafe(resolveRunPath(runId, area, area),relPath.slice(area.length+1));
         if (existsSync(candidate)) return candidate;
       } catch {}
     }
@@ -175,14 +176,14 @@ export function findFileInRunDirectories(runId: string, relPath: string): string
   for (const area of areas) {
     try {
       const areaDir = resolveRunPath(runId, area, area);
-      const directCandidate = path.join(areaDir, base);
+      const directCandidate = resolveSafe(areaDir, base);
       if (existsSync(directCandidate)) return directCandidate;
 
       if (existsSync(areaDir)) {
         const files = readdirSync(areaDir);
         const matched = files.find((f) => f === base || f.endsWith(`-${base}`));
         if (matched) {
-          const matchedPath = path.join(areaDir, matched);
+          const matchedPath = resolveSafe(areaDir, matched);
           if (existsSync(matchedPath)) return matchedPath;
         }
       }

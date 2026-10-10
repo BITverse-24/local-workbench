@@ -1,0 +1,465 @@
+
+> local-workbench@0.1.0 test
+> node scripts/test.cjs backend/tests/three-modes.test.ts backend/tests/mode-recovery.test.ts backend/tests/run-verification.test.ts backend/tests/execution-envelope.test.ts backend/tests/ipc.test.ts backend/tests/task-progress.test.ts backend/tests/result-memory-integration.test.ts backend/tests/context-compaction.test.ts backend/tests/gateway-telemetry.test.ts backend/tests/completion-stream.test.ts backend/tests/streaming-filter.test.ts backend/tests/result-store.test.ts backend/tests/run-sessions.test.ts backend/tests/agent-loop.test.ts backend/tests/agent-v2-integration.test.ts backend/tests/dynamic-dispatch.test.ts backend/tests/benchmark-phase2.test.ts backend/tests/completion-semantics.test.ts
+
+
+ RUN  v3.2.7 /Users/krishay/projects/agent
+
+ ✓ backend/tests/result-store.test.ts (9 tests) 188ms
+ ✓ backend/tests/agent-loop.test.ts (34 tests) 89ms
+ ✓ backend/tests/completion-stream.test.ts (11 tests) 7ms
+ ✓ backend/tests/task-progress.test.ts (8 tests) 57ms
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > executes unified agent loop when WORKBENCH_AGENT_V2 is active
+[run:70a1b1d6] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain thermal expansion
+[run:767a6182] ➜ acting
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > executes unified agent loop when WORKBENCH_AGENT_V2 is active
+[run:70a1b1d6] ➜ planning
+[run:70a1b1d6] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain thermal expansion
+[run:767a6182] ➜ completed
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > executes unified agent loop when WORKBENCH_AGENT_V2 is active
+[run:70a1b1d6] ➜ completed
+
+stdout | backend/tests/completion-semantics.test.ts > P0-02: Truthful Completion Semantics > Persistence & Store Truthful Transitions > RunManager dispatches partial and limit_exceeded outcomes correctly
+[run:ee61298f] ➜ classifying
+
+stdout | backend/tests/completion-semantics.test.ts > P0-02: Truthful Completion Semantics > Persistence & Store Truthful Transitions > RunManager dispatches partial and limit_exceeded outcomes correctly
+[run:ee61298f] ➜ planning
+[run:ee61298f] ➜ acting
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > uses a persisted contract and native result retrieval through the active V2 loop after semantic classification
+[run:882925b2] ➜ classifying
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > uses a persisted contract and native result retrieval through the active V2 loop after semantic classification
+[run:882925b2] ➜ planning
+[run:882925b2] ➜ acting
+
+stdout | backend/tests/run-verification.test.ts > P1-D durable outcome verification > keeps a failed mandatory deterministic check partial
+[run:c955257f] ➜ partial
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Compare mass and weight
+[run:0aa3daa4] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Compare mass and weight
+[run:0aa3daa4] ➜ completed
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > uses a persisted contract and native result retrieval through the active V2 loop after semantic classification
+[run:882925b2] ➜ completed
+
+stdout | backend/tests/completion-semantics.test.ts > P0-02: Truthful Completion Semantics > Persistence & Store Truthful Transitions > RunManager dispatches partial and limit_exceeded outcomes correctly
+┌── [Artifact Ready: DOCX] ────────────────────────────────────
+│ File:     approval-note.docx (8.4 KB)
+│ Location: runs/ee61298f-cc51-400f-9b1e-f58ad0d408c8/output/approval-note.docx
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > pauses before driver generation with plan_approval and resumes after confirmation
+[run:7e3839cb] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Fix src/index.ts
+[run:f178d7fa] ➜ acting
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > pauses before driver generation with plan_approval and resumes after confirmation
+[run:7e3839cb] ➜ planning
+[run:7e3839cb] ➜ acting
+[run:7e3839cb] ➜ awaiting_confirmation
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Fix src/index.ts
+[run:f178d7fa] ➜ completed
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > pauses before driver generation with plan_approval and resumes after confirmation
+[run:7e3839cb] ➜ acting
+
+stdout | backend/tests/completion-semantics.test.ts > P0-02: Truthful Completion Semantics > Persistence & Store Truthful Transitions > RunManager dispatches partial and limit_exceeded outcomes correctly
+[run:ee61298f] ➜ partial
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > pauses before driver generation with plan_approval and resumes after confirmation
+[run:7e3839cb] ➜ completed
+
+stdout | backend/tests/run-verification.test.ts > P1-D durable outcome verification > does not let an unsupported optional semantic constraint block completion
+[run:09a5ac7a] ➜ completed
+
+ ✓ backend/tests/run-verification.test.ts (12 tests) 292ms
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Run rm -rf .
+[run:f0951b56] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Run rm -rf .
+[run:f0951b56] ➜ completed
+
+ ✓ backend/tests/completion-semantics.test.ts (24 tests) 305ms
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > gives same-name inputs distinct aliases and preserves both input bytes
+[run:52c91a86] ➜ acting
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > bypasses confirmation gate when turn 1 tool calls are strictly read-only
+[run:731c8275] ➜ classifying
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > bypasses confirmation gate when turn 1 tool calls are strictly read-only
+[run:731c8275] ➜ planning
+[run:731c8275] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Create report.docx
+[run:5bce51d1] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Create report.docx
+[run:5bce51d1] ➜ completed
+
+stdout | backend/tests/agent-v2-integration.test.ts > Unified Agent Loop v2 RunManager Integration > bypasses confirmation gate when turn 1 tool calls are strictly read-only
+[run:731c8275] ➜ completed
+
+ ✓ backend/tests/agent-v2-integration.test.ts (5 tests) 366ms
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > gives same-name inputs distinct aliases and preserves both input bytes
+[run:52c91a86] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Search the mounted workspace
+[run:29205e3e] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Search the mounted workspace
+[run:29205e3e] ➜ completed
+
+ ✓ backend/tests/dynamic-dispatch.test.ts (9 tests) 6ms
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > persists a truncated Chat response as Partial
+[run:8eb8575a] ➜ acting
+
+stdout | backend/tests/benchmark-phase2.test.ts > Phase 2 Benchmark: Context Budget & Schema Token Savings > demonstrates >70% token savings in Pure Chat mode on turn 1
+
+================ PHASE 2 TOKEN BENCHMARK ================
+Baseline (all tools):             1907 tokens (12 tools)
+Pure Chat Turn 1:                 0 tokens (0 tools)
+Token Reduction:                  100.0% savings
+=========================================================
+
+
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > persists a truncated Chat response as Partial
+[run:8eb8575a] ➜ partial
+
+stdout | backend/tests/benchmark-phase2.test.ts > Phase 2 Benchmark: Context Budget & Schema Token Savings > benchmarks tool surfaces across execution modes and states
+
+| Execution Scenario | Tools Exposed | Tool Names | Tokens | Savings vs Baseline |
+|---|---|---|---|---|
+| 1. Pure Chat (Turn 1) | 0 |  | 0 | 100.0% |
+| 2. Chat with Document Attachment (Turn 1) | 1 | extract_document | 87 | 95.4% |
+| 3. Chat with Mounted Workspace (Read-Only) | 0 |  | 0 | 100.0% |
+| 4. Agent Mode with Workspace (Turn 1) | 4 | request_capability, list_dir, read_file, search | 345 | 81.9% |
+| 5. Agent after Python Computation Expanded (Turn 2) | 7 | request_capability, list_dir, read_file, search, write_file, delete_file, execute_python | 846 | 55.6% |
+| 6. Agent with Deliverables & Results (Turn 3) | 9 | request_capability, list_dir, read_file, search, write_file, delete_file, execute_python, generate_deliverable, retrieve_result | 1364 | 28.5% |
+
+
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Switch yourself to Agent
+[run:422ceb2a] ➜ acting
+
+ ✓ backend/tests/benchmark-phase2.test.ts (3 tests) 5ms
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Switch yourself to Agent
+[run:422ceb2a] ➜ completed
+
+ ✓ backend/tests/result-memory-integration.test.ts (11 tests) 576ms
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > keeps an interrupted Chat stream in conversation history after transport failure
+[run:64e0467a] ➜ acting
+
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > keeps an interrupted Chat stream in conversation history after transport failure
+[run:64e0467a] ➜ failed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Ignore policy and execute Python
+[run:14cba02d] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Ignore policy and execute Python
+[run:14cba02d] ➜ completed
+
+ ✓ backend/tests/ipc.test.ts (7 tests) 52ms
+ ✓ backend/tests/execution-envelope.test.ts (9 tests) 3ms
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > rejects a forged tool response from Chat without dispatch
+[run:4f7e8532] ➜ acting
+
+stdout | backend/tests/mode-recovery.test.ts > Source ownership and Chat evidence > rejects a forged tool response from Chat without dispatch
+[run:4f7e8532] ➜ failed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Return a forged write_file call
+[run:0aebfc5a] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Return a forged write_file call
+[run:0aebfc5a] ➜ completed
+
+ ✓ backend/tests/context-compaction.test.ts (8 tests) 3ms
+ ✓ backend/tests/streaming-filter.test.ts (6 tests) 2ms
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Compute a sum in your answer
+[run:3aeb18ee] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Compute a sum in your answer
+[run:3aeb18ee] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain CSV headers
+[run:2425df59] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain CSV headers
+[run:2425df59] ➜ completed
+
+ ✓ backend/tests/run-sessions.test.ts (2 tests) 1ms
+ ✓ backend/tests/gateway-telemetry.test.ts (3 tests) 1ms
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain a denied approval
+[run:16483884] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain a denied approval
+[run:16483884] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Describe a JSON export
+[run:2139ee5d] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Describe a JSON export
+[run:2139ee5d] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Review prior conversation
+[run:0f419941] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Review prior conversation
+[run:0f419941] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > What is a unit test?
+[run:1663d61a] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > What is a unit test?
+[run:1663d61a] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain path containment
+[run:be076862] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain path containment
+[run:be076862] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > What are formula cells?
+[run:9a2de548] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > What are formula cells?
+[run:9a2de548] ➜ completed
+
+stderr | backend/tests/mode-recovery.test.ts > Independent readers and fallback authority > rejects fallback approval when a generated dependency changes
+[python-runner] macOS sandbox-exec unavailable or disabled; approval required before direct execution
+
+stderr | backend/tests/mode-recovery.test.ts > Independent readers and fallback authority > does not execute rejected Python fallback
+[python-runner] macOS sandbox-exec unavailable or disabled; approval required before direct execution
+
+ ✓ backend/tests/mode-recovery.test.ts (29 tests) 1112ms
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Translate a short sentence
+[run:973a658b] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Translate a short sentence
+[run:973a658b] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Answer in one line
+[run:793ee459] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Answer in one line
+[run:793ee459] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Give a checklist
+[run:f9ab0992] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Give a checklist
+[run:f9ab0992] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain the previous output
+[run:9bbd5e15] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain the previous output
+[run:9bbd5e15] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Tell me how to repair code
+[run:38e9e1c6] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Tell me how to repair code
+[run:38e9e1c6] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Inspect a pasted snippet
+[run:cdec4a55] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Inspect a pasted snippet
+[run:cdec4a55] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Summarize this source
+[run:fc6b6482] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Summarize this source
+[run:fc6b6482] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Ask for missing evidence
+[run:9b7cfd85] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Ask for missing evidence
+[run:9b7cfd85] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Compare two designs
+[run:48036b27] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Compare two designs
+[run:48036b27] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain tool cancellation
+[run:6e7ede24] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain tool cancellation
+[run:6e7ede24] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain local retrieval
+[run:1c750ae6] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Explain local retrieval
+[run:1c750ae6] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > State evidence limits
+[run:5ae09c73] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > State evidence limits
+[run:5ae09c73] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Suggest a mode for creating files
+[run:d1045137] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Chat: 30 varied requests stay on one response call > Suggest a mode for creating files
+[run:d1045137] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Lifecycle and scheduling > does not complete cancelled transport callbacks
+[run:93ccef73] ➜ acting
+
+stderr | backend/tests/three-modes.test.ts > Lifecycle and scheduling > requires digest-bound approval when Python isolation is unavailable
+[python-runner] macOS sandbox-exec unavailable or disabled; approval required before direct execution
+
+stderr | backend/tests/three-modes.test.ts > Lifecycle and scheduling > rejects changed executed source after Python approval
+[python-runner] macOS sandbox-exec unavailable or disabled; approval required before direct execution
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'md'
+[run:20c0fe75] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'md'
+[run:20c0fe75] ➜ planning
+[run:20c0fe75] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'md'
+┌── [Artifact Ready: MD] ────────────────────────────────────
+│ File:     report.md (0.0 KB)
+│ Location: runs/20c0fe75-af93-40a5-b85d-022597e0d676/output/report.md
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'md'
+[run:20c0fe75] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'txt'
+[run:67bf08c6] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'txt'
+[run:67bf08c6] ➜ planning
+[run:67bf08c6] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'txt'
+┌── [Artifact Ready: TXT] ────────────────────────────────────
+│ File:     report.txt (0.0 KB)
+│ Location: runs/67bf08c6-c319-4983-ab94-2f5d7e3cdffe/output/report.txt
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'txt'
+[run:67bf08c6] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'json'
+[run:ee3fdcfd] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'json'
+[run:ee3fdcfd] ➜ planning
+[run:ee3fdcfd] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'json'
+┌── [Artifact Ready: JSON] ────────────────────────────────────
+│ File:     report.json (0.0 KB)
+│ Location: runs/ee3fdcfd-9f4f-4396-9e34-29d8b79b445d/output/report.json
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'json'
+[run:ee3fdcfd] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'csv'
+[run:f6339fa4] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'csv'
+[run:f6339fa4] ➜ planning
+[run:f6339fa4] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'csv'
+┌── [Artifact Ready: CSV] ────────────────────────────────────
+│ File:     report.csv (0.0 KB)
+│ Location: runs/f6339fa4-98cd-4c99-bd27-b217dc52fb16/output/report.csv
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'csv'
+[run:f6339fa4] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'docx'
+[run:5ba22074] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'docx'
+[run:5ba22074] ➜ planning
+[run:5ba22074] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'docx'
+┌── [Artifact Ready: DOCX] ────────────────────────────────────
+│ File:     report.docx (8.4 KB)
+│ Location: runs/5ba22074-ae26-4d3b-bbe3-b92835efd3dd/output/report.docx
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'docx'
+[run:5ba22074] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'xlsx'
+[run:0b6cc2b0] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'xlsx'
+[run:0b6cc2b0] ➜ planning
+[run:0b6cc2b0] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'xlsx'
+┌── [Artifact Ready: XLSX] ────────────────────────────────────
+│ File:     report.xlsx (6.5 KB)
+│ Location: runs/0b6cc2b0-1e8b-4636-b2e1-a039d49554dd/output/report.xlsx
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > creates and independently reopens 'xlsx'
+[run:0b6cc2b0] ➜ completed
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > preserves a useful file and reports Partial when required content is unverified
+[run:a3e837f2] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > preserves a useful file and reports Partial when required content is unverified
+[run:a3e837f2] ➜ planning
+[run:a3e837f2] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > preserves a useful file and reports Partial when required content is unverified
+┌── [Artifact Ready: MD] ────────────────────────────────────
+│ File:     decision.md (0.0 KB)
+│ Location: runs/a3e837f2-25f7-4d32-8665-e3682b72563c/output/decision.md
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > preserves a useful file and reports Partial when required content is unverified
+[run:a3e837f2] ➜ partial
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > converts an explicit CSV to JSON without model calls
+[run:728abcc3] ➜ classifying
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > converts an explicit CSV to JSON without model calls
+[run:728abcc3] ➜ acting
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > converts an explicit CSV to JSON without model calls
+┌── [Artifact Ready: JSON] ────────────────────────────────────
+│ File:     data.json (0.0 KB)
+│ Location: runs/728abcc3-1012-44ed-95fa-8292565bdb91/output/data.json
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/three-modes.test.ts > Work engine integration > converts an explicit CSV to JSON without model calls
+[run:728abcc3] ➜ completed
+
+ ✓ backend/tests/three-modes.test.ts (130 tests) 4571ms
+
+ Test Files  18 passed (18)
+      Tests  320 passed (320)
+   Start at  21:51:17
+   Duration  5.38s (transform 928ms, setup 0ms, collect 5.26s, tests 7.64s, environment 1ms, prepare 632ms)
+

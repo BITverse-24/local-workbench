@@ -1,0 +1,114 @@
+{
+  "hardware": {
+    "cpu": "Apple M4",
+    "memory": 17179869184
+  },
+  "model": "config/models.json",
+  "samples": [
+    {
+      "runId": "58f12d8e-9e89-426c-9aef-ce6ec7bf882f",
+      "state": "completed",
+      "visibleTtftMs": 11002,
+      "totalMs": 11679,
+      "prompt": "Explain thermal expansion in fewer than 60 words.",
+      "condition": "initial-residency-unknown",
+      "calls": 2,
+      "providerTtftMs": [
+        null,
+        2164
+      ]
+    },
+    {
+      "runId": "a528f13b-494b-449b-829b-ea18d5366922",
+      "state": "completed",
+      "visibleTtftMs": 3492,
+      "totalMs": 4230,
+      "prompt": "What is the difference between mass and weight? Use fewer than 60 words.",
+      "condition": "warm",
+      "calls": 2,
+      "providerTtftMs": [
+        null,
+        1217
+      ]
+    },
+    {
+      "runId": "4eeebf11-e7da-4166-a713-d79da5aec49a",
+      "state": "completed",
+      "visibleTtftMs": 3688,
+      "totalMs": 4266,
+      "prompt": "Explain why unit tests are useful in fewer than 60 words.",
+      "condition": "warm",
+      "calls": 2,
+      "providerTtftMs": [
+        null,
+        1012
+      ]
+    },
+    {
+      "runId": "b72df6e7-7caf-4c39-a0e1-6009ce2bc3f5",
+      "state": "completed",
+      "visibleTtftMs": 7141,
+      "totalMs": 7144,
+      "prompt": "Give three checks for reading a CSV file. Use fewer than 60 words.",
+      "condition": "warm",
+      "calls": 2,
+      "providerTtftMs": [
+        null,
+        null
+      ]
+    },
+    {
+      "runId": "fb3810e8-02b7-4b10-b629-6dab3c579448",
+      "state": "completed",
+      "visibleTtftMs": 3629,
+      "totalMs": 4260,
+      "prompt": "Explain thermal expansion in fewer than 60 words.",
+      "condition": "warm",
+      "calls": 2,
+      "providerTtftMs": [
+        null,
+        1015
+      ]
+    },
+    {
+      "runId": "824cc0d9-45dc-4bb5-935e-8d5f7ccfd99e",
+      "state": "completed",
+      "visibleTtftMs": 3583,
+      "totalMs": 4368,
+      "prompt": "What is the difference between mass and weight? Use fewer than 60 words.",
+      "condition": "warm",
+      "calls": 2,
+      "providerTtftMs": [
+        null,
+        1285
+      ]
+    },
+    {
+      "runId": "ad88e7a2-8e01-439f-b9d5-9b667d47eb65",
+      "state": "completed",
+      "visibleTtftMs": 3938,
+      "totalMs": 4566,
+      "prompt": "Explain why unit tests are useful in fewer than 60 words.",
+      "condition": "warm",
+      "calls": 2,
+      "providerTtftMs": [
+        null,
+        1047
+      ]
+    },
+    {
+      "runId": "8a15d14c-f2e8-4526-aec1-94abed702134",
+      "state": "completed",
+      "visibleTtftMs": 6356,
+      "totalMs": 6359,
+      "prompt": "Give three checks for reading a CSV file. Use fewer than 60 words.",
+      "condition": "warm",
+      "calls": 2,
+      "providerTtftMs": [
+        null,
+        null
+      ]
+    }
+  ],
+  "root": "/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/workbench-mode-benchmark-VHbi01"
+}

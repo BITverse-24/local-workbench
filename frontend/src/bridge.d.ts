@@ -59,7 +59,7 @@ interface VerificationCheck {
   criterionId: string;
   requirement: string;
   status: "passed" | "failed" | "unverified" | "not_applicable";
-  method: "sha256" | "result_store_checksum" | "format_parser" | "filesystem" | "execution_record" | "agent_loop_completion";
+  method: "sha256" | "result_store_checksum" | "format_parser" | "filesystem" | "execution_record" | "agent_loop_completion" | "content_check" | "independent_reader";
   evidence: Array<{ kind: "result" | "artifact" | "execution"; id: string }>;
   reason: string;
   verifiedAt: string;
@@ -91,7 +91,7 @@ interface ArtifactRef {
 interface PendingAction {
   actionId: string;
   runId: string;
-  kind: "generate_docx" | "execute_python" | "generate_xlsx" | "plan_approval";
+  kind: "generate_docx" | "execute_python" | "generate_xlsx" | "plan_approval" | "uncontained_python";
   prompt: string;
   createdAt: string;
   expiresAt: string;
@@ -168,7 +168,11 @@ interface ModelProgressEvent {
 
 type TaskProgressEvent = import("../../backend/src/shared/contracts.js").TaskProgressEvent;
 
+type RunSnapshot = import("../../backend/src/shared/contracts.js").RunSnapshot;
+type ExecutionMode = import("../../backend/src/shared/contracts.js").ExecutionMode;
 type RunEvent =
+  | {type:"run_registered";runId:string;chatId:string;mode:ExecutionMode}
+  | {type:"run_queue";runId:string;queued:boolean;queueWaitMs?:number}
   | ModelProgressEvent
   | TaskProgressEvent
   | { type: "run_state"; runId: string; state: RunState }
@@ -231,7 +235,8 @@ interface WorkbenchBridge {
   renameChat: (chatId: string, title: string) => Promise<void>;
   getSetting: (key: string) => Promise<{ value: unknown }>;
   setSetting: (key: string, value: unknown) => Promise<void>;
-  startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string; selectedModel?: string; mode?: "chat" | "agent" }) => Promise<{ runId: string }>;
+  getRunSnapshot: (input:{chatId?:string;runId?:string}) => Promise<RunSnapshot | undefined>;
+  startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string; selectedModel?: string; mode?: "chat" | "work" | "agent" }) => Promise<{ runId: string }>;
   resumeRun: (input: { runId: string; largerGenerationAllowance?: boolean }) => Promise<{ runId: string }>;
   registerAttachment: (input: {
     chatId?: string;

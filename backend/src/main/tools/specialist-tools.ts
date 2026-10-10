@@ -1,15 +1,19 @@
+import { reviewProposedPython, reviewAttachedPython } from "../agent/source-review.js";
+import { assertRuntimeActive } from "../run/runtime-scope.js";
+import { parseFileIndependently } from "./file-worker.js";
 import { withTaskProgress } from "../run/task-progress.js";
 import { createHash, randomUUID } from "node:crypto";
 import { matchesContractDeliverable } from "../run/contract.js";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { z } from 'zod';
 import type { AgentTool, ToolExecutionContext, ToolExecutionResult } from "./types.js";
 import { resolveSafe } from "../harness/path-guard.js";
 import { requestBase } from "../gateway/model-gateway.js";
 import { executePython } from "./python.js";
 import { buildPythonBehaviorValidationRunner, buildPythonReturnValidationRunner } from "./python-contract.js";
 import { generateDocx, generateXlsxFromContent, verifyArtifactFile } from "./artifacts.js";
-import { resolveRunPath, writeRunFile, artifactRef, dataRoot } from "../run/filesystem.js";
+import { resolveRunPath, writeRunFile, artifactRef, dataRoot, absoluteDataPath, createRunDirectories } from "../run/filesystem.js";
 import { extractContentArg, extractPathArg, findFileInRunDirectories } from "./workspace-tools.js";
 import type {
   ArtifactKind,
@@ -57,6 +61,7 @@ export const extractDocumentTool: AgentTool = {
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
     const rawPath = extractPathArg(args) || String(args.filename ?? args.path ?? args.document ?? args.file ?? "");
     const cleanRawPath = rawPath.trim().replace(/^['"]|['"]$/g, "");
+    if (path.isAbsolute(cleanRawPath)||cleanRawPath.includes("\0")||cleanRawPath.split(/[\\/]/).includes(".."))throw {code:"permission_denied",retryable:false,message:"Document sources require a contained relative path."};
     if (!cleanRawPath) {
       throw new Error(`extract_document requires a filename or path parameter. Received: ${JSON.stringify(args)}`);
     }
@@ -71,9 +76,6 @@ export const extractDocumentTool: AgentTool = {
     }
     if (!filePath && context.runId) {
       filePath = findFileInRunDirectories(context.runId, cleanRawPath);
-    }
-    if (!filePath && existsSync(cleanRawPath)) {
-      filePath = cleanRawPath;
     }
 
     if (!filePath || !existsSync(filePath)) {
@@ -193,7 +195,7 @@ export const extractDocumentTool: AgentTool = {
       : "application/octet-stream";
 
     const entries = [...(context.gateway.registry?.values() ?? [])];
-    const preferred = entries.find(entry => entry.id === context.runContract?.routing.driverModel && entry.enabled && entry.capabilities.includes("image-input"));
+    const preferred = entries.find(entry => entry.id === context.runContract?.routing?.driverModel && entry.enabled && entry.capabilities.includes("image-input"));
     const imageModel = preferred ?? entries.find(entry => entry.enabled && entry.capabilities.includes("image-input"));
     if (!imageModel) throw new Error("Visual extraction requires an enabled model with image-input capability; none is configured.");
     const targetModelId = imageModel.id;
@@ -237,7 +239,7 @@ export const extractDocumentTool: AgentTool = {
       runId: context.runId,
       taskType: "vision",
       modelId: targetModelId,
-      reason: targetModelId === context.runContract?.routing.driverModel
+      reason: targetModelId === context.runContract?.routing?.driverModel
         ? `Visual extraction: ${filename}`
         : `Vision fallback model for ${filename}`,
       tier: "vision",
@@ -300,7 +302,7 @@ const generateCodeImplementation: AgentTool = {
     }
     const targetModelId = (context.gateway?.registry?.has("primary-model")
       ? "primary-model"
-      : context.runContract?.routing.driverModel ?? "primary-model") as ModelId;
+      : context.runContract?.routing?.driverModel ?? "primary-model") as ModelId;
 
     const base = requestBase(
       context.runId,
@@ -385,7 +387,7 @@ const generateTextImplementation: AgentTool = {
     }
     const targetModelId = (context.gateway?.registry?.has("primary-model")
       ? "primary-model"
-      : context.runContract?.routing.driverModel ?? "primary-model") as ModelId;
+      : context.runContract?.routing?.driverModel ?? "primary-model") as ModelId;
 
     const base = requestBase(
       context.runId,
@@ -482,7 +484,7 @@ export const executePythonTool: AgentTool = {
     type: "function",
     function: {
       name: "execute_python",
-      description: "Execute Python code inside the secure, air-gapped sandbox without network access. Standard library only (no docx/openpyxl). For Word (.docx) or Excel (.xlsx) deliverables, use 'generate_deliverable' instead. Captures stdout, stderr, exit code, and created files.",
+      description: "Execute Python in run storage. OS isolation is probed first. Without OS isolation, explicit approval is required and filesystem and network limits are not enforced. Standard library only (no docx/openpyxl). For Word (.docx) or Excel (.xlsx) deliverables, use 'generate_deliverable' instead. Captures stdout, stderr, exit code, and created files.",
       parameters: {
         type: "object",
         properties: {
@@ -572,6 +574,8 @@ export const executePythonTool: AgentTool = {
       throw new Error("execute_python requires 'code' (or 'script') containing Python source code to execute.");
     }
     const filename = String(args.filename ?? args.path ?? args.file ?? "task.py");
+    const rawInputs=Array.isArray(args.input_files)?args.input_files:[args.input_files,args.input_file,args.data_file].filter(value=>typeof value==="string").flatMap(value=>String(value).split(","));
+    if ([filename,...rawInputs.map(String)].some(value=>path.isAbsolute(value)||value.split(/[\\/]/).includes("..")))throw {code:"permission_denied",message:"Python paths must stay within run storage.",retryable:false};
     let inputFiles: string[] = [];
     if (Array.isArray(args.input_files)) {
       inputFiles = args.input_files.map((f) => path.basename(String(f).trim())).filter(Boolean);
@@ -642,6 +646,12 @@ export const executePythonTool: AgentTool = {
     }
     const repairSource = sourceFile ? { source_file: sourceFile, source_revision: revision, code,
       nextEdit: "To edit this exact attempted source, use source_file and source_revision above with old strings from this code. Omitting source_revision selects the original attachment." } : undefined;
+    const sharedReviewInput={runId:context.runId,emitProgress:context.emitRunEvent,isCancelled:context.isCancelled,gateway:context.gateway,modelId:context.runContract?.routing?.driverModel??"primary-model",request:context.originalUserRequest??"Repair the attached source",sourceEvidence:context.sourceReviewEvidence??"",sourceChecklist:context.sourceReviewChecklist};
+    if(attachedRepair && context.envelope?.mode==="work"){
+      const gaps=await reviewProposedPython({...sharedReviewInput,proposedSource:code});
+      assertRuntimeActive();
+      if(gaps.length)return {ok:false,output:JSON.stringify({repairSource,gaps}),summary:"Source review found defects before execution",error:{code:"validation_failure",retryable:true,message:JSON.stringify(gaps)}};
+    }
     const returnValidationName = `check-returns-${randomUUID()}.py`;
     writeRunFile(context.runId, "intermediate", returnValidationName, buildPythonReturnValidationRunner(filename));
     let execResult = await executePython(context.runId, returnValidationName, inputFiles, [], 60000, context.workspaceRoot);
@@ -683,6 +693,10 @@ export const executePythonTool: AgentTool = {
       if (existsSync(outPath)) {
         try {
           const stat = statSync(outPath);
+          if(context.envelope?.mode==="work"){
+            const parsed=await parseFileIndependently(resolveSafe(outputDir,outFile),path.extname(outFile).slice(1),context.signal);
+            if(parsed.formulas)throw new Error("Work v1 supports XLSX tables without formula cells.");
+          }
           artifacts.push({
             artifactId: randomUUID(),
             runId: context.runId,
@@ -692,7 +706,7 @@ export const executePythonTool: AgentTool = {
             sizeBytes: stat.size,
             createdAt: new Date().toISOString(),
           });
-        } catch {}
+        } catch(error) {assertRuntimeActive();if(context.envelope?.mode==="work")throw error;}
       }
     }
 
@@ -742,9 +756,16 @@ export const executePythonTool: AgentTool = {
       ? "Calculations completed successfully. Proceed immediately to invoke 'generate_deliverable' to generate the requested document using the computed figures."
       : "The executed source is already exported and ran successfully against the supplied inputs. Report the observed output and any limits; do not create another export or helper script.";
 
+    let behaviorReview:{status:string;reason?:string;gaps?:unknown[]} | undefined;
+    if(attachedRepair && context.envelope?.mode==="work"){
+      try {const gaps=await reviewAttachedPython({...sharedReviewInput,currentSource:code,executionOutput:execResult.stdout});behaviorReview={status:gaps.length?"failed":"passed",gaps};}
+      catch(error){assertRuntimeActive();behaviorReview={status:"unverified",reason:String(error)};}
+    }
     return {
       output: JSON.stringify({
         ...observation,
+        behaviorReview,
+        sourceDigest:revision,
         artifacts: artifacts.map((artifact) => ({ filename: artifact.filename, relativePath: artifact.relativePath })),
         executionPassed: execResult.exitCode === 0 && !execResult.timedOut,
         validationAssertionsPassed,
@@ -754,7 +775,7 @@ export const executePythonTool: AgentTool = {
       summary,
       artifacts: artifacts.length > 0 ? artifacts : undefined,
       sideEffects: [`executed:${filename}`],
-      intermediate,
+      intermediate:intermediate?{...intermediate,payload:{...(intermediate.payload as Record<string,unknown>),...(behaviorReview?{behaviorReview}:{}),sourceDigest:revision}}:undefined,
     };
   },
 };
@@ -775,7 +796,7 @@ export const generateDeliverableTool: AgentTool = {
         properties: {
           type: {
             type: "string",
-            enum: ["docx", "xlsx", "md", "file"],
+            enum: ["docx", "xlsx", "csv", "json", "txt", "md", "file"],
             description: "'docx' for Word, 'xlsx' for Excel, 'md' for Markdown, 'file' for exact source/text content and filename.",
           },
           title: {
@@ -792,8 +813,12 @@ export const generateDeliverableTool: AgentTool = {
             type: "string",
             description: "Desired deliverable filename (e.g. 'approval-note.docx', 'findings.md', 'summary.xlsx').",
           },
+          report_rows: {
+            type:'array', description:'Optional structured report rows. Each row must cite its source page. All supplied source pages must be represented.',
+            items:{type:'object',properties:Object.fromEntries(['source','equipment','measurements','defects','inspector_notes','decision','citations'].map(key=>[key,{type:'string'}])),required:['source'],additionalProperties:false},
+          },
         },
-        required: ["type", "content"],
+        required: ["type"],
       },
     },
   },
@@ -813,7 +838,17 @@ export const generateDeliverableTool: AgentTool = {
     let type = String(effectiveArgs.type ?? effectiveArgs.kind ?? effectiveArgs.format ?? "").toLowerCase();
     let title = String(effectiveArgs.title ?? effectiveArgs.name ?? effectiveArgs.heading ?? "Deliverable");
     let content = extractContentArg(effectiveArgs) || String(effectiveArgs.content ?? effectiveArgs.body ?? effectiveArgs.text ?? effectiveArgs.markdown ?? "");
+    if(effectiveArgs.report_rows!==undefined){
+      const columns=['source','equipment','measurements','defects','inspector_notes','decision','citations'] as const;
+      const rows=z.array(z.object({source:z.string().min(1),equipment:z.string().optional(),measurements:z.string().optional(),defects:z.string().optional(),inspector_notes:z.string().optional(),decision:z.string().optional(),citations:z.string().optional()}).strict()).min(1).max(500).safeParse(effectiveArgs.report_rows);
+      if(!rows.success)throw {code:'invalid_arguments',retryable:true,message:'Report rows must contain source citations and supported text columns.'};
+      const missing=(context.sourceReferences??[]).filter(reference=>!rows.data.some(row=>row.source.includes(`${reference.filename}, page ${reference.page}`)));
+      if(missing.length)throw {code:'invalid_arguments',retryable:true,message:'Report rows omit supplied source pages: '+missing.map(reference=>`${reference.filename}, page ${reference.page}`).join('; ')};
+      const cell=(value:string)=>value.replace(/\|/g,'\\|').replace(/\r?\n/g,' ');
+      content=[content,`| ${columns.join(' | ')} |`,`| ${columns.map(()=>'---').join(' | ')} |`,...rows.data.map(row=>`| ${columns.map(column=>cell(row[column]??'')).join(' | ')} |`)].filter(Boolean).join('\n');
+    }
     const rawFilename = String(effectiveArgs.filename ?? effectiveArgs.path ?? effectiveArgs.file ?? "");
+    if (rawFilename && (path.isAbsolute(rawFilename) || rawFilename.includes("\\") || rawFilename.split("/").some(part=>part===".." || part==="."))) throw {code:"permission_denied",message:"Deliverables require a contained relative filename.",retryable:false};
     let filename = rawFilename;
 
     // 1. Align with contract deliverables if present
@@ -846,8 +881,8 @@ export const generateDeliverableTool: AgentTool = {
     if (!type) {
       type = filename.endsWith(".docx") ? "docx" : filename.endsWith(".xlsx") ? "xlsx" : "md";
     }
-    if (!["docx", "xlsx", "md", "file"].includes(type)) {
-      throw { code: "invalid_arguments", retryable: true, message: `Unsupported deliverable type ${type}. Use docx, xlsx, md or file.` };
+    if (!["docx", "xlsx", "csv", "json", "txt", "md", "file"].includes(type)) {
+      throw { code: "invalid_arguments", retryable: true, message: `Unsupported deliverable type ${type}. Use docx, xlsx, csv, json, txt, md or file.` };
     }
     if (!filename) {
       filename = `deliverable.${type}`;
@@ -877,10 +912,14 @@ export const generateDeliverableTool: AgentTool = {
       }
     }
 
-    if (type === "file") {
+    if (["file","csv","json","txt"].includes(type)) {
       if (!content.trim() || !args.filename) throw { code: "invalid_arguments", retryable: true, message: "Source file deliverables require filename and complete nonempty content." };
       const relativePath = writeRunFile(context.runId, "output", filename, content, true);
-      const artifact = artifactRef(context.runId, inferArtifactKind(filename), filename, relativePath);
+      const kind=inferArtifactKind(filename);
+      const check=await verifyArtifactFile(absoluteDataPath(relativePath),{runId:context.runId,expectedKind:kind,originalContent:content});
+      if(!check.valid)throw new Error(`Saved output is invalid: ${check.details.error}`);
+      if(context.envelope?.mode==="work")await parseFileIndependently(absoluteDataPath(relativePath),path.extname(filename).slice(1),context.signal);
+      const artifact = artifactRef(context.runId, kind, filename, relativePath);
       return { output: `Created downloadable file ${filename} (${artifact.sizeBytes} bytes).`, summary: `Created deliverable: ${filename}`, artifacts: [artifact], sideEffects: [`artifact:${filename}`] };
     }
 
@@ -1001,6 +1040,7 @@ export const generateDeliverableTool: AgentTool = {
       const art = await generateXlsxFromContent(context.runId, content, filename, title);
       artifacts.push(art);
     } else {
+      createRunDirectories(context.runId);
       const intermediateDir = resolveRunPath(context.runId, "intermediate", "intermediate");
       const tempName = `staging-${randomUUID()}-${filename}`;
       const tempPath = path.join(intermediateDir, tempName);
@@ -1037,6 +1077,10 @@ export const generateDeliverableTool: AgentTool = {
       });
     }
 
+    if(context.envelope?.mode==="work")for(const artifact of artifacts){
+      const parsed=await parseFileIndependently(absoluteDataPath(artifact.relativePath),path.extname(artifact.filename).slice(1),context.signal);
+      if(parsed.formulas)throw new Error("Work v1 supports XLSX tables only; formulas are unavailable.");
+    }
     const primaryArt = artifacts[0];
     const checkSummary = primaryArt?.verified
       ? `File passed all structural verification checks (${type.toUpperCase()} package validated)`

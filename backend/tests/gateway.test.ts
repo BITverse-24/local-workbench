@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync, mkdtempSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -72,11 +72,11 @@ afterEach(() => {
 
 describe("vision attachment payloads", () => {
 
-  it("sends PDFs as file parts, not image_url", async () => {
+  it("renders real PDF pages as image parts", async () => {
     const relativePath = `runs/${RUN_ID}/input/report.pdf`;
     const abs = path.join(process.env.WORKBENCH_DATA_ROOT!, relativePath);
     mkdirSync(path.dirname(abs), { recursive: true });
-    writeFileSync(abs, Buffer.from("%PDF"));
+    writeFileSync(abs, readFileSync(path.resolve("demo/flow_a/inspection-report-E201.pdf")));
     let sent: unknown[] = [];
     const gateway = new ModelGateway(
       {
@@ -93,8 +93,8 @@ describe("vision attachment payloads", () => {
     const result = await gateway.execute(visionRequest(relativePath, "report.pdf", "application/pdf"));
     expect(result.ok).toBe(true);
     expect(sent[1]).toEqual({
-      type: "file",
-      file: { filename: "report.pdf", file_data: expect.stringMatching(/^data:application\/pdf;base64,/) },
+      type: "image_url",
+      image_url: { url: expect.stringMatching(/^data:image\/(?:jpeg|png);base64,/) },
     });
   });
 
@@ -560,7 +560,7 @@ describe("model gateway health checks", () => {
     expect(retryBody.response_format.json_schema.name).toBe("vision_result");
   });
 
-  it("falls back to text-only messages when provider rejects image/multimodal content", async () => {
+  it("keeps image rejection as a real error without dropping visual evidence", async () => {
     let callCount = 0;
     let fallbackBody: any;
     const model: ModelRegistryEntry = {
@@ -569,7 +569,7 @@ describe("model gateway health checks", () => {
       runtime: "ollama",
       baseUrl: "http://127.0.0.1:1234/v1",
       model: "qwen2.5-coder-7b-instruct-mlx",
-      capabilities: ["text"],
+      capabilities: ["text", "image-input"],
       requestTimeoutMs: 1000,
       healthPath: "/models",
       enabled: true,
@@ -623,14 +623,12 @@ describe("model gateway health checks", () => {
       timeoutMs: 1000,
     });
 
-    expect(result.ok).toBe(true);
-    expect(callCount).toBe(2);
-    // Verifies messages[1].content is converted to pure text string without image_url
-    expect(typeof fallbackBody.messages[1].content).toBe("string");
-    expect(fallbackBody.messages[1].content).toContain("Find data in diagram.");
+    expect(result.ok).toBe(false);
+    expect(callCount).toBe(1);
+    expect(fallbackBody).toBeUndefined();
   });
 
-  it("recovers gracefully when provider rejects both json_object and image_url sequentially", async () => {
+  it("retries the JSON format but retains image rejection as a real error", async () => {
     let callCount = 0;
     let finalBody: any;
     const model: ModelRegistryEntry = {
@@ -639,7 +637,7 @@ describe("model gateway health checks", () => {
       runtime: "ollama",
       baseUrl: "http://127.0.0.1:1234/v1",
       model: "qwen2.5-coder-7b-instruct-mlx",
-      capabilities: ["text"],
+      capabilities: ["text", "image-input"],
       requestTimeoutMs: 1000,
       healthPath: "/models",
       enabled: true,
@@ -702,10 +700,8 @@ describe("model gateway health checks", () => {
       timeoutMs: 1000,
     });
 
-    expect(result.ok).toBe(true);
-    expect(callCount).toBe(3);
-    // Verifies final call had both valid json_schema and text-only content
-    expect(finalBody.response_format.type).toBe("json_schema");
-    expect(typeof finalBody.messages[1].content).toBe("string");
+    expect(result.ok).toBe(false);
+    expect(callCount).toBe(2);
+    expect(finalBody).toBeUndefined();
   });
 });

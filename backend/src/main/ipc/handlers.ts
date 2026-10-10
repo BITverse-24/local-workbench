@@ -24,6 +24,7 @@ import {
   confirmActionSchema,
   cancelRunSchema,
   resumeRunSchema,
+  getRunSnapshotSchema,
   getArtifactSchema,
   getVerificationReportSchema,
   getRunHistorySchema,
@@ -126,6 +127,7 @@ export function registerChatHandlers(ipcMain: MinimalIpcMain): void {
 }
 
 export function registerRunHandlers(ipcMain: MinimalIpcMain, manager: RunManager): void {
+  ipcMain.handle(IPC_RUN.GET_SNAPSHOT, (_event, input) => manager.getRunSnapshot(getRunSnapshotSchema.parse(input)));
   ipcMain.handle(IPC_RUN.START_RUN, (_event, input) => manager.start(startRunSchema.parse(input)));
   ipcMain.handle(IPC_RUN.RESUME_RUN, (_event, input) => { const parsed = resumeRunSchema.parse(input); return manager.resume(parsed.runId, parsed.largerGenerationAllowance); });
   ipcMain.handle(IPC_RUN.CONFIRM, (_event, input) => manager.confirm(confirmActionSchema.parse(input)));

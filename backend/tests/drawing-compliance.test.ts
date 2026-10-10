@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { initDb, closeDb } from "../src/main/persistence/db.js";
 import { createChat } from "../src/main/persistence/chats.js";
 import { RunManager } from "../src/main/run/manager.js";
+import { modeGateway, fixtureIntent } from './helpers/mode-gateway.js';
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { RAGService } from "../src/main/rag/rag-service.js";
 import { RAGGroundingProvider } from "../src/main/grounding/rag-grounding-provider.js";
@@ -55,14 +56,14 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
     expect(extraction.drawingId).toBe("PID-P204-REV-C");
     expect(extraction.service).toBe("Hydrocarbon service");
 
-    const valveComp = extraction.observedComponents.find((c) => c.attributeName === "valve rating");
+    const valveComp = extraction.observedComponents.find((c) => c.attributeName === "rating");
     expect(valveComp).toBeDefined();
     expect(valveComp?.tag).toBe("XV-204");
     expect(valveComp?.observedValue).toMatch(/Class 150/i);
     expect(valveComp?.numericValue).toBe(150);
 
     const lineComp = extraction.observedComponents.find(
-      (c) => c.attributeName === "nominal diameter" && c.location === "discharge line",
+      (c) => c.attributeName === "nominal size" && c.location === "discharge",
     );
     expect(lineComp).toBeDefined();
     expect(lineComp?.observedValue).toMatch(/DN80/i);
@@ -237,244 +238,25 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
     expect(assessment.checks[1].citation).toBe("[SPEC-990 §10.2]");
   });
 
-  it("executes complete drawing compliance review flow via RunManager", async () => {
-    let capturedPrompt = "";
-    const mockGateway = new ModelGateway(
-      {
-        async request(_url, init) {
-          const body = JSON.parse(init.body || "{}");
-          const userMsg = body.messages?.[body.messages.length - 1]?.content ?? "";
-          capturedPrompt = typeof userMsg === "string" ? userMsg : JSON.stringify(userMsg);
-
-          return {
-            status: 200,
-            async text() {
-              return JSON.stringify({
-                id: "chatcmpl-flow-c",
-                choices: [
-                  {
-                    message: {
-                      content: JSON.stringify({
-                        drawingId: "PID-P204-REV-C",
-                        approved: false,
-                        checks: [
-                          {
-                            component: "XV-204 Class 150",
-                            observed: "XV-204 Class 150",
-                            required: "Class 300 minimum",
-                            status: "non_compliant",
-                            citation: "[SOP-220 §4.2]",
-                            reasoning: "150 is below the required minimum rating of 300.",
-                          },
-                          {
-                            component: "DN80 discharge line",
-                            observed: "DN80 discharge line",
-                            required: "DN100 minimum",
-                            status: "non_compliant",
-                            citation: "[SOP-220 §4.3]",
-                            reasoning: "80 is below the required minimum nominal diameter of 100.",
-                          },
-                        ],
-                        correctiveAction:
-                          "Replace XV-204 with a Class 300 valve and revise the discharge line to DN100 or larger before sign-off.",
-                        noApprovalClaim: true,
-                        markdownNote:
-                          "# P-204 Design Review - Corrective Action\n\nDrawing `PID-P204-REV-C` is not ready for sign-off (DRAWING NOT APPROVED).\n\n1. Replace isolation valve `XV-204`, shown as Class 150, with a minimum Class 300 valve per `[SOP-220 §4.2]`.\n2. Revise the pump discharge line from DN80 to DN100 or larger per `[SOP-220 §4.3]`.\n\nThe note is a review finding, not an approval. A new drawing revision must be checked before release.",
-                      }),
-                    },
-                  },
-                ],
-              });
-            },
-          };
-        },
-      },
-      new Map([
-        [
-          "draft-qwen3",
-          {
-            id: "draft-qwen3",
-            taskTypes: ["draft"],
-            runtime: "llama-server",
-            baseUrl: "http://localhost:8000/v1",
-            model: "draft-model",
-            capabilities: ["text", "structured-output"],
-            requestTimeoutMs: 10000,
-            healthPath: "/models",
-            enabled: true,
-          },
-        ],
-      ] as any),
-    );
-
-    const runEvents: RunEvent[] = [];
-    const manager = new RunManager(mockGateway, (evt) => runEvents.push(evt));
-    manager.setRAGService(ragService);
-    manager.setGrounding(new RAGGroundingProvider(ragService));
-
-    const chatId = createChat("Drawing Compliance Run");
-    const svgPath = path.resolve(__dirname, "../../demo/flow_c/pump-skid-P204.svg");
-    const svgBuffer = readFileSync(svgPath);
-
-    const { attachment } = manager.registerAttachment({
-      chatId,
-      filename: "pump-skid-P204.svg",
-      mediaType: "image/svg+xml",
-      sizeBytes: svgBuffer.length,
-      base64OrBuffer: svgBuffer,
-    });
-
-    const { runId } = await manager.start({
-      chatId,
-      userText: "Check this against our piping spec / standard / SOP and draft a corrective action note if anything is non-compliant",
-      attachmentToken: attachment.attachmentId,
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      const start = Date.now();
-      const interval = setInterval(() => {
-        const err = runEvents.find((e) => e.type === "error");
-        if (err) {
-          clearInterval(interval);
-          reject(new Error(`Run failed: ${(err as any).message}`));
-        }
-        if (Date.now() - start > 5000) {
-          clearInterval(interval);
-          reject(new Error(`Timed out waiting for run completion. Events: ${JSON.stringify(runEvents)}`));
-        }
-        if (runEvents.some((e) => e.type === "run_state" && e.state === "completed")) {
-          clearInterval(interval);
-          resolve();
-        }
-      }, 50);
-    });
-
-    // 1. Check routing event
-    const routingEvt = runEvents.find((e) => e.type === "routing");
-    expect(routingEvt).toBeDefined();
-    expect(routingEvt?.taskType).toBe("draft");
-    expect(routingEvt?.modelId).toBe("primary-model");
-
-    // 2. Check tool execution events
-    const inspectTool = runEvents.find((e) => e.type === "tool_result" && e.tool === "inspect_drawing");
-    expect(inspectTool).toBeDefined();
-
-    const ragTool = runEvents.find((e) => e.type === "tool_result" && e.tool === "retrieve_sop");
-    expect(ragTool).toBeDefined();
-
-    const draftTool = runEvents.find((e) => e.type === "tool_result" && e.tool === "draft_note");
-    expect(draftTool).toBeDefined();
-
-    // 3. Check prompt content
-    expect(capturedPrompt).toContain("XV-204");
-    expect(capturedPrompt).toContain("CLASS 150");
-    expect(capturedPrompt).toContain("DN80");
-    expect(capturedPrompt).toContain("SOP-220");
-
-    // 4. Check deliverable artifact
-    const artifactEvt = runEvents.find((e) => e.type === "artifact_ready");
-    expect(artifactEvt).toBeDefined();
-    expect((artifactEvt as any).artifact.filename).toBe("corrective-action-note.md");
-
-    const outputPath = path.join(process.env.WORKBENCH_DATA_ROOT!, "runs", runId, "output", "corrective-action-note.md");
-    const outputContent = readFileSync(outputPath, "utf8");
-    expect(outputContent).toContain("DRAWING NOT APPROVED");
-    expect(outputContent).toContain("[SOP-220 §4.2]");
-    expect(outputContent).toContain("[SOP-220 §4.3]");
+  const note='# P-204 Design Review\n\nDRAWING NOT APPROVED.\nReplace XV-204 from Class 150 to Class 300 [SOP-220 §4.2].\nRevise discharge line DN80 to DN100 [SOP-220 §4.3].';
+  async function inspectDrawing(work:boolean){
+    const fixture=modeGateway(fixtureIntent('Review drawing',work?[{type:'md',filename:'corrective-action-note.md'}]:[]),()=>note);
+    const events:RunEvent[]=[];const manager=new RunManager(fixture.gateway,event=>events.push(event));manager.setRAGService(ragService);manager.setGrounding(new RAGGroundingProvider(ragService));
+    const chatId=createChat('Drawing review');const bytes=readFileSync(path.resolve('demo/flow_c/pump-skid-P204.svg'));
+    const {attachment}=manager.registerAttachment({chatId,filename:'drawing.svg',mediaType:'image/svg+xml',sizeBytes:bytes.length,base64OrBuffer:bytes});
+    const {runId}=await manager.start({chatId,mode:work?'work':'chat',groundingEnabled:true,userText:work?'Check this against the piping spec and create corrective-action-note.md':'Check this against the piping spec and describe required corrections',attachmentToken:attachment.attachmentId});
+    await vi.waitFor(()=>expect(events.some(e=>e.runId===runId&&e.type==='run_state'&&e.state==='completed'),JSON.stringify(events.filter(e=>e.type==='error'))).toBe(true),{timeout:5000});
+    return {fixture,events,runId};
+  }
+  it('executes grounded Work review with the real source reader and a saved Markdown output',async()=>{
+    const {fixture,events,runId}=await inspectDrawing(true);
+    expect(events.some(e=>e.type==='routing'&&e.modelId==='primary-model'&&e.taskType==='draft')).toBe(true);
+    expect(events.some(e=>e.type==='tool_result'&&e.tool==='retrieve_knowledge'&&e.ok)).toBe(true);
+    const prompts=JSON.stringify(fixture.turns);expect(prompts).toContain('XV-204');expect(prompts).toContain('CLASS 150');expect(prompts).toContain('DN80');expect(prompts).toContain('SOP-220');
+    const artifact=events.find(e=>e.type==='artifact_ready');expect(artifact?.type==='artifact_ready'&&artifact.artifact.filename).toBe('corrective-action-note.md');
+    const output=readFileSync(path.join(process.env.WORKBENCH_DATA_ROOT!,'runs',runId,'output/corrective-action-note.md'),'utf8');expect(output).toContain('DRAWING NOT APPROVED');expect(output).toContain('[SOP-220 §4.2]');expect(output).toContain('[SOP-220 §4.3]');
   });
-
-  it("does not generate deliverable artifact when user only asks for in-chat compliance check", async () => {
-    let capturedPrompt = "";
-    const gateway = new ModelGateway(
-      {
-        async request(_url, init) {
-          const body = JSON.parse(init.body || "{}");
-          const userMsg = body.messages?.[body.messages.length - 1]?.content ?? "";
-          capturedPrompt = typeof userMsg === "string" ? userMsg : JSON.stringify(userMsg);
-
-          const complianceOutput = {
-            drawingId: "PID-P204-REV-C", approved: false, noApprovalClaim: true,
-            checks: [{ component: "XV-204", observed: "Class 150", required: "Class 300", status: "non_compliant", citation: "[SOP-220 §4.2]", reasoning: "150 is below 300." }],
-            correctiveAction: "Upgrade the valve before release.",
-            markdownNote: "Drawing is NOT APPROVED. Upgrade XV-204 per [SOP-220 §4.2].",
-          };
-
-          return {
-            status: 200,
-            async text() {
-              return JSON.stringify({
-                id: "chatcmpl-mock",
-                choices: [{ message: { content: JSON.stringify(complianceOutput) } }],
-              });
-            },
-          };
-        },
-      },
-      new Map([
-        [
-          "draft-qwen3",
-          {
-            id: "draft-qwen3",
-            taskTypes: ["draft"],
-            runtime: "llama-server",
-            baseUrl: "http://localhost:8000/v1",
-            model: "draft-model",
-            capabilities: ["text", "structured-output"],
-            requestTimeoutMs: 10000,
-            healthPath: "/models",
-            enabled: true,
-          },
-        ],
-      ] as any),
-    );
-
-    const runEvents: RunEvent[] = [];
-    const manager = new RunManager(gateway, (evt) => runEvents.push(evt));
-    manager.setRAGService(ragService);
-    manager.setGrounding(new RAGGroundingProvider(ragService));
-
-    const chatId = createChat("Drawing In-Chat Only Check");
-    const svgPath = path.resolve(__dirname, "../../demo/flow_c/pump-skid-P204.svg");
-    const svgBuffer = readFileSync(svgPath);
-    const { attachment } = manager.registerAttachment({
-      chatId,
-      filename: "pump-skid-P204.svg",
-      mediaType: "image/svg+xml",
-      sizeBytes: svgBuffer.length,
-      base64OrBuffer: svgBuffer,
-    });
-
-    const { runId } = await manager.start({
-      chatId,
-      userText: "Check this against our piping spec and tell me if anything's non-compliant",
-      attachmentToken: attachment.attachmentId,
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      const start = Date.now();
-      const interval = setInterval(() => {
-        const err = runEvents.find((e) => e.type === "error");
-        if (err) {
-          clearInterval(interval);
-          reject(new Error(`Run failed: ${(err as any).message}`));
-        }
-        if (Date.now() - start > 5000) {
-          clearInterval(interval);
-          reject(new Error("Timed out"));
-        }
-        if (runEvents.some((e) => e.type === "run_state" && e.state === "completed")) {
-          clearInterval(interval);
-          resolve();
-        }
-      }, 50);
-    });
-
-    // Verify routing and tool events occurred
-    expect(runEvents.some((e) => e.type === "tool_result" && e.tool === "inspect_drawing")).toBe(true);
-    expect(runEvents.some((e) => e.type === "tool_result" && e.tool === "retrieve_sop")).toBe(true);
-
-    // Verify NO artifact_ready was emitted because user didn't ask for a report or deliverable
-    const artifactEvt = runEvents.find((e) => e.type === "artifact_ready");
-    expect(artifactEvt).toBeUndefined();
+  it('returns grounded Chat findings without an unrequested deliverable',async()=>{
+    const {fixture,events}=await inspectDrawing(false);expect(fixture.execute).not.toHaveBeenCalled();expect(fixture.chat).toHaveBeenCalledTimes(1);expect(events.some(e=>e.type==='tool_result'&&e.tool==='retrieve_knowledge'&&e.ok)).toBe(true);expect(events.some(e=>e.type==='assistant_message'&&e.text.includes('NOT APPROVED'))).toBe(true);expect(events.some(e=>e.type==='artifact_ready')).toBe(false);
   });
 });

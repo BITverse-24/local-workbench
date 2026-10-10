@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { compactConversationHistory, compactToolResult, type AgentMessage } from "../src/main/agent/context-manager.js";
 import { ToolDispatcher } from "../src/main/agent/tool-dispatcher.js";
-import { AgentLoop, extractInChatFindings, deriveFormalPlan, isSubstantiveReportOrFindings } from "../src/main/agent/agent-loop.js";
+import { AgentLoop } from "./helpers/agent-loop-fixture.js";
+import { extractInChatFindings, deriveFormalPlan, isSubstantiveReportOrFindings } from "../src/main/agent/agent-loop.js";
 import type { AgentTool } from "../src/main/tools/types.js";
 
 describe("Agent Loop Engine & Context Manager", () => {

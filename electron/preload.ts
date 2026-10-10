@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("workbench", {
   // run protocol
   startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean }) =>
     ipcRenderer.invoke("workbench:startRun", input),
+  getRunSnapshot: (input: {chatId?:string;runId?:string}) => ipcRenderer.invoke("workbench:getRunSnapshot",input),
   resumeRun: (input: { runId: string; largerGenerationAllowance?: boolean }) => ipcRenderer.invoke("workbench:resumeRun", input),
   registerAttachment: (input: {
     chatId?: string;

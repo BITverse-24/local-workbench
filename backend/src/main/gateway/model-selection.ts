@@ -110,14 +110,7 @@ function findMatchingModel(
   const byModel = models.find((m) => m.model.toLowerCase() === norm);
   if (byModel) return byModel;
 
-  // 3. Substring / partial match by configured model name only.
-  return models.find(
-    (m) =>
-      m.id.toLowerCase().includes(norm) ||
-      m.model.toLowerCase().includes(norm) ||
-      norm.includes(m.id.toLowerCase()) ||
-      norm.includes(m.model.toLowerCase()),
-  );
+  return undefined;
 }
 
 function findPrimaryModel(models: ModelRegistryEntry[]): ModelRegistryEntry {
@@ -140,14 +133,14 @@ export function resolveModelSelection(
     };
   }
 
-  if (usableModels.length === 1) {
-    return { ok: true, modelId: usableModels[0].id, modelEntry: usableModels[0], isSingleModel: true, reason: "single configured model" };
-  }
   const explicit = options.explicitSelection?.trim();
   if (explicit) {
     const match = findMatchingModel(explicit, usableModels);
-    if (match?.enabled) return { ok: true, modelId: match.id, modelEntry: match, isSingleModel: false, reason: "explicit user selection" };
+    if (match?.enabled) return { ok: true, modelId: match.id, modelEntry: match, isSingleModel: usableModels.length===1, reason: "explicit user selection" };
     return { ok: false, code: "model_unavailable", error: `Selected model "${explicit}" is unavailable or not configured in active model registry.` };
+  }
+  if (usableModels.length === 1) {
+    return { ok: true, modelId: usableModels[0].id, modelEntry: usableModels[0], isSingleModel: true, reason: "single configured model" };
   }
   const primary = findPrimaryModel(usableModels);
   return {

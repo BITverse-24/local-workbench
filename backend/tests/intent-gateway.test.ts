@@ -29,7 +29,8 @@ describe("Production intent classifier request and failure boundaries", () => {
       const payload = JSON.parse(init.body);
       expect(payload.reasoning_effort).toBe("none");
       expect(payload.response_format.type).toBe("json_schema");
-      expect(payload.response_format.json_schema.schema).toEqual({ type: "object" });
+      expect(payload.response_format.json_schema.schema.type).toBe('object');
+      expect(payload.response_format.json_schema.schema.properties).toHaveProperty('requestedAction');
       expect(timeoutMs).toBe(60000);
       expect(payload.max_tokens).toBe(768);
       return { status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify(artifactIntent), reasoning_content: "" }, finish_reason: "stop" }] }) };

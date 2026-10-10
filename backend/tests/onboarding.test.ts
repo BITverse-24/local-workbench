@@ -122,10 +122,11 @@ describe("Onboarding Architecture & IPC Handlers", () => {
 
     it("converts rows into valid ModelRegistryEntry array", () => {
       const entries = buildRegistryFromRows(rows);
-      expect(entries).toHaveLength(1);
+      expect(entries.filter(entry=>!entry.fallbackOnly)).toHaveLength(1);
       const primary = entries[0];
       expect(primary.id).toBe("primary-model");
-      expect(primary.taskTypes).toEqual(["vision", "draft", "code"]);
+      expect(primary.capabilities).toEqual(expect.arrayContaining(["text", "image-input", "code-generation"]));
+      expect(entries.find(entry=>entry.id==="vision-fallback")?.fallbackOnly).toBe(true);
       expect(primary.baseUrl).toBe("http://127.0.0.1:8000/v1");
       expect(primary.model).toBe("qwen3:8b");
 
@@ -187,7 +188,8 @@ describe("Onboarding Architecture & IPC Handlers", () => {
 
       // Old role-based model settings migrate to the former general endpoint.
       const gateway = manager.getGateway();
-      expect(gateway.registry.size).toBe(1);
+      expect([...gateway.registry.values()].filter(entry=>!entry.fallbackOnly)).toHaveLength(1);
+      expect(gateway.registry.get("vision-fallback")?.fallbackOnly).toBe(true);
       const primary = gateway.registry.get("primary-model");
       expect(primary).toBeDefined();
       expect(primary?.baseUrl).toBe("http://10.0.0.7:9002/v1");

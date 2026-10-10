@@ -5,9 +5,9 @@ import os from "node:os";
 import {
   detectRequestedDeliverables,
   evaluateCompletionOutcome,
-  AgentLoop,
   type ExpectedDeliverable,
 } from "../src/main/agent/agent-loop.js";
+import { AgentLoop } from "./helpers/agent-loop-fixture.js";
 import { RunManager } from "../src/main/run/manager.js";
 import { initDb, closeDb } from "../src/main/persistence/db.js";
 import { getState, transition, createRun } from "../src/main/run/store.js";
@@ -520,6 +520,7 @@ describe("P0-02: Truthful Completion Semantics", () => {
       });
       const started = await manager.start({
         userText: "Draft an approval note in docx format",
+        mode: "work",
       });
 
       // Wait for run_state event indicating terminal state

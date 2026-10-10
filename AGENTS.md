@@ -49,11 +49,24 @@
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Three-mode execution (v1)
+
+RunManager validates and persists the mode before source preparation or intent classification. Older callers default to Chat. Historical runs with no mode record remain unknown. Each chat can have one active run. Agent runs against the same workspace execute in order. Other chats can continue.
+
+- **Chat** uses one generation call for ordinary text. It can read authorized input snapshots and selected knowledge sources. It receives no workspace authority.
+- **Work** owns requirements, input preparation, generation, validation, repair, and delivery. It uses run storage, 24 model calls, and two recoveries per run, including resumed work. Required unverified checks produce Partial.
+- **Agent** retains AgentLoop, a bound workspace root, approval gates, run-specific mutation scopes, locks, and backups. Changing the workspace revokes authority.
+- Inference uses one shared local accelerator slot for generation, vision, and embeddings. Calls are non-preemptive. Chat has admission preference with fairness and aging. File processing has two slots; Python has one.
+- Work inputs are read-only. Python uses a minimal environment and probes OS isolation. If isolation is unavailable, approval binds the run, source, dependencies, and inputs by digest. This approved fallback does not enforce filesystem or network isolation.
+- Schema 3 stores mode and engine version, artifact validation evidence, and streamed drafts. Snapshots restore background runs by chat/run identity. Restart marks interrupted execution Partial and expires approvals; the user must resume. Mutations are not replayed automatically.
+
+See `docs/three-mode-v1-implementation.md` for measured results and open release gates.
+
 ### Core Tech Stack
 - **Desktop Shell**: Electron 44 (44.7.0), TypeScript 5.6, esbuild
 - **Frontend Renderer**: React 18, Vite 5, Tailwind CSS v4, Lucide icons
 - **Backend Orchestrator**: Node.js (22.12+), TypeScript
-- **Persistence**: SQLite via `better-sqlite3` with WAL mode (Schema Version 2)
+- **Persistence**: SQLite via `better-sqlite3` with WAL mode (Schema Version 3)
 - **Model Gateway**: OpenAI-compatible REST loopback endpoints (LM Studio, `mlx-lm`, `llama-server`, `ollama` for air-gapped deployment; default `http://127.0.0.1:1234/v1` or configured port)
 - **Primary Model Architecture**: Single primary text/code model (e.g. `qwen2.5-coder-7b-instruct-mlx` or `qwen/qwen3.5-9b`) with capability-based fallback for vision (`qwen/qwen3-vl-4b`)
 - **Local RAG & Vector**: Embedded local vector index (`vectra` `LocalIndex`) + SQLite FTS5 (full-text keyword search with Porter stemmer) with Reciprocal Rank Fusion (RRF), local embedding endpoints (`/v1/embeddings`, e.g. `nomic-embed-text`)
@@ -109,9 +122,14 @@ agent/
 │   │       │   ├── onboarding-handlers.ts# First-launch model onboarding IPC handlers
 │   │       │   └── validators.ts         # Strict Zod input validators for all IPC requests
 │   │       ├── run/               # Run lifecycle, storage, contracts, and filesystem
-│   │       │   ├── manager.ts            # RunManager (start, cancel, confirm, resume, execution coordination)
+│   │       │   ├── manager.ts            # Lifecycle owner; dispatches persisted mode before routing
+│   │       │   ├── chat-responder.ts     # Direct response; no autonomous tools or workspace
+│   │       │   ├── work-orchestrator.ts  # Run-scoped generation, repair, and saved-content checks
+│   │       │   ├── runtime-scope.ts      # Backend authority, cancellation, and shared Work budgets
+│   │       │   ├── source-preparation.ts # Cached extraction and bounded source excerpts
+│   │       │   ├── recovery.ts           # Startup interruption recovery; no automatic replay
 │   │       │   ├── contract.ts           # RunContract normalization, persistence, completion evaluation
-│   │       │   ├── envelope.ts           # ExecutionEnvelope builder (CHAT vs AGENT capabilities)
+│   │       │   ├── envelope.ts           # ExecutionEnvelope builder (Chat / Work / Agent capabilities)
 │   │       │   ├── execution-ledger.ts   # Operational state and mutation tracking ledger
 │   │       │   ├── result-store.ts       # P1 immutable intermediate result store and SQLite manifests
 │   │       │   ├── store.ts              # Run state persistence in SQLite (transitions, errors, routing)
@@ -122,6 +140,7 @@ agent/
 │   │       │   ├── partial-result.ts     # Partial execution summaries
 │   │       │   └── images.ts             # PDF/SVG/Image rendering and vision token estimation
 │   │       ├── gateway/           # Model communication and inference abstraction
+│   │       │   ├── inference-scheduler.ts# Shared inference admission, file and Python slots
 │   │       │   ├── model-gateway.ts      # Gateway client (OpenAI-compatible REST loopback, chatWithTools)
 │   │       │   ├── registry.ts           # Model registry loader (config/models.json & DB overrides)
 │   │       │   ├── model-selection.ts    # Model selection resolution (single model vs multi-role)
@@ -147,7 +166,9 @@ agent/
 │   │       │   ├── specialist-tools.ts   # extract_document, retrieve_knowledge, execute_python, generate_deliverable
 │   │       │   ├── result-retrieval.ts   # retrieve_result tool for P1 ResultStore slices
 │   │       │   ├── capabilities.ts       # request_capability tool and capability group mappings
-│   │       │   ├── python.ts             # Bounded Python execution with opportunistic isolation
+│   │       │   ├── file-worker.ts        # Bounded independent PDF/DOCX/XLSX/export readers
+│   │       │   ├── child-process.ts      # Abortable subprocess and process-tree termination
+│   │       │   ├── python.ts             # Probed OS isolation; explicit digest-bound fallback approval
 │   │       │   ├── python-contract.ts    # Behavioral and return validation runners for Python
 │   │       │   ├── artifacts.ts          # Deliverable generation (docx, xlsx) and validation
 │   │       │   ├── document-reader.ts    # Text/table extraction from PDF and DOCX
@@ -161,7 +182,7 @@ agent/
 │   │       │   └── provider.ts               # Grounding provider interface
 │   │       ├── persistence/       # SQLite storage
 │   │       │   ├── db.ts                 # SQLite connection manager, WAL config, schema migrations
-│   │       │   ├── schema.sql            # SQLite DDL (Schema version 2, 18 tables)
+│   │       │   ├── schema.sql            # SQLite DDL (Schema version 3)
 │   │       │   ├── chats.ts              # Chat session store
 │   │       │   ├── messages.ts           # Message persistence store
 │   │       │   ├── settings-store.ts     # Key-value settings store
@@ -235,7 +256,7 @@ agent/
 │   └── models.v0.example.json     # Reference template for local LM Studio / OpenAI-compatible servers
 │
 ├── data/                          # Runtime persistent data (gitignored)
-│   ├── workbench.db               # SQLite database file (WAL mode, Schema version 2)
+│   ├── workbench.db               # SQLite database file (WAL mode, Schema version 3)
 │   ├── rag/                       # RAG storage: keyword.db (FTS5) and index.json (Vectra vector index)
 │   └── runs/                      # Unique UUID directory per execution run
 │       └── <runId>/
@@ -308,7 +329,7 @@ The backend coordinates the execution lifecycle, security enforcement, model gat
 2. **`run/` (Execution Lifecycle & Storage)**:
    - **`manager.ts`**: `RunManager` controls the state machine for each execution (`created` → `classifying` → `planning` → `acting` → `awaiting_confirmation` → terminal: `completed` / `partial` / `failed` / `cancelled` / `limit_exceeded`). Coordinates run directory creation, contract persistence, execution envelope creation, and confirmation pauses.
    - **`contract.ts`**: Normalizes semantic requests into versioned `RunContract` (v1) records. Persisted insert-once into SQLite `run_contracts`. Serves as the authoritative basis for completion evaluation (`evaluateRunContractCompletion`), without granting execution mutation permissions.
-   - **`envelope.ts`**: Builds `ExecutionEnvelope`, establishing the capability boundary (`CHAT` vs `AGENT` execution mode) and gating active capability groups (`source_access`, `document_processing`, `result_retrieval`, `structured_computation`, `artifact_generation`, `workspace_mutation`).
+   - **`envelope.ts`**: Builds `ExecutionEnvelope`, establishing the capability boundary (`chat`, `work`, and `agent` execution modes) and gating active capability groups (`source_access`, `document_processing`, `result_retrieval`, `structured_computation`, `artifact_generation`, `workspace_mutation`).
    - **`result-store.ts`**: P1 persistent intermediate result store. Writes immutable typed payloads (`text`, `document`, `table`, `structured`, `execution`) to `data/runs/<runId>/intermediate/results/<uuid>.json|.txt` with SHA-256 digests and SQLite manifests (`intermediate_results` table).
    - **`execution-ledger.ts`**: Tracks compact operational state, authorized operations, disk mutations, and token usage limits.
    - **`verification.ts`**: Runs structural and parser validation on generated deliverables (`verifyArtifactFile`: existence, containment, non-empty, extension match, format parser verification).
@@ -347,7 +368,7 @@ The backend coordinates the execution lifecycle, security enforcement, model gat
 
 8. **`persistence/` (SQLite Storage)**:
    - **`db.ts`**: Initializes `better-sqlite3` with WAL mode (`journal_mode = WAL`, `synchronous = FULL`, `foreign_keys = ON`). Handles idempotent schema creation and version migrations.
-   - **`schema.sql`**: SQLite DDL defining Schema Version 2 across 18 tables: `chats`, `messages`, `attachments`, `message_attachments`, `run_attachments`, `runs`, `run_transitions`, `routing_decisions`, `model_calls`, `tool_calls`, `execution_results`, `confirmations`, `artifacts`, `run_errors`, `settings`, `kv_meta`, `run_contracts`, `run_execution_ledgers`, `run_verification_reports`, and `intermediate_results`.
+   - **`schema.sql`**: SQLite DDL defining Schema Version 3: `chats`, `messages`, `attachments`, `message_attachments`, `run_attachments`, `runs`, `run_transitions`, `routing_decisions`, `model_calls`, `tool_calls`, `execution_results`, `confirmations`, `artifacts`, `run_errors`, `settings`, `kv_meta`, `run_contracts`, `run_execution_ledgers`, `run_verification_reports`, `intermediate_results`, `run_mode_details`, `run_artifact_validations`, and `run_drafts`.
    - **`chats.ts`**, **`messages.ts`**, **`settings-store.ts`**: Structured query repositories for chats, messages, and settings.
 
 9. **`confirmation/` (Operator Confirmation Gate)**:
@@ -412,7 +433,7 @@ Built with React 18, Vite 5, Tailwind CSS v4, and Lucide icons:
 
 ```
 data/
-├── workbench.db              # SQLite persistence database (WAL enabled, schema version 2)
+├── workbench.db              # SQLite persistence database (WAL enabled, schema version 3)
 ├── rag/                      # RAG persistence directory
 │   ├── keyword.db            # SQLite FTS5 keyword index and document metadata
 │   └── index.json            # Vectra embedded vector index
@@ -436,6 +457,7 @@ All communication between the React renderer and the Electron/Node backend occur
 | Channel | Direction | Payload Schema / Validator | Description |
 |---|---|---|---|
 | `workbench:startRun` | Renderer → Main | `startRunInputSchema` | Begins run execution; creates Run ID and directories |
+| `workbench:getRunSnapshot` | Renderer → Main | `getRunSnapshotInputSchema` | Restores mode, state, queue, progress, draft, approval, artifacts, and verification by chat or run |
 | `workbench:resumeRun` | Renderer → Main | `resumeRunInputSchema` | Resumes an interrupted or truncated run |
 | `workbench:cancelRun` | Renderer → Main | `cancelRunInputSchema` | Cancels active run execution and revokes scopes |
 | `workbench:confirmAction`| Renderer → Main | `confirmActionInputSchema` | Approves or rejects a pending operator confirmation |

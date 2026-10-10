@@ -17,7 +17,7 @@ describe("Intelligent Intent Classifier", () => {
     });
     expect(decision.actionTarget).toBe("harness");
     expect(decision.taskType).toBe("code");
-    expect(decision.modelId).toBe("code-qwen25coder");
+    expect(decision.modelId).toBe("primary-model");
     expect(decision.isWorkspaceAction).toBe(true);
   });
 
@@ -28,7 +28,7 @@ describe("Intelligent Intent Classifier", () => {
     });
     expect(decision.actionTarget).toBe("harness");
     expect(decision.taskType).toBe("code");
-    expect(decision.modelId).toBe("code-qwen25coder");
+    expect(decision.modelId).toBe("primary-model");
     expect(decision.isWorkspaceAction).toBe(true);
   });
 
@@ -68,7 +68,7 @@ describe("Intelligent Intent Classifier", () => {
     });
     expect(decision.actionTarget).toBe("data");
     expect(decision.taskType).toBe("code");
-    expect(decision.modelId).toBe("code-qwen25coder");
+    expect(decision.modelId).toBe("primary-model");
     expect(decision.reason).toBe("CSV/code intent");
   });
 
@@ -79,7 +79,7 @@ describe("Intelligent Intent Classifier", () => {
     });
     expect(pdfDecision.actionTarget).toBe("vision");
     expect(pdfDecision.taskType).toBe("vision");
-    expect(pdfDecision.modelId).toBe("vision-qwen25vl");
+    expect(pdfDecision.modelId).toBe("primary-model");
 
     const imgDecision = classifyIntent({
       userText: "read the meter in this picture",
@@ -87,7 +87,7 @@ describe("Intelligent Intent Classifier", () => {
     });
     expect(imgDecision.actionTarget).toBe("vision");
     expect(imgDecision.taskType).toBe("vision");
-    expect(imgDecision.modelId).toBe("vision-qwen25vl");
+    expect(imgDecision.modelId).toBe("primary-model");
   });
 
   it("routes conversational requests without filesystem context to chat", () => {
@@ -96,7 +96,7 @@ describe("Intelligent Intent Classifier", () => {
     });
     expect(decision.actionTarget).toBe("chat");
     expect(decision.taskType).toBe("draft");
-    expect(decision.modelId).toBe("draft-qwen3");
+    expect(decision.modelId).toBe("primary-model");
     expect(decision.isWorkspaceAction).toBe(false);
   });
 
@@ -106,7 +106,7 @@ describe("Intelligent Intent Classifier", () => {
     });
     expect(decision.actionTarget).toBe("chat");
     expect(decision.taskType).toBe("draft");
-    expect(decision.modelId).toBe("draft-qwen3");
+    expect(decision.modelId).toBe("primary-model");
   });
 
   describe("Negative Workspace Constraints & Standalone Deliverables", () => {
@@ -117,7 +117,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("standalone_file");
       expect(decision.taskType).toBe("code");
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
       expect(decision.isWorkspaceAction).toBe(false);
       expect(decision.isNegativeWorkspaceConstraint).toBe(true);
       expect(decision.suggestedExtension).toBe("py");
@@ -130,7 +130,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("standalone_file");
       expect(decision.taskType).toBe("code");
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
       expect(decision.isWorkspaceAction).toBe(false);
       expect(decision.extractedFilename).toBe("script.py");
     });
@@ -256,19 +256,19 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("chat");
       expect(decision.taskType).toBe("draft");
-      expect(decision.modelId).toBe("draft-qwen3");
+      expect(decision.modelId).toBe("primary-model");
       expect(decision.isWorkspaceAction).toBe(false);
       expect(decision.reason).toBe("approval note drafting");
     });
 
-    it("routes general approval notes to draft-qwen3", () => {
+    it("routes general approval notes to primary-model", () => {
       const decision = classifyIntent({
         userText: "draft an executive summary note for equipment inspection",
         isWorkspaceActive: true,
       });
       expect(decision.actionTarget).toBe("chat");
       expect(decision.taskType).toBe("draft");
-      expect(decision.modelId).toBe("draft-qwen3");
+      expect(decision.modelId).toBe("primary-model");
     });
   });
 
@@ -280,7 +280,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("harness");
       expect(decision.taskType).toBe("code");
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
       expect(decision.isWorkspaceAction).toBe(true);
       expect(decision.reason).toBe("workspace command execution");
     });
@@ -342,7 +342,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("harness");
       expect(decision.taskType).toBe("code");
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
       expect(decision.isWorkspaceAction).toBe(true);
       expect(decision.reason).toBe("affirmative follow-up in active workspace");
     });
@@ -358,7 +358,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("harness");
       expect(decision.isWorkspaceAction).toBe(true);
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
     });
 
     it("routes 'execute the file' in active workspace to harness", () => {
@@ -368,7 +368,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("harness");
       expect(decision.isWorkspaceAction).toBe(true);
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
       expect(decision.reason).toBe("script/file execution follow-up in workspace");
     });
 
@@ -380,7 +380,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("data");
       expect(decision.isWorkspaceAction).toBe(false);
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
     });
 
     it("routes affirmative 'Yes' without active workspace to chat", () => {
@@ -415,7 +415,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("harness");
       expect(decision.taskType).toBe("code");
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
       expect(decision.isWorkspaceAction).toBe(true);
     });
 
@@ -430,7 +430,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("harness");
       expect(decision.taskType).toBe("code");
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
       expect(decision.isWorkspaceAction).toBe(true);
     });
 
@@ -492,7 +492,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("harness");
       expect(decision.isWorkspaceAction).toBe(true);
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
     });
 
     it("routes 'Still hasnt been deleted from the directory' to harness even with historical attachments", () => {
@@ -503,7 +503,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("harness");
       expect(decision.isWorkspaceAction).toBe(true);
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
     });
 
     it("routes 'Delete the damn file from the workspace bruh' to harness even with historical attachments", () => {
@@ -514,7 +514,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("harness");
       expect(decision.isWorkspaceAction).toBe(true);
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
     });
 
     it("routes 'clean up the generated files from the folder' to harness", () => {
@@ -525,7 +525,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("harness");
       expect(decision.isWorkspaceAction).toBe(true);
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
     });
   });
 
@@ -556,7 +556,7 @@ describe("Intelligent Intent Classifier", () => {
       });
       expect(decision.actionTarget).toBe("harness");
       expect(decision.taskType).toBe("code");
-      expect(decision.modelId).toBe("code-qwen25coder");
+      expect(decision.modelId).toBe("primary-model");
       expect(decision.isWorkspaceAction).toBe(true);
     });
 

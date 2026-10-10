@@ -41,7 +41,7 @@ describe("Execution Envelope Specification", () => {
       expect(isCapabilityPermitted(envelope, "system_execution")).toBe(false);
     });
 
-    it("permits safe read-only, computation, and deliverable capabilities in Chat mode", () => {
+    it("permits source access but prohibits computation and deliverable creation in Chat mode", () => {
       const envelope = buildExecutionEnvelope({
         runId: "run-chat-2",
         mode: "chat",
@@ -53,8 +53,8 @@ describe("Execution Envelope Specification", () => {
       expect(isCapabilityPermitted(envelope, "source_access")).toBe(true);
       expect(isCapabilityPermitted(envelope, "document_processing")).toBe(true);
       expect(isCapabilityPermitted(envelope, "result_retrieval")).toBe(true);
-      expect(isCapabilityPermitted(envelope, "structured_computation")).toBe(true);
-      expect(isCapabilityPermitted(envelope, "artifact_generation")).toBe(true);
+      expect(isCapabilityPermitted(envelope, "structured_computation")).toBe(false);
+      expect(isCapabilityPermitted(envelope, "artifact_generation")).toBe(false);
     });
 
     it("defaults to empty active capabilities for pure chat to minimize schema overhead", () => {
@@ -100,7 +100,7 @@ describe("Execution Envelope Specification", () => {
   });
 
   describe("Deterministic Initial Exposure Rules", () => {
-    it("activates source_access when workspace is mounted", () => {
+    it("does not activate source access from a mounted workspace in Chat", () => {
       const envelope = buildExecutionEnvelope({
         runId: "run-ws",
         mode: "chat",
@@ -109,7 +109,9 @@ describe("Execution Envelope Specification", () => {
         userPrompt: "What files are in this project?",
       });
 
-      expect(envelope.activeCapabilities).toContain("source_access");
+      expect(envelope.activeCapabilities).not.toContain("source_access");
+      expect(envelope.hasWorkspace).toBe(false);
+      expect(envelope.workspaceRoot).toBeUndefined();
       expect(envelope.activeCapabilities).not.toContain("workspace_mutation");
     });
 
@@ -163,7 +165,7 @@ describe("Execution Envelope Specification", () => {
     it("activates artifact_generation when deliverables are explicitly requested", () => {
       const docxEnvelope = buildExecutionEnvelope({
         runId: "run-deliv",
-        mode: "chat",
+        mode: "work",
         modelId: "draft-qwen3",
         hasWorkspace: false,
         userPrompt: "Compile findings and save as compliance-note.docx",

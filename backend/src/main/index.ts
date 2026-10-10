@@ -18,7 +18,7 @@ if (typeof (Promise as any).try !== "function") {
 }
 
 import { setDataDir } from "./run/filesystem.js";
-import { configurePersistence, initDb } from "./persistence/db.js";
+import { configurePersistence, initDb, getDb } from "./persistence/db.js";
 import { configureModels } from "./gateway/registry.js";
 import {
   registerChatHandlers,
@@ -29,6 +29,7 @@ import {
 } from "./ipc/handlers.js";
 import type { IpcRegistrar } from "./ipc/handlers.js";
 import { RunManager } from "./run/manager.js";
+import { recoverInterruptedModeRuns } from "./run/recovery.js";
 import { reconcileInterruptedExecutions } from "./run/execution-ledger.js";
 import type { ModelGateway } from "./gateway/model-gateway.js";
 import type { RunEvent } from "../shared/contracts.js";
@@ -92,10 +93,11 @@ export function initBackend(
   }
   initDb();
   reconcileInterruptedExecutions();
+  recoverInterruptedModeRuns();
   registerChatHandlers(ipcMain);
   const manager = new RunManager(gateway, emit);
   registerRunHandlers(ipcMain, manager);
-  const harness = new HarnessManager(emitWorkspace ?? (() => undefined), emit);
+  const harness = new HarnessManager(event=>{manager.workspaceChanged();emitWorkspace?.(event);}, emit);
   registerWorkspaceHandlers(ipcMain, harness);
   manager.setHarness(harness);
   try {

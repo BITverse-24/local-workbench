@@ -1,3 +1,4 @@
+import { assertRuntimeActive } from "../run/runtime-scope.js";
 import type { GroundingProvider, GroundingRequest, GroundingResult } from "./provider.js";
 import type { RAGService } from "../rag/rag-service.js";
 import type { GroundingChunk } from "../../shared/contracts.js";
@@ -51,6 +52,7 @@ export class RAGGroundingProvider implements GroundingProvider {
         chunks,
       };
     } catch (err) {
+      assertRuntimeActive();
       console.warn(`[grounding] Failed to retrieve grounding context for run ${input.runId}:`, err);
       return { runId: input.runId, notes: [], chunks: [] };
     }

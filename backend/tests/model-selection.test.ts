@@ -6,11 +6,12 @@ import {
 } from "../src/main/gateway/model-selection.js";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { resolveModel } from "../src/main/gateway/registry.js";
+import { HarnessManager } from "../src/main/harness/harness-manager.js";
 import { RunManager } from "../src/main/run/manager.js";
 import { initDb, closeDb } from "../src/main/persistence/db.js";
 import { getRunContract } from "../src/main/run/contract.js";
 import type { ModelConfigRow, ModelRegistryEntry, RunEvent } from "../src/shared/contracts.js";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
 describe("Phase 1: Model Selection & Classification Removal", () => {
@@ -138,6 +139,9 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
         expect(resolved.error).toContain("non-existent-model");
         expect(resolved.error).toContain("unavailable or not configured");
       }
+      const single=resolveModelSelection({configuredModels:singleModels,explicitSelection:'missing-primary-model'});
+      expect(single.ok).toBe(false);
+      if(!single.ok)expect(single.error).toContain('missing-primary-model');
     });
 
     it("Scenario: Zero usable models configured -> returns model_unavailable error", () => {
@@ -173,7 +177,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
   });
 
   describe("RunManager Execution Lifecycles (V2)", () => {
-    it("Scenario: Simple Chat request -> semantic classification without tool work", async () => {
+    it("Scenario: Simple Chat request -> direct response without classification", async () => {
       tempDir = mkdtempSync(path.join(process.cwd(), ".tmp-p1-chat-"));
       process.env.WORKBENCH_DATA_ROOT = path.join(tempDir, "data");
       process.env.WORKBENCH_AGENT_V2 = "true";
@@ -224,8 +228,8 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
         { timeout: 2000 },
       );
 
-      // Interpret the request without keyword rules.
-      expect(classifications).toBe(1);
+      // Chat uses the selected model directly.
+      expect(classifications).toBe(0);
 
       // Verify routing event is configuration-driven
       const routingEvent = events.find((e) => e.type === "routing");
@@ -250,7 +254,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       const events: RunEvent[] = [];
 
       const mockGateway = {
-        registry: new Map([["primary-model", { id: "primary-model", model: "first", enabled: true }], ["model-2", { id: "model-2", model: "second", enabled: true }]]),
+        registry: new Map([["primary-model", { id: "primary-model", model: "first", enabled: true, capabilities:["text"] }], ["model-2", { id: "model-2", model: "second", enabled: true, capabilities:["text"] }]]),
         async execute() {
           classifications++;
           return { ok: true, value: { result: { intentType: "general_qa", taskType: "code", primaryGoal: "Explain quicksort", isActionable: false, chatResponseOnly: true, workspaceMutationRequested: false, expectedDeliverables: [] } } };
@@ -283,12 +287,12 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       );
 
       // Model selection must be authoritative throughout execution
-      expect(classifications).toBe(1);
+      expect(classifications).toBe(0);
       expect(modelUsedInChat).toBe("model-2");
 
       const routingEvent = events.find((e) => e.type === "routing");
       expect(routingEvent?.modelId).toBe("model-2");
-      expect(routingEvent?.taskType).toBe("code");
+      expect(routingEvent?.taskType).toBe("draft");
 
       const contract = getRunContract(started.runId);
       expect(contract?.routing.driverModel).toBe("model-2");
@@ -334,6 +338,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       const events: RunEvent[] = [];
 
       const mockGateway = {
+        registry: new Map([["model-2", { id:"model-2",model:"selected",enabled:true,capabilities:["text"] }]]),
         async execute() {
           classifications++;
           return {
@@ -362,11 +367,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
               tool_calls: [
                 {
                   id: "c1",
-                  type: "function",
-                  function: {
-                    name: "write_file",
-                    arguments: JSON.stringify({ path: "worker.ts", content: "export const x = 1;" }),
-                  },
+                  name: "write_file", arguments: { path: "worker.ts", content: "export const x = 1;" },
                 },
               ],
             },
@@ -379,11 +380,14 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       manager = new RunManager(mockGateway, (e) => {
         events.push(e);
         if (e.type === "confirmation_required") {
-          void manager.confirm({ runId: e.runId, actionId: e.action.actionId, approved: true });
+          // This test checks the pending approval before any write.
         }
       });
 
+      const harness=new HarnessManager();
+      mkdirSync(path.join(tempDir,"workspace"));harness.registerWorkspace(path.join(tempDir,"workspace"));manager.setHarness(harness);
       const started = await manager.start({
+        mode:"agent",
         userText: "Modify worker.ts to export x",
         selectedModel: "model-2",
       });
@@ -401,6 +405,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       expect(contract?.routing.driverModel).toBe("model-2");
       expect(contract?.constraints.protectedPaths).toContain(".env");
       expect(contract?.workspace.operations.some((op) => op.targetPath === "worker.ts")).toBe(true);
+      manager.cancel(started.runId);
     });
   });
 });

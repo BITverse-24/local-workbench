@@ -1,7 +1,10 @@
 import path from "node:path";
+import { getCapabilityForTool } from "../tools/capabilities.js";
+import { assertRuntimeActive, currentRuntimeScope } from "../run/runtime-scope.js";
 import type { AgentToolCall, IntermediateResultInput, SourceReference } from "../../shared/contracts.js";
 import { compactToolObservation } from "./context-manager.js";
 import { recordExecutionToolOutcome, recordExecutionToolStarted } from "../run/execution-ledger.js";
+import { runRoot } from "../run/filesystem.js";
 import { resolveSafe, PermissionError } from "../harness/path-guard.js";
 import { extractPathArg } from "../tools/workspace-tools.js";
 import type {
@@ -339,12 +342,28 @@ export class ToolDispatcher {
           if (typeof call.arguments.raw === "string") {
             throw { code: "invalid_arguments", message: "Invalid or malformed tool arguments. Resend a complete JSON object for this tool. For workspace Python tests use run_command with command and python_code; python_module checks additionally require python_function, raw input lines and a matching independent python_reference_pipeline. For attached scripts use execute_python with code and input_files. No operation was executed.", retryable: true };
           }
-          if (context.envelope?.mode === "chat") {
-            if (call.name === "write_file" || call.name === "delete_file") {
-              throw new PermissionError("Workspace mutation is prohibited in Chat mode. Switch to Agent mode to enable workspace edits.");
+          assertRuntimeActive();
+          context.signal?.throwIfAborted();
+          context.assertAuthority?.();
+          if (context.envelope) {
+            const mode=currentRuntimeScope()?.mode??context.envelope.mode;
+            const registered=new Set(["request_capability","list_dir","read_file","search","write_file","delete_file","run_command","execute_python","generate_deliverable","retrieve_result","retrieve_knowledge","extract_document"]);
+            if(!registered.has(call.name))throw new PermissionError("Unlisted tools cannot execute.");
+            if(mode==="chat"&&!["extract_document","retrieve_result","retrieve_knowledge"].includes(call.name))throw new PermissionError("Chat cannot use this tool.");
+            if(mode==="agent"&&["write_file","delete_file","run_command"].includes(call.name)&&(!context.policyGuard?.isEnforcingExplicit(context.runId)||!context.policyGuard.isAuthorized(context.runId,call.name as "write_file"|"delete_file"|"run_command",call.arguments,true)))throw new PermissionError("Agent operation requires an approved run scope.");
+            if(mode!=="agent"){
+              const relative=path.relative(runRoot(context.runId),context.workspaceRoot);
+              if(context.harness || relative.startsWith("..") || path.isAbsolute(relative))throw new PermissionError(`${mode} requires run-scoped storage.`);
             }
-            if (call.name === "run_command") {
-              throw new PermissionError("Command execution is prohibited in Chat mode. Switch to Agent mode to execute commands.");
+            const cap = getCapabilityForTool(call.name);
+            if (call.name !== "request_capability" && (!cap || !context.envelope.permittedCapabilities.includes(cap))) {
+              throw new PermissionError(`Tool ${call.name} is prohibited in ${context.envelope.mode} mode.`);
+            }
+            if (context.envelope.mode === "chat" && !["extract_document", "retrieve_result", "retrieve_knowledge"].includes(call.name)) {
+              throw new PermissionError("Chat cannot execute tools that inspect a workspace, compute, or create files.");
+            }
+            if (context.envelope.mode === "work" && ["write_file", "delete_file", "run_command"].includes(call.name)) {
+              throw new PermissionError("Work cannot modify a persistent workspace or execute workspace commands.");
             }
           }
           if (context.resultStore && (call.name === "write_file" || call.name === "delete_file")) {
@@ -353,7 +372,11 @@ export class ToolDispatcher {
           }
           recordExecutionToolStarted({ runId: context.runId, callId: call.id, tool: call.name, args: call.arguments, summary: callSummary });
           const rawResult = await tool.execute(call.arguments, { ...context, currentCallId: call.id });
+          assertRuntimeActive();
+          context.signal?.throwIfAborted();
+          context.assertAuthority?.();
           const durationMs = Date.now() - t0;
+          currentRuntimeScope()?.observe?.({toolTimeMs:durationMs});
 
           const rawOutput = typeof rawResult.output === "string" ? rawResult.output : "";
           const rawSummary = typeof rawResult.summary === "string" ? rawResult.summary : callSummary;

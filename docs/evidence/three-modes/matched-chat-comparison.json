@@ -1,0 +1,24 @@
+{
+  "baseline": {
+    "visibleTtftMs": {
+      "p50": 3688,
+      "p95": 7141
+    },
+    "totalMs": {
+      "p50": 4368,
+      "p95": 7144
+    },
+    "samples": 7
+  },
+  "current": {
+    "visibleTtftMs": {
+      "p50": 381,
+      "p95": 384
+    },
+    "totalMs": {
+      "p50": 1109,
+      "p95": 1907
+    },
+    "samples": 7
+  }
+}
