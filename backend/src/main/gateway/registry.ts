@@ -41,10 +41,12 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
   let profiles: ModelRegistryEntry[] = [];
   try { profiles = Array.from(loadRegistry().values()); } catch { /* No file profile configured. */ }
   const eligible = rows.filter((row) => row.role !== "embedding" && row.modelName?.trim());
-  // New settings use generic primary rows. Collapse old role-specific settings
-  // to their former general model so legacy specialist rows do not route work.
   const primaryRows = eligible.filter((row) => row.role === "primary");
-  const candidates = primaryRows.length ? primaryRows : [eligible.find((row) => row.role === "draft") ?? eligible[0]].filter(Boolean) as ModelConfigRow[];
+  const roleOrder: Array<ModelConfigRow["role"]> = ["draft", "vision", "coding"];
+  const roleRows = roleOrder.flatMap((role) => eligible.filter((row) => row.role === role));
+  // `primary` is accepted for settings written by earlier app versions. New
+  // onboarding saves the three user-facing roles. Draft is the default route.
+  const candidates = roleRows.length > 0 ? roleRows : primaryRows;
   const seen = new Set<string>();
   const primaryEntries: ModelRegistryEntry[] = candidates.filter((row) => {
     const key = `${sanitizeHost(row.host)}:${row.port || 11434}/${row.modelName.toLowerCase()}`;

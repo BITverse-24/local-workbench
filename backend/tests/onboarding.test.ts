@@ -20,6 +20,7 @@ import { RunManager } from "../src/main/run/manager.js";
 import { RAGService } from "../src/main/rag/rag-service.js";
 import type { MinimalIpcMain } from "../src/main/ipc/handlers.js";
 import type { ModelConfigRow } from "../src/shared/contracts.js";
+import { getModelRoutes } from "../../frontend/src/lib/models.js";
 
 class FakeIpcMain implements MinimalIpcMain {
   handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
@@ -122,7 +123,7 @@ describe("Onboarding Architecture & IPC Handlers", () => {
 
     it("converts rows into valid ModelRegistryEntry array", () => {
       const entries = buildRegistryFromRows(rows);
-      expect(entries.filter(entry=>!entry.fallbackOnly)).toHaveLength(1);
+      expect(entries.filter(entry=>!entry.fallbackOnly)).toHaveLength(3);
       const primary = entries[0];
       expect(primary.id).toBe("primary-model");
       expect(primary.capabilities).toEqual(expect.arrayContaining(["text", "image-input", "code-generation"]));
@@ -133,6 +134,41 @@ describe("Onboarding Architecture & IPC Handlers", () => {
       // Verify no legacy plan model is synthesized
       const plan = entries.find((e: any) => e.id === "plan-qwen3-8b");
       expect(plan).toBeUndefined();
+    });
+
+    it("deduplicates the same endpoint configured for Vision, Coding, and Draft", () => {
+      const sameEndpoint: ModelConfigRow[] = ["vision", "coding", "draft"].map((role) => ({
+        role: role as ModelConfigRow["role"],
+        modelName: "shared-local-model",
+        host: "127.0.0.1",
+        port: 11434,
+        contextLength: 8192,
+      }));
+
+      const entries = buildRegistryFromRows(sameEndpoint).filter((entry) => !entry.fallbackOnly);
+      expect(entries).toHaveLength(1);
+      expect(entries[0].id).toBe("primary-model");
+      expect(entries[0].model).toBe("shared-local-model");
+    });
+
+    it("lists distinct role models in the selector with Draft as the default", () => {
+      const models = getModelRoutes(rows);
+      expect(models.map((model) => model.name)).toEqual([
+        "qwen3:8b",
+        "qwen2.5-vl:7b",
+        "qwen2.5-coder:32b",
+      ]);
+      expect(models[0].id).toBe("primary-model");
+    });
+
+    it("shows one selector choice when all three roles share one endpoint", () => {
+      expect(getModelRoutes(["vision", "coding", "draft"].map((role) => ({
+        role: role as ModelConfigRow["role"],
+        modelName: "shared-local-model",
+        host: "127.0.0.1",
+        port: 11434,
+        contextLength: 8192,
+      })))).toHaveLength(1);
     });
   });
 
@@ -186,9 +222,9 @@ describe("Onboarding Architecture & IPC Handlers", () => {
       expect(status.completed).toBe(true);
       expect(status.configuredModels).toHaveLength(4);
 
-      // Old role-based model settings migrate to the former general endpoint.
+      // The three role endpoints stay available. Draft is the default route.
       const gateway = manager.getGateway();
-      expect([...gateway.registry.values()].filter(entry=>!entry.fallbackOnly)).toHaveLength(1);
+      expect([...gateway.registry.values()].filter(entry=>!entry.fallbackOnly)).toHaveLength(3);
       expect(gateway.registry.get("vision-fallback")?.fallbackOnly).toBe(true);
       const primary = gateway.registry.get("primary-model");
       expect(primary).toBeDefined();

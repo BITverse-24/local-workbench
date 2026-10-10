@@ -81,12 +81,7 @@ export function countUsableModels(
   }
 
   if (rows !== undefined && Array.isArray(rows)) {
-    const llmRows = rows.filter((r) => r.role !== "embedding" && r.modelName?.trim());
-    const endpoints = new Set<string>();
-    for (const r of llmRows) {
-      endpoints.add(`${r.host}:${r.port}/${r.modelName}`);
-    }
-    return endpoints.size;
+    return buildRegistryFromRows(rows).filter((entry) => !entry.fallbackOnly).length;
   }
 
   const entries = getUsableConfiguredModels(gateway, dbModels);

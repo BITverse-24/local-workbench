@@ -19,7 +19,6 @@ type Props = {
   mode?: ExecutionMode;
   onModeChange?: (mode:ExecutionMode) => void;
   hasWorkspace?: boolean;
-  onEnableWorkspace?: () => void;
 };
 
 function formatSize(bytes: number): string {
@@ -87,7 +86,6 @@ export default function InputBar({
   mode = "chat",
   onModeChange,
   hasWorkspace=false,
-  onEnableWorkspace,
   onVoice,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -96,6 +94,9 @@ export default function InputBar({
   const [attachError, setAttachError] = useState<string | null>(null);
 
   const canSend = !disabled && (input.trim().length > 0 || attachedFiles.length > 0);
+  const [hoveredMode, setHoveredMode] = useState<ExecutionMode | null>(null);
+  const modeOptions = ["chat", "work", "agent"] as const;
+  const slideMode = hoveredMode ?? mode;
 
   const showError = (msg: string) => {
     setAttachError(msg);
@@ -311,16 +312,55 @@ export default function InputBar({
               />
 
               {onModeChange && (
-                <div className="inline-flex items-center gap-1" role="group" aria-label="Execution mode">
-                  {(["chat","work","agent"] as const).map(value=>(
-                    <button key={value} type="button" onClick={()=>onModeChange(value)}
-                      disabled={disabled || (value==="agent"&&!hasWorkspace)}
-                      aria-pressed={mode===value} title={value==="chat"?"Answer from conversation and selected sources":value==="work"?"Compute and create output files":hasWorkspace?"Inspect and change the bound workspace":"Select a workspace to use Agent"}
-                      className={`h-9 px-2 rounded-lg text-xs border disabled:opacity-40 ${mode===value?'bg-[#183248] text-[#70B7EC] border-[#3E7CA6]':'bg-[#252A32] text-[#D8DEE4] border-[#3E4756]'}`}>
-                      {value[0].toUpperCase()+value.slice(1)}
-                    </button>
-                  ))}
-                  {!hasWorkspace&&onEnableWorkspace&&<button type="button" onClick={onEnableWorkspace} className="text-xs px-2 text-[#70B7EC]">Select workspace</button>}
+                <div className="rounded-full border border-white/[0.09] bg-[#15191D] p-1 shadow-[0_2px_8px_rgba(0,0,0,0.18)]" role="group" aria-label="Execution mode">
+                  <div className="relative grid grid-cols-3" onMouseLeave={() => setHoveredMode(null)} onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHoveredMode(null);
+                  }}>
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-y-0 left-0 z-0 w-1/3 rounded-full border border-white/[0.09] bg-[#2A3238] shadow-[0_1px_3px_rgba(0,0,0,0.22)] transition-transform duration-200 ease-out motion-reduce:transition-none"
+                      style={{ transform: `translateX(${modeOptions.indexOf(slideMode) * 100}%)` }}
+                    />
+                  {modeOptions.map((value) => {
+                    const selected = mode === value;
+                    const highlighted = slideMode === value;
+                    const agentNeedsWorkspace = value === "agent" && !hasWorkspace;
+                    return (
+                      <div key={value} className={value === "agent" ? "relative group/agent" : "relative"}>
+                        <button
+                          type="button"
+                          onMouseEnter={() => setHoveredMode(value)}
+                          onFocus={() => setHoveredMode(value)}
+                          onClick={() => {
+                            if (!disabled && !agentNeedsWorkspace) onModeChange(value);
+                          }}
+                          disabled={disabled}
+                          aria-disabled={agentNeedsWorkspace || undefined}
+                          aria-pressed={selected}
+                          aria-describedby={agentNeedsWorkspace ? "agent-workspace-tooltip" : undefined}
+                          title={value === "chat" ? "Answer from conversation and selected sources" : value === "work" ? "Compute and create output files" : hasWorkspace ? "Inspect and change the bound workspace" : undefined}
+                          className={`relative z-10 h-8 w-[72px] rounded-full text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#94A3AD]/50 disabled:cursor-not-allowed disabled:opacity-45 ${agentNeedsWorkspace && !highlighted
+                            ? "cursor-help text-[#77818A] hover:text-[#AEB7BE]"
+                            : highlighted || selected
+                              ? "text-[#EDF1F3]"
+                              : "text-[#A8B0B7] hover:text-[#D7DDE1]"
+                          }`}
+                        >
+                          {value[0].toUpperCase() + value.slice(1)}
+                        </button>
+                        {agentNeedsWorkspace && !disabled && (
+                          <div id="agent-workspace-tooltip" role="tooltip" className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 z-30 w-52 -translate-x-1/2 translate-y-1 rounded-xl border border-white/[0.11] bg-[#1B2025] px-3 py-2.5 text-left opacity-0 shadow-[0_10px_30px_rgba(0,0,0,0.38)] transition-all duration-150 group-hover/agent:translate-y-0 group-hover/agent:opacity-100 group-focus-within/agent:translate-y-0 group-focus-within/agent:opacity-100">
+                            <div className="flex items-start gap-2">
+                              <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border border-[#758493]/35 text-[10px] leading-none text-[#A8B7C4]">i</span>
+                              <span className="text-[11px] leading-relaxed text-[#CBD2D8]">Enable a workspace to use Agent.</span>
+                            </div>
+                            <span className="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-b border-r border-white/[0.11] bg-[#1B2025]" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  </div>
                 </div>
               )}
 

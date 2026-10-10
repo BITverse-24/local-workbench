@@ -104,6 +104,7 @@ export default function App() {
   // Onboarding state
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
   const [cachedModels, setCachedModels] = useState<ModelConfigRow[] | undefined>(undefined);
+  const [modelSettingsError, setModelSettingsError] = useState<string | null>(null);
 
   const availableModels = useMemo(() => getModelRoutes(cachedModels), [cachedModels]);
 
@@ -114,7 +115,9 @@ export default function App() {
         if (availableModels.length === 1) {
           return availableModels[0];
         }
-        const match = availableModels.find((m) => m.id === (savedModelId || prev?.id) || m.name === prev?.name);
+        const match = availableModels.find((m) => m.id === savedModelId)
+          ?? availableModels.find((m) => m.id === prev?.id)
+          ?? availableModels.find((m) => m.name === prev?.name);
         return match ?? availableModels[0];
       });
     }
@@ -931,7 +934,17 @@ export default function App() {
           workspaceLoading={workspaceLoading}
         />
 
-        <ChatPanel title={activeTitle} leftCollapsed={leftCollapsed} rightCollapsed={rightCollapsed} onToggleLeft={() => setLeftCollapsed(!leftCollapsed)} onToggleRight={() => setRightCollapsed(!rightCollapsed)}>
+        <ChatPanel title={activeTitle} leftCollapsed={leftCollapsed} rightCollapsed={rightCollapsed} onToggleLeft={() => setLeftCollapsed(!leftCollapsed)} onToggleRight={() => setRightCollapsed(!rightCollapsed)} onModelSettings={async () => {
+          try {
+            const result = await wb.resetOnboarding();
+            if (!result.ok) throw new Error("Could not open model settings.");
+            setModelSettingsError(null);
+            setOnboardingCompleted(false);
+          } catch (error) {
+            setModelSettingsError(error instanceof Error ? error.message : String(error));
+          }
+        }}>
+          {modelSettingsError && <div className="mx-4 mt-2 px-3 py-2 rounded-[var(--radius-sm)] border border-[var(--status-error)]/40 text-xs text-[var(--status-error)] flex items-center justify-between gap-3"><span>{modelSettingsError}</span><button onClick={() => setModelSettingsError(null)} aria-label="Dismiss model settings error">×</button></div>}
           {runState==="partial"&&activeRunId&&["work","agent"].includes(sessions.current.modes.get(activeRunId)??"")&&<button className="mx-4 mt-2 text-sm text-[var(--accent)]" onClick={()=>{const id=activeRunId;void wb.resumeRun({runId:id}).then(()=>{if(activeRunRef.current===id)setRunState("created");}).catch(error=>setRunError({code:"resume_failed",message:String(error)}));}}>Resume from saved evidence</button>}
           {activeRoute && <RouteBadge route={activeRoute} state={runState} />}
           {runError && (
@@ -967,7 +980,6 @@ export default function App() {
             mode={executionMode}
             onModeChange={handleModeChange}
             hasWorkspace={Boolean(activeWorkspace)}
-            onEnableWorkspace={handlePickWorkspace}
           />
         </ChatPanel>
 

@@ -1,7 +1,6 @@
 import { Worker } from "node:worker_threads";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { fileProcessingSlots } from "../gateway/inference-scheduler.js";
 import { currentRuntimeScope, abortError } from "../run/runtime-scope.js";
 
@@ -130,7 +129,9 @@ const main=async()=>{
 export async function parseFileIndependently(file: string, kind: string, signal = currentRuntimeScope()?.signal): Promise<ParsedFile> {
   return fileProcessingSlots.run("work", async () => {
     signal?.throwIfAborted();
-    const require = createRequire(typeof __filename === "string" ? __filename : fileURLToPath(import.meta.url));
+    // The Electron bundle is CommonJS, while Vitest loads this source as ESM.
+    // Use its filename when available and the project root in source tests.
+    const require = createRequire(typeof __filename === "string" ? __filename : path.join(process.cwd(), "package.json"));
     return new Promise<ParsedFile>((resolve, reject) => {
       const worker = new Worker(workerSource, { eval: true, resourceLimits:{maxOldGenerationSizeMb:256,stackSizeMb:4}, workerData: { file, kind,
         zipModule: require.resolve("jszip"), xmlModule: require.resolve("saxes"),

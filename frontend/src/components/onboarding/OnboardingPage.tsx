@@ -28,14 +28,48 @@ export interface RoleCardState {
 
 const DEFAULT_CARDS: RoleCardState[] = [
   {
-    role: "primary",
-    title: "Primary Model",
-    description: "One local model for chat, documents, vision, code, and tool use",
-    badge: "PRIMARY",
+    role: "vision",
+    title: "Vision Model",
+    description: "Model used for image and drawing interpretation",
+    badge: "VISION",
     badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
     nodes: [
       {
-        id: "primary-node-1",
+        id: "vision-node-1",
+        modelName: "qwen3.5:9b",
+        host: "127.0.0.1",
+        port: "11434",
+        contextLength: "32768",
+        testStatus: "idle",
+      },
+    ],
+  },
+  {
+    role: "coding",
+    title: "Coding Model",
+    description: "Model used for code and structured computation tasks",
+    badge: "CODING",
+    badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
+    nodes: [
+      {
+        id: "coding-node-1",
+        modelName: "qwen3.5:9b",
+        host: "127.0.0.1",
+        port: "11434",
+        contextLength: "32768",
+        testStatus: "idle",
+      },
+    ],
+  },
+  {
+    role: "draft",
+    title: "Draft Model",
+    description: "Default model for chat and written responses",
+    badge: "DRAFT",
+    badgeColor: "bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border-[var(--border-subtle)]",
+    nodes: [
+      {
+        id: "draft-node-1",
         modelName: "qwen3.5:9b",
         host: "127.0.0.1",
         port: "11434",
@@ -76,14 +110,20 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
 
   const [cards, setCards] = useState<RoleCardState[]>(() => {
     if (initialConfig && initialConfig.length > 0) {
+      const legacyPrimary = initialConfig.find((model) => model.role === "primary");
       return DEFAULT_CARDS.map((def) => {
-        const matching = def.role === "primary"
-          ? [initialConfig.find((c) => c.role === "primary") ?? initialConfig.find((c) => c.role === "draft")].filter(Boolean) as ModelConfigRow[]
-          : initialConfig.filter((c) => c.role === def.role);
-        if (matching.length > 0) {
+        const matching = initialConfig.filter((model) => model.role === def.role);
+        // Older versions stored one general-purpose model. Show it in each
+        // restored role so the existing setup remains usable after upgrade.
+        const restored = matching.length > 0
+          ? matching
+          : def.role !== "embedding" && legacyPrimary
+            ? [legacyPrimary]
+            : [];
+        if (restored.length > 0) {
           return {
             ...def,
-            nodes: matching.map((m, i) => ({
+            nodes: restored.map((m, i) => ({
               id: `${def.role}-node-${i + 1}-${Date.now()}`,
               modelName: m.modelName,
               host: m.host,
@@ -554,9 +594,9 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                 Deterministic Routing & Worker Scaling
               </h3>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                Workloads are partitioned: Vision handles drawings/OCR, Coding executes
-                Python, Draft handles notes, and Embedding runs vector search. Add
-                worker instances to pool distributed LAN GPUs with round-robin dispatch.
+                Configure Vision, Coding, and Draft endpoints. Draft is the default
+                choice in the model selector. Embedding supports local knowledge search.
+                Add worker instances to pool distributed LAN GPUs with round-robin dispatch.
               </p>
             </div>
             <div className="text-[11px] font-mono text-[var(--text-tertiary)] pt-2.5 border-t border-[var(--border-subtle)]">
