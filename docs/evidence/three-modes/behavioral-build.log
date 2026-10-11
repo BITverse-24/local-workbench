@@ -1,4 +1,0 @@
-
-> local-workbench@0.1.0 build:behavioral
-> node scripts/build-behavioral.cjs
-

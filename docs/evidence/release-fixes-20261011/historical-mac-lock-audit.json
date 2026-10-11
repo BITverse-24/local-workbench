@@ -1,8 +1,0 @@
-{
-  "condition": "Mac locked; CUA cannot access final packaged UI.",
-  "consecutiveGoalTurns": 3,
-  "lastTurnClassification": "no progress: same Mac lock; no independent required work remains",
-  "progressThisTurn": [],
-  "pendingUserInput": "Unlock the Mac manually. Existing request remains pending.",
-  "nextAction": "User unlocks the Mac and resumes this goal; complete the final packaged manual UI checks."
-}

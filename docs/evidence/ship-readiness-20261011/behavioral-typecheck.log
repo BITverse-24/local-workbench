@@ -1,4 +1,0 @@
-
-> local-workbench@0.1.0 typecheck:behavioral
-> tsc --noEmit -p tests/tsconfig.json
-

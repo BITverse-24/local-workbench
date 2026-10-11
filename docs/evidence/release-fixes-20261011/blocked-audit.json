@@ -1,7 +1,0 @@
-{
-  "condition": null,
-  "consecutiveGoalTurns": 0,
-  "resolved": "The user directly confirmed the remaining active-mode and underscore-rendering UI checks. The old Python fallback request expired safely. Backend integration tests verify the approved subprocess path.",
-  "historicalMacLock": "See historical-mac-lock-audit.json",
-  "remainingSecurityConstraint": "If OS isolation is unavailable, each Python fallback run remains uncontained and needs explicit approval bound to its code and input digests."
-}

@@ -1,13 +1,13 @@
 # AGENTS.md — Codebase Architecture & Reference
 
-> **Purpose of this file**: This document serves as the single source of truth for the codebase architecture, module responsibilities, file hierarchy, IPC channels, and execution lifecycles of **Local Workbench** (Team: Unpaid_Interns, Team ID: 119100).
+> **Purpose of this file**: This document describes the current codebase architecture, module responsibilities, file hierarchy, IPC channels, and execution lifecycles of **Local Workbench**.
 > AI coding assistants must read this reference to locate files, understand contracts, and make changes across any directory without needing token-expensive file system searches.
 
 ---
 
 ## 1. System Overview
 
-**Local Workbench** is a self-hosted, air-gapped, local-first agentic AI desktop application tailored for industrial, PSU, and defence engineering knowledge work. It enables offline document inspection, code modification and repair, engineering drawing review, and local workspace interactions with verifiable model routing, hard execution safety boundaries, and zero external egress.
+**Local Workbench** is a local-first desktop application for document inspection, analysis, file generation, and approved workspace changes. It uses local storage and connects to configured model servers on the same computer or on a private network. Model endpoint validation rejects public IP addresses and public host names. This is an application-level endpoint rule; it is not an operating-system firewall or a guarantee that the computer has no external network access.
 
 ### High-Level Architecture
 
@@ -29,19 +29,20 @@
 ┌────────────────────────────────────────────────────────────────────────┐
 │                     BACKEND RUNTIME (backend/src/main/)                │
 │                                                                        │
-│   IPC Handlers ────▶ RunManager ────▶ ContextualRouter / Intent        │
-│         │                  │                      │                    │
-│         │                  ▼                      ▼                    │
-│         │            AgentLoop               ModelGateway              │
-│         │                  │                      │                    │
-│         │           ┌──────┴──────┐         ┌─────┴──────────┐         │
-│         │           ▼             ▼         ▼                ▼         │
-│         │     ToolDispatcher  ResultStore  Primary Model   Vision      │
-│         │           │         (P1 Storage) (LM Studio/MLX) Fallback    │
-│         │     ┌─────┴─────────┐                                        │
-│         │     ▼               ▼                                        │
-│         │  WorkspaceTools  SpecialistTools                             │
-│         │  (PathGuard)     (extract, python, docx/xlsx, RAG)           │
+│   IPC Handlers ────▶ RunManager (validate / persist / dispatch mode)   │
+│                              │                                         │
+│              ┌───────────────┼────────────────┐                        │
+│              ▼               ▼                ▼                        │
+│        ChatResponder  WorkOrchestrator    AgentLoop                    │
+│              │               │                │                        │
+│              └───────────────┴────────────────┘                        │
+│                              │                                         │
+│          ModelGateway · ResultStore · safety services                  │
+│                              │                                         │
+│                 ┌────────────┴───────────┐                             │
+│                 ▼                        ▼                             │
+│           Specialist tools         Workspace tools                     │
+│        (extract, compute, files)  (Agent mode only)                    │
 │         │                                                              │
 │         ▼                                                              │
 │   SQLite Persistence (workbench.db) & Scoped Run Files (data/runs/)    │
@@ -60,15 +61,15 @@ RunManager validates and persists the mode before source preparation or intent c
 - Work inputs are read-only. Python uses a minimal environment and probes OS isolation. If isolation is unavailable, approval binds the run, source, dependencies, and inputs by digest. This approved fallback does not enforce filesystem or network isolation.
 - Schema 3 stores mode and engine version, artifact validation evidence, and streamed drafts. Snapshots restore background runs by chat/run identity. Restart marks interrupted execution Partial and expires approvals; the user must resume. Mutations are not replayed automatically.
 
-See `docs/three-mode-v1-implementation.md` for measured results and open release gates.
+The run lifecycle and mode authority are implemented in `backend/src/main/run/`. Verification tests for mode boundaries are in `backend/tests/three-modes.test.ts` and related run tests.
 
 ### Core Tech Stack
 - **Desktop Shell**: Electron 44 (44.7.0), TypeScript 5.6, esbuild
 - **Frontend Renderer**: React 18, Vite 5, Tailwind CSS v4, Lucide icons
 - **Backend Orchestrator**: Node.js (22.12+), TypeScript
 - **Persistence**: SQLite via `better-sqlite3` with WAL mode (Schema Version 3)
-- **Model Gateway**: OpenAI-compatible REST loopback endpoints (LM Studio, `mlx-lm`, `llama-server`, `ollama` for air-gapped deployment; default `http://127.0.0.1:1234/v1` or configured port)
-- **Primary Model Architecture**: Single primary text/code model (e.g. `qwen2.5-coder-7b-instruct-mlx` or `qwen/qwen3.5-9b`) with capability-based fallback for vision (`qwen/qwen3-vl-4b`)
+- **Model Gateway**: OpenAI-compatible REST endpoints on localhost or private IP addresses; onboarding and registry loading reject public IPs and public host names
+- **Model Roles**: Separate Vision, Coding, Draft, and Embeddings endpoints are supported. Draft is the default model selector choice; duplicate endpoints are consolidated.
 - **Local RAG & Vector**: Embedded local vector index (`vectra` `LocalIndex`) + SQLite FTS5 (full-text keyword search with Porter stemmer) with Reciprocal Rank Fusion (RRF), local embedding endpoints (`/v1/embeddings`, e.g. `nomic-embed-text`)
 - **Document & Data Processing**: `pdfjs-dist`, `canvas`, `docx`, `exceljs`, `jszip`
 - **Testing & Verification**: Vitest 3, custom behavioral and scenario evaluation harnesses (`scripts/behavioral.cjs`, `scripts/certify-v0.cjs`, `tests/acceptance.ts`)
@@ -80,7 +81,6 @@ See `docs/three-mode-v1-implementation.md` for measured results and open release
 ```
 agent/
 ├── AGENTS.md                      # Codebase architecture and navigation guide (this file)
-├── FRAMEWORK.md                   # V0 MVP shipping criteria and acceptance framework
 ├── README.md                      # Quickstart and reference setup guide
 ├── VERSION                        # Application version string (0.1.0)
 ├── LICENSE                        # MIT License
@@ -104,6 +104,7 @@ agent/
 │   ├── src/
 │   │   ├── shared/                # Shared contracts and type definitions
 │   │   │   ├── contracts.ts       # Canonical data contracts (RunContract, ModelId, RunEvent, ToolName, etc.)
+│   │   │   ├── local-network.ts   # Allows localhost and private IP model endpoints only
 │   │   │   └── task-progress.ts   # Checkpoint stages and task progress helpers
 │   │   └── main/                  # Backend implementation
 │   │       ├── index.ts           # initBackend() entry point
@@ -141,8 +142,8 @@ agent/
 │   │       │   └── images.ts             # PDF/SVG/Image rendering and vision token estimation
 │   │       ├── gateway/           # Model communication and inference abstraction
 │   │       │   ├── inference-scheduler.ts# Shared inference admission, file and Python slots
-│   │       │   ├── model-gateway.ts      # Gateway client (OpenAI-compatible REST loopback, chatWithTools)
-│   │       │   ├── registry.ts           # Model registry loader (config/models.json & DB overrides)
+│   │       │   ├── model-gateway.ts      # Gateway client (OpenAI-compatible REST, chatWithTools)
+│   │       │   ├── registry.ts           # Local/private model registry loader (JSON & DB settings)
 │   │       │   ├── model-selection.ts    # Model selection resolution (single model vs multi-role)
 │   │       │   ├── completion-stream.ts  # SSE streaming parser, token & reasoning extraction
 │   │       │   ├── normalizer.ts         # Response normalizer and error classifying
@@ -267,7 +268,7 @@ agent/
 │           └── logs/              # model-gateway.log JSONL, per-request payloads, execution traces
 │
 ├── docs/                          # Architecture diagrams and specifications
-│   └── diagrams/                  # Verified architecture audit and flow charts (00_ARCHITECTURE_AUDIT.md, etc.)
+│   └── diagrams/                  # Architecture and flow diagrams
 │
 ├── tests/                         # Comprehensive acceptance and behavioral test suite
 │   ├── acceptance.ts              # High-level acceptance test runner
@@ -319,15 +320,15 @@ agent/
 
 The backend coordinates the execution lifecycle, security enforcement, model gateway, tools, and local storage:
 
-1. **`agent/` (Unified Agent Loop)**:
-   - **`agent-loop.ts`**: The core iterative execution loop (`AgentLoop.run({ maxTurns: 100 })`). Dispatches conversation turns to the driver model with native `tools` and `tool_choice: "auto"`. Enforces upfront plan approval, per-turn mutation authorization, loop detection (repetition and A-B-A call patterns over the last 8 turns), and terminal completion evaluation against the `RunContract`.
+1. **`agent/` (Agent mode loop)**:
+   - **`agent-loop.ts`**: Agent mode's iterative execution loop. Dispatches turns to the selected model with native tools or the configured JSON tool format. Enforces plan approval, per-turn mutation authorization, loop detection, and completion checks against the `RunContract`. Chat and Work use their own responders and do not run this loop.
    - **`tool-dispatcher.ts`**: Dispatches tool invocations concurrently for read-only tools (`Promise.all`), while strictly serializing workspace mutations via `MutationPolicyGuard.withMutationLock`. Integrates with `ResultStore` to register full intermediate outputs before tool results are published.
    - **`context-manager.ts`**: Sliding-window context compaction. Summarizes tool outputs older than 2 turns to protect local GPU context memory while strictly retaining stable result IDs and retrieval instructions. Enforces token budgets (`enforceContextBudget`).
    - **`source-review.ts`**: Verifies attached Python scripts and proposed code modifications against behavioral checklists prior to execution.
    - **`streaming-filter.ts`**: Filters provider reasoning blocks and inline `<think>` tags from live text chunks to maintain clean transcript streams.
 
 2. **`run/` (Execution Lifecycle & Storage)**:
-   - **`manager.ts`**: `RunManager` controls the state machine for each execution (`created` → `classifying` → `planning` → `acting` → `awaiting_confirmation` → terminal: `completed` / `partial` / `failed` / `cancelled` / `limit_exceeded`). Coordinates run directory creation, contract persistence, execution envelope creation, and confirmation pauses.
+   - **`manager.ts`**: `RunManager` validates and persists the mode, then dispatches to Chat, Work, or Agent before mode-specific source preparation and intent classification. It owns run persistence, event routing, cancellation, and lifecycle coordination.
    - **`contract.ts`**: Normalizes semantic requests into versioned `RunContract` (v1) records. Persisted insert-once into SQLite `run_contracts`. Serves as the authoritative basis for completion evaluation (`evaluateRunContractCompletion`), without granting execution mutation permissions.
    - **`envelope.ts`**: Builds `ExecutionEnvelope`, establishing the capability boundary (`chat`, `work`, and `agent` execution modes) and gating active capability groups (`source_access`, `document_processing`, `result_retrieval`, `structured_computation`, `artifact_generation`, `workspace_mutation`).
    - **`result-store.ts`**: P1 persistent intermediate result store. Writes immutable typed payloads (`text`, `document`, `table`, `structured`, `execution`) to `data/runs/<runId>/intermediate/results/<uuid>.json|.txt` with SHA-256 digests and SQLite manifests (`intermediate_results` table).
@@ -337,13 +338,13 @@ The backend coordinates the execution lifecycle, security enforcement, model gat
 
 3. **`gateway/` (Inference & Model Gateway)**:
    - **`model-gateway.ts`**: Provides OpenAI-compatible REST communication (`POST {baseUrl}/chat/completions`, `GET {baseUrl}/models`). Handles native tool calling (`tools` parameter) and JSON-schema fallback modes, streaming chunk consumption, retry logic, timeout enforcement, and token tracking.
-   - **`registry.ts`**: Loads model registry entries from `config/models.json` and overrides stored in SQLite settings (`configured_models`).
-   - **`model-selection.ts`**: Resolves model endpoints. Supports single-model mode (where one model handles driver and specialized tasks, stripping delegation tools) and multi-model mode with vision fallback.
+   - **`registry.ts`**: Loads model registry entries from `config/models.json` and SQLite settings (`configured_models`). It accepts localhost and private IP endpoints and rejects public IPs and public host names.
+   - **`model-selection.ts`**: Resolves the explicit user choice or the configured default. Draft is the default choice; identical model endpoints are deduplicated.
    - **`completion-stream.ts`**: Parses Server-Sent Events (SSE) streams, split UTF-8 chunks, reasoning content, tool call fragments, and finish reasons.
 
 4. **`router/` (Contextual Routing & Tool Compositing)**:
-   - **`contextual-router.ts`**: Analyzes user prompt and attachments to determine semantic intent, required capabilities, and deliverable expectations. Uses a fast LLM pass with bounded JSON-repair retry.
-   - **`tool-compositor.ts`**: Inspects the runtime environment (active workspace mounted? attachments present? knowledge base non-empty?) and envelope permissions to assemble the active tool surface for the agent turn (`composeTools`, `filterToolsForTurn`).
+   - **`contextual-router.ts`**: Used by Work and Agent to analyze intent, capabilities, and deliverable expectations with a bounded classification and repair pass. Chat bypasses this router.
+   - **`tool-compositor.ts`**: Uses the runtime environment and persisted envelope to compose allowed tools for Work and Agent. Chat has no autonomous tool surface. Unknown tools fail closed.
    - **`output-expectation.ts`**: Determines expected output modes and deliverable files.
 
 5. **`harness/` (Workspace Harness & Security)**:
@@ -356,10 +357,10 @@ The backend coordinates the execution lifecycle, security enforcement, model gat
    - **`specialist-tools.ts`**:
      - `extract_document`: Extracts text, tables, and visual evidence from attached PDFs, images, or SVGs via multimodal vision models or document extractors.
      - `retrieve_knowledge`: Performs hybrid vector + keyword search over indexed standard operating procedures and technical documents in the local RAG subsystem.
-     - `execute_python`: Sandboxed Python execution with input staging, 60-second timeouts, and stdout/stderr capture (macOS sandbox / Linux bwrap if enabled).
+     - `execute_python`: Input-staged Python execution with timeouts and captured output. The backend probes operating-system isolation; when unavailable, a separate user-approved fallback runs without filesystem or network isolation.
      - `generate_deliverable`: Produces structured output documents (`.docx`, `.xlsx`, `.md`, `.csv`, `.json`, `.txt`) with structural parser verification.
    - **`result-retrieval.ts`**: `retrieve_result` allows the agent to inspect bounded slices of immutable stored results from previous turns.
-   - **`capabilities.ts`**: `request_capability` enables dynamic expansion of active capability groups within the execution envelope.
+   - **`capabilities.ts`**: `request_capability` can activate a capability only when the persisted mode policy permits it.
    - **`workspace-tools.ts`**: Adapts workspace harness operations for native agent tool calling.
 
 7. **`rag/` & `grounding/` (Local RAG & Grounding)**:
@@ -372,7 +373,7 @@ The backend coordinates the execution lifecycle, security enforcement, model gat
    - **`chats.ts`**, **`messages.ts`**, **`settings-store.ts`**: Structured query repositories for chats, messages, and settings.
 
 9. **`confirmation/` (Operator Confirmation Gate)**:
-   - **`store.ts`**: `ConfirmationStore` manages pending sensitive actions (`plan_approval`, `execute_python`, `generate_docx`, `generate_xlsx`) with 5-minute expirations and user approval tracking.
+   - **`store.ts`**: `ConfirmationStore` manages pending approvals and their outcomes. Python fallback approval is tied to the run, source, dependencies, and inputs by digest.
 
 ---
 
@@ -507,36 +508,23 @@ All communication between the React renderer and the Electron/Node backend occur
 
 ## 5. Core Execution Lifecycles
 
-### 5.1 Unified Agent Execution Loop (`RunManager` & `AgentLoop` — v2 Architecture)
+### 5.1 Shared run lifecycle and mode dispatch
 
-```
-1. User enters prompt (and optional attachment) in InputBar
-2. Frontend calls workbench.startRun(input)
-3. RunManager initializes Run ID and directory tree under data/runs/<runId>/
-4. ContextualRouter analyzes prompt + attachments via fast LLM pass
-   - Normalizes into a versioned RunContract (v1) and persists it in SQLite (run_contracts)
-   - Determines ExecutionMode ('chat' vs 'agent') and permitted capability groups
-   - Builds ExecutionEnvelope with authorization state and context limit
-5. ToolSurfaceCompositor inspects runtime environment (workspace mounted? attachments? KB docs?)
-   - Assembles active tool definitions for the turn:
-     Workspace tools: list_dir, read_file, search, write_file, delete_file, run_command
-     Specialist tools: extract_document, retrieve_knowledge, execute_python, generate_deliverable
-     Result & capability tools: retrieve_result, request_capability
-6. AgentLoop dispatches turn to driver model with native `tools` and `tool_choice: "auto"`:
-   - Model streams thinking / reasoning -> emitted via 'agent_thinking' or 'model_progress'
-   - Pure Chat: If model generates text without tool calls, completes immediately
-   - Agentic Plan Confirmation Gate: If tools are invoked on turn 1, pauses for upfront operator review
-     of plan and proposed actions via ConfirmationModal
-7. Autonomous Tool Execution:
-   - ToolDispatcher runs independent read-only tool calls concurrently via Promise.all()
-   - Workspace mutations (write_file, delete_file, run_command) are serialized under MutationPolicyGuard
-   - Full tool outputs are registered in P1 ResultStore (intermediate/results/<uuid>)
-   - Emits 'tool_call', 'tool_result', and 'artifact_ready' events to UI
-   - ContextManager applies sliding-window context compaction to summarize tool outputs older than 2 turns
-8. Loop repeats (up to maxTurns = 100) until model generates final response or contract completion evaluates to true
-9. Deliverables verified via verifyArtifactFile (parser checks, digest generation, integrity check)
-10. RunManager persists assistant message to SQLite and transitions state to 'completed' (or 'partial'/'failed')
-```
+`RunManager` validates and persists the requested mode before it prepares sources or classifies intent. A prompt cannot change the selected mode. New runs store their mode and engine version. Older callers with no mode use Chat; older records with no reliable mode remain unknown.
+
+The manager then dispatches to one of three paths:
+
+| Path | Lifecycle owner | Authority |
+| --- | --- | --- |
+| **Chat** | `ChatResponder` | One ordinary response generation. Reads authorized attachment snapshots, prior artifact snapshots, and selected knowledge sources. No autonomous tool loop or workspace access. |
+| **Work** | `WorkOrchestrator` | Requirements, source preparation, generation, validation, repair, and delivery. Reads run inputs and results, and writes only to run storage. |
+| **Agent** | `AgentLoop` | Workspace tasks through the harness. The run is bound to a workspace root and uses path containment, approvals, mutation scopes, locks, backups, and verification. |
+
+The RunManager owns persistence, cancellation, event routing, per-chat concurrency, and restart recovery. One run can execute in each chat. Agent runs for the same workspace are serialized. Chat and Work runs in other chats can continue.
+
+Work and Agent compose tools from the persisted execution envelope. Unknown tools fail closed. Chat does not enter the tool loop. Work is limited to 24 model turns and two recovery attempts. A useful result with a missing or unverified required check is Partial, not Complete.
+
+Generation, vision, and embeddings use the shared inference scheduler. Calls are non-preemptive. Queued calls can be cancelled. The scheduler gives Chat preference while admitting waiting background work and ages long waits. File processing uses two slots; Python uses one.
 
 ### 5.1.1 Streaming Output, Model Progress, and Task Checkpoints
 
@@ -565,10 +553,10 @@ All communication between the React renderer and the Electron/Node backend occur
    - Enforces target restrictions and explicit grantScope authorization
    - Automatically archives existing files to .harness_backups/ prior to modification
    - Serializes concurrent mutations with withMutationLock
-6. Sandboxed command execution (run_command):
-   - Cwd locked to workspace root; sanitized environment variables
-   - Command denylist rejects dangerous calls (rm -rf, sudo, curl, wget, network pipes)
-   - Opportunistic Linux bwrap network unsharing or macOS sandbox-exec when configured
+6. Command execution (`run_command`):
+   - Requires an operating-system sandbox and runs against an isolated workspace copy.
+   - Fails closed if the sandbox is unavailable. It does not fall back to an unrestricted shell.
+   - Publishes only changes that pass the configured scope and verification checks.
 ```
 
 ### 5.3 Knowledge Base RAG & Grounding Subsystem

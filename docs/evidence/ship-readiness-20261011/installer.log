@@ -1,5 +1,0 @@
-  • electron-builder  version=26.17.0 os=25.6.0
-  • loaded configuration  file=/Users/krishay/projects/agent/electron/electron-builder.json5
-  • building        target=DMG arch=arm64 file=/tmp/workbench-ship-installer/Sovereign Workbench-Mac-0.1.0-Installer.dmg
-  • default Electron icon is used  reason=application icon is not set
-  • building block map  blockMapFile=/tmp/workbench-ship-installer/Sovereign Workbench-Mac-0.1.0-Installer.dmg.blockmap
