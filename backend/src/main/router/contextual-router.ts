@@ -180,8 +180,51 @@ export function validateAndNormalizeIntent(
       workspaceMutationRequested: false, targetFiles: [], workspaceOperations: [], expectedDeliverables: [],
       validationRequested: false, successMarker: undefined };
   }
-  // The live interpreter selects one action and one response mode. Derive the
-  // redundant legacy flags once; caller-supplied older intents remain supported.
+  // Apply output authority to both current and legacy classifier shapes.
+  if (raw && typeof raw === "object") {
+    let value = raw as Record<string, any>;
+    // Only the latest user request can add an export. Workspace edits and
+    // references to previous output do not request another document by default.
+    const outputRequest = /\b(?:create|generate|write|draft|produce|make|save|export|download|return|provide|put|deliver|prepare|render)\b[\s\S]*(?:\b(?:documents?|reports?|notes?|memos?|letters?|workbooks?|spreadsheets?|artifacts?|word|excel|docx|xlsx|pdf|csv|markdown|json|files?)\b|[\w/-]+\.[a-z0-9]{1,10}\b)/i.test(context.userPrompt) ||
+      /\b(?:as|in|into)\s+(?:an?\s+)?(?:word|excel|docx|xlsx|pdf|csv|markdown|json)\b/i.test(context.userPrompt);
+    const workspaceOnly = value.workspaceMutationRequested && /\b(?:workspace|repository|repo|project)\b/i.test(context.userPrompt) &&
+      !/\b(?:export|download|attach|deliver|return)\b/i.test(context.userPrompt) &&
+      !/\b(?:create|generate|draft|produce|make|prepare|render)\b[^.!?\n]*\b(?:documents?|reports?|notes?|memos?|letters?|workbooks?|spreadsheets?|word|excel|docx|xlsx|pdf)\b/i.test(context.userPrompt);
+    if (workspaceOnly || (!outputRequest && Array.isArray(value.expectedDeliverables) && value.expectedDeliverables.some((d: any) => d.type !== "file"))) {
+      const inspection = value.requestedAction === "inspect" || value.intentType === "file_inspection";
+      value = { ...value, responseMode: "chat", expectedDeliverables: [],
+        intentType: value.workspaceMutationRequested ? "code_modification" : inspection ? "file_inspection" : "general_qa",
+        isActionable: value.isActionable === false ? false : Boolean(value.workspaceMutationRequested || inspection),
+        chatResponseOnly: value.chatResponseOnly === true || (!value.workspaceMutationRequested && !inspection),
+        ...(value.requestedAction === "draft" ? { requestedAction: value.workspaceMutationRequested ? "modify_software" : "explain" } : {}) };
+    }
+    const outputName = context.userPrompt.match(/\b(?:as|named|to|create|generate|write|return|export|save)\s+[`"']?([\w./-]+\.([a-z0-9]{1,10}))\b/i);
+    if (!workspaceOnly && outputRequest && value.expectedDeliverables?.length === 1 && outputName) {
+      const extension = outputName[2].toLowerCase();
+      value = { ...value, expectedDeliverables: [{ ...value.expectedDeliverables[0], filename: outputName[1], filenameRequired: true,
+        type: ["docx", "xlsx", "csv", "pdf", "md", "json"].includes(extension) ? extension : "file" }] };
+    }
+    const requestedFormat = context.userPrompt.match(/\b(?:as|in|into|to|create|generate|export|make)\s+(?:an?\s+)?(word|docx|excel|xlsx|csv|json|pdf|markdown|md)\b|\b(word|docx|excel|xlsx|csv|json|pdf|markdown|md)\s+(?:artifacts?|files?|documents?|reports?|workbooks?|spreadsheets?)\b/i);
+    if (!workspaceOnly && outputRequest && !outputName && value.expectedDeliverables?.length === 1 && requestedFormat) {
+      const label = (requestedFormat[1] ?? requestedFormat[2]).toLowerCase();
+      const format = ({ word: "docx", excel: "xlsx", markdown: "md" } as Record<string,string>)[label] ?? label;
+      const item = value.expectedDeliverables[0];
+      value = { ...value, expectedDeliverables: [{ ...item, type: format,
+        filename: typeof item.filename === "string" && !item.filenameRequired ? `${path.basename(item.filename, path.extname(item.filename))}.${format}` : item.filename }] };
+    }
+    const deniedOutput = /\b(?:do\s+not|don'?t|never|without|no)\s+(?:(?:create|generate|export|produce|make|attach|download|return|save)\s+)?(?:an?\s+|any\s+|new\s+)*(files?|artifacts?|downloads?|documents?|reports?|word|docx|excel|xlsx|csv|json|pdf|markdown|md)\b/gi;
+    for (const denied of context.userPrompt.matchAll(deniedOutput)) {
+      const label = denied[1].toLowerCase();
+      const format = ({ word: "docx", excel: "xlsx", markdown: "md" } as Record<string,string>)[label] ?? label;
+      if (Array.isArray(value.expectedDeliverables)) value = { ...value, expectedDeliverables: value.expectedDeliverables.filter((d: any) =>
+        !/^(?:files?|artifacts?|downloads?|documents?|reports?)$/.test(label) && d.type !== format) };
+    }
+    if (Array.isArray(value.expectedDeliverables) && !value.expectedDeliverables.length && Array.isArray((raw as any).expectedDeliverables) && (raw as any).expectedDeliverables.length) {
+      value = { ...value, responseMode: "chat" };
+    }
+    raw = value;
+  }
+  // Derive redundant legacy flags from the selected action and response mode.
   if (raw && typeof raw === "object" && "requestedAction" in raw) {
     const value = raw as Record<string, any>;
     const categories = { inspect: "file_inspection", modify_software: "code_modification", draft: "document_drafting", execute: "command_execution", explain: "general_qa" } as const;

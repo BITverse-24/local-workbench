@@ -177,6 +177,11 @@ export function verifyRunEvidence(runId: string, options: { contractEvaluatorPas
           const expected = latest.tool === "delete_file" ? !exists : exists && statSync(targetPath).isFile();
           status = expected ? "passed" : "failed";
           reason = expected ? "Current workspace state matches the completed operation." : "Current workspace state does not match the completed operation.";
+          if (expected && operation.sourceId) {
+            method = "sha256";
+            status = operation.sourceSha256 && sha256File(targetPath) === operation.sourceSha256 ? "passed" : "failed";
+            reason = status === "passed" ? "Workspace file bytes match the approved source snapshot." : "Workspace file bytes do not match the approved source snapshot.";
+          }
         } catch { status = "failed"; reason = "The target path could not be checked safely."; }
       }
     }

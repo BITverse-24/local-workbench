@@ -61,8 +61,8 @@ describe("ModelGateway Worker Pool & Load Balancing", () => {
   it("keeps configured endpoints individually selectable", () => {
     const rows: ModelConfigRow[] = [
       { role: "vision", modelName: "qwen2.5vl:3b", host: "127.0.0.1", port: 11434, contextLength: 32768 },
-      { role: "primary", modelName: "qwen3:8b", host: "127.0.0.1", port: 11434, contextLength: 32768 },
-      { role: "primary", modelName: "qwen3:8b", host: "192.168.1.50", port: 11434, contextLength: 32768 },
+      { role: "draft", modelName: "qwen3:8b", host: "127.0.0.1", port: 11434, contextLength: 32768 },
+      { role: "coding", modelName: "qwen3:8b", host: "192.168.1.50", port: 11434, contextLength: 32768 },
     ];
 
     const entries = buildRegistryFromRows(rows);
@@ -72,13 +72,15 @@ describe("ModelGateway Worker Pool & Load Balancing", () => {
     const draftInstances = gateway.getModelInstances("primary-model");
     expect(draftInstances).toHaveLength(1);
     expect(draftInstances[0].baseUrl).toBe("http://127.0.0.1:11434/v1");
-    expect(gateway.getModelInstances('model-2')).toHaveLength(1);
-    expect(gateway.getModelInstances('model-2')[0].baseUrl).toBe("http://192.168.1.50:11434/v1");
+    expect(entries.filter(entry => !entry.fallbackOnly)).toHaveLength(3);
+    const codingId = entries.find(entry => entry.baseUrl === "http://192.168.1.50:11434/v1")!.id;
+    expect(gateway.getModelInstances(codingId)).toHaveLength(1);
+    expect(gateway.getModelInstances(codingId)[0].baseUrl).toBe("http://192.168.1.50:11434/v1");
 
     // Round-robin resolution
     const first = gateway.resolveNextEndpoint("primary-model");
     expect(first?.baseUrl).toBe("http://127.0.0.1:11434/v1");
-    const second = gateway.resolveNextEndpoint("model-2");
+    const second = gateway.resolveNextEndpoint(codingId);
     expect(second?.baseUrl).toBe("http://192.168.1.50:11434/v1");
   });
 });

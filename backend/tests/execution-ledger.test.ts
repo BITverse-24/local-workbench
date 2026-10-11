@@ -19,7 +19,7 @@ describe("P1-C1 execution ledger", () => {
     intentType: "code_modification", primaryGoal: "Repair parser behavior", driverModel: "primary-model", taskType: "code", isActionable: true,
     chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: ["parser.py"], protectedPaths: [], restrictMutationsToTargets: true,
     workspaceOperations: [{ operation: "mutate", targetPath: "parser.py" }], expectedDeliverables: [{ filename: "report.md", type: "md" }],
-  }, { hasWorkspace: true, workspaceFiles: ["parser.py"], userPrompt: "Repair parser and report" });
+  }, { hasWorkspace: true, workspaceFiles: ["parser.py"], userPrompt: "Repair parser and export report.md" });
   beforeEach(() => {
     dir = mkdtempSync(path.join(os.tmpdir(), "p1-c1-ledger-"));
     initDb(path.join(dir, "workbench.sqlite"));

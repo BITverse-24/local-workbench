@@ -178,8 +178,7 @@ export function constrainToolsToIntent(
      contract?.workspace.operations?.some((op) => op.operation === "execute"))
   );
 
-  const hasDeliverables = Boolean(
-    (contract?.deliverables && contract.deliverables.length > 0) ||
+  const hasDeliverables = contract ? contract.deliverables.length > 0 : Boolean(
     (intent.expectedDeliverables && intent.expectedDeliverables.length > 0) ||
     intent.intentType === "document_drafting"
   );

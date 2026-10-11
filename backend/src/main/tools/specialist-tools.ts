@@ -790,7 +790,7 @@ export const generateDeliverableTool: AgentTool = {
     function: {
       name: "generate_deliverable",
       description:
-        "Generate a requested downloadable file in the run output folder: Word (.docx), Excel (.xlsx), Markdown (.md) or source/text file. Compiles .docx and .xlsx automatically without Python packages. Use type='file' for repaired code. Use ONLY for requested deliverables.",
+        "Generate a requested downloadable file in the run output folder: Word (.docx), Excel (.xlsx), Markdown (.md) or source/text file. Word supports general drafting; tables are optional. Compiles .docx and .xlsx automatically without Python packages. Use type='file' for repaired code. Use ONLY for requested deliverables.",
       parameters: {
         type: "object",
         properties: {
@@ -807,15 +807,11 @@ export const generateDeliverableTool: AgentTool = {
             type: "string",
             format: "multiline",
             description:
-              "Complete Markdown document body, or exact source/text content for type='file'. Do not pass outlines or placeholder text.",
+              "Complete Markdown document body, including any requested tables as Markdown, or exact source/text content for type='file'. Do not pass outlines or placeholder text.",
           },
           filename: {
             type: "string",
             description: "Desired deliverable filename (e.g. 'approval-note.docx', 'findings.md', 'summary.xlsx').",
-          },
-          report_rows: {
-            type:'array', description:'Optional structured report rows. Each row must cite its source page. All supplied source pages must be represented.',
-            items:{type:'object',properties:Object.fromEntries(['source','equipment','measurements','defects','inspector_notes','decision','citations'].map(key=>[key,{type:'string'}])),required:['source'],additionalProperties:false},
           },
         },
         required: ["type"],
@@ -838,10 +834,20 @@ export const generateDeliverableTool: AgentTool = {
     let type = String(effectiveArgs.type ?? effectiveArgs.kind ?? effectiveArgs.format ?? "").toLowerCase();
     let title = String(effectiveArgs.title ?? effectiveArgs.name ?? effectiveArgs.heading ?? "Deliverable");
     let content = extractContentArg(effectiveArgs) || String(effectiveArgs.content ?? effectiveArgs.body ?? effectiveArgs.text ?? effectiveArgs.markdown ?? "");
+    if (context.runContract && context.runContract.deliverables.length === 0) {
+      throw { code: "permission_denied", retryable: false, message: "This file export is not part of the user's run contract. Workspace edits do not authorize a new downloadable document." };
+    }
+    if (effectiveArgs.report_rows === null || (Array.isArray(effectiveArgs.report_rows) && effectiveArgs.report_rows.length === 0)) {
+      // Older calls may still include this optional field. Empty rows do not
+      // request a report table, even when the draft uses attached sources.
+      effectiveArgs = { ...effectiveArgs }; delete effectiveArgs.report_rows;
+    }
+    // Support existing structured-report calls without exposing this specialized
+    // field in the general drafting schema. Supplied rows still require evidence.
     if(effectiveArgs.report_rows!==undefined){
       const columns=['source','equipment','measurements','defects','inspector_notes','decision','citations'] as const;
       const rows=z.array(z.object({source:z.string().min(1),equipment:z.string().optional(),measurements:z.string().optional(),defects:z.string().optional(),inspector_notes:z.string().optional(),decision:z.string().optional(),citations:z.string().optional()}).strict()).min(1).max(500).safeParse(effectiveArgs.report_rows);
-      if(!rows.success)throw {code:'invalid_arguments',retryable:true,message:'Report rows must contain source citations and supported text columns.'};
+      if(!rows.success)throw {code:'invalid_arguments',retryable:true,message:'report_rows requires at least one row with a non-empty source. Omit report_rows when no sourced table is requested. A sourced table must cover all supplied source pages.'};
       const missing=(context.sourceReferences??[]).filter(reference=>!rows.data.some(row=>row.source.includes(`${reference.filename}, page ${reference.page}`)));
       if(missing.length)throw {code:'invalid_arguments',retryable:true,message:'Report rows omit supplied source pages: '+missing.map(reference=>`${reference.filename}, page ${reference.page}`).join('; ')};
       const cell=(value:string)=>value.replace(/\|/g,'\\|').replace(/\r?\n/g,' ');
@@ -931,7 +937,6 @@ export const generateDeliverableTool: AgentTool = {
     // Guardrail against placeholder or empty content
     const isPlaceholderOnly =
       !content ||
-      content.length < 15 ||
       /^(?:pending|n\/a|none|placeholder|todo)$/i.test(content) ||
       /\[tool_result\]/i.test(content);
 

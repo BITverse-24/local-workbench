@@ -185,6 +185,9 @@ export interface ExpectedWorkspaceOperation {
   id: string;
   operation: "mutate" | "write" | "delete" | "execute";
   targetPath?: string;
+  /** Backend-resolved immutable source; never supplied by intent classification. */
+  sourceId?: string;
+  sourceSha256?: string;
 }
 
 export type IntermediateResultType = "text" | "document" | "table" | "structured" | "execution";

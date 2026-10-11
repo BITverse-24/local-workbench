@@ -50,6 +50,8 @@ export interface AgentLoopOptions {
   envelope?: ExecutionEnvelope;
   resumeEvidence?: { writtenPaths?: string[]; deletedPaths?: string[]; artifactFilenames?: string[]; commandExecuted?: boolean; hasExecutedDiskMutations?: boolean };
   firstTurnExtraGenerationTokens?: number;
+  /** Backend-resolved operations with exact input identity; no model interpretation. */
+  deterministicCalls?: AgentToolCall[];
   emitEvent: (event: RunEvent) => void;
 }
 
@@ -58,6 +60,7 @@ export interface AgentLoopResult {
   turns: number;
   completed: boolean;
   outcome: AgentOutcome;
+  error?: { code: string; message: string };
   modelId: ModelId;
   messageId?: string;
   outputExpectation?: OutputExpectation;
@@ -771,6 +774,7 @@ export class AgentLoop {
       turns: turn,
       completed: outcome === "completed",
       outcome,
+      ...(outcome === "failed" && lastExecutionHadError ? { error: { code: lastErrorCode, message: lastErrorMessage } } : {}),
       modelId: driverModelId,
       messageId: assistantMessageId,
       outputExpectation,
@@ -858,6 +862,12 @@ export class AgentLoop {
           });
         }
       }
+    }
+
+    if (options.deterministicCalls?.length === 0) {
+      const text = "The saved artifact copy is already recorded. No workspace operation was repeated.";
+      const completion = evaluateCurrentCompletion(text);
+      return buildResult(text, completion.outcome, completion);
     }
 
     while (turn < maxTurns) {
@@ -1007,7 +1017,9 @@ export class AgentLoop {
       // providers lose tool arguments in non-streaming recovery completions.
       const onChunk = tagFilter ? (delta: string) => tagFilter.process(delta) : (_delta: string) => {};
 
-      const requestTurn = async () => context.gateway.chatWithTools(
+      const requestTurn = async () => options.deterministicCalls ? { ok: true as const, value: {
+        content: null, tool_calls: options.deterministicCalls, finishReason: "stop",
+      } } : context.gateway.chatWithTools(
         driverModelId,
         activeMessages,
         currentToolDefinitions,
@@ -1020,7 +1032,7 @@ export class AgentLoop {
         },
       );
 
-      const generationStage = attachedPythonRepair || semanticIntent?.intentType === "code_modification"
+      const generationStage = options.deterministicCalls ? undefined : attachedPythonRepair || semanticIntent?.intentType === "code_modification"
         ? attachedRepairRecoveryTurns > 0 || lastExecutionHadError ? "correction" : "repair_generation"
         : semanticIntent?.intentType === "document_drafting" ? "draft_generation" : undefined;
       const turnResponse = generationStage ? await withTaskProgress(progressContext, generationStage, async activity => {
@@ -1380,6 +1392,12 @@ export class AgentLoop {
 
       // Keep the model working when it tries to finalize before fulfilling the request.
       if (!effectiveToolCalls || effectiveToolCalls.length === 0) {
+        if (lastExecutionHadError && runContract && completionRetries >= 3) {
+          const text = `Execution failed: [${lastErrorCode}] ${lastErrorMessage}`;
+          emitEvent({ type: "assistant_message_reset", runId, messageId: assistantMessageId });
+          emitEvent({ type: "assistant_message_chunk", runId, messageId: assistantMessageId, delta: text, modelId: driverModelId });
+          return buildResult(text, hasExecutedDiskMutations ? "partial" : "failed", evaluateCurrentCompletion(text));
+        }
         const pending = evaluateCurrentCompletion(content ?? "");
         const missing = [...pending.missingDeliverables, ...(pending.missingMutations ?? []), ...("missingAcceptance" in pending ? pending.missingAcceptance as string[] : [])];
         const artifactValidationMissing = pythonArtifactsToValidate.some((filename) => !validatedPythonArtifacts.has(filename));
@@ -1878,6 +1896,12 @@ export class AgentLoop {
       const successfulAttachedPythonRepair = attachedPythonRepair
         ? executed.find((exec) => exec.name === "execute_python" && exec.result.ok)
         : undefined;
+      if (options.deterministicCalls) {
+        const text = lastExecutionHadError ? `Workspace copy failed: ${lastErrorMessage}`
+          : executed.map(exec => exec.result.summary).join("\n") + "\nThe workspace file matches the saved artifact bytes.";
+        const completion = evaluateCurrentCompletion(text);
+        return buildResult(text, lastExecutionHadError ? "failed" : completion.outcome, completion);
+      }
       const documentResponses = executed.filter(exec => exec.result.ok && exec.name === "generate_deliverable" && exec.result.artifacts?.every(artifact => artifact.verified))
         .map(exec => exec.result.ok && exec.result.data && typeof exec.result.data === "object" ? (exec.result.data as { responseText?: string }).responseText : undefined)
         .filter((text): text is string => Boolean(text));

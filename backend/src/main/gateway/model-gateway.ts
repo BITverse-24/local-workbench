@@ -361,6 +361,24 @@ export function extractEmbeddedToolCalls(rawContent: string, allowFencedEnvelope
   // envelope. Decode only that envelope, never fragments of executable strings
   // or ordinary code examples. Dispatch still enforces tool scope and approvals.
   if (allowFencedEnvelope) {
+    // Decode one complete narrated envelope; never recover partial argument strings.
+    const start = rawContent.search(/\n\s*\{/);
+    if (start >= 0) {
+      const prefix = rawContent.slice(0, start);
+      const suffix = rawContent.slice(start).trim();
+      if (!/[{}`]|\b(?:example|sample|tutorial|illustration|would|could)\b/i.test(prefix)) {
+        try {
+          const envelope = JSON.parse(suffix);
+          if (Array.isArray(envelope?.tool_calls) && envelope.tool_calls.length &&
+              Object.keys(envelope).every(key => ["tool_calls", "content"].includes(key)) &&
+              envelope.tool_calls.every((call: any) => typeof call?.name === "string" && call.arguments &&
+                typeof call.arguments === "object" && !Array.isArray(call.arguments))) {
+            const decoded = extractEmbeddedToolCalls(suffix);
+            if (decoded.toolCalls.length) return { toolCalls: decoded.toolCalls, cleanedContent: [prefix.trim(), decoded.cleanedContent].filter(Boolean).join("\n") || null };
+          }
+        } catch { /* Reject malformed, truncated or multiple envelopes. */ }
+      }
+    }
     for (const fence of rawContent.matchAll(/```json\s*\n([\s\S]*?)\n```/gi)) {
       try {
         const envelope = parseStructuredData(fence[1]) as any;

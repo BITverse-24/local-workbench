@@ -82,6 +82,7 @@ export interface ToolExecutionContext {
   sourceCoverageFailed?: boolean;
   /** Original user text, kept separate from model-generated requirements. */
   originalUserRequest?: string;
+  inputSources?: Array<{ id: string; filename: string; relativePath: string; sha256: string }>;
   executionLedger?: RunExecutionLedger;
   verificationFeedback?: () => { key: string; text: string } | undefined;
   refreshVerificationReport?: () => void;

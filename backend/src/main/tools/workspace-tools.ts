@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -63,8 +63,8 @@ export function extractPathArg(args: Record<string, unknown>): string {
   return "";
 }
 
-export function extractContentArg(args: Record<string, unknown>): string {
-  if (!args) return "";
+function findContentArg(args: Record<string, unknown>): string | undefined {
+  if (!args) return;
   const candidateKeys = [
     "content", "fileContent", "file_content", "code", "body", "text", "data",
   ];
@@ -77,14 +77,14 @@ export function extractContentArg(args: Record<string, unknown>): string {
   for (const wrapper of ["parameters", "arguments", "input", "params"]) {
     const val = args[wrapper];
     if (val && typeof val === "object" && !Array.isArray(val)) {
-      const nested = extractContentArg(val as Record<string, unknown>);
-      if (nested) return nested;
+      const nested = findContentArg(val as Record<string, unknown>);
+      if (nested !== undefined) return nested;
     } else if (typeof val === "string" && val.trim().startsWith("{")) {
       try {
         const parsed = JSON.parse(val);
         if (parsed && typeof parsed === "object") {
-          const nested = extractContentArg(parsed);
-          if (nested) return nested;
+          const nested = findContentArg(parsed);
+          if (nested !== undefined) return nested;
         }
       } catch {}
     }
@@ -95,12 +95,16 @@ export function extractContentArg(args: Record<string, unknown>): string {
     try {
       const parsed = JSON.parse(rawStr);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return extractContentArg(parsed);
+        return findContentArg(parsed);
       }
     } catch {}
   }
 
-  return "";
+  return undefined;
+}
+
+export function extractContentArg(args: Record<string, unknown>): string {
+  return findContentArg(args) ?? "";
 }
 
 export function extractCommandArg(args: Record<string, unknown>): string {
@@ -357,25 +361,42 @@ export const writeFileTool: AgentTool = {
     type: "function",
     function: {
       name: "write_file",
-      description: "Write UTF-8 text or source code to a file. Use generate_deliverable for Word, Excel and PDF documents. Automatically creates timestamped backup before modifying.",
+      description: "Write UTF-8 text or source code, or copy an authorized input snapshot by source_id without changing its bytes. Automatically creates a backup before modifying. Use generate_deliverable only for requested new documents.",
       parameters: {
         type: "object",
         properties: {
           path: { type: "string", description: "Relative path to write to." },
           content: { type: "string", description: "The complete file content." },
+          source_id: { type: "string", description: "Stable ID of an authorized input snapshot to copy exactly. Omit content when copying." },
         },
-        required: ["path", "content"],
+        required: ["path"],
       },
     },
   },
   async execute(args: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolExecutionResult> {
     const relPath = extractPathArg(args);
-    const content = extractContentArg(args);
+    const suppliedContent = findContentArg(args);
+    let content: string | Buffer = suppliedContent ?? "";
+    const sourceId = typeof args.source_id === "string" ? args.source_id : undefined;
+    const transfer = context.runContract?.workspace.operations.find(op => op.targetPath === relPath && op.sourceId);
+    if (transfer && sourceId !== transfer.sourceId) throw { code: "invalid_arguments", retryable: false, message: "This operation must copy the approved source snapshot by source_id." };
+    if (sourceId) {
+      if (suppliedContent !== undefined) throw { code: "invalid_arguments", retryable: true, message: "Copy by source_id without supplying replacement content." };
+      const source = context.inputSources?.find(item => item.id === sourceId);
+      if (!source) throw new PermissionError("Source ID is not an authorized input for this run.");
+      const prefix = `runs/${context.runId}/input/`;
+      if (!source.relativePath.startsWith(prefix)) throw new PermissionError("Source snapshot is outside run input storage.");
+      content = readFileSync(resolveSafe(resolveRunPath(context.runId, "input", "input"), source.relativePath.slice(prefix.length)));
+      const digest = createHash("sha256").update(content).digest("hex");
+      if (digest !== source.sha256 || (transfer && digest !== transfer.sourceSha256)) throw new PermissionError("Approved source snapshot changed. Submit a new request.");
+    } else if (suppliedContent === undefined) {
+      throw { code: "invalid_arguments", retryable: true, message: "write_file requires content or an authorized source_id." };
+    }
     if (!relPath) {
       throw new Error(`path parameter is required. Received arguments: ${JSON.stringify(args).slice(0, 150)}. Expected format: {"path": "relative/path/to/file", "content": "..."}`);
     }
 
-    if (/\.(?:docx|xlsx|pdf)$/i.test(relPath)) {
+    if (!sourceId && /\.(?:docx|xlsx|pdf)$/i.test(relPath)) {
       throw { code: "invalid_arguments", retryable: true,
         message: "write_file writes UTF-8 text and cannot create or revise a Word, Excel or PDF document. Use generate_deliverable with the document type, filename and complete revised content; it compiles a valid document." };
     }
@@ -396,11 +417,18 @@ export const writeFileTool: AgentTool = {
     }
 
     const lockKey = `file:${relPath}`;
+    const mutate = () => {
+      context.signal?.throwIfAborted();
+      context.assertAuthority?.();
+      return writeFile(context.workspaceRoot, relPath, content);
+    };
     const res = context.policyGuard
-      ? await context.policyGuard.withMutationLock(lockKey, () =>
-          writeFile(context.workspaceRoot, relPath, content),
-        )
-      : writeFile(context.workspaceRoot, relPath, content);
+      ? await context.policyGuard.withMutationLock(lockKey, mutate)
+      : mutate();
+
+    if (sourceId && !readFileSync(resolveSafe(context.workspaceRoot, relPath)).equals(content as Buffer)) {
+      throw { code: "validation_failure", retryable: false, message: "Workspace copy does not match the approved source bytes." };
+    }
 
     if (context.harness) {
       try {
@@ -430,7 +458,7 @@ export const writeFileTool: AgentTool = {
       } catch {}
     }
 
-    if (relPath.endsWith(".py") && relPath.includes("-")) {
+    if (!sourceId && !context.runContract && relPath.endsWith(".py") && relPath.includes("-")) {
       try {
         const alias = relPath.replace(/-/g, "_");
         const fullAlias = path.resolve(context.workspaceRoot, alias);

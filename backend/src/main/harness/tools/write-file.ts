@@ -26,7 +26,7 @@ export interface WriteResult {
 export function writeFile(
   workspaceRoot: string,
   relativePath: string,
-  content: string,
+  content: string | Buffer,
 ): WriteResult {
   const target = resolveSafe(workspaceRoot, relativePath);
   let backedUp = false;
@@ -35,7 +35,7 @@ export function writeFile(
 
   // Backup existing file before overwrite (HARNESS.md §5)
   if (existsSync(target)) {
-    previousContent = readFileSync(target, "utf8");
+    if (typeof content === "string") previousContent = readFileSync(target, "utf8");
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const canonicalRoot = resolveSafe(workspaceRoot, ".");
     const relFromRoot = path.relative(canonicalRoot, target);
@@ -73,8 +73,10 @@ export function writeFile(
 
   // Generate a clear diff summary
   let diff: string;
-  const newLines = content.split(/\r?\n/).length;
-  if (previousContent !== undefined) {
+  const newLines = typeof content === "string" ? content.split(/\r?\n/).length : 0;
+  if (Buffer.isBuffer(content)) {
+    diff = `${backedUp ? "replaced" : "new file"}: ${content.length} bytes`;
+  } else if (previousContent !== undefined) {
     const oldLines = previousContent.split(/\r?\n/).length;
     const delta = newLines - oldLines;
     const sign = delta >= 0 ? "+" : "";

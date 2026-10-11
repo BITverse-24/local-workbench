@@ -12,7 +12,7 @@ import { MutationPolicyGuard } from "../src/main/harness/policy-guard.js";
 describe("P1 canonical run contract", () => {
   let dir: string, runId: string;
   const raw = { intentType: "code_modification", primaryGoal: "Repair the parser", driverModel: "primary-model", taskType: "code", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: ["parser.py"], protectedPaths: ["config.json"], restrictMutationsToTargets: true, expectedDeliverables: [] };
-  const intent = (patch = {}, userPrompt="This raw prompt must never be copied into a contract") => validateAndNormalizeIntent({ ...raw, ...patch }, { hasWorkspace: true, workspaceFiles: ["parser.py", "config.json"], userPrompt });
+  const intent = (patch = {}, userPrompt="Repair the parser and export the requested Word documents and Excel workbooks. This raw prompt must never be copied into a contract") => validateAndNormalizeIntent({ ...raw, ...patch }, { hasWorkspace: true, workspaceFiles: ["parser.py", "config.json"], userPrompt });
   const evidence = (patch: Partial<CompletionEvidence> = {}): CompletionEvidence => ({ artifacts: new Set(), written: new Set(), deleted: new Set(), commandExecuted: false, writtenValidationPassed: false, validatedPythonArtifacts: new Set(), responseText: "Done", hadErrors: false, ...patch });
   beforeEach(() => { dir = mkdtempSync(path.join(os.tmpdir(), "p1-contract-")); initDb(path.join(dir, "db.sqlite")); runId = createRun(createChat(), "existing request"); });
   afterEach(() => { closeDb(); rmSync(dir, { recursive: true, force: true }); });

@@ -78,7 +78,8 @@ import { routeTask } from "../router/deterministic-router.js";
 import { classifyIntent, type IntentDecision } from "../router/intent-classifier.js";
 import { composeTools, constrainToolsToIntent } from "../router/tool-compositor.js";
 import { resolveModelSelection } from "../gateway/model-selection.js";
-import { resolveSemanticIntent, extractReferencedFiles, type ValidatedSemanticIntent } from "../router/contextual-router.js";
+import { resolveSemanticIntent, validateAndNormalizeIntent, extractReferencedFiles, type ValidatedSemanticIntent } from "../router/contextual-router.js";
+import { resolveArtifactTransfer } from "./artifact-transfer.js";
 import { ToolDispatcher } from "../agent/tool-dispatcher.js";
 import { extractDocumentTool } from "../tools/specialist-tools.js";
 import { AgentLoop } from "../agent/agent-loop.js";
@@ -796,12 +797,13 @@ export class RunManager {
     relativePath: string;
     sizeBytes: number;
     kind: string;
+    sha256?: string;
   }> {
     const db = getDb();
     try {
       return db
         .prepare(
-          `SELECT a.artifact_id as artifactId, a.run_id as runId, a.filename, a.relative_path as relativePath, a.size_bytes as sizeBytes, a.kind
+          `SELECT a.artifact_id as artifactId, a.run_id as runId, a.filename, a.relative_path as relativePath, a.size_bytes as sizeBytes, a.kind, a.sha256
            FROM artifacts a
            JOIN runs r ON a.run_id = r.id
            WHERE r.chat_id = ?
@@ -945,7 +947,11 @@ export class RunManager {
         return {...file,runId,filename:alias.filename,relativePath:alias.relativePath};
       });
       // Prior output references are immutable snapshots from this chat only.
-      const prior=this.allChatArtifacts(chatId).filter(a=>a.runId!==runId && text.includes(a.filename));
+      const availableArtifacts=this.allChatArtifacts(chatId).filter(a=>a.runId!==runId);
+      const transfer=mode==="agent"&&!resume?resolveArtifactTransfer(text,[...availableArtifacts,
+        ...originals.map(file=>({artifactId:file.attachmentId,runId,filename:file.filename}))]):undefined;
+      if(transfer)scope.observe({artifactTransfer:transfer});
+      const prior=availableArtifacts.filter(a=>transfer?a.artifactId===transfer.sourceId:text.includes(a.filename));
       if(resume && aliases.length){
         files.length=0;
         for(const alias of aliases){
@@ -963,6 +969,8 @@ export class RunManager {
         const prefix=`runs/${file.runId}/`;if(!file.relativePath.startsWith(prefix))throw new Error("Source is outside its registered run.");
         const source=resolveSafe(runRoot(file.runId),file.relativePath.slice(prefix.length));
         if(!statSync(source).isFile())throw new Error("Source is not a file.");
+        const savedDigest=prior.find(a=>a.artifactId===file.attachmentId)?.sha256;
+        if(savedDigest&&createHash("sha256").update(readFileSync(source)).digest("hex")!==savedDigest)throw new Error("Saved artifact changed. Submit a new source.");
         const ext=path.extname(file.filename);const filename=counts.get(filenameKey(file.filename))!>1?`${path.basename(file.filename,ext).slice(0,170)}-${file.attachmentId}${ext}`:file.filename;
         const destination=resolveSafe(path.join(runRoot(runId),"input"),filename);
         if(source!==destination && (!existsSync(destination)||!readFileSync(source).equals(readFileSync(destination)))){if(existsSync(destination))chmodSync(destination,0o600);copyFileSync(source,destination);}
@@ -1053,9 +1061,16 @@ export class RunManager {
         ? this.harness.getDirectoryTree().filter((e) => e.type === "file").map((e) => e.name)
         : [];
       let resolvedIntent: ValidatedSemanticIntent;
+      const transfer = !resume ? this.runMetrics.get(runId)?.artifactTransfer as { sourceId: string; targetPath: string } | undefined : undefined;
       if (resume) {
         if (driverModelId !== resume.contract.routing.driverModel) throw new Error("The original model selection is unavailable.");
         resolvedIntent = intentFromContract(resume.contract);
+      } else if (transfer) {
+        resolvedIntent = validateAndNormalizeIntent({ intentType: "code_modification", taskType: "code",
+          primaryGoal: `Copy saved artifact to ${transfer.targetPath}`.slice(0,500), isActionable: true, chatResponseOnly: false,
+          workspaceMutationRequested: true, targetFiles: [transfer.targetPath], restrictMutationsToTargets: true,
+          workspaceOperations: [{ operation: "write", targetPath: transfer.targetPath }], expectedDeliverables: [],
+        }, { hasWorkspace: isWorkspaceActive, workspaceFiles, userPrompt: text, attachments });
       } else {
         this.state(runId, "classifying");
         resolvedIntent = await resolveSemanticIntent({ userPrompt: text, runId, attachments,
@@ -1070,7 +1085,15 @@ export class RunManager {
       const isMutationRequested = resolvedIntent.workspaceMutationRequested;
 
       // Persist the interpretation before any execution.
-      const runContract = resume?.contract ?? persistRunContract(normalizeRunContract(runId, resolvedIntent));
+      const normalizedContract = resume?.contract ?? normalizeRunContract(runId, resolvedIntent);
+      if (transfer) {
+        const source = attachments.find(a => a.attachmentId === transfer.sourceId);
+        if (!source) throw new Error("Saved artifact was not staged for this run.");
+        normalizedContract.workspace.operations[0].sourceId = transfer.sourceId;
+        normalizedContract.workspace.operations[0].sourceSha256 = createHash("sha256").update(readFileSync(absoluteDataPath(source.relativePath))).digest("hex");
+      }
+      const runContract = resume?.contract ?? persistRunContract(normalizedContract);
+      const isArtifactTransfer = runContract.workspace.operations.some(op => op.sourceId);
       const executionLedger = runContract.routing.actionable && !runContract.response.chatOnly
         ? (initializeExecutionLedger(runContract), getExecutionLedger(runId))
         : undefined;
@@ -1189,6 +1212,8 @@ export class RunManager {
         completeKnowledgeEvidence: false,
         sourceReviewEvidence: "",
         originalUserRequest: text,
+        inputSources: attachments.map(a => ({ id: a.attachmentId, filename: a.filename, relativePath: a.relativePath,
+          sha256: createHash("sha256").update(readFileSync(absoluteDataPath(a.relativePath))).digest("hex") })),
         workspaceRoot,
         gateway: this.gateway,
         harness: useMountedWorkspace ? this.harness : undefined,
@@ -1235,7 +1260,7 @@ export class RunManager {
           }
         }
       }
-      if (!resume && attachments.length > 0) {
+      if (!resume && attachments.length > 0 && !isArtifactTransfer) {
         const inputDir = resolveRunPath(runId, "input", "input");
         const dirFiles = existsSync(inputDir) ? readdirSync(inputDir) : [];
 
@@ -1339,7 +1364,7 @@ export class RunManager {
 
       const treeFormatted = useMountedWorkspace && this.harness
         ? formatTreeForPrompt(this.harness.getDirectoryTree()) : "Run sandbox only.";
-      const referencedFiles = useMountedWorkspace && this.harness
+      const referencedFiles = !isArtifactTransfer && useMountedWorkspace && this.harness
         ? findReferencedWorkspaceFiles(text, history, workspaceRoot, this.harness.getDirectoryTree(), semanticIntent.targetFiles || [], true) : [];
       const referencedFilesSection = referencedFiles.map((file) =>
         `--- SOURCE FILE: ${file.path} ---\n${file.content}\n--- END SOURCE FILE ---`).join("\n\n");
@@ -1355,7 +1380,7 @@ ${attachedFilesSection}
 ${referencedFilesSection}`;
 
       toolContext.sourceReviewEvidence = `${attachedFilesSection}\n${referencedFilesSection}`;
-      if (!resume && hasKnowledgeBaseDocs && activeGrounding) {
+      if (!resume && !isArtifactTransfer && hasKnowledgeBaseDocs && activeGrounding) {
         // Grounding is an application setting. Retrieve actual indexed sources using
         // the current request and extracted evidence, with no intent keyword rules.
         const kbFiles = this.ragService?.listDocuments().map(doc => doc.title || path.basename(doc.source_path)) ?? [];
@@ -1423,6 +1448,10 @@ ${referencedFilesSection}`;
           maxTurns: 100,
           firstTurnExtraGenerationTokens: resume?.extraTokens,
           resumeEvidence: resume?.resumeEvidence,
+          deterministicCalls: runContract.workspace.operations.some(op => op.sourceId)
+            ? runContract.workspace.operations.filter(op => !resume?.resumeEvidence.writtenPaths.includes(op.targetPath!)).map(op => ({
+              id: op.id, name: "write_file", arguments: { path: op.targetPath, source_id: op.sourceId },
+            })) : undefined,
           isCancelled: () => getState(runId) === "cancelled",
           onPlanConfirmationRequired: async (planText, mutatingCalls) => {
             return new Promise<boolean>((resolve) => {
@@ -1481,7 +1510,7 @@ ${referencedFilesSection}`;
             break;
           case "failed":
           default:
-            this.fail(runId, new Error(loopResult.finalText || "Run execution failed"));
+            this.fail(runId, Object.assign(new Error(loopResult.finalText || "Run execution failed"), loopResult.error ? { code: loopResult.error.code } : {}));
             break;
         }
         return;
@@ -3749,10 +3778,11 @@ If the user asks to run, execute, or test code or commands, call run_command! Ne
     try {
       if (["completed", "partial", "cancelled", "failed", "limit_exceeded"].includes(getState(runId))) return;
       const message = error instanceof Error ? error.message : "run failed";
-      recordError(runId, "invalid_model_response", message);
+      const code = typeof (error as any)?.code === "string" ? (error as any).code : "invalid_model_response";
+      recordError(runId, code, message);
       updateExecutionLedgerState(runId, "failed", message);
       this.state(runId, "failed");
-      this.emit({ type: "error", runId, code: "invalid_model_response", message, retryable: false });
+      this.emit({ type: "error", runId, code, message, retryable: false });
     } catch (e) {
       console.error(`[run:${runId.slice(0, 8)}] failure reporting error:`, e);
     }
