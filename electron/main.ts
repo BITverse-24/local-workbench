@@ -107,7 +107,7 @@ function frontendPublicDir(): string {
 }
 
 function createWindow(): void {
-  const iconPath = path.join(frontendPublicDir(), "electron-vite.svg");
+  const iconPath = path.join(frontendPublicDir(), "icon.png");
   win = new BrowserWindow({
     title: "Local Workbench",
     ...(existsSync(iconPath) ? { icon: iconPath } : {}),
