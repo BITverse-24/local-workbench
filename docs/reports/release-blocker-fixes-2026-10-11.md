@@ -44,7 +44,7 @@ Further changes close related authority and evidence gaps:
 | Packaged backend | SHA-256 matches the final built backend |
 | DMG checksum verification | Pass |
 | Final packaged app startup with a separate test profile | Backend initialized and production UI loaded |
-| Manual final-package UI checks | Core actions checked; positive fallback approval and final visual check remain open |
+| Manual final-package UI checks | Core packaged actions checked; user confirmed active mode and underscore rendering |
 
 ### Fresh framework campaign
 
@@ -89,11 +89,11 @@ The Mac became available. Manual actions used a separate profile and a temporary
 
 These checks found two display faults. Identifiers with underscores were parsed as emphasis; the renderer now preserves identifiers and escaped punctuation. Four component tests cover this. The composer also showed the global preferred mode when returning to an active background run; it now uses the persisted active mode.
 
-The UI tool's last screenshot shows a different view from its current accessibility tree. This is an observation limit, not proof of a product fault. The final visual layout and the background-mode display correction remain unverified through that tool. The actual resume action is confirmed by the new backend transitions and refreshed accessibility transcript. Positive Python fallback approval was not bypassed. The final test also expired safely: run `5d412def` was Cancelled 22 ms after its approval deadline, with no execution result.
+The UI tool's screenshot remained stale, so it could not verify the last visual state. The user then checked the packaged UI directly and confirmed the active Work mode display and underscore rendering. The filename-like string in the check was display text only; no file was requested or created. Resume is also confirmed by the persisted run transitions and artifact. The Python approval test expired safely: run `5d412def` was Cancelled 22 ms after its deadline, with no execution result. The approved execution path itself is covered by a real Python subprocess test in `backend/tests/three-modes.test.ts`; the packaged modal, warning, rejection and expiry were checked separately.
 
 ## Remaining release work
 
-Finish the final visual check and the positive fallback approval check. The latter runs without OS isolation and needs action-time confirmation under the computer-use tool policy. The request for run `5d412def` has expired. It cannot be approved. A fresh inspected action needs fresh confirmation. Tool reset did not restore a current screenshot; later prompt-entry attempts also did not enter a new request. The goal is blocked on these external requirements, not complete.
+The four reproduced blockers now meet the framework gates on the tested Mac configuration. The positive approved Python path passed an integration test; this review did not execute it through the packaged UI. Any fallback run still needs the user to inspect and approve its exact code and inputs because OS isolation is unavailable. The previous UI test request expired safely.
 
 The package has no Developer ID signing or notarization. Public Mac distribution and clean-machine installation remain unverified. Windows and Linux remain outside this certification. Positive sandbox execution also needs a supported host check before it is advertised as available.
 

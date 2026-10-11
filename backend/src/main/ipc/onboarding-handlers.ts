@@ -7,12 +7,13 @@ import type { IpcRegistrar } from "./handlers.js";
 import { RunManager } from "../run/manager.js";
 import { RAGService } from "../rag/rag-service.js";
 import { buildRegistryFromRows, sanitizeHost, writeRegistryToFile } from "../gateway/registry.js";
+import { isAllowedLocalModelHost } from "../../shared/local-network.js";
 
 
 const modelConfigRowSchema = z.object({
   role: z.enum(["primary", "vision", "coding", "draft", "embedding"]),
   modelName: z.string().trim().min(1, "Model name cannot be empty"),
-  host: z.string().trim().min(1, "Host / IP cannot be empty"),
+  host: z.string().trim().min(1, "Host / IP cannot be empty").refine((host) => isAllowedLocalModelHost(sanitizeHost(host)), "Use localhost or a private IP address"),
   port: z.number().int().min(1, "Port must be at least 1").max(65535, "Port must be <= 65535"),
   contextLength: z.number().int().min(512, "Context length must be at least 512"),
 });
@@ -22,7 +23,7 @@ const saveModelConfigSchema = z.object({
 });
 
 const testEndpointSchema = z.object({
-  host: z.string().trim().min(1, "Host is required"),
+  host: z.string().trim().min(1, "Host is required").refine((host) => isAllowedLocalModelHost(sanitizeHost(host)), "Use localhost or a private IP address"),
   port: z.number().int().min(1).max(65535),
   modelName: z.string().trim().optional(),
   role: z.string().optional(),
@@ -50,13 +51,14 @@ export async function handleTestModelEndpoint(input: unknown): Promise<ModelEndp
 
   try {
     // Attempt standard OpenAI endpoint first (/v1/models)
-    let url = `http://${host}:${port}/v1/models`;
+    const urlHost = host.includes(":") ? `[${host}]` : host;
+    let url = `http://${urlHost}:${port}/v1/models`;
     let res: Response;
     try {
       res = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
     } catch {
       // Fallback to /models (e.g. some ollama or local setups)
-      url = `http://${host}:${port}/models`;
+      url = `http://${urlHost}:${port}/models`;
       res = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
     }
 

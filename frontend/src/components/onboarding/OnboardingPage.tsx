@@ -97,8 +97,27 @@ const DEFAULT_CARDS: RoleCardState[] = [
   },
 ];
 
+function isAllowedPrivateHost(value: string): boolean {
+  let host = value.trim().toLowerCase();
+  if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
+  if (host === "localhost") return true;
+  const parts = host.split(".");
+  if (parts.length === 4 && parts.every((part) => /^\d{1,3}$/.test(part) && String(Number(part)) === part)) {
+    const [a, b, c, d] = parts.map(Number);
+    if ([a, b, c, d].some((part) => part > 255)) return false;
+    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+  }
+  if (!host.includes(":")) return false;
+  try {
+    const parsedHost = new URL(`http://[${host}]/`).hostname.slice(1, -1).toLowerCase();
+    return parsedHost === "::1" || /^(fc|fd)/.test(parsedHost) || /^fe[89ab]/.test(parsedHost);
+  } catch {
+    return false;
+  }
+}
+
 export default function OnboardingPage({ onComplete, initialConfig }: OnboardingPageProps) {
-  // Allow external requests toggle: defaults to false (strict localhost 127.0.0.1)
+  // Private LAN endpoints are optional. Public network hosts are always blocked.
   const [allowExternal, setAllowExternal] = useState<boolean>(() => {
     if (initialConfig && initialConfig.length > 0) {
       return initialConfig.some(
@@ -142,8 +161,9 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
   const [saving, setSaving] = useState(false);
   const [testingAll, setTestingAll] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [copiedRole, setCopiedRole] = useState<ModelRoleType | null>(null);
 
-  const handleToggleAllowExternal = () => {
+  const handleToggleAllowLan = () => {
     const nextVal = !allowExternal;
     setAllowExternal(nextVal);
     // If switching off, lock all hosts back to 127.0.0.1
@@ -224,7 +244,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
 
   const applyHostPortToAll = (sourceCardIdx: number, sourceNodeIdx = 0) => {
     const sourceNode = cards[sourceCardIdx].nodes[sourceNodeIdx];
-    const sourceHost = sourceNode.host;
+    const sourceHost = allowExternal ? sourceNode.host : "127.0.0.1";
     const sourcePort = sourceNode.port;
     setCards((prev) =>
       prev.map((c) => ({
@@ -238,6 +258,8 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
         })),
       })),
     );
+    setCopiedRole(cards[sourceCardIdx].role);
+    window.setTimeout(() => setCopiedRole((role) => role === cards[sourceCardIdx].role ? null : role), 1800);
   };
 
   const prefillOllama = () => {
@@ -307,6 +329,21 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
     const node = card.nodes[nodeIdx];
     const portNum = parseInt(node.port, 10);
     const hostToTest = allowExternal ? node.host.trim() : "127.0.0.1";
+
+    if (!isAllowedPrivateHost(hostToTest)) {
+      setCards((prev) => {
+        const next = [...prev];
+        const nextNodes = [...next[cardIdx].nodes];
+        nextNodes[nodeIdx] = {
+          ...nextNodes[nodeIdx],
+          testStatus: "error",
+          testMessage: "Use localhost or a private IP address",
+        };
+        next[cardIdx] = { ...next[cardIdx], nodes: nextNodes };
+        return next;
+      });
+      return;
+    }
 
     if (!hostToTest || isNaN(portNum) || portNum < 1 || portNum > 65535) {
       setCards((prev) => {
@@ -394,7 +431,10 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
     field: "modelName" | "host" | "port" | "contextLength",
   ): string | null => {
     if (field === "modelName" && !n.modelName.trim()) return "Model name required";
-    if (field === "host" && allowExternal && !n.host.trim()) return "Host required";
+    if (field === "host" && allowExternal) {
+      if (!n.host.trim()) return "Host required";
+      if (!isAllowedPrivateHost(n.host)) return "Use localhost or a private IP (10/8, 172.16/12, 192.168/16, or local IPv6)";
+    }
     if (field === "port") {
       const p = parseInt(n.port, 10);
       if (isNaN(p) || p < 1 || p > 65535) return "1-65535";
@@ -484,7 +524,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
 
   return (
     <div className="w-full h-full min-h-screen flex flex-col justify-between px-8 sm:px-12 lg:px-16 py-8 bg-[var(--bg-canvas)] text-[var(--text-primary)] overflow-y-auto select-none">
-      <div className="w-full max-w-[1760px] mx-auto flex-1 flex flex-col space-y-5">
+      <div className="w-full max-w-[1760px] mx-auto flex-1 flex flex-col gap-5">
         {/* 1. Header Section */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-5 border-b border-[var(--border-subtle)]">
           <div className="space-y-1">
@@ -497,10 +537,8 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
               LLM Model Endpoint Configuration
             </h1>
             <p className="text-xs sm:text-sm text-[var(--text-secondary)] max-w-4xl leading-relaxed">
-              Industrial multi-model orchestration for defence manufacturing,
-              PSU engineering, and government facilities. Assign offline,
-              OpenAI-compatible model endpoints for each specialized operational
-              role with optional LAN worker pool scaling.
+              Configure local model servers for chat, coding, vision, and
+              knowledge search. You can also use approved private-network hosts.
             </p>
           </div>
 
@@ -567,13 +605,12 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                 OpenAI-Compatible REST API
               </h3>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                Ensure an approved local server (Ollama, vLLM, LM Studio, or
-                llama-server) is listening. Local Workbench communicates via
-                standard HTTP JSON payloads.
+                Start a local server such as Ollama, LM Studio, vLLM, or
+                llama-server. Workbench connects to its OpenAI-compatible API.
               </p>
             </div>
             <div className="text-[11px] font-mono text-[var(--text-tertiary)] pt-2.5 border-t border-[var(--border-subtle)]">
-              Standard routes: /v1/chat/completions, /v1/models
+                Routes: /v1/chat/completions and /v1/models
             </div>
           </div>
 
@@ -582,7 +619,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-[var(--text-secondary)]">
-                  Role delegation & worker pools
+                Model roles
                 </span>
                 <span
                   className={`text-xs font-mono font-semibold ${step2Done ? "text-[var(--status-success)]" : "text-[var(--text-tertiary)]"}`}
@@ -591,20 +628,20 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                 </span>
               </div>
               <h3 className="text-sm font-medium text-[var(--text-primary)]">
-                Deterministic Routing & Worker Scaling
+                Vision, Coding, Draft, and Embeddings
               </h3>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                Configure Vision, Coding, and Draft endpoints. Draft is the default
-                choice in the model selector. Embedding supports local knowledge search.
-                Add worker instances to pool distributed LAN GPUs with round-robin dispatch.
+                Draft is the default model. Vision handles image input. Coding supports
+                code tasks. Embeddings support knowledge search. Optional worker nodes
+                can use private network addresses.
               </p>
             </div>
             <div className="text-[11px] font-mono text-[var(--text-tertiary)] pt-2.5 border-t border-[var(--border-subtle)]">
-              Horizontal worker scaling & round-robin balancing
+              Each role uses its configured endpoint
             </div>
           </div>
 
-          {/* Card 3: Air-Gap Boundary & "Allow external requests" Inverse Toggle */}
+          {/* Card 3: Local and private-network boundary */}
           <div className="neu-card p-5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] flex flex-col justify-between space-y-3">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
@@ -618,12 +655,11 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                 </span>
               </div>
               <h3 className="text-sm font-medium text-[var(--text-primary)]">
-                Network Boundary Enforcement
+                Local network only
               </h3>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                By default, all network calls are physically restricted to
-                loopback (127.0.0.1) with zero data egress. Enable external
-                requests only to target air-gapped LAN GPU nodes.
+                Model endpoints must use localhost or a private IP address.
+                Public IPs and public host names are blocked.
               </p>
             </div>
 
@@ -631,19 +667,19 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
             <div className="pt-2.5 border-t border-[var(--border-subtle)] flex items-center justify-between gap-4">
               <div>
                 <div className="text-xs font-medium text-[var(--text-primary)]">
-                  Allow external requests
+                  Allow private LAN endpoints
                 </div>
                 <div className="text-[11px] text-[var(--text-tertiary)] mt-0.5">
                   {allowExternal
-                    ? "LAN access enabled — Host/IP unlocked"
-                    : "Loopback locked — Host/IP forced to 127.0.0.1"}
+                    ? "Private IPs enabled: 10/8, 172.16/12, 192.168/16, and local IPv6"
+                    : "Using localhost (127.0.0.1) only"}
                 </div>
               </div>
               <button
                 type="button"
                 role="switch"
                 aria-checked={allowExternal}
-                onClick={handleToggleAllowExternal}
+                onClick={handleToggleAllowLan}
                 className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border border-[var(--border-default)] transition-colors duration-150 ease-in-out focus:outline-none ${
                   allowExternal
                     ? "bg-[var(--accent)]"
@@ -670,11 +706,11 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
         {/* 3. Model Role Endpoints Table */}
         <form
           onSubmit={handleSubmit}
-          className="flex-1 flex flex-col justify-between pt-1"
+          className="flex-1 flex flex-col pt-1"
         >
-          <div className="flex-1 flex flex-col justify-between space-y-3 sm:space-y-4">
+          <div className="flex flex-col gap-4 sm:gap-5">
             {/* Table Column Headers */}
-            <div className="flex items-center gap-4 px-2">
+            <div className="flex items-center px-2">
               <div className="flex-1 grid grid-cols-12 gap-4 px-4 py-1.5 text-xs text-[var(--text-tertiary)] font-medium">
                 <div className="col-span-3">Operational role & worker pool</div>
                 <div className="col-span-3">Model tag / identifier</div>
@@ -684,9 +720,6 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                 <div className="col-span-2 text-right">
                   Endpoint status & test
                 </div>
-              </div>
-              <div className="w-28 text-xs text-[var(--text-tertiary)] font-medium text-center">
-                Sync row
               </div>
             </div>
 
@@ -699,9 +732,9 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
               const primaryContextErr = getFieldError(primaryNode, "contextLength");
 
               return (
-                <div key={card.role} className="flex items-start gap-4">
+                <div key={card.role} className="w-full">
                   {/* Main Role Card */}
-                  <div className="flex-1 rounded-[var(--radius-md)] p-5 sm:p-6 bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] transition-colors">
+                  <div className="w-full rounded-[var(--radius-md)] p-5 sm:p-6 bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] transition-colors">
                     {/* Primary Node Row */}
                     <div className="grid grid-cols-12 gap-4 items-center">
                       {/* Col 1: Role & Description + Add Worker Node */}
@@ -1108,39 +1141,46 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                         })}
                       </div>
                     )}
-                  </div>
 
-                  {/* Copy to All Button (aligned with primary row) */}
-                  <button
-                    type="button"
-                    onClick={() => applyHostPortToAll(cardIdx, 0)}
-                    className="w-32 h-11 px-3 rounded-[var(--radius-sm)] border border-[var(--border-default)] bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface-active)] text-xs font-sans text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors shrink-0 flex items-center justify-center gap-1.5 self-start mt-2"
-                    title={`Copy Host and Port from ${card.title} (${primaryNode.host}:${primaryNode.port}) to all other roles`}
-                  >
-                    <span>Copy to all</span>
-                  </button>
+                    <div className="mt-4 pt-3 border-t border-[var(--border-subtle)] flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        disabled={Boolean(primaryPortErr || (allowExternal && primaryHostErr))}
+                        onClick={() => applyHostPortToAll(cardIdx, 0)}
+                        className="h-9 px-3 rounded-[var(--radius-sm)] border border-[var(--border-default)] bg-[var(--bg-surface-raised)] hover:bg-[var(--bg-surface-active)] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={`Copy ${allowExternal ? primaryNode.host : "127.0.0.1"}:${primaryNode.port} to every role endpoint`}
+                        aria-label={`Copy ${card.title} host and port to all roles`}
+                      >
+                        <span aria-hidden="true">⧉</span>
+                        <span>Copy host &amp; port to all roles</span>
+                      </button>
+                      {copiedRole === card.role && (
+                        <span role="status" className="text-xs text-[var(--status-success)]">Endpoint copied to all roles</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               );
             })}
           </div>
 
           {/* 4. Bottom Commit & Launch Action Bar */}
-          <div className="pt-5 pb-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-[var(--border-subtle)]">
+          <div className="mt-6 pt-5 pb-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-[var(--border-subtle)]">
             <div className="text-xs sm:text-sm text-[var(--text-secondary)] flex items-center gap-2.5">
               <span className="w-2 h-2 rounded-full bg-[var(--status-success)] shrink-0" />
               <span>
-                Configuration is saved to local SQLite database (
+                Configuration is saved to the local SQLite database (
                 <code className="font-mono text-[var(--text-primary)]">
                   workbench.db
                 </code>
-                ). Offline operation.
+                ).
               </span>
             </div>
 
             <button
               type="submit"
               disabled={saving || hasErrors}
-              className="h-12 sm:h-13 px-8 sm:px-10 rounded-[var(--radius-sm)] font-semibold text-sm neu-button-primary disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2.5"
+              className="h-12 min-w-[190px] px-8 sm:px-10 rounded-[var(--radius-sm)] font-semibold text-sm neu-button-primary disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2.5 self-center sm:self-auto"
             >
               {saving ? (
                 <>
@@ -1157,8 +1197,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
 
       {/* Industrial Footer Notice */}
       <div className="pt-4 pb-1 text-center text-xs text-[var(--text-tertiary)] font-sans">
-        Local Workbench · defence & PSU mission-critical intelligence
-        platform · air-gapped verified
+        Local Workbench · private-network model setup
       </div>
     </div>
   );

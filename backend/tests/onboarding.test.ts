@@ -21,6 +21,7 @@ import { RAGService } from "../src/main/rag/rag-service.js";
 import type { MinimalIpcMain } from "../src/main/ipc/handlers.js";
 import type { ModelConfigRow } from "../src/shared/contracts.js";
 import { getModelRoutes } from "../../frontend/src/lib/models.js";
+import { isAllowedLocalModelEndpoint, isAllowedLocalModelHost } from "../src/shared/local-network.js";
 
 class FakeIpcMain implements MinimalIpcMain {
   handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
@@ -54,6 +55,25 @@ afterEach(() => {
 
 
 describe("Onboarding Architecture & IPC Handlers", () => {
+  describe("local endpoint network policy", () => {
+    it("allows localhost and private IPv4 and IPv6 ranges only", () => {
+      for (const host of ["localhost", "127.0.0.1", "10.20.30.40", "172.16.2.3", "172.31.2.3", "192.168.1.9", "::1", "fd12::1", "fe80::2"]) {
+        expect(isAllowedLocalModelHost(host), host).toBe(true);
+      }
+      for (const host of ["example.com", "8.8.8.8", "172.32.0.1", "192.169.1.1", "169.254.1.1", "0127.0.0.1", "localhost.example.com"]) {
+        expect(isAllowedLocalModelHost(host), host).toBe(false);
+      }
+    });
+
+    it("rejects public model endpoints from saved registries", () => {
+      expect(isAllowedLocalModelEndpoint("http://127.0.0.1:1234/v1")).toBe(true);
+      expect(isAllowedLocalModelEndpoint("http://192.168.1.10:1234/v1")).toBe(true);
+      expect(isAllowedLocalModelEndpoint("https://example.com/v1")).toBe(false);
+      expect(isAllowedLocalModelEndpoint("http://8.8.8.8/v1")).toBe(false);
+      expect(isAllowedLocalModelEndpoint("http://user:pass@127.0.0.1/v1")).toBe(false);
+    });
+  });
+
   it("registers all onboarding channels via initBackend", () => {
     const fake = new FakeIpcMain();
     initBackend(fake, undefined, {
@@ -276,6 +296,15 @@ describe("Onboarding Architecture & IPC Handlers", () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toBeDefined();
+    });
+
+    it("rejects public hosts before endpoint testing or saving", async () => {
+      await expect(handleTestModelEndpoint({ host: "example.com", port: 11434 })).rejects.toThrow(/private IP address/);
+      const manager = new RunManager();
+      const ragService = new RAGService(dir);
+      expect(() => handleSaveModelConfig({ models: [{
+        role: "draft", modelName: "test-model", host: "8.8.8.8", port: 11434, contextLength: 8192,
+      }] }, manager, ragService, dir)).toThrow(/private IP address|outside the allowed local network/);
     });
 
     it("serves requests strictly from in-memory DB endpoints without external egress", async () => {

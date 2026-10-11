@@ -51,11 +51,11 @@
     },
     {
       "check": "Final identifier rendering",
-      "result": "Four component tests pass; live AX confirms UI_ROUTING_OK; final visual layout unverified"
+      "result": "Four component tests pass. User confirms identifiers with underscores display as plain text in the packaged UI."
     },
     {
       "check": "Final background active mode display",
-      "result": "Source fix included; active Work AX is correct; explicit return from different preferred mode still unverified"
+      "result": "User confirms the active background Work chat displays Work while an idle chat keeps the preferred mode."
     },
     {
       "check": "Positive Python fallback approval",
@@ -63,7 +63,7 @@
       "result": "Not approved. Expired at 10:38:44.530Z; Cancelled at 10:38:44.552Z; zero execution results. Fresh action needs fresh confirmation."
     }
   ],
-  "observationLimit": "Latest screenshot shows Untitled Chat/Vision dropdown; simultaneous AX shows active Work approval. Do not use that screenshot as final-layout evidence. Tool reset did not repair the screenshot. Later composer paste, setValue and typeText attempts did not appear in the AX field; no new run was submitted. Final mode return check remains unproved.",
+  "observationLimit": "The automation screenshot remained stale. The user directly checked the packaged UI and confirmed the mode and underscore display points.",
   "savedArtifact": {
     "filename": "ui-check-saved-79a9.md",
     "sha256": "815bb3271f1df74b1c0936fa40018ed1d95c3866b6b413033a60deba7034fb8c",
@@ -73,5 +73,6 @@
     "filename": "smoke.txt",
     "sha256": "b80552cefbbf4fd05b9e47a0f4f3da4b04d65136bd8cd84b674650f6a5a61bdc",
     "text": "AFTER_UI"
-  }
+  },
+  "userClarification": "The filename-like text (file_name.md) was only a renderer example. No file was requested or created for this check."
 }

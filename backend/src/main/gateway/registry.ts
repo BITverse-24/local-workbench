@@ -2,9 +2,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { ModelConfigRow, ModelId, ModelRegistryEntry } from "../../shared/contracts.js";
+import { isAllowedLocalModelEndpoint, isAllowedLocalModelHost } from "../../shared/local-network.js";
 import { getSetting } from "../persistence/settings-store.js";
 
-const entry = z.object({ id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1).optional(), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url(), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), fallbackOnly: z.boolean().optional(), toolCallingFormat: z.enum(["native", "json"]).optional(), temperature: z.number().min(0).max(2).optional(), contextLength: z.number().int().positive().max(128000).optional(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
+const entry = z.object({ id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1).optional(), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url().refine(isAllowedLocalModelEndpoint, "Model endpoint must use localhost or a private IP address"), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), fallbackOnly: z.boolean().optional(), toolCallingFormat: z.enum(["native", "json"]).optional(), temperature: z.number().min(0).max(2).optional(), contextLength: z.number().int().positive().max(128000).optional(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
 const config = z.object({ $comment: z.string().optional(), models: z.array(entry).min(1) }).strict();
 
 
@@ -24,8 +25,15 @@ export function defaultModelsPath(): string {
 
 export function sanitizeHost(host: string): string {
   let cleaned = (host || "").trim();
+  if (/^https?:\/\//i.test(cleaned)) {
+    try { return new URL(cleaned).hostname.replace(/^\[|\]$/g, "") || "127.0.0.1"; } catch { return ""; }
+  }
   cleaned = cleaned.replace(/^https?:\/\//i, "");
   cleaned = cleaned.replace(/\/.*$/, "");
+  if (cleaned.startsWith("[")) {
+    const close = cleaned.indexOf("]");
+    if (close >= 0) return cleaned.slice(1, close);
+  }
   if (cleaned.includes(":") && !cleaned.includes("[")) {
     const parts = cleaned.split(":");
     if (parts.length === 2 && /^\d+$/.test(parts[1])) {
@@ -36,6 +44,11 @@ export function sanitizeHost(host: string): string {
 }
 
 export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntry[] {
+  for (const row of rows) {
+    if (!isAllowedLocalModelHost(sanitizeHost(row.host))) {
+      throw new Error(`Model host is outside the allowed local network ranges: ${row.host}`);
+    }
+  }
   // Preserve endpoint-specific transport and generation settings when restoring
   // the same selected endpoint from onboarding. Selection still comes from rows.
   let profiles: ModelRegistryEntry[] = [];
@@ -56,7 +69,8 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
   }).map((row, index) => {
     const host = sanitizeHost(row.host);
     const port = row.port || 11434;
-    const baseUrl = `http://${host}:${port}/v1`;
+    const urlHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+    const baseUrl = `http://${urlHost}:${port}/v1`;
     const profile = profiles.find(candidate => candidate.model === row.modelName && candidate.baseUrl.replace(/\/$/, "") === baseUrl);
     return {
       id: index === 0 ? "primary-model" : `model-${index + 1}`, runtime: "ollama",
@@ -100,7 +114,14 @@ export function loadProductionRegistryEntriesFromDb(dbModels?: ModelConfigRow[])
   }
 
   if (rows && Array.isArray(rows) && rows.length > 0) {
-    return buildRegistryFromRows(rows);
+    const localRows = rows.filter((row) => isAllowedLocalModelHost(sanitizeHost(row.host)));
+    if (localRows.length > 0) {
+      if (localRows.length !== rows.length) {
+        console.warn("[models] ignored saved model endpoints outside localhost/private IP ranges");
+      }
+      return buildRegistryFromRows(localRows);
+    }
+    console.warn("[models] saved model endpoints are not local/private; using the local registry instead");
   }
 
   try { return Array.from(loadRegistry().values()); } catch { return Array.from(defaultLocalRegistry().values()); }
