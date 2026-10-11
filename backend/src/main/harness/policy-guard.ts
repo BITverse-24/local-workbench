@@ -14,6 +14,8 @@ export interface MutationScopeConstraint {
   operation: MutationOperation;
   targetPath?: string;
   command?: string;
+  /** Approval preview disclosed execution with user permissions if isolation fails. */
+  allowUnisolated?: boolean;
   expiresAt?: string;
   createdAt: string;
 }
@@ -249,6 +251,7 @@ export class MutationPolicyGuard {
       operation: constraint.operation,
       targetPath: constraint.targetPath ? normalizePath(constraint.targetPath) : undefined,
       command: constraint.command ? normalizeCommand(constraint.command) : undefined,
+      allowUnisolated: constraint.allowUnisolated,
       expiresAt: constraint.expiresAt,
     };
     this.scopes.push(fullConstraint);
@@ -342,6 +345,13 @@ export class MutationPolicyGuard {
     }
 
     return false;
+  }
+
+  isUnisolatedCommandAuthorized(runId: string | undefined, command: string): boolean {
+    return Boolean(runId && this.isAuthorized(runId, "run_command", { command }, true) &&
+      this.getActiveScopes(runId).some(scope => scope.runId === runId &&
+        scope.operation === "run_command" && scope.allowUnisolated === true &&
+        scope.command && isCommandMatch(scope.command, command)));
   }
 
   async authorize(

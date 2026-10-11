@@ -4,6 +4,7 @@ vi.mock("../src/main/harness/tools/run-command.js", async () => {
 });
 import { describe, expect, it, vi } from "vitest";
 import { getCommandCapability } from "../src/main/harness/tools/run-command.js";
+import { MutationPolicyGuard } from "../src/main/harness/policy-guard.js";
 import { compactConversationHistory, compactToolResult, type AgentMessage } from "../src/main/agent/context-manager.js";
 import { ToolDispatcher } from "../src/main/agent/tool-dispatcher.js";
 import { AgentLoop } from "./helpers/agent-loop-fixture.js";
@@ -170,17 +171,44 @@ describe("Agent Loop Engine & Context Manager", () => {
   });
 
   it("removes unavailable commands before the first model call and returns Partial without retries", async () => {
-    vi.mocked(getCommandCapability).mockResolvedValueOnce({ status: "unavailable", message: "Workspace commands are unavailable on Windows." });
+    vi.mocked(getCommandCapability).mockResolvedValueOnce({ status: "unavailable", message: "The command shell could not start." });
     const execute = vi.fn(async () => ({ output: "should not execute", summary: "unexpected" }));
     const gateway = { chatWithTools: vi.fn(async (_model, messages, definitions) => {
       expect(definitions.some((definition: any) => definition.function.name === "run_command")).toBe(false);
-      expect(messages[0].content).toContain("unavailable on Windows");
+      expect(messages[0].content).toContain("command shell could not start");
       return { ok: true, value: { content: "The requested command cannot run on this host.", tool_calls: null } };
     }) };
     const tools: AgentTool[] = [{ name: "run_command", definition: { type: "function", function: { name: "run_command", description: "execute", parameters: { type: "object", properties: {} } } }, execute }];
     const result = await new AgentLoop().run({ runId: "unsupported", driverModelId: "primary-model", userPrompt: "Run the workspace checks", systemPrompt: "Check the workspace", semanticIntent: { intentType: "command_execution" }, tools, context: { runId: "unsupported", workspaceRoot: ".", gateway: gateway as any }, emitEvent() {} });
     expect(result.outcome).toBe("partial"); expect(result.finalText).toContain("unverified"); expect(gateway.chatWithTools).toHaveBeenCalledOnce(); expect(execute).not.toHaveBeenCalled();
     expect(result.envelope?.permittedCapabilities).not.toContain("system_execution");
+  });
+
+  it("keeps commands available without isolation and discloses fallback before exact approval", async () => {
+    vi.mocked(getCommandCapability).mockResolvedValueOnce({ status: "approval_required", message: "Windows cmd.exe is available. No OS isolation." });
+    const guard = new MutationPolicyGuard({ strict: true });
+    const execute = vi.fn(async args => {
+      expect(guard.isUnisolatedCommandAuthorized("fallback", args.command)).toBe(true);
+      return { output: JSON.stringify({ exitCode: 0, stdout: "CHECK_OK", isolationStatus: "unisolated" }), summary: "check passed without OS isolation" };
+    });
+    let turns = 0;
+    const gateway = { chatWithTools: vi.fn(async (_model, messages, definitions) => {
+      expect(messages[0].content).toContain("No OS isolation");
+      if (turns++ === 0) {
+        expect(definitions.some((def: any) => def.function.name === "run_command")).toBe(true);
+        return { ok: true, value: { content: "Run the requested check.", tool_calls: [{ id: "check", name: "run_command", arguments: { command: "echo CHECK_OK" } }] } };
+      }
+      return { ok: true, value: { content: "The check passed: CHECK_OK.", tool_calls: null } };
+    }) };
+    const approve = vi.fn(async (plan, calls) => {
+      expect(plan).toContain("user permissions"); expect(plan).toContain("outside the workspace");
+      expect(calls[0].arguments.command).toBe("echo CHECK_OK");
+      return true;
+    });
+    const tool: AgentTool = { name: "run_command", definition: { type: "function", function: { name: "run_command", description: "execute", parameters: { type: "object", properties: {} } } }, execute };
+    const result = await new AgentLoop().run({ runId: "fallback", driverModelId: "primary-model", userPrompt: "Run echo CHECK_OK", systemPrompt: "Check workspace", semanticIntent: { intentType: "command_execution" }, tools: [tool], policyGuard: guard, context: { runId: "fallback", workspaceRoot: ".", gateway: gateway as any }, onPlanConfirmationRequired: approve, emitEvent() {} });
+    expect(result.outcome).toBe("completed"); expect(execute).toHaveBeenCalledOnce(); expect(approve).toHaveBeenCalledOnce();
+    expect(result.envelope?.permittedCapabilities).toContain("system_execution");
   });
 
   it("terminates pure chat on turn 1 without triggering confirmation", async () => {

@@ -86,15 +86,19 @@ The Work and Agent mode selector shows the current execution status. Use **Refre
 
 | Platform | Agent workspace commands | Python in run storage |
 | --- | --- | --- |
-| Windows | Unavailable. This app has no Windows OS isolation backend. File reads and approved file edits remain available. | Python 3 is required. Execution requires separate approval and has no OS filesystem or network isolation. |
-| Linux | Requires bubblewrap (`bwrap`) and a successful isolation probe. | Uses bubblewrap when its isolation probe passes. Otherwise, execution requires separate approval and has no OS filesystem or network isolation. |
-| macOS | Requires `sandbox-exec` and a successful isolation probe. | Uses `sandbox-exec` when its isolation probe passes. Otherwise, execution requires separate approval and has no OS filesystem or network isolation. |
+| Windows | Uses `cmd.exe` after exact command approval. No OS isolation backend is available. | Python 3 is required. Execution requires separate approval and has no OS filesystem or network isolation. |
+| Linux | Uses bubblewrap (`bwrap`) when its probe passes. Otherwise, uses `/bin/sh` after exact command approval. | Uses bubblewrap when its isolation probe passes. Otherwise, execution requires separate approval and has no OS filesystem or network isolation. |
+| macOS | Uses `sandbox-exec` when its probe passes. Otherwise, uses `/bin/sh` after exact command approval. | Uses `sandbox-exec` when its isolation probe passes. Otherwise, execution requires separate approval and has no OS filesystem or network isolation. |
 
-On Linux, install your distribution's **bubblewrap** package. The AppImage does not include it. The app checks `/usr/bin/bwrap`, `/bin/bwrap`, and PATH. The host must permit user namespaces and the namespaces required by bubblewrap. A package can be present while host security settings prevent it from starting. Check the displayed probe diagnostic and your distribution's namespace policy. Workspace commands stay unavailable if isolation cannot start; they have no direct execution fallback. A required command check remains unverified, so the task cannot be marked Complete.
+On Linux, install your distribution's **bubblewrap** package. The AppImage does not include it. The app checks `/usr/bin/bwrap`, `/bin/bwrap`, and PATH. The host must permit user namespaces and the namespaces required by bubblewrap. A package can be present while host security settings prevent it from starting. Check the displayed probe diagnostic and your distribution's namespace policy. If isolation cannot start, commands can still run after approval. The approval covers the exact command and run, and states that execution can use your permissions to access files and the network. A failed user command is never retried without isolation.
 
 Python discovery uses `PYTHON`, if set, or PATH. Set `PYTHON` to an absolute interpreter path or an interpreter name on PATH. On Windows, the app checks both `python.exe` and `python3.exe`. Every launch uses the exact resolved interpreter. The run environment excludes user Python packages and does not inherit the full application environment.
 
 Approval for Python without OS isolation covers the run, exact source, generated Python dependencies, and staged inputs by digest. The app checks these bytes after approval and before execution. A change requires a new approval. This fallback runs with your user permissions and can access files and the network. It is not a sandbox.
+
+Commands run in an independent workspace copy. The app checks changes from this copy against the approved paths, rejects links, and publishes successful changes with backups. These checks do not contain a process that runs without OS isolation. In fallback mode, absolute paths can access the original workspace or other files, and those effects cannot be rolled back by the copy. The UI and command transcript show the actual isolation status. Use Windows `cmd.exe` syntax on Windows and `/bin/sh` syntax on Linux or macOS; structured Python checks use the detected interpreter on Windows.
+
+Tool results sync payload files before saving a SQLite manifest. Windows syncs the published file with a writable handle; it does not attempt an unsupported directory sync. Unix systems also sync the containing directory. Payload digests, immutable result IDs, and run boundaries apply on all three systems. Windows volumes without hard links use exclusive copying before the manifest commit. This strategy does not claim Unix directory-sync guarantees for sudden power loss on Windows. A real storage failure names the failed step; a read-only tool failure does not imply a workspace change.
 
 Onboarding stores the model context window separately from the output allowance. A model on a private LAN address receives a default output allowance of one quarter of its context window when no exact endpoint profile exists. Chat also caps output at one quarter of the context window, so a saved output limit cannot consume the entire prompt budget.
 
@@ -102,7 +106,7 @@ Onboarding stores the model context window separately from the output allowance.
 
 - Chat and Work do not receive workspace mutation tools.
 - Agent operations are bound to the selected workspace. The app checks file paths and requires approval for protected actions.
-- Command execution requires available operating-system isolation. It stops if the required isolation cannot start.
+- Command execution uses OS isolation when its probe passes. Otherwise, exact command approval permits execution with user permissions. The workspace copy is not an OS sandbox.
 - Python can use an explicitly approved fallback when operating-system isolation is unavailable. That fallback does not provide filesystem or network isolation. The approval is tied to the code and inputs.
 - Work files are stored under the run data folder. Use the app’s save action to copy an artifact elsewhere.
 
@@ -119,3 +123,7 @@ Published installers and their platform notes belong on [GitHub Releases](https:
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+
+## Native portability checks
+
+The `Native package portability` workflow builds an unpacked package on Windows, macOS, and Linux. It checks Agent file reads through result storage and retrieval, checksum integrity, database reopen, Python workspace validation, and a real manifest failure. On macOS it also forces the command fallback. To run it locally, set `WORKBENCH_BUILD_SMOKE=1`, run `npm run package:dir`, then run `node scripts/test-packaged-portability.cjs`. The smoke bundle is included only when this build option is set. CI results must pass before claiming native coverage.

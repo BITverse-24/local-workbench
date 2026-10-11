@@ -56,7 +56,7 @@ export const CAPABILITY_GROUPS: Record<CapabilityGroup, CapabilityMetadata> = {
   system_execution: {
     name: "system_execution",
     label: "System Execution",
-    description: "Executing sandboxed shell commands within the active project workspace",
+    description: "Executing approved shell commands in a workspace copy with OS isolation when available, or approved fallback with user permissions",
     tools: ["run_command"],
     requiresAgentMode: true,
   },

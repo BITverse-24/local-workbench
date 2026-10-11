@@ -547,7 +547,10 @@ export class ToolDispatcher {
                 status: normalizedResult.ok ? intermediate.status : "partial", producer: { tool: call.name, callId: call.id }, summary: rawSummary,
               });
             } catch (error) {
-              throw { code: "persistence_failure", message: `Tool ${call.name} ran but its result could not be persisted. Side effects may already exist. ${error instanceof Error ? error.message : String(error)}`, retryable: false };
+              const readOnly = ["read_file", "list_dir", "search", "extract_document", "retrieve_knowledge"].includes(call.name);
+              const effectMessage = readOnly ? "This read-only tool did not modify workspace files." :
+                rawResult.sideEffects?.length ? `Reported effects: ${rawResult.sideEffects.join(", ")}.` : "The tool may already have produced side effects.";
+              throw { code: "persistence_failure", message: `Tool ${call.name} ran but its result could not be saved. ${effectMessage} ${error instanceof Error ? error.message : String(error)}`, retryable: false };
             }
             const body = compactToolObservation({ content: rawOutput, toolName: call.name, source: filename as string | undefined, resultId: record.resultId, isOlderTurn: false });
             normalizedResult = { ...normalizedResult, output: body.content, resultRef: record,

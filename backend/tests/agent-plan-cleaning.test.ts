@@ -334,6 +334,6 @@ Now, let's execute this updated script using the execute_python tool:`,
     expect(presentedPlan).toContain("### Objective");
     expect(presentedPlan).toContain("Diagnose and repair reported script/code defects");
     expect(presentedPlan).toContain("### Proposed Operations");
-    expect(presentedPlan).toContain("• **execute_python**: Run sandboxed script verification using `broken-vendor-log-parser.py, vendor-maintenance-log.csv`");
+    expect(presentedPlan).toContain("• **execute_python**: Run approved script verification using `broken-vendor-log-parser.py, vendor-maintenance-log.csv`");
   });
 });

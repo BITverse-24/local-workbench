@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, copyFileSync, existsSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { z } from "zod";
@@ -11,6 +11,14 @@ import { dataRoot } from "./filesystem.js";
 export const RESULT_SUMMARY_MAX_CHARS = 512;
 export const RESULT_SLICE_MAX_CHARS = 3000;
 export const RESULT_PAYLOAD_MAX_BYTES = 64 * 1024 * 1024;
+
+/** Preserve the failed operation, even when the native error only says fsync. */
+export class ResultPersistenceError extends Error {
+  constructor(readonly operation: string, cause: unknown) {
+    super(`Result storage failed during ${operation}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    this.name = "ResultPersistenceError";
+  }
+}
 const sourceSchema = z.object({
   filename: z.string().max(1024).optional(), resultId: z.string().uuid().optional(),
   page: z.number().int().positive().optional(), section: z.string().max(1024).optional(),
@@ -74,21 +82,45 @@ export class RunResultStore {
     const sourcesJson = JSON.stringify(parsed.sources);
     if (Buffer.byteLength(sourcesJson) + Buffer.byteLength(schemaJson ?? "") > 256 * 1024) throw new Error("Result metadata exceeds limit; no payload was truncated");
     const resultId = randomUUID();
-    const target = this.payloadPath(resultId, encoding, true);
+    let target: string;
+    try { target = this.payloadPath(resultId, encoding, true); }
+    catch (error) { throw new ResultPersistenceError("prepare payload directory", error); }
     const temp = `${target}.pending-${randomUUID()}`;
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     let fd: number | undefined;
     let published = false;
+    let operation = "create payload file";
     try {
       fd = openSync(temp, "wx", 0o600);
+      operation = "write payload file";
       writeFileSync(fd, bytes);
+      operation = "sync payload file";
       fsyncSync(fd);
       closeSync(fd); fd = undefined;
       // Atomic exclusive publication: unlike rename, never overwrite an immutable payload.
-      linkSync(temp, target); published = true;
+      operation = "publish payload file";
+      try { linkSync(temp, target); }
+      catch (error) {
+        // Some Windows volumes do not support hard links. Exclusive copying
+        // keeps the manifest invisible until the complete payload is synced.
+        if (process.platform !== "win32" || !["ENOSYS", "ENOTSUP", "EOPNOTSUPP", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+        copyFileSync(temp, target, constants.COPYFILE_EXCL);
+      }
+      published = true;
       unlinkSync(temp);
-      const dirFd = openSync(path.dirname(target), "r");
-      try { fsyncSync(dirFd); } finally { closeSync(dirFd); }
+      if (process.platform === "win32") {
+        // Node cannot fsync a Windows directory handle. Sync the published file
+        // with a writable handle instead; do not hide real file-sync errors.
+        operation = "sync published payload file";
+        fd = openSync(target, "r+");
+        fsyncSync(fd);
+        closeSync(fd); fd = undefined;
+      } else {
+        operation = "sync payload directory";
+        const dirFd = openSync(path.dirname(target), "r");
+        try { fsyncSync(dirFd); } finally { closeSync(dirFd); }
+      }
+      operation = "commit result manifest";
       this.db.transaction(() => {
         this.db.prepare(`INSERT INTO intermediate_results
           (result_id,run_id,schema_version,result_type,status,origin,relative_path,encoding,size_bytes,sha256,producer_tool,producer_call_id,summary,structured_schema_json,sources_json,created_at)
@@ -102,7 +134,7 @@ export class RunResultStore {
       if (fd !== undefined) closeSync(fd);
       if (existsSync(temp)) unlinkSync(temp);
       if (published && existsSync(target)) unlinkSync(target);
-      throw error;
+      throw new ResultPersistenceError(operation, error);
     }
     return this.getResult(resultId);
   }

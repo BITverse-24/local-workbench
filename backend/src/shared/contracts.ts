@@ -408,6 +408,8 @@ export interface HarnessCommandResult {
   exitCode: number;
   timedOut: boolean;
   durationMs: number;
+  isolationStatus?: "os_isolated" | "unisolated";
+  isolationMessage?: string;
 }
 
 export type HarnessToolCall =

@@ -299,6 +299,8 @@ agent/
 └── scripts/                       # Development, build, and test tooling
     ├── dev.cjs                    # Concurrently spawns Vite dev server and Electron
     ├── build-electron.cjs         # Esbuild bundler for electron main & preload
+    ├── portability-smoke.ts      # Opt-in native package backend checks
+    ├── test-packaged-portability.cjs # Runs checks inside the native Electron package
     ├── preview.cjs                # Runs production Electron build against static frontend
     ├── test.cjs                   # Vitest test runner wrapper (spawns under Electron Node environment)
     ├── behavioral.cjs             # Behavioral test suite runner
@@ -491,7 +493,7 @@ All communication between the React renderer and the Electron/Node backend occur
 | `workspace:readFile` | Renderer → Main | `readFileInputSchema` | Scoped file read (200 KB safety limit) |
 | `workspace:search` | Renderer → Main | `searchInputSchema` | Scoped ripgrep/grep search (50 matches max) |
 | `workspace:writeFile` | Renderer → Main | `writeFileInputSchema` | Scoped atomic file write with backup |
-| `workspace:runCommand` | Renderer → Main | `runCommandInputSchema` | Sandboxed command execution locked to workspace cwd |
+| `workspace:runCommand` | Renderer → Main | `runCommandInputSchema` | Command execution in a workspace copy; probed OS isolation or exact approved fallback |
 | `kb:listDocs` | Renderer → Main | None | Lists all indexed documents in Knowledge Base |
 | `kb:ingestDoc` | Renderer → Main | `ingestDocInputSchema` | Ingests and indexes document into vector and FTS5 index |
 | `kb:deleteDoc` | Renderer → Main | `deleteDocInputSchema` | Removes document and all chunks from index |
@@ -556,8 +558,8 @@ Generation, vision, and embeddings use the shared inference scheduler. Calls are
    - Automatically archives existing files to .harness_backups/ prior to modification
    - Serializes concurrent mutations with withMutationLock
 6. Command execution (`run_command`):
-   - Requires an operating-system sandbox and runs against an isolated workspace copy.
-   - Fails closed if the sandbox is unavailable. It does not fall back to an unrestricted shell.
+   - Runs in a workspace copy and uses operating-system isolation when its probe passes.
+   - If isolation is unavailable, exact run-bound command approval permits native shell execution with user permissions. The approval states that files outside the workspace and the network can be accessed. The copy does not provide OS isolation.
    - Publishes only changes that pass the configured scope and verification checks.
 ```
 

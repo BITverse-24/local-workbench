@@ -8,6 +8,7 @@ import { readFile } from "../harness/tools/read-file.js";
 import { search } from "../harness/tools/search.js";
 import { writeFile } from "../harness/tools/write-file.js";
 import { deleteFile } from "../harness/tools/delete-file.js";
+import { getPythonExecutable } from "./python-runtime.js";
 import { runCommand } from "../harness/tools/run-command.js";
 import { PermissionError, resolveSafe } from "../harness/path-guard.js";
 import { resolveRunPath } from "../run/filesystem.js";
@@ -540,7 +541,14 @@ if spec.get("success_marker"):
     const normalized = normalizeRunCommandArgs({ python_code: pythonCode });
     return { ...args, python_code: pythonCode, command: normalized.command };
   }
-  if (typeof args.python_code !== "string" || !args.python_code.trim()) return args;
+  if (typeof args.python_code !== "string" || !args.python_code.trim()) {
+    const command = extractCommandArg(args);
+    if (process.platform === "win32" && /^python(?:3)?(?:\.exe)?(?=\s|$)/i.test(command)) {
+      const python = getPythonExecutable();
+      return { ...args, command: command.replace(/^python(?:3)?(?:\.exe)?/i, () => `"${python}"`) };
+    }
+    return args;
+  }
   // A quoted heredoc preserves Python/CSV quotes and literal backslashes. Choose
   // a delimiter absent from the supplied body, never interpreting it as shell.
   const hyphenShim = `import sys, os, importlib.util
@@ -555,6 +563,11 @@ if not any(isinstance(f, _WorkbenchHyphenFinder) for f in sys.meta_path):
     sys.meta_path.insert(0, _WorkbenchHyphenFinder())
 `;
   const wrappedCode = `${hyphenShim}\n${args.python_code}`;
+  if (process.platform === "win32") {
+    const python = getPythonExecutable();
+    const encoded = Buffer.from(wrappedCode, "utf8").toString("base64");
+    return { ...args, command: `"${python}" -B -c "import base64; exec(compile(base64.b64decode('${encoded}'), '<workbench-validation>', 'exec'))"` };
+  }
   let delimiter = "WORKBENCH_PYTHON";
   const lines = wrappedCode.split(/\r?\n/);
   while (lines.includes(delimiter)) delimiter += "_";
@@ -567,7 +580,7 @@ export const runCommandTool: AgentTool = {
     type: "function",
     function: {
       name: "run_command",
-      description: "Execute an approved shell command in an OS-isolated workspace snapshot using relative paths. No network. Successful file changes are scope-checked and saved with backups; failed commands save no changes. Isolation is required. 60-second timeout.",
+      description: "Execute an approved command in a workspace copy using relative paths. Use cmd.exe syntax on Windows and /bin/sh syntax on macOS or Linux. OS isolation is used when available. Otherwise, approval permits execution with user permissions and no filesystem or network isolation. Successful changes in the copy are scope-checked and saved with backups; failed commands publish no changes from the copy. 60-second timeout.",
       parameters: {
         type: "object",
         properties: {
@@ -607,7 +620,7 @@ export const runCommandTool: AgentTool = {
         )
       : await runCommand(context.workspaceRoot, command, 60000, context.policyGuard ? { guard: context.policyGuard, runId: context.runId, assertAuthority: context.assertAuthority } : undefined);
 
-    const summary = `Command exit ${res.exitCode} in ${res.durationMs}ms: "${command.slice(0, 40)}"`;
+    const summary = `Command exit ${res.exitCode} in ${res.durationMs}ms${res.isolationStatus === "unisolated" ? "; ran without OS isolation" : "; OS isolation active"}: "${command.slice(0, 40)}"`;
     return {
       output: JSON.stringify(res),
       summary,

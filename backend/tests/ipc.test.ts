@@ -79,7 +79,7 @@ describe("chat IPC over mock Electron ipcMain", () => {
     initBackend(fake);
     const status = await fake.invoke(IPC_RUN.GET_EXECUTION_CAPABILITIES, undefined) as import("../src/shared/contracts.js").ExecutionCapabilities;
     expect(status.platform).toBe(process.platform);
-    expect(["os_isolated", "unavailable"]).toContain(status.workspaceCommands.status);
+    expect(["os_isolated", "approval_required", "unavailable"]).toContain(status.workspaceCommands.status);
     expect(["os_isolated", "approval_required", "unavailable"]).toContain(status.python.status);
     expect(status.workspaceCommands.message).toBeTruthy(); expect(status.python.message).toBeTruthy();
   });

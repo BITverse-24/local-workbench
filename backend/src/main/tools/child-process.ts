@@ -5,17 +5,21 @@ import { currentRuntimeScope, assertRuntimeActive, abortError } from "../run/run
 /** Kill the process group, including children of shells, on timeout or cancellation. */
 export function executeProcess(command: string, args: string[], options: {
   cwd?: string; env?: NodeJS.ProcessEnv; timeout: number; maxBuffer: number; signal?: AbortSignal;
+  windowsVerbatimArguments?: boolean;
 }): Promise<{ stdout: string; stderr: string }> {
   assertRuntimeActive();
   const signal = options.signal ?? currentRuntimeScope()?.signal;
   signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: options.cwd, env: options.env, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { cwd: options.cwd, env: options.env, detached: process.platform !== "win32", windowsHide: true, windowsVerbatimArguments: options.windowsVerbatimArguments, stdio: ["ignore", "pipe", "pipe"] });
     const stdoutDecoder=new StringDecoder("utf8"),stderrDecoder=new StringDecoder("utf8");
     let stdout = "", stderr = "", size = 0, timedOut = false, overflow = false, aborted = false;
     const kill = () => {
       if (!child.pid) return;
-      if (process.platform === "win32") spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+      if (process.platform === "win32") {
+        const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+        killer.on("error", () => { child.kill(); });
+      }
       else { try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); } }
     };
     const onAbort = () => { aborted = true; kill(); };

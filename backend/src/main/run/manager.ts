@@ -1269,7 +1269,7 @@ ${referencedFilesSection}`;
                   const inputs = Array.isArray(c.arguments?.input_files) && c.arguments.input_files.length > 0
                     ? c.arguments.input_files.join(", ")
                     : "";
-                  summaryItems.push(inputs ? `Python verification (${inputs})` : "Python sandbox execution");
+                  summaryItems.push(inputs ? `Python verification (${inputs})` : "Python verification");
                 } else if (c.name === "write_file") {
                   summaryItems.push(`Write ${c.arguments?.path || "file"}`);
                 } else if (c.name === "delete_file") {

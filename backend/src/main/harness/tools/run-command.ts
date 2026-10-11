@@ -19,9 +19,11 @@ export interface CommandResult {
   durationMs: number;
   changes: string[];
   backupPaths: string[];
+  isolationStatus: "os_isolated" | "unisolated";
+  isolationMessage: string;
 }
 
-// A usability guard. Only an effective OS sandbox grants process authority.
+// A usability guard, not an OS security boundary. Approval is still required.
 export const DANGEROUS_COMMAND_PATTERNS: RegExp[] = [
   // Destructive operations
   /\b(rm\s+-[a-z]*[rf]|rmdir|del\s+[\/a-z]*|erase)\b/i,
@@ -46,11 +48,10 @@ export const DANGEROUS_COMMAND_PATTERNS: RegExp[] = [
 ];
 
 
-export function validateCommandSafety(command: string, hasContainment = true): void {
+export function validateCommandSafety(command: string): void {
   if (typeof command !== "string" || !command.trim()) throw new Error("command must be a non-empty string");
   if (/\.harness_backups|\.backups/i.test(command)) throw new PermissionError("command access to backup recovery trail forbidden");
   if (DANGEROUS_COMMAND_PATTERNS.some(pattern => pattern.test(command))) throw new PermissionError("destructive or unsafe command rejected");
-  if (!hasContainment) throw new PermissionError("Unsupported sandbox containment: commands require effective OS isolation.");
 }
 
 const MAX_FILES = 10000;
@@ -94,7 +95,7 @@ function snapshot(root: string, rejectLinks: boolean): Snapshot {
 
 const literal = (value: string) => JSON.stringify(value);
 
-function sandboxLaunch(workspace: string, scratch: string, command: string): { binary: string; args: string[]; env: NodeJS.ProcessEnv } {
+function sandboxLaunch(workspace: string, scratch: string, command: string): CommandLaunch {
   const trustedPath = [...new Set(["/usr/bin", "/bin", "/usr/local/bin", "/opt/homebrew/bin", ...(process.env.PATH ?? "").split(path.delimiter).filter(directory => /^(?:\/usr\/|\/bin$|\/opt\/homebrew\/)/.test(directory))])].join(path.delimiter);
   const env: NodeJS.ProcessEnv = { PATH: trustedPath, HOME: scratch, TMPDIR: scratch, LANG: "en_US.UTF-8", PYTHONDONTWRITEBYTECODE: "1", PYTHONNOUSERSITE: "1" };
   if (process.platform === "darwin" && process.env.WORKBENCH_USE_MAC_SANDBOX !== "0" && existsSync("/usr/bin/sandbox-exec")) {
@@ -121,32 +122,73 @@ function sandboxLaunch(workspace: string, scratch: string, command: string): { b
     }
   }
   const reason = process.platform === "win32"
-    ? "Workspace commands are unavailable on Windows. This app has no Windows OS isolation backend. File reads and approved file edits remain available."
+    ? "This app has no Windows OS isolation backend."
     : process.platform === "linux"
-    ? "Workspace commands require bubblewrap (bwrap). Install bubblewrap and enable user namespaces. Commands stay unavailable until the isolation probe passes."
+    ? "OS isolation requires bubblewrap (bwrap) and enabled user namespaces."
     : "Workspace commands require OS isolation. sandbox-exec is unavailable or disabled.";
   throw new PermissionError(`Unsupported sandbox containment: ${reason} No command was executed.`);
 }
 
-/** Use the same launcher as real commands. Never run user code during this probe. */
+export const COMMAND_FALLBACK_DISCLOSURE = "The app tries OS isolation first. If isolation cannot start, this approved command runs with your user permissions. It can read or change files outside the workspace and access the network. The workspace copy and publication checks do not provide OS isolation.";
+
+type CommandLaunch = { binary: string; args: string[]; env: NodeJS.ProcessEnv; windowsVerbatimArguments?: boolean };
+
+function directLaunch(scratch: string, command: string): CommandLaunch {
+  const env: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH ?? process.env.Path, HOME: scratch, TMPDIR: scratch,
+    LANG: "en_US.UTF-8", PYTHONDONTWRITEBYTECODE: "1", PYTHONNOUSERSITE: "1",
+  };
+  if (process.platform === "win32") {
+    const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? "C:\\Windows";
+    const binary = path.win32.join(systemRoot, "System32", "cmd.exe");
+    Object.assign(env, { SystemRoot: systemRoot, WINDIR: systemRoot, COMSPEC: binary,
+      TEMP: scratch, TMP: scratch, USERPROFILE: scratch, APPDATA: scratch, LOCALAPPDATA: scratch,
+      PATHEXT: process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD" });
+    // Match Node's Windows shell launch. cmd.exe receives the approved command
+    // unchanged, including operators and quotes, with AutoRun disabled.
+    return { binary, args: ["/d", "/s", "/c", `"${command}"`], env, windowsVerbatimArguments: true };
+  }
+  return { binary: "/bin/sh", args: ["-c", command], env };
+}
+
+/** Probe fixed code only. Select fallback before, never after, running user code. */
+async function selectCommandLaunch(workspace: string, scratch: string, command: string) {
+  try {
+    const probe = sandboxLaunch(workspace, scratch, "printf WORKBENCH_ISOLATED");
+    const result = await executeProcess(probe.binary, probe.args, { cwd: workspace, env: probe.env, timeout: 5000, maxBuffer: 4096 });
+    if (result.stdout !== "WORKBENCH_ISOLATED") throw new Error("Invalid isolation probe response.");
+    return { launch: sandboxLaunch(workspace, scratch, command), status: "os_isolated" as const,
+      message: "Command uses OS isolation. The network is blocked." };
+  } catch (error) {
+    assertRuntimeActive();
+    return { launch: directLaunch(scratch, command), status: "unisolated" as const,
+      message: `OS isolation is unavailable. ${String(error).slice(0, 500)} ${COMMAND_FALLBACK_DISCLOSURE}` };
+  }
+}
+
 export async function getCommandCapability(): Promise<ExecutionCapability> {
   const temporary = realpathSync(mkdtempSync(path.join(tmpdir(), "workbench-command-probe-")));
   const work = path.join(temporary, "workspace"), scratch = path.join(temporary, "scratch");
   try {
     mkdirSync(work, { mode: 0o700 }); mkdirSync(scratch, { mode: 0o700 });
-    const probe = sandboxLaunch(work, scratch, "printf WORKBENCH_ISOLATED");
-    const result = await executeProcess(probe.binary, probe.args, { cwd: work, env: probe.env, timeout: 5000, maxBuffer: 4096 });
-    if (result.stdout !== "WORKBENCH_ISOLATED") throw new Error("Invalid isolation probe response.");
-    return { status: "os_isolated", message: "Workspace command isolation probe passed. Commands use an isolated workspace copy and cannot access the network." };
+    const selected = await selectCommandLaunch(work, scratch, "echo WORKBENCH_COMMAND");
+    if (selected.status === "os_isolated") return { status: "os_isolated", message: selected.message };
+    // Verify the native shell too, so missing launchers still have a clear error.
+    const { launch } = selected;
+    const result = await executeProcess(launch.binary, launch.args, { cwd: work, env: launch.env,
+      windowsVerbatimArguments: launch.windowsVerbatimArguments, timeout: 5000, maxBuffer: 4096 });
+    if (result.stdout.trim() !== "WORKBENCH_COMMAND") throw new Error("Invalid command shell probe response.");
+    return { status: "approval_required", message: `${selected.message} Shell: ${process.platform === "win32" ? "Windows cmd.exe" : "/bin/sh"}. Use commands for this shell.` };
   } catch (error) {
     assertRuntimeActive();
-    return { status: "unavailable", message: `Workspace commands are unavailable. ${process.platform === "linux" ? "Install bubblewrap (bwrap) and enable user namespaces. The isolation probe must pass. " : ""}${String(error).slice(0, 700)}` };
+    return { status: "unavailable", message: `The command shell could not start. ${String(error).slice(0, 700)}` };
   } finally { rmSync(temporary, { recursive: true, force: true }); }
 }
 
 /**
  * Commands run against an independent workspace snapshot. The original workspace
- * is never writable by a subprocess, even through hard links or absolute paths.
+ * is protected by the OS only when isolation is active. Approved fallback code
+ * has user permissions; the snapshot cannot contain its absolute-path access.
  * A successful command's file changes are checked together and published through
  * guarded writers with backups. Failed/cancelled commands publish no changes.
  */
@@ -163,16 +205,14 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
   const scratch = path.join(temporary, "scratch");
   mkdirSync(work, { mode: 0o700 }); mkdirSync(scratch, { mode: 0o700 });
   try {
-    // Probe the actual launcher before copying inputs or running user code.
-    const probe = sandboxLaunch(work, scratch, "printf WORKBENCH_ISOLATED");
-    try {
-      const result = await executeProcess(probe.binary, probe.args, { cwd: work, env: probe.env, timeout: 5000, maxBuffer: 4096 });
-      if (result.stdout !== "WORKBENCH_ISOLATED") throw new Error("Invalid isolation probe response");
-    } catch (error) {
-      assertRuntimeActive();
-      throw new PermissionError(`Unsupported sandbox containment: OS isolation could not start. ${process.platform === "linux" ? "Check bubblewrap and user namespace settings. " : ""}No command was executed. Diagnostic: ${String(error).slice(0, 500)}`);
+    const selected = await selectCommandLaunch(work, scratch, command);
+    const fallbackApproved = () => Boolean(policy?.guard.isUnisolatedCommandAuthorized(policy.runId, command));
+    if (selected.status === "unisolated" && !fallbackApproved()) {
+      throw new PermissionError(`Unsupported sandbox containment: command execution without OS isolation requires approval for this exact command and run. No command was executed. ${selected.message}`);
     }
     assertRuntimeActive();
+    policy?.assertAuthority?.();
+    if (policy && !policy.guard.isAuthorized(policy.runId, "run_command", { command })) throw new PermissionError("Command approval was revoked before execution.");
     const before = snapshot(root, false);
     for (const directory of before.directories) mkdirSync(path.join(work, directory), { recursive: true });
     for (const [name, file] of before) {
@@ -180,18 +220,19 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
       mkdirSync(path.dirname(destination), { recursive: true });
       writeFileSync(destination, file.bytes, { mode: file.mode });
     }
-    const launch = sandboxLaunch(work, scratch, command);
-    currentRuntimeScope()?.observe?.({ commandIsolationStatus: "os_isolated" });
+    const { launch } = selected;
+    currentRuntimeScope()?.observe?.({ commandIsolationStatus: selected.status,
+      isolationStatus: selected.status === "os_isolated" ? "os_isolated" : "approved_uncontained" });
     let stdout = "", stderr = "", exitCode = 0, timedOut = false;
     try {
-      ({stdout, stderr} = await executeProcess(launch.binary, launch.args, { cwd: work, env: launch.env, timeout: timeoutMs, maxBuffer: 1024 * 1024 }));
+      ({stdout, stderr} = await executeProcess(launch.binary, launch.args, { cwd: work, env: launch.env, windowsVerbatimArguments: launch.windowsVerbatimArguments, timeout: timeoutMs, maxBuffer: 1024 * 1024 }));
     } catch (error: any) {
       assertRuntimeActive();
       stdout = error.stdout ?? ""; stderr = error.stderr ?? String(error);
       exitCode = typeof error.code === "number" ? error.code : 1; timedOut = Boolean(error.killed);
     }
     assertRuntimeActive();
-    const result: CommandResult = { stdout: stdout.slice(0,8000), stderr: stderr.slice(0,8000), exitCode, timedOut, durationMs: Date.now()-started, changes: [], backupPaths: [] };
+    const result: CommandResult = { stdout: stdout.slice(0,8000), stderr: stderr.slice(0,8000), exitCode, timedOut, durationMs: Date.now()-started, changes: [], backupPaths: [], isolationStatus: selected.status, isolationMessage: selected.message };
     if (exitCode !== 0) return result;
     const after = snapshot(work, true);
     // A directory-only operation cannot be represented by the guarded file writer.
@@ -203,7 +244,7 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
     const changes = [...new Set([...before.keys(), ...after.keys()])].filter(name => before.get(name)?.hash !== after.get(name)?.hash || before.get(name)?.mode !== after.get(name)?.mode);
     // Validate the entire change set and current authority before the first write.
     policy?.assertAuthority?.();
-    if (policy && !policy.guard.isAuthorized(policy.runId, "run_command", { command })) throw new PermissionError("Command approval was revoked before publication.");
+    if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", { command }) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before publication.");
     for (const name of changes) {
       if (policy && (policy.guard.isPathProtected(policy.runId, name) || policy.guard.isPathTargetRestricted(policy.runId, name))) throw new PermissionError(`Command attempted an out-of-scope change: ${name}. No changes were published.`);
       if (existsSync(path.join(root, name)) && lstatSync(path.join(root, name)).isSymbolicLink()) throw new PermissionError(`Command changed a symlink input: ${name}. No changes were published.`);

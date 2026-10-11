@@ -5,6 +5,7 @@
 
 const path = require("node:path");
 const { buildSync } = require("esbuild");
+const { rmSync } = require("node:fs");
 
 const ROOT = path.resolve(__dirname, "..");
 const OUTDIR = path.join(ROOT, "electron", "dist-electron");
@@ -18,6 +19,12 @@ const shared = {
 };
 
 function build() {
+  const smokeOutput = path.join(OUTDIR, "portability-smoke.cjs");
+  if (process.env.WORKBENCH_BUILD_SMOKE === "1") {
+    buildSync({ ...shared, entryPoints: [path.join(ROOT, "scripts", "portability-smoke.ts")], format: "cjs", outfile: smokeOutput });
+  } else {
+    rmSync(smokeOutput, { force: true });
+  }
   buildSync({
     ...shared,
     entryPoints: [path.join(ROOT, "electron", "main.ts")],
