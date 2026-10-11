@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld("workbench", {
     ipcRenderer.invoke("workbench:saveArtifact", input),
   copyArtifact: (input: { runId: string; artifactId: string }) =>
     ipcRenderer.invoke("workbench:copyArtifact", input),
+  getExecutionCapabilities: () => ipcRenderer.invoke("workbench:getExecutionCapabilities"),
   getHealth: () =>
     ipcRenderer.invoke("workbench:getHealth"),
   getRunLogs: (input: { runId: string; limit?: number }) =>

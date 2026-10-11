@@ -1,3 +1,4 @@
+import ExecutionSupport from "./ExecutionSupport";
 import { useRef, useEffect, useState, useMemo } from 'react';
 
 type Props = {
@@ -19,6 +20,8 @@ type Props = {
   mode?: ExecutionMode;
   onModeChange?: (mode:ExecutionMode) => void;
   hasWorkspace?: boolean;
+  executionCapabilities?: ExecutionCapabilities | null;
+  executionCapabilitiesError?: string | null;
 };
 
 function formatSize(bytes: number): string {
@@ -86,6 +89,8 @@ export default function InputBar({
   mode = "chat",
   onModeChange,
   hasWorkspace=false,
+  executionCapabilities=null,
+  executionCapabilitiesError,
   onVoice,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -177,6 +182,7 @@ export default function InputBar({
       onDrop={handleDrop}
     >
       <div className="w-full max-w-[96%] xl:max-w-[94%] 2xl:max-w-[90%] mx-auto flex flex-col gap-2.5">
+        <ExecutionSupport capabilities={executionCapabilities} mode={mode} error={executionCapabilitiesError} />
         {/* Error notification banner */}
         {attachError && (
           <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs sm:text-sm text-rose-300 flex items-center gap-2.5 shadow-md animate-apple-fade">

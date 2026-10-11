@@ -1,4 +1,9 @@
-import { describe, expect, it } from "vitest";
+vi.mock("../src/main/harness/tools/run-command.js", async () => {
+  const commands = await vi.importActual<typeof import("../src/main/harness/tools/run-command.js")>("../src/main/harness/tools/run-command.js");
+  return { ...commands, getCommandCapability: vi.fn(async () => ({ status: "os_isolated", message: "Unit fixture: command isolation available." })) };
+});
+import { describe, expect, it, vi } from "vitest";
+import { getCommandCapability } from "../src/main/harness/tools/run-command.js";
 import { compactConversationHistory, compactToolResult, type AgentMessage } from "../src/main/agent/context-manager.js";
 import { ToolDispatcher } from "../src/main/agent/tool-dispatcher.js";
 import { AgentLoop } from "./helpers/agent-loop-fixture.js";
@@ -162,6 +167,20 @@ describe("Agent Loop Engine & Context Manager", () => {
     expect(result.outcome).toBe("completed");
     expect(sawCorrection).toBe(true);
     expect(executions).toBe(2);
+  });
+
+  it("removes unavailable commands before the first model call and returns Partial without retries", async () => {
+    vi.mocked(getCommandCapability).mockResolvedValueOnce({ status: "unavailable", message: "Workspace commands are unavailable on Windows." });
+    const execute = vi.fn(async () => ({ output: "should not execute", summary: "unexpected" }));
+    const gateway = { chatWithTools: vi.fn(async (_model, messages, definitions) => {
+      expect(definitions.some((definition: any) => definition.function.name === "run_command")).toBe(false);
+      expect(messages[0].content).toContain("unavailable on Windows");
+      return { ok: true, value: { content: "The requested command cannot run on this host.", tool_calls: null } };
+    }) };
+    const tools: AgentTool[] = [{ name: "run_command", definition: { type: "function", function: { name: "run_command", description: "execute", parameters: { type: "object", properties: {} } } }, execute }];
+    const result = await new AgentLoop().run({ runId: "unsupported", driverModelId: "primary-model", userPrompt: "Run the workspace checks", systemPrompt: "Check the workspace", semanticIntent: { intentType: "command_execution" }, tools, context: { runId: "unsupported", workspaceRoot: ".", gateway: gateway as any }, emitEvent() {} });
+    expect(result.outcome).toBe("partial"); expect(result.finalText).toContain("unverified"); expect(gateway.chatWithTools).toHaveBeenCalledOnce(); expect(execute).not.toHaveBeenCalled();
+    expect(result.envelope?.permittedCapabilities).not.toContain("system_execution");
   });
 
   it("terminates pure chat on turn 1 without triggering confirmation", async () => {

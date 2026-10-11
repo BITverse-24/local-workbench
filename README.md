@@ -80,6 +80,24 @@ npm run package
 
 The packaging configuration defines a macOS DMG, a Windows x64 installer, and a Linux AppImage. Build and test each target on its supported platform. Check the release notes for the platforms and signing status of published binaries.
 
+## Execution support by platform
+
+The Work and Agent mode selector shows the current execution status. Use **Refresh** in Service health after you install Python or change the host isolation settings. The app probes the same isolation launcher used for execution. Commands also probe isolation again before they copy inputs or execute user code.
+
+| Platform | Agent workspace commands | Python in run storage |
+| --- | --- | --- |
+| Windows | Unavailable. This app has no Windows OS isolation backend. File reads and approved file edits remain available. | Python 3 is required. Execution requires separate approval and has no OS filesystem or network isolation. |
+| Linux | Requires bubblewrap (`bwrap`) and a successful isolation probe. | Uses bubblewrap when its isolation probe passes. Otherwise, execution requires separate approval and has no OS filesystem or network isolation. |
+| macOS | Requires `sandbox-exec` and a successful isolation probe. | Uses `sandbox-exec` when its isolation probe passes. Otherwise, execution requires separate approval and has no OS filesystem or network isolation. |
+
+On Linux, install your distribution's **bubblewrap** package. The AppImage does not include it. The app checks `/usr/bin/bwrap`, `/bin/bwrap`, and PATH. The host must permit user namespaces and the namespaces required by bubblewrap. A package can be present while host security settings prevent it from starting. Check the displayed probe diagnostic and your distribution's namespace policy. Workspace commands stay unavailable if isolation cannot start; they have no direct execution fallback. A required command check remains unverified, so the task cannot be marked Complete.
+
+Python discovery uses `PYTHON`, if set, or PATH. Set `PYTHON` to an absolute interpreter path or an interpreter name on PATH. On Windows, the app checks both `python.exe` and `python3.exe`. Every launch uses the exact resolved interpreter. The run environment excludes user Python packages and does not inherit the full application environment.
+
+Approval for Python without OS isolation covers the run, exact source, generated Python dependencies, and staged inputs by digest. The app checks these bytes after approval and before execution. A change requires a new approval. This fallback runs with your user permissions and can access files and the network. It is not a sandbox.
+
+Onboarding stores the model context window separately from the output allowance. A model on a private LAN address receives a default output allowance of one quarter of its context window when no exact endpoint profile exists. Chat also caps output at one quarter of the context window, so a saved output limit cannot consume the entire prompt budget.
+
 ## Safety notes
 
 - Chat and Work do not receive workspace mutation tools.

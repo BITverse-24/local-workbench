@@ -546,3 +546,14 @@ export type ToolResult =
       summary: string;
       resultRef?: IntermediateResultRecord;
     };
+
+
+export interface ExecutionCapability {
+  status: "os_isolated" | "approval_required" | "unavailable";
+  message: string;
+}
+export interface ExecutionCapabilities {
+  platform: string;
+  workspaceCommands: ExecutionCapability;
+  python: ExecutionCapability;
+}

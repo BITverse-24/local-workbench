@@ -1,3 +1,5 @@
+import type { ExecutionCapability } from "../../../shared/contracts.js";
+import { findBubblewrap } from "../../tools/python-runtime.js";
 import { executeProcess } from "../../tools/child-process.js";
 import { assertRuntimeActive, currentRuntimeScope } from "../../run/runtime-scope.js";
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, lstatSync, readFileSync, writeFileSync, rmSync, realpathSync, chmodSync } from "node:fs";
@@ -110,7 +112,7 @@ function sandboxLaunch(workspace: string, scratch: string, command: string): { b
     return { binary: "/usr/bin/sandbox-exec", args: ["-p", profile, "/bin/sh", "-c", command], env };
   }
   if (process.platform === "linux") {
-    const binary = ["/usr/bin/bwrap", "/bin/bwrap"].find(existsSync);
+    const binary = findBubblewrap();
     if (binary) {
       return { binary, args: ["--die-with-parent", "--unshare-all", "--new-session", "--clearenv", ...Object.entries(env).flatMap(([key,value]) => ["--setenv",key,value!]),
         ...["/usr", "/bin", "/lib", "/lib64"].filter(existsSync).flatMap(root => ["--ro-bind", root, root]),
@@ -118,7 +120,28 @@ function sandboxLaunch(workspace: string, scratch: string, command: string): { b
         "--chdir", workspace, "--", "/bin/sh", "-c", command], env };
     }
   }
-  throw new PermissionError("Unsupported sandbox containment: commands require effective OS isolation. No command was executed.");
+  const reason = process.platform === "win32"
+    ? "Workspace commands are unavailable on Windows. This app has no Windows OS isolation backend. File reads and approved file edits remain available."
+    : process.platform === "linux"
+    ? "Workspace commands require bubblewrap (bwrap). Install bubblewrap and enable user namespaces. Commands stay unavailable until the isolation probe passes."
+    : "Workspace commands require OS isolation. sandbox-exec is unavailable or disabled.";
+  throw new PermissionError(`Unsupported sandbox containment: ${reason} No command was executed.`);
+}
+
+/** Use the same launcher as real commands. Never run user code during this probe. */
+export async function getCommandCapability(): Promise<ExecutionCapability> {
+  const temporary = realpathSync(mkdtempSync(path.join(tmpdir(), "workbench-command-probe-")));
+  const work = path.join(temporary, "workspace"), scratch = path.join(temporary, "scratch");
+  try {
+    mkdirSync(work, { mode: 0o700 }); mkdirSync(scratch, { mode: 0o700 });
+    const probe = sandboxLaunch(work, scratch, "printf WORKBENCH_ISOLATED");
+    const result = await executeProcess(probe.binary, probe.args, { cwd: work, env: probe.env, timeout: 5000, maxBuffer: 4096 });
+    if (result.stdout !== "WORKBENCH_ISOLATED") throw new Error("Invalid isolation probe response.");
+    return { status: "os_isolated", message: "Workspace command isolation probe passed. Commands use an isolated workspace copy and cannot access the network." };
+  } catch (error) {
+    assertRuntimeActive();
+    return { status: "unavailable", message: `Workspace commands are unavailable. ${process.platform === "linux" ? "Install bubblewrap (bwrap) and enable user namespaces. The isolation probe must pass. " : ""}${String(error).slice(0, 700)}` };
+  } finally { rmSync(temporary, { recursive: true, force: true }); }
 }
 
 /**
@@ -147,7 +170,7 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
       if (result.stdout !== "WORKBENCH_ISOLATED") throw new Error("Invalid isolation probe response");
     } catch (error) {
       assertRuntimeActive();
-      throw new PermissionError("Unsupported sandbox containment: OS isolation could not start. No command was executed.");
+      throw new PermissionError(`Unsupported sandbox containment: OS isolation could not start. ${process.platform === "linux" ? "Check bubblewrap and user namespace settings. " : ""}No command was executed. Diagnostic: ${String(error).slice(0, 500)}`);
     }
     assertRuntimeActive();
     const before = snapshot(root, false);

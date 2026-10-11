@@ -65,7 +65,7 @@ describe("chat IPC over mock Electron ipcMain", () => {
     );
     expect([...fake.handlers.keys()].sort()).toEqual(expected.sort());
     expect(CHAT_CHANNELS).toHaveLength(9);
-    expect(RUN_CHANNELS).toHaveLength(13);
+    expect(RUN_CHANNELS).toHaveLength(14);
     expect(WORKSPACE_CHANNELS).toHaveLength(9);
     expect(KB_CHANNELS).toHaveLength(6);
     expect(ONBOARDING_CHANNELS).toHaveLength(4);
@@ -73,6 +73,16 @@ describe("chat IPC over mock Electron ipcMain", () => {
 
 
 
+
+  it("exposes host execution diagnostics through the preload IPC channel", async () => {
+    const fake = new FakeIpcMain();
+    initBackend(fake);
+    const status = await fake.invoke(IPC_RUN.GET_EXECUTION_CAPABILITIES, undefined) as import("../src/shared/contracts.js").ExecutionCapabilities;
+    expect(status.platform).toBe(process.platform);
+    expect(["os_isolated", "unavailable"]).toContain(status.workspaceCommands.status);
+    expect(["os_isolated", "approval_required", "unavailable"]).toContain(status.python.status);
+    expect(status.workspaceCommands.message).toBeTruthy(); expect(status.python.message).toBeTruthy();
+  });
 
   it("createChat → getChatHistory round-trips a uuid4 chat", async () => {
     const fake = new FakeIpcMain();

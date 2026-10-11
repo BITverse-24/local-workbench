@@ -310,7 +310,7 @@ export default function ConfirmationModal({
                 </svg>
                 <span>
                   {isUncontainedPython
-                    ? "OS isolation is unavailable. This script can access files and the network with your user permissions. Approval covers this source and input snapshot only."
+                    ? "OS isolation is unavailable. This script can access files and the network with your user permissions. Approval covers the exact source, dependencies, and input snapshot."
                     : "Review the Python source before execution. If OS isolation is unavailable, a separate approval is required."}
                 </span>
               </div>
@@ -321,7 +321,7 @@ export default function ConfirmationModal({
         {/* Informative text for non-preview actions */}
         {!action.preview && (
           <div className="py-4 text-xs text-[var(--text-secondary)] leading-relaxed">
-            {isPython ? (isUncontainedPython ? "This script will run without OS filesystem or network isolation. Review the source and input digests before approval." : "Review this Python script before execution.") : "This action requires your confirmation before the workbench creates deliverables in the run directory."}
+            {isPython ? (isUncontainedPython ? "This script will run without OS filesystem or network isolation. Review the source, dependencies, and input digests before approval." : "Review this Python script before execution.") : "This action requires your confirmation before the workbench creates deliverables in the run directory."}
           </div>
         )}
 

@@ -170,6 +170,8 @@ agent/
 │   │       │   ├── file-worker.ts        # Bounded independent PDF/DOCX/XLSX/export readers
 │   │       │   ├── child-process.ts      # Abortable subprocess and process-tree termination
 │   │       │   ├── python.ts             # Probed OS isolation; explicit digest-bound fallback approval
+│   │       │   ├── python-runtime.ts     # Platform-aware discovery, launch environments, and isolation probes
+│   │       │   ├── execution-capabilities.ts # Host command/Python diagnostics exposed through IPC
 │   │       │   ├── python-contract.ts    # Behavioral and return validation runners for Python
 │   │       │   ├── artifacts.ts          # Deliverable generation (docx, xlsx) and validation
 │   │       │   ├── document-reader.ts    # Text/table extraction from PDF and DOCX

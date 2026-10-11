@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+vi.mock("../src/main/harness/tools/run-command.js", async () => {
+  const commands = await vi.importActual<typeof import("../src/main/harness/tools/run-command.js")>("../src/main/harness/tools/run-command.js");
+  return { ...commands, getCommandCapability: vi.fn(async () => ({ status: "os_isolated", message: "Unit fixture: command isolation available." })) };
+});
+import { describe, expect, it, vi } from "vitest";
 import { AgentLoop } from "./helpers/agent-loop-fixture.js";
 import type { AgentTool } from "../src/main/tools/types.js";
 

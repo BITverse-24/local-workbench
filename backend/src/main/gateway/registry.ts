@@ -78,7 +78,7 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
       capabilities: profile?.capabilities ?? (candidates.some(candidate => candidate.role === "vision" && candidate.modelName.toLowerCase() === row.modelName.toLowerCase() && sanitizeHost(candidate.host) === host && (candidate.port || 11434) === port) ? ["text", "image-input", "structured-output"] : ["text", "structured-output", "code-generation"]),
       requestTimeoutMs: 300000, healthPath: "/models", enabled: true,
       contextLength: row.contextLength || 8192,
-      maxOutputTokens: profile?.maxOutputTokens ?? (row.contextLength || 8192),
+      maxOutputTokens: profile?.maxOutputTokens ?? Math.max(1, Math.floor((row.contextLength || 8192) / 4)),
       ...(profile?.toolCallingFormat ? { toolCallingFormat: profile.toolCallingFormat } : {}),
       ...(profile?.temperature !== undefined ? { temperature: profile.temperature } : {}),
     };

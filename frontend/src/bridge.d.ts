@@ -253,6 +253,7 @@ interface WorkbenchBridge {
   openArtifact: (input: { runId: string; artifactId: string }) => Promise<{ opened: true; filename: string }>;
   saveArtifact: (input: { runId: string; artifactId: string }) => Promise<{ saved: boolean; filename?: string }>;
   copyArtifact: (input: { runId: string; artifactId: string }) => Promise<{ copied: boolean; mode: "text" | "file"; filename: string }>;
+  getExecutionCapabilities: () => Promise<ExecutionCapabilities>;
   getHealth: () => Promise<ModelHealth[]>;
   getRunLogs: (input: { runId: string; limit?: number }) => Promise<{ runId: string; entries: unknown[]; files: string[]; recentFull: unknown }>;
   getRunLogFile: (input: { runId: string; filename: string }) => Promise<{ runId: string; filename: string; content: unknown }>;
@@ -323,4 +324,15 @@ interface OnboardingStatus {
 interface Window {
   electronAPI?: { minimize: () => void; maximize: () => void; close: () => void };
   workbench?: WorkbenchBridge;
+}
+
+
+interface ExecutionCapability {
+  status: "os_isolated" | "approval_required" | "unavailable";
+  message: string;
+}
+interface ExecutionCapabilities {
+  platform: string;
+  workspaceCommands: ExecutionCapability;
+  python: ExecutionCapability;
 }

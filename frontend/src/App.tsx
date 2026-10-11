@@ -70,6 +70,8 @@ export default function App() {
   const [, setRunArtifacts] = useState<ArtifactRef[]>([]);
   const [runError, setRunError] = useState<{ code: string; message: string } | null>(null);
   const [serviceHealth, setServiceHealth] = useState<ModelHealth[] | null>(null);
+  const [executionCapabilities, setExecutionCapabilities] = useState<ExecutionCapabilities | null>(null);
+  const [executionCapabilitiesError, setExecutionCapabilitiesError] = useState<string | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
   const [groundingEnabled, setGroundingEnabled] = useState(false);
   const [, setGroundingStatus] = useState<{ status: "retrieving" | "injected" | "skipped"; chunkCount?: number } | null>(null);
@@ -129,6 +131,18 @@ export default function App() {
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
 
   useEffect(()=>{if(!activeWorkspace&&executionMode==="agent")setExecutionMode("chat");},[activeWorkspace,executionMode]);
+
+  const refreshExecutionCapabilities = useCallback(async () => {
+    if (!wb.isWorkbenchAvailable()) return;
+    try {
+      setExecutionCapabilities(await wb.getExecutionCapabilities());
+      setExecutionCapabilitiesError(null);
+    } catch {
+      setExecutionCapabilities(null);
+      setExecutionCapabilitiesError("Execution support could not be checked. Use Refresh in Service health to retry. Workspace commands still require OS isolation. Python requires separate approval if isolation is unavailable.");
+    }
+  }, []);
+  useEffect(() => { void refreshExecutionCapabilities(); }, [refreshExecutionCapabilities]);
 
   // Launch: restore history, last chat, temperature, workspace, onboarding
   useEffect(() => {
@@ -194,6 +208,7 @@ export default function App() {
   const refreshHealth = useCallback(async () => {
     if (!wb.isWorkbenchAvailable()) return;
     setHealthLoading(true);
+    void refreshExecutionCapabilities();
     try {
       const h = await wb.getHealth();
       setServiceHealth(h);
@@ -201,7 +216,7 @@ export default function App() {
       void 0;
     }
     setHealthLoading(false);
-  }, []);
+  }, [refreshExecutionCapabilities]);
 
   // Single run-event subscription
   useEffect(() => {
@@ -979,6 +994,8 @@ export default function App() {
             setGroundingEnabled={setGroundingEnabled}
             mode={isRunning && activeRunId ? sessions.current.modes.get(activeRunId) ?? executionMode : executionMode}
             onModeChange={handleModeChange}
+            executionCapabilities={executionCapabilities}
+            executionCapabilitiesError={executionCapabilitiesError}
             hasWorkspace={Boolean(activeWorkspace)}
           />
         </ChatPanel>

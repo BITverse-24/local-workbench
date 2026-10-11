@@ -273,3 +273,7 @@ export async function resetOnboarding(): Promise<{ ok: boolean }> {
 }
 
 export async function getRunSnapshot(input:{chatId?:string;runId?:string}):Promise<RunSnapshot|undefined>{return bridge().getRunSnapshot(input);}
+
+export async function getExecutionCapabilities(): Promise<ExecutionCapabilities> {
+  return bridge().getExecutionCapabilities();
+}

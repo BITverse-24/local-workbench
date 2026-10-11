@@ -6,66 +6,21 @@ import { assertRuntimeActive, currentRuntimeScope } from "../run/runtime-scope.j
 import { pythonProcessingSlots } from "../gateway/inference-scheduler.js";
 import { resolveRunPath } from "../run/filesystem.js";
 import { resolveSafe } from "../harness/path-guard.js";
+import { getPythonExecutable, pythonLaunch, probePythonIsolation, directPythonEnvironment } from "./python-runtime.js";
 import type { PythonExecutionResult } from "../../shared/contracts.js";
 
 const exec = executeProcess;
-function getPythonExecutable(): string {
-  if (process.env.PYTHON && existsSync(process.env.PYTHON)) {
-    return process.env.PYTHON;
-  }
-  const candidates = [
-    "/opt/homebrew/bin/python3",
-    "/usr/local/bin/python3",
-    "/usr/bin/python3",
-    "python3",
-  ];
-  for (const candidate of candidates) {
-    if (candidate.startsWith("/") && existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  for (const directory of (process.env.PATH??"").split(path.delimiter)) for (const executable of process.platform==="win32"?["python.exe","python3.exe"]:["python3","python"]) {
-    const candidate=path.join(directory,executable);if(existsSync(candidate))return candidate;
-  }
-  throw new Error("Python executable is unavailable.");
-}
-
-function profileLiteral(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
-function macSandboxProfile(pythonBin: string, inputDir: string, intermediateDir: string, outputDir: string, stagedInputs: string[]): string {
-  const stagedInputRules = stagedInputs.map((file) => `(deny file-write* (literal ${profileLiteral(path.join(outputDir, file))}))`).join(" ");
-  return [
-    "(version 1)",
-    "(deny default)",
-    "(deny network*)",
-    `(allow process-exec (literal ${profileLiteral(pythonBin)}))`,
-    `(allow file-read* (subpath ${profileLiteral("/usr/lib")}))`,
-    `(allow file-read* (subpath ${profileLiteral("/usr/share")}))`,
-    `(allow file-read* (subpath ${profileLiteral(path.resolve(path.dirname(pythonBin),".."))}))`,
-    `(allow file-read* (subpath ${profileLiteral("/opt/homebrew/lib")}))`,
-    `(allow file-read* (subpath ${profileLiteral("/opt/homebrew/opt")}))`,
-    `(allow file-read* (subpath ${profileLiteral("/System")}))`,
-    `(allow file-read* (subpath ${profileLiteral("/Library")}))`,
-    `(allow file-read* (subpath ${profileLiteral(inputDir)}))`,
-    `(allow file-read* (subpath ${profileLiteral(intermediateDir)}))`,
-    `(allow file-read* (subpath ${profileLiteral(outputDir)}))`,
-    `(allow file-write* (subpath ${profileLiteral(outputDir)}))`,
-    stagedInputRules,
-  ].join(" ");
-}
-
 type InputAlias = { logical: string; source: string };
 
 function stageInputs(runId: string, inputFiles: string[], aliases: InputAlias[] = [], workspaceRoot?: string) {
-  const inputDir = resolveRunPath(runId, "input", "input");
-  const intermediateDir = resolveRunPath(runId, "intermediate", "intermediate");
-  const publishedDir = resolveRunPath(runId, "output", "output");
+  const inputDir = realpathSync(resolveRunPath(runId, "input", "input"));
+  const intermediateDir = realpathSync(resolveRunPath(runId, "intermediate", "intermediate"));
+  const publishedDir = realpathSync(resolveRunPath(runId, "output", "output"));
   // Each execution gets fresh input copies. Staging must never overwrite a
   // published artifact, including a repair with the original source filename.
-  const outputDir = resolveRunPath(runId, `intermediate/python-executions/${randomUUID()}`, "intermediate");
-  mkdirSync(outputDir, { recursive: true });
+  const executionDir = resolveRunPath(runId, `intermediate/python-executions/${randomUUID()}`, "intermediate");
+  mkdirSync(executionDir, { recursive: true });
+  const outputDir = realpathSync(executionDir);
   const stagedInputs: string[] = [];
   for (const inputFile of inputFiles) {
     const rawTrimmed = (inputFile ?? "").trim();
@@ -170,59 +125,12 @@ export async function executePython(
       ? resolveSafe(staged.intermediateDir, source)
       : path.join(staged.intermediateDir, "task.py");
   if (!existsSync(targetScript)) throw new Error("generated Python task is missing");
-  const script = targetScript;
-  const scriptBaseName = path.basename(script);
-
-  const PYTHON = realpathSync(getPythonExecutable());
-  let command: string;
-  let args: string[];
-  if (process.platform === "linux") {
-    const bwrap = existsSync("/usr/bin/bwrap") ? "/usr/bin/bwrap" : existsSync("/bin/bwrap") ? "/bin/bwrap" : null;
-    if (bwrap) {
-      command = bwrap;
-      args = [
-        ...["/lib","/lib64"].filter(existsSync).flatMap(directory=>["--ro-bind",directory,directory]),
-        "--die-with-parent", "--unshare-net",
-        "--ro-bind", "/usr", "/usr", "--ro-bind", "/bin", "/bin",
-        "--ro-bind", staged.inputDir, "/input", "--ro-bind", staged.intermediateDir, "/intermediate",
-        "--bind", staged.outputDir, "/output",
-        ...staged.stagedInputs.flatMap((file) => ["--ro-bind", path.join(staged.outputDir, file), path.join("/output", file)]),
-        "--chdir", "/output", "--", PYTHON, `/intermediate/${scriptBaseName}`,
-        ...staged.stagedInputs,
-      ];
-    } else {
-      console.warn("[python-runner] Linux bubblewrap unavailable; approval required before direct execution");
-      command = PYTHON;
-      args = [script, ...staged.stagedInputs];
-    }
-  } else if (process.platform === "darwin") {
-    // Probe OS isolation before use. A failed probe requires explicit fallback approval.
-    if (existsSync("/usr/bin/sandbox-exec") && process.env.WORKBENCH_USE_MAC_SANDBOX !== "0") {
-      command = "/usr/bin/sandbox-exec";
-      args = ["-p", macSandboxProfile(PYTHON, staged.inputDir, staged.intermediateDir, staged.outputDir, staged.stagedInputs), PYTHON, script, ...staged.stagedInputs];
-    } else {
-      console.warn("[python-runner] macOS sandbox-exec unavailable or disabled; approval required before direct execution");
-      command = PYTHON;
-      args = [script, ...staged.stagedInputs];
-    }
-  } else if (process.platform === "win32") {
-    console.warn("[python-runner] Windows development runner; using python directly in run directory");
-    command = process.env.PYTHON ?? "python";
-    args = [script, ...staged.stagedInputs];
-  } else {
-    throw new Error(`No supported Python sandbox is available on ${process.platform}`);
-  }
-
-  const execEnv:NodeJS.ProcessEnv = { PATH: "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", PYTHONPATH: [staged.intermediateDir,staged.outputDir].join(path.delimiter), PYTHONDONTWRITEBYTECODE: "1", PYTHONNOUSERSITE: "1", LANG: "en_US.UTF-8", TMPDIR: staged.outputDir };
-  if(command.endsWith("bwrap")){execEnv.PYTHONPATH="/intermediate:/output";execEnv.TMPDIR="/output";}
-  if(process.platform==="win32"){execEnv.SystemRoot=process.env.SystemRoot;execEnv.WINDIR=process.env.WINDIR;execEnv.PATH=path.dirname(PYTHON);}
-  let isolated=command!==PYTHON && command!=="python";
-  if(isolated){
-    try {
-      const probeArgs=process.platform==="darwin"?["-p",args[1],PYTHON,"-c","pass"]:[...args.slice(0,args.indexOf("--")+1),PYTHON,"-c","pass"];
-      await exec(command,probeArgs,{cwd:staged.outputDir,env:execEnv,timeout:5000,maxBuffer:4096});
-    }catch(error){assertRuntimeActive();isolated=false;}
-  }
+  const script = realpathSync(targetScript);
+  const PYTHON = getPythonExecutable();
+  const launch = pythonLaunch(PYTHON, staged, script);
+  const isolation = await probePythonIsolation(launch, PYTHON, staged.outputDir);
+  const isolated = isolation.status === "os_isolated";
+  let { command, args, env: execEnv } = launch;
   const dependencyDigests=()=>{
     const files:string[]=[];let sourceBytes=0;
     const visit=(root:string,relative="")=>{for(const entry of readdirSync(path.join(root,relative),{withFileTypes:true})) {
@@ -238,7 +146,7 @@ export async function executePython(
   const digestSnapshot=()=>createHash('sha256').update(readFileSync(script)).update(JSON.stringify(inputSnapshot())).update(JSON.stringify(dependencyDigests())).digest('hex');
   let approvedDigest:string|undefined;
   if(!isolated){
-    const code=readFileSync(resolveSafe(staged.intermediateDir,path.basename(script)),"utf8");
+    const code=readFileSync(resolveSafe(staged.intermediateDir,path.relative(staged.intermediateDir,script)),"utf8");
     const inputDigests=[...inputSnapshot(),...dependencyDigests()];
     const digest=digestSnapshot();approvedDigest=digest;
     if(!scope?.approveUncontainedPython || !await scope.approveUncontainedPython(code+'\n\n# Generated Python dependencies included in this approval:\n'+dependencyDigests().map(entry=>{const filename=entry.slice(0,entry.lastIndexOf(':'));return '# FILE '+filename+'\n'+readFileSync(resolveSafe(filename.startsWith('intermediate/')?staged.intermediateDir:staged.outputDir,filename.slice(filename.indexOf('/')+1)),'utf8');}).join('\n\n'),inputDigests,digest))throw new Error("Python without OS isolation was not approved.");
@@ -246,6 +154,7 @@ export async function executePython(
     // Verify the exact bytes again after approval. Input or source changes need a new request.
     if(digestSnapshot()!==digest)throw new Error('Python source or inputs changed after approval.');
     command=PYTHON;args=[script,...staged.stagedInputs];
+    execEnv=directPythonEnvironment(PYTHON,staged);
   }
   scope?.observe?.({isolationStatus:isolated?"os_isolated":"approved_uncontained"});
   const release=await pythonProcessingSlots.acquire(scope?.mode??"work",scope?.signal,'python-processing');

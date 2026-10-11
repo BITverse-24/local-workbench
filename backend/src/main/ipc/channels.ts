@@ -20,6 +20,7 @@ export const IPC_RUN = {
   GET_VERIFICATION_REPORT: "workbench:getVerificationReport",
   GET_HISTORY: "workbench:getRunHistory",
   REGISTER_ATTACHMENT: "workbench:registerAttachment",
+  GET_EXECUTION_CAPABILITIES: "workbench:getExecutionCapabilities",
   GET_HEALTH: "workbench:getHealth",
   RUN_EVENT: "workbench:runEvent",
   OPEN_ARTIFACT: "workbench:openArtifact",
