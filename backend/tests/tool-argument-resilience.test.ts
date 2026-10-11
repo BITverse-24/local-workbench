@@ -191,9 +191,9 @@ describe("Tool Argument Parsing Resilience", () => {
 
     it("searchTool succeeds with search_query alias", async () => {
       const context = { workspaceRoot: tmpDir, runId: "test-run", gateway: {} as any };
-      writeFileSync(path.join(tmpDir, "greet.ts"), "hello sovereign world");
+      writeFileSync(path.join(tmpDir, "greet.ts"), "hello local world");
 
-      const res = await searchTool.execute({ search_query: "sovereign" }, context);
+      const res = await searchTool.execute({ search_query: "local" }, context);
       expect(res.summary).toContain("Found 1 matches");
     });
 

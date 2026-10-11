@@ -841,7 +841,7 @@ export class RunManager {
       typeof (this.gateway as any)?.chatWithTools === "function";
 
     if (useUnifiedAgentV2) {
-      // ── Unified Agent Loop (Sovereign Workbench v2) ────────────────────────
+      // ── Unified Agent Loop (Local Workbench v2) ────────────────────────
       // 1. Configuration-driven model selection & validation
       const modelSelection = resolveModelSelection({
         explicitSelection: resume?.contract.routing.driverModel ?? this.runSelectedModels.get(runId),

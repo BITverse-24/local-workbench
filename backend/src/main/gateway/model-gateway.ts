@@ -1370,7 +1370,7 @@ export class ModelGateway implements ModelClient {
   private readonly toolParamCapabilities = new Map<string, boolean>();
 
   /**
-   * Sovereign Workbench v2 Unified Agent Loop native function calling interface.
+   * Local Workbench v2 Unified Agent Loop native function calling interface.
    * Dispatches conversation turns with native `tools` and `tool_choice: "auto"`.
    * Automatically falls back to prompt-injected schema if provider rejects `tools`.
    */

@@ -109,7 +109,7 @@ function frontendPublicDir(): string {
 function createWindow(): void {
   const iconPath = path.join(frontendPublicDir(), "electron-vite.svg");
   win = new BrowserWindow({
-    title: "Sovereign Workbench",
+    title: "Local Workbench",
     ...(existsSync(iconPath) ? { icon: iconPath } : {}),
     frame: false,
     fullscreen: true,

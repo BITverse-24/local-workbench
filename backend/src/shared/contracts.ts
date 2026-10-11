@@ -458,7 +458,7 @@ export interface OnboardingStatus {
 }
 
 
-// ── Sovereign Workbench v2 Unified Agent Tool Contracts ────────────────────
+// ── Local Workbench v2 Unified Agent Tool Contracts ────────────────────
 
 export interface FunctionToolParameterProperty {
   format?: "multiline";

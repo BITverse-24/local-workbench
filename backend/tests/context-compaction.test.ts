@@ -364,7 +364,7 @@ describe("P0-01: Context Compaction & Deterministic Budgeting Specification", ()
     const hugeOutput = "A".repeat(25000);
 
     const messages: AgentMessage[] = [
-      { role: "system", content: "You are Sovereign Workbench." },
+      { role: "system", content: "You are Local Workbench." },
       { role: "user", content: "Inspect codebase and fix reactor log parsing." },
       // Step 1: list_dir
       {

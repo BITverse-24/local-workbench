@@ -48,16 +48,16 @@ describe("Agent Tools Suite", () => {
     };
 
     // 1. write_file
-    const writeRes = await writeFileTool.execute({ path: "test.txt", content: "Hello Sovereign Workbench v2\nLine 2" }, mockContext);
+    const writeRes = await writeFileTool.execute({ path: "test.txt", content: "Hello Local Workbench v2\nLine 2" }, mockContext);
     expect(writeRes.summary).toContain('Wrote "test.txt"');
     expect(writeRes.sideEffects).toEqual(["modified:test.txt"]);
 
     // 2. read_file
     const readRes = await readFileTool.execute({ path: "test.txt" }, mockContext);
-    expect(readRes.output).toContain("Hello Sovereign Workbench v2");
+    expect(readRes.output).toContain("Hello Local Workbench v2");
 
     // 3. search
-    const searchRes = await searchTool.execute({ query: "Sovereign" }, mockContext);
+    const searchRes = await searchTool.execute({ query: "Local" }, mockContext);
     expect(searchRes.output).toContain("test.txt");
 
     // 4. list_dir

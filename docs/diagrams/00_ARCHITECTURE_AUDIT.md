@@ -1,4 +1,4 @@
-# 00 — Verified Architecture Audit: Sovereign Workbench
+# 00 — Verified Architecture Audit: Local Workbench
 
 Source of truth: current source code in `/backend`, `/electron`, `/frontend`, `/ai`, `/config` (inspected Oct 2026).
 Docs, PPT claims, and marketing copy were treated as unverified until confirmed in code.

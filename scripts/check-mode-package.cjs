@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const app = path.resolve(process.argv[2] || 'release/0.1.0/mac-arm64/Sovereign Workbench.app');
+const app = path.resolve(process.argv[2] || 'release/0.1.0/mac-arm64/Local Workbench.app');
 const packagedMain = path.join(app, 'Contents/Resources/app.asar/electron/dist-electron/main.cjs');
 if (!fs.existsSync(path.join(app, 'Contents/Resources/app.asar'))) throw new Error('Build the macOS directory package first.');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'workbench-package-check-'));
@@ -31,7 +31,7 @@ const {parseFileIndependently}=require('./reader.cjs');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 `);
 try {
-  const binary = path.join(app, 'Contents/MacOS/Sovereign Workbench');
+  const binary = path.join(app, 'Contents/MacOS/Local Workbench');
   const result = spawnSync(binary, [check], {stdio:'inherit',env:{...process.env,ELECTRON_RUN_AS_NODE:'1'}});
   process.exitCode = result.status ?? 1;
 } finally { fs.rmSync(temporary,{recursive:true,force:true}); }

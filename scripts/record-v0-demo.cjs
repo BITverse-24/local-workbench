@@ -8,7 +8,7 @@ const directory = path.join(root, "tests/.runtime/v0-recordings", new Date().toI
 fs.mkdirSync(directory, { recursive: true });
 const recording = fs.createWriteStream(path.join(directory, "normal-abc.cast"));
 const transcript = fs.createWriteStream(path.join(directory, "normal-abc.log"));
-recording.write(JSON.stringify({ version: 2, width: 140, height: 42, timestamp: Math.floor(Date.now() / 1000), title: "Sovereign Workbench — genuine CLI task runs", env: { TERM: "xterm-256color", SHELL: process.env.SHELL ?? "" } }) + "\n");
+recording.write(JSON.stringify({ version: 2, width: 140, height: 42, timestamp: Math.floor(Date.now() / 1000), title: "Local Workbench — genuine CLI task runs", env: { TERM: "xterm-256color", SHELL: process.env.SHELL ?? "" } }) + "\n");
 const start = performance.now();
 const child = spawn(process.execPath, [path.join(root, "scripts/certify-v0.cjs"), ...taskIds], { cwd: root, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
 const capture = (chunk, stream) => {

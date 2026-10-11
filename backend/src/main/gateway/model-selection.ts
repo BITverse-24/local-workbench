@@ -113,7 +113,7 @@ function findPrimaryModel(models: ModelRegistryEntry[]): ModelRegistryEntry {
 }
 
 /**
- * Resolves the execution model according to the Sovereign Workbench Phase 1 specification:
+ * Resolves the execution model according to the Local Workbench Phase 1 specification:
  * - Task semantics do not select a model. Users may select among configured models.
  */
 export function resolveModelSelection(

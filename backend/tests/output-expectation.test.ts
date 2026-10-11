@@ -150,7 +150,7 @@ describe("P0-05: Output Expectation & Chat vs File vs Artifact Routing", () => {
         runId: "test-p05-python",
         driverModelId: "code-qwen25coder",
         userPrompt: "Show me how to do this in Python",
-        systemPrompt: "You are Sovereign Workbench.",
+        systemPrompt: "You are Local Workbench.",
         tools: [mockWriteTool],
         semanticIntent: {
           driverModel: "code-qwen25coder",
@@ -236,7 +236,7 @@ describe("P0-05: Output Expectation & Chat vs File vs Artifact Routing", () => {
         runId: "test-p05-explain",
         driverModelId: "draft-qwen3",
         userPrompt: "Explain this CSV",
-        systemPrompt: "You are Sovereign Workbench.",
+        systemPrompt: "You are Local Workbench.",
         tools: [mockExecPythonTool],
         semanticIntent: {
           driverModel: "draft-qwen3",

@@ -27,7 +27,7 @@ export interface EnvironmentState {
 }
 
 /**
- * Returns all potential tools registered in Sovereign Workbench.
+ * Returns all potential tools registered in Local Workbench.
  */
 export function getAllAvailableTools(_driverModelId: ModelId, _isSingleModel = true): AgentTool[] {
   const tools: AgentTool[] = [

@@ -219,7 +219,7 @@ describe("ModelGateway.chatWithTools", () => {
 
     // Multi-turn messages containing agent internal fields (turn, toolName, arguments object)
     const multiTurnMessages = [
-      { role: "system", content: "You are Sovereign Workbench." },
+      { role: "system", content: "You are Local Workbench." },
       { role: "user", content: "Delete all files in the workspace" },
       {
         role: "assistant",
@@ -254,7 +254,7 @@ describe("ModelGateway.chatWithTools", () => {
     // Message 0: system
     expect(wireMessages[0]).toEqual({
       role: "system",
-      content: "You are Sovereign Workbench.",
+      content: "You are Local Workbench.",
     });
 
     // Message 1: user

@@ -4,10 +4,10 @@
 // are not part of the distributable.
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "com.sovereign.workbench",
+  "appId": "com.local.workbench",
   "asar": true,
   "publish": null,
-  "productName": "Sovereign Workbench",
+  "productName": "Local Workbench",
   "directories": {
     "output": "release/${version}"
   },
