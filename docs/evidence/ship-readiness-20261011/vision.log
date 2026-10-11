@@ -1,0 +1,62 @@
+[model-gateway:vision:vision-fallback:71da7611] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen/qwen3-vl-4b, role: vision)
+
+┌─ [AI Request: VISION] (req:71da7611)
+│ Model:   qwen/qwen3-vl-4b (vision-fallback)
+│ Params:  max_tokens=1024 │ temp=0
+│ Prompt:  "[multipart vision]"
+└───────────────────────────────────────────────────────
+┌── [AI Gateway Error: VISION] (req:71da7611) ────────────────────────
+│ Message: provider rejected response_format, retrying with json_schema
+│ Detail:  {"error":"'response_format.type' must be 'json_schema' or 'text'"}
+└──────────────────────────────────────────────────────────
+┌─ [AI Response: VISION] (req:71da7611)
+│ Status:  HTTP 200 in 14ms (finish: stop, 1925 chars)
+└───────────────────────────────────────────────────────
+┌── [Vision Findings: 3 item(s)] ──────────────────────────────────
+│ • First blue circle: A solid blue circle positioned on the left side of the image. (high)
+│ • Second blue circle: A solid blue circle positioned to the right of the first blue circle, side by side with it. (high)
+│ • Red triangle: A solid red triangle positioned to the right of the two blue circles. (high)
+└──────────────────────────────────────────────────────────
+image-only.pdf: PASS; 20.4s
+[model-gateway:vision:vision-fallback:e072fefc] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen/qwen3-vl-4b, role: vision)
+
+┌─ [AI Request: VISION] (req:e072fefc)
+│ Model:   qwen/qwen3-vl-4b (vision-fallback)
+│ Params:  max_tokens=1024 │ temp=0
+│ Prompt:  "[multipart vision]"
+└───────────────────────────────────────────────────────
+┌── [AI Gateway Error: VISION] (req:e072fefc) ────────────────────────
+│ Message: provider rejected response_format, retrying with json_schema
+│ Detail:  {"error":"'response_format.type' must be 'json_schema' or 'text'"}
+└──────────────────────────────────────────────────────────
+┌─ [AI Response: VISION] (req:e072fefc)
+│ Status:  HTTP 200 in 5ms (finish: stop, 2723 chars)
+└───────────────────────────────────────────────────────
+┌── [Vision Findings: 3 item(s)] ──────────────────────────────────
+│ • Blue Circle: There are two blue circles on the left side of the image, positioned side by side. (high)
+│ • Red Triangle: There is one red triangle on the right side of the image, positioned to the right of the two blue circles. (high)
+│ • Spatial Relationship: The two blue circles are positioned side by side on the left, and the red triangle is positioned to the right of the circles, forming a horizontal arrangement. (high)
+└──────────────────────────────────────────────────────────
+shapes.png: PASS; 13.4s
+[model-gateway:vision:vision-fallback:0762ba98] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen/qwen3-vl-4b, role: vision)
+
+┌─ [AI Request: VISION] (req:0762ba98)
+│ Model:   qwen/qwen3-vl-4b (vision-fallback)
+│ Params:  max_tokens=1024 │ temp=0
+│ Prompt:  "[multipart vision]"
+└───────────────────────────────────────────────────────
+┌── [AI Gateway Error: VISION] (req:0762ba98) ────────────────────────
+│ Message: provider rejected response_format, retrying with json_schema
+│ Detail:  {"error":"'response_format.type' must be 'json_schema' or 'text'"}
+└──────────────────────────────────────────────────────────
+┌─ [AI Response: VISION] (req:0762ba98)
+│ Status:  HTTP 200 in 3ms (finish: stop, 2491 chars)
+└───────────────────────────────────────────────────────
+┌── [Vision Findings: 4 item(s)] ──────────────────────────────────
+│ • Blue Circles: Two blue circles, one positioned above the other, on the left side of the image. (high)
+│ • Green Rectangle: One green rectangle, positioned on the right side of the image. (high)
+│ • Horizontal Lines: Two horizontal black lines, each connecting a blue circle to the green rectangle. (high)
+│ • Spatial Arrangement: The two blue circles are vertically aligned on the left, and the green rectangle is positioned to the right, connected by horizontal lines to each circle. (high)
+└──────────────────────────────────────────────────────────
+geometry.svg: PASS; 12.0s
+Visual smoke evidence: /Users/krishay/projects/agent/tests/.runtime/vision-v0/2026-10-11T05-50-46-708Z

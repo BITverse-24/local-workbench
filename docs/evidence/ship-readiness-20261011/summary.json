@@ -1,0 +1,51 @@
+{
+  "auditedHead": "7ec4fd7811d49c053d7d8d25543672c990bc08ad",
+  "decision": "hold",
+  "productionSourceChanged": false,
+  "ordinaryTests": {
+    "passed": 974,
+    "skipped": 6
+  },
+  "typecheck": "passed",
+  "behavioralTypecheck": "passed",
+  "build": "passed",
+  "macArm64Package": "passed_unsigned",
+  "dmgChecksum": "passed",
+  "canonical": {
+    "pass": 8,
+    "partial": 1,
+    "fail": 0,
+    "scenarioHarnessFailures": 0,
+    "allWorkProductionStates": "partial",
+    "p50Seconds": 57.735516083,
+    "p95Seconds": 80.41795225
+  },
+  "vision": {
+    "pass": 3
+  },
+  "optInTests": {
+    "suiteSetupFailures": 1,
+    "failedTests": 1,
+    "blockedTests": 5,
+    "reason": "stale registry and run-scope assumptions"
+  },
+  "reproducedProductDefects": [
+    "Agent command writes outside bound workspace",
+    "macOS command sandbox flag does not invoke isolation",
+    "Hidden filename aliases even before rejected commands",
+    "Query-dependent visual extraction cached without query/model identity",
+    "Python fallback rendered as Excel generation"
+  ],
+  "untested": [
+    "New manual desktop acceptance",
+    "Clean-machine installer/Gatekeeper",
+    "Signed/notarized distribution",
+    "Windows/Linux runtime",
+    "Interrupted profile migration",
+    "True cold model and renderer paint latency"
+  ],
+  "historicalEvidenceIntegrity": {
+    "checked": 26,
+    "mismatches": 0
+  }
+}

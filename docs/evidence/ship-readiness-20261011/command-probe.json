@@ -1,0 +1,34 @@
+{
+  "root": "/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/workbench-ship-command-JE3Dm4",
+  "platform": "darwin",
+  "writeEscaped": true,
+  "fallbackApprovals": 0,
+  "approvedCommandResult": {
+    "stdout": "",
+    "stderr": "",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationMs": 44
+  },
+  "containmentClaimed": true,
+  "sandboxFlagEscaped": true,
+  "sandboxResult": {
+    "stdout": "",
+    "stderr": "",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationMs": 41
+  },
+  "echoCreatedUnrequestedAlias": true,
+  "aliasIsSymlink": true,
+  "unsafeCommandRejected": true,
+  "rejectedCommandCreatedAlias": true,
+  "networkBlocked": false,
+  "networkResult": {
+    "stdout": "CONNECTED\n",
+    "stderr": "",
+    "exitCode": 0,
+    "timedOut": false,
+    "durationMs": 52
+  }
+}

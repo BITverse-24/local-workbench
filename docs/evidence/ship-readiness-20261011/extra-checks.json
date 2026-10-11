@@ -1,0 +1,20 @@
+[
+  {
+    "name": "mode-smokes",
+    "exitCode": 0,
+    "durationMs": 71803,
+    "log": "/tmp/workbench-ship-live-smoke.log"
+  },
+  {
+    "name": "opt-in-tests",
+    "exitCode": 1,
+    "durationMs": 13247,
+    "log": "/tmp/workbench-ship-opt-in.log"
+  },
+  {
+    "name": "vision",
+    "exitCode": 0,
+    "durationMs": 46254,
+    "log": "/tmp/workbench-ship-vision.log"
+  }
+]

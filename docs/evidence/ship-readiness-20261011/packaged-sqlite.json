@@ -1,0 +1,31 @@
+{
+  "root": "/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/workbench-ship-sqlite-xEqyJI",
+  "sqliteVersion": "3.53.4",
+  "integrity": "ok",
+  "tables": [
+    "artifacts",
+    "attachments",
+    "chats",
+    "confirmations",
+    "execution_results",
+    "intermediate_results",
+    "kv_meta",
+    "message_attachments",
+    "messages",
+    "model_calls",
+    "routing_decisions",
+    "run_artifact_validations",
+    "run_attachments",
+    "run_contracts",
+    "run_drafts",
+    "run_errors",
+    "run_execution_ledgers",
+    "run_mode_details",
+    "run_transitions",
+    "run_verification_reports",
+    "runs",
+    "settings",
+    "sqlite_sequence",
+    "tool_calls"
+  ]
+}

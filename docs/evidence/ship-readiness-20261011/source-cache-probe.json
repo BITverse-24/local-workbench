@@ -1,0 +1,20 @@
+{
+  "root": "/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/workbench-ship-source-cache-5UwL4I",
+  "extractionCallCount": 1,
+  "queries": [
+    "Describe colors only",
+    "Read the serial number"
+  ],
+  "evidence": [
+    "--- ATTACHED FILE: image.png ---\nSource ID: 890ab878-087f-4a6d-97df-fb3c007affbb\nMock extraction for query: Describe colors only\n--- END ATTACHED FILE: image.png ---",
+    "--- ATTACHED FILE: image.png ---\nSource ID: 42ce4fcf-b399-4da3-ba2e-5b299fb3ef6f\nMock extraction for query: Describe colors only\n--- END ATTACHED FILE: image.png ---"
+  ],
+  "secondRunUsedFirstQueryResult": true,
+  "unprofiledCodingModelAdvertisesVision": true,
+  "capabilities": [
+    "text",
+    "image-input",
+    "structured-output",
+    "code-generation"
+  ]
+}
