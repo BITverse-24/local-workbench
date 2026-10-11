@@ -1,4 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { simulateCommandSandbox } from "./helpers/command-sandbox.js";
+vi.mock("../src/main/tools/child-process.js", async importOriginal => {
+  const actual = await importOriginal<typeof import("../src/main/tools/child-process.js")>();
+  return { ...actual, executeProcess: simulateCommandSandbox(actual.executeProcess) };
+});
+import { describe, it, expect, beforeEach, afterEach , vi } from "vitest";
 import { mkdirSync, writeFileSync, rmSync, realpathSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";

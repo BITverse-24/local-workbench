@@ -53,6 +53,15 @@ export class WorkspaceManager {
     if (!this.active) {
       throw new Error("no workspace is registered — select a directory first");
     }
+    // Registration binds the physical root. A later symlink must not redirect
+    // existing authority to another directory with the same displayed path.
+    try {
+      if (realpathSync(this.active.root) !== this.active.root || !statSync(this.active.root).isDirectory()) {
+        throw new Error("workspace root changed");
+      }
+    } catch {
+      throw new Error("workspace binding changed — register the directory again");
+    }
     return this.active;
   }
 

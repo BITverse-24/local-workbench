@@ -1,4 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { simulateCommandSandbox } from "./helpers/command-sandbox.js";
+vi.mock("../src/main/tools/child-process.js", async importOriginal => {
+  const actual = await importOriginal<typeof import("../src/main/tools/child-process.js")>();
+  return { ...actual, executeProcess: simulateCommandSandbox(actual.executeProcess) };
+});
+import { describe, it, expect, beforeEach, afterEach , vi } from "vitest";
 import {
   mkdirSync,
   writeFileSync,
@@ -217,7 +222,7 @@ describe("Harness Tools", () => {
     it("executes inside workspace directory as cwd", async () => {
       const res = await runCommand(root, "pwd");
       expect(res.exitCode).toBe(0);
-      expect(res.stdout.trim()).toBe(root);
+      expect(res.stdout.trim()).toMatch(/workbench-command-.*[/\\]workspace$/);
     });
 
     it("handles command timeout", async () => {

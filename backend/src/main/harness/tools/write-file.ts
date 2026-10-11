@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { resolveSafe } from "../path-guard.js";
+import { backupDestination } from "./backup.js";
 import { clearListDirCache } from "./list-dir.js";
 
 export interface WriteResult {
@@ -36,17 +37,11 @@ export function writeFile(
   // Backup existing file before overwrite (HARNESS.md §5)
   if (existsSync(target)) {
     if (typeof content === "string") previousContent = readFileSync(target, "utf8");
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const canonicalRoot = resolveSafe(workspaceRoot, ".");
-    const relFromRoot = path.relative(canonicalRoot, target);
-
-    const backupDir = path.join(canonicalRoot, ".harness_backups", timestamp);
-    const backupDest = path.join(backupDir, relFromRoot);
-
-    mkdirSync(path.dirname(backupDest), { recursive: true });
-    copyFileSync(target, backupDest);
+    const backup = backupDestination(canonicalRoot, path.relative(canonicalRoot, target));
+    copyFileSync(target, backup.destination);
     backedUp = true;
-    backupPath = path.join(".harness_backups", timestamp, relFromRoot);
+    backupPath = backup.relativePath;
   }
 
   // Ensure parent directory exists before writing
@@ -58,14 +53,13 @@ export function writeFile(
   try {
     writeFileSync(tmpTarget, content, "utf8");
     renameSync(tmpTarget, target);
-  } catch {
+  } catch (error) {
     if (existsSync(tmpTarget)) {
       try {
         rmSync(tmpTarget, { force: true });
       } catch {}
     }
-    // Direct write fallback
-    writeFileSync(target, content, "utf8");
+    throw error;
   }
 
   // Invalidate listDir cache so subsequent directory queries reflect the written file immediately

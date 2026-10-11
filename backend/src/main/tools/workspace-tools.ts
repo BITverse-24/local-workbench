@@ -1,6 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
-import * as fs from "node:fs";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { parseStructuredData } from "../gateway/structured-data.js";
 import type { AgentTool, ToolExecutionContext, ToolExecutionResult } from "./types.js";
@@ -12,19 +11,7 @@ import { deleteFile } from "../harness/tools/delete-file.js";
 import { runCommand } from "../harness/tools/run-command.js";
 import { PermissionError, resolveSafe } from "../harness/path-guard.js";
 import { resolveRunPath } from "../run/filesystem.js";
-import type { ArtifactKind, ArtifactRef } from "../../shared/contracts.js";
 import { isTextExtractableDocument, readDocumentContent } from "./document-reader.js";
-
-function inferArtifactKind(filename: string): ArtifactKind {
-  const ext = path.extname(filename).toLowerCase();
-  if (ext === ".docx") return "docx";
-  if (ext === ".xlsx") return "xlsx";
-  if (ext === ".csv") return "csv";
-  if (ext === ".json") return "json";
-  if (ext === ".md") return "md";
-  if (ext === ".pdf") return "pdf";
-  return "txt";
-}
 
 export function extractPathArg(args: Record<string, unknown>): string {
   if (!args) return "";
@@ -410,7 +397,8 @@ export const writeFileTool: AgentTool = {
     }
 
     if (context.policyGuard && context.policyGuard.isEnforcingExplicit(context.runId)) {
-      const isAuth = context.policyGuard.isAuthorized(context.runId, "write_file", { path: relPath });
+      const canonicalPath = path.relative(resolveSafe(context.workspaceRoot, "."), resolveSafe(context.workspaceRoot, relPath));
+      const isAuth = context.policyGuard.isAuthorized(context.runId, "write_file", { path: relPath }) && context.policyGuard.isAuthorized(context.runId, "write_file", { path: canonicalPath });
       if (!isAuth) {
         throw new PermissionError(`Operation not authorized: write_file ${relPath}`);
       }
@@ -436,40 +424,9 @@ export const writeFileTool: AgentTool = {
       } catch {}
     }
 
-    // Legacy callers mirror writes; V2 workspace changes are independent of exports.
-    const artifacts: ArtifactRef[] = [];
-    if (context.runId && !context.runContract) {
-      try {
-        const baseName = path.basename(relPath);
-        const outDir = resolveRunPath(context.runId, "output", "output");
-        mkdirSync(outDir, { recursive: true });
-        const outPath = path.join(outDir, baseName);
-        writeFileSync(outPath, content, "utf8");
-        const kind = inferArtifactKind(baseName);
-        artifacts.push({
-          artifactId: randomUUID(),
-          runId: context.runId,
-          kind,
-          filename: baseName,
-          relativePath: `runs/${context.runId}/output/${baseName}`,
-          sizeBytes: Buffer.byteLength(content, "utf8"),
-          createdAt: new Date().toISOString(),
-        });
-      } catch {}
-    }
-
-    if (!sourceId && !context.runContract && relPath.endsWith(".py") && relPath.includes("-")) {
-      try {
-        const alias = relPath.replace(/-/g, "_");
-        const fullAlias = path.resolve(context.workspaceRoot, alias);
-        fs.writeFileSync(fullAlias, content, "utf8");
-      } catch {}
-    }
-
     return {
       output: JSON.stringify(res),
       summary: `Wrote "${relPath}" (${res.diff ?? "updated"})`,
-      artifacts: artifacts.length > 0 ? artifacts : undefined,
       sideEffects: [`modified:${relPath}`],
     };
   },
@@ -498,7 +455,8 @@ export const deleteFileTool: AgentTool = {
     }
 
     if (context.policyGuard && context.policyGuard.isEnforcingExplicit(context.runId)) {
-      const isAuth = context.policyGuard.isAuthorized(context.runId, "delete_file", { path: relPath });
+      const canonicalPath = path.relative(resolveSafe(context.workspaceRoot, "."), resolveSafe(context.workspaceRoot, relPath));
+      const isAuth = context.policyGuard.isAuthorized(context.runId, "delete_file", { path: relPath }) && context.policyGuard.isAuthorized(context.runId, "delete_file", { path: canonicalPath });
       if (!isAuth) {
         throw new PermissionError(`Operation not authorized: delete_file ${relPath}`);
       }
@@ -609,7 +567,7 @@ export const runCommandTool: AgentTool = {
     type: "function",
     function: {
       name: "run_command",
-      description: "Execute a shell command with workspace directory as cwd. 60-second timeout.",
+      description: "Execute an approved shell command in an OS-isolated workspace snapshot using relative paths. No network. Successful file changes are scope-checked and saved with backups; failed commands save no changes. Isolation is required. 60-second timeout.",
       parameters: {
         type: "object",
         properties: {
@@ -643,34 +601,17 @@ export const runCommandTool: AgentTool = {
       }
     }
 
-    try {
-      const entries = fs.readdirSync(context.workspaceRoot);
-      for (const entry of entries) {
-        if (entry.endsWith(".py") && entry.includes("-")) {
-          const alias = entry.replace(/-/g, "_");
-          const target = path.join(context.workspaceRoot, alias);
-          if (!fs.existsSync(target)) {
-            try {
-              fs.symlinkSync(entry, target);
-            } catch {
-              fs.copyFileSync(path.join(context.workspaceRoot, entry), target);
-            }
-          }
-        }
-      }
-    } catch {}
-
     const res = context.policyGuard
       ? await context.policyGuard.withMutationLock("workspace:run_command", () =>
-          runCommand(context.workspaceRoot, command),
+          runCommand(context.workspaceRoot, command, 60000, context.policyGuard ? { guard: context.policyGuard, runId: context.runId, assertAuthority: context.assertAuthority } : undefined),
         )
-      : await runCommand(context.workspaceRoot, command);
+      : await runCommand(context.workspaceRoot, command, 60000, context.policyGuard ? { guard: context.policyGuard, runId: context.runId, assertAuthority: context.assertAuthority } : undefined);
 
     const summary = `Command exit ${res.exitCode} in ${res.durationMs}ms: "${command.slice(0, 40)}"`;
     return {
       output: JSON.stringify(res),
       summary,
-      sideEffects: [`executed:${command.slice(0, 30)}`],
+      sideEffects: [`executed:${command.slice(0, 30)}`, ...res.changes],
     };
   },
 };

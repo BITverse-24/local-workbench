@@ -79,12 +79,13 @@ export default function ConfirmationModal({
 
   // Keyboard shortcut listener: Enter to approve, Escape to reject
   useEffect(() => {
-    if (!open) return;
+    if (!open || !action || busy || Date.parse(action.expiresAt) <= Date.now()) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         onReject();
       } else if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        if (Date.parse(action.expiresAt) <= Date.now()) return;
         // Prevent accidental trigger if focus is on an input or button
         const target = e.target as HTMLElement;
         if (target && target.tagName === "BUTTON") return;
@@ -94,7 +95,7 @@ export default function ConfirmationModal({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onApprove, onReject]);
+  }, [open, action, busy, onApprove, onReject]);
 
   const [now, setNow] = useState(Date.now());
 
@@ -141,7 +142,9 @@ export default function ConfirmationModal({
   if (!open || !action) return null;
 
   const isPlan = action.kind === "plan_approval";
-  const isPython = action.kind === "execute_python";
+  const isUncontainedPython = action.kind === "uncontained_python";
+  const isPython = action.kind === "execute_python" || isUncontainedPython;
+  const expired = Date.parse(action.expiresAt) <= now;
   const isDocx = action.kind === "generate_docx";
 
   const kindBadge = (
@@ -160,7 +163,7 @@ export default function ConfirmationModal({
             <polyline points="16 18 22 12 16 6" />
             <polyline points="8 6 2 12 8 18" />
           </svg>
-          Python sandbox execution
+          {isUncontainedPython ? "Python execution without OS isolation" : "Python execution"}
         </>
       ) : isDocx ? (
         <>
@@ -306,7 +309,9 @@ export default function ConfirmationModal({
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                 </svg>
                 <span>
-                  Sandboxed execution: zero network egress • read-only inputs • run-scoped output directory • 60s timeout
+                  {isUncontainedPython
+                    ? "OS isolation is unavailable. This script can access files and the network with your user permissions. Approval covers this source and input snapshot only."
+                    : "Review the Python source before execution. If OS isolation is unavailable, a separate approval is required."}
                 </span>
               </div>
             ) : null}
@@ -316,7 +321,7 @@ export default function ConfirmationModal({
         {/* Informative text for non-preview actions */}
         {!action.preview && (
           <div className="py-4 text-xs text-[var(--text-secondary)] leading-relaxed">
-            This action requires your confirmation before the workbench creates official deliverables in the run directory.
+            {isPython ? (isUncontainedPython ? "This script will run without OS filesystem or network isolation. Review the source and input digests before approval." : "Review this Python script before execution.") : "This action requires your confirmation before the workbench creates deliverables in the run directory."}
           </div>
         )}
 
@@ -335,7 +340,7 @@ export default function ConfirmationModal({
             </button>
             <button
               onClick={onApprove}
-              disabled={busy}
+              disabled={busy || expired}
               className="h-10 px-5 rounded-[var(--radius-sm)] neu-button-primary text-sm font-semibold flex items-center gap-2 disabled:opacity-40 transition-colors"
             >
               {busy ? (

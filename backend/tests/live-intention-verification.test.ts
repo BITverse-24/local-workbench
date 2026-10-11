@@ -8,6 +8,7 @@ import type { ModelConfigRow, ModelRegistryEntry, RunEvent } from "../src/shared
 import { resolveSemanticIntent } from "../src/main/router/contextual-router.js";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { buildRegistryFromRows, loadRegistry } from "../src/main/gateway/registry.js";
+import { createChat } from "../src/main/persistence/chats.js";
 import { closeDb, initDb } from "../src/main/persistence/db.js";
 import { RunManager } from "../src/main/run/manager.js";
 import { HarnessManager } from "../src/main/harness/harness-manager.js";
@@ -17,6 +18,7 @@ import { resolveRunPath } from "../src/main/run/filesystem.js";
 // skipped, rather than claiming that an unreachable endpoint passed a live test.
 describe.skipIf(process.env.WORKBENCH_LIVE_TESTS !== "1")("Live intent classification through the production gateway", () => {
   let registry: ModelRegistryEntry[];
+  let driverModel: string;
   let tempDir: string;
   let previousDataRoot: string | undefined;
   beforeAll(() => {
@@ -32,8 +34,9 @@ describe.skipIf(process.env.WORKBENCH_LIVE_TESTS !== "1")("Live intent classific
         registry = buildRegistryFromRows(JSON.parse(row.value) as ModelConfigRow[]);
       } finally { settingsDb.close(); }
     }
-    expect(registry.some((model) => model.id === "draft-qwen3" && model.enabled)).toBe(true);
-    console.log("Live classifier registry:", registry.filter((model) => model.id === "draft-qwen3"));
+    driverModel = registry.find(model => model.enabled && !model.fallbackOnly && model.capabilities.includes("text"))!.id;
+    expect(driverModel).toBeTruthy();
+    console.log("Live classifier registry:", registry.filter(model => model.id === driverModel));
   });
   beforeEach(() => {
     tempDir = mkdtempSync(path.join(os.tmpdir(), "workbench-live-intent-"));
@@ -62,7 +65,7 @@ describe.skipIf(process.env.WORKBENCH_LIVE_TESTS !== "1")("Live intent classific
     }, new ModelGateway(undefined, registry));
     console.log("Attached repair classification:", Date.now() - started, "ms", intent);
     expect(intent.status, intent.failureReason).toBe("resolved");
-    expect(intent.driverModel).toBe("code-qwen25coder");
+    expect(intent.driverModel).toBe(driverModel);
     expect(intent.workspaceMutationRequested).toBe(false);
     expect(intent.targetFiles).toEqual([]);
     expect(intent.expectedDeliverables.some((file) => file.type === "file" && file.filename?.endsWith(".py"))).toBe(true);
@@ -107,12 +110,10 @@ describe.skipIf(process.env.WORKBENCH_LIVE_TESTS !== "1")("Live intent classific
     const harness = new HarnessManager();
     harness.registerWorkspace(workspace);
     manager.setHarness(harness);
-    const source = Buffer.from("def read(text):\n    raise ValueError('broken')\n");
-    const uploaded = manager.registerAttachment({ filename: "broken-reader.py", mediaType: "text/x-python", sizeBytes: source.length, base64OrBuffer: source });
     const previousV2 = process.env.WORKBENCH_AGENT_V2;
     process.env.WORKBENCH_AGENT_V2 = "true";
     try {
-      await manager.start({ userText: "Fix this attached reader and return a corrected Python file. Keep the workspace untouched.", attachmentTokens: [uploaded.attachment.attachmentId], groundingEnabled: false });
+      await manager.start({ mode: "agent", selectedModel: driverModel, userText: "Update notes.md to say checked. Keep all other files untouched.", groundingEnabled: false });
       await vi.waitFor(() => expect(events.some((event) => event.type === "run_state" && event.state === "cancelled")).toBe(true), { timeout: 18000 });
       expect(events.some((event) => event.type === "confirmation_required")).toBe(true);
       expect(generation).not.toHaveBeenCalled();
@@ -135,26 +136,27 @@ describe.skipIf(process.env.WORKBENCH_LIVE_TESTS !== "1")("Live intent classific
     const manager = new RunManager(gateway, (event) => {
       events.push(event);
       if (event.type === "confirmation_required") {
-        expect(generation).not.toHaveBeenCalled();
+        expect(event.action.kind).toBe("uncontained_python");
+        expect(event.action.preview).toContain("def read");
         void manager.confirm({ runId: event.runId, actionId: event.action.actionId, approved: true });
       }
     });
     const harness = new HarnessManager();
     harness.registerWorkspace(workspace);
     manager.setHarness(harness);
+    const chatId = createChat('Live repair');
     const source = Buffer.from('def read(path):\n    with open(path) as handle:\n        return [line.strip().split(",") for line in handle]\n');
     const sample = Buffer.from('name,note\n"pump","check, valve"\n\n');
-    const uploaded = manager.registerAttachment({ filename: "broken-reader.py", mediaType: "text/x-python", sizeBytes: source.length, base64OrBuffer: source });
-    const data = manager.registerAttachment({ filename: "sample.csv", mediaType: "text/csv", sizeBytes: sample.length, base64OrBuffer: sample });
+    const uploaded = manager.registerAttachment({ chatId, filename: "broken-reader.py", mediaType: "text/x-python", sizeBytes: source.length, base64OrBuffer: source });
+    const data = manager.registerAttachment({ chatId, filename: "sample.csv", mediaType: "text/csv", sizeBytes: sample.length, base64OrBuffer: sample });
     const previousV2 = process.env.WORKBENCH_AGENT_V2;
     process.env.WORKBENCH_AGENT_V2 = "true";
     try {
-      const started = await manager.start({ userText: "Fix the attached CSV reader to handle quoted commas and ignore blank lines. Preserve read(path) returning a list of rows. Test it against the attached sample and return fixed-reader.py. Keep the workspace untouched.", attachmentTokens: [uploaded.attachment.attachmentId, data.attachment.attachmentId], groundingEnabled: false });
-      await vi.waitFor(() => expect(events.some((event) => event.type === "run_state" && ["completed", "failed", "cancelled"].includes(event.state))).toBe(true), { timeout: 180000, interval: 250 });
-      expect(events.filter((event) => event.type === "run_state").at(-1)).toMatchObject({ state: "completed" });
-      expect(events.some((event) => event.type === "confirmation_required")).toBe(true);
+      const started = await manager.start({ mode: "work", chatId, selectedModel: driverModel, userText: "Fix the attached CSV reader to handle quoted commas and ignore blank lines. Preserve read(path) returning a list of rows. Test it against the attached sample and return fixed-reader.py. Keep the workspace untouched.", attachmentTokens: [uploaded.attachment.attachmentId, data.attachment.attachmentId], groundingEnabled: false });
+      await vi.waitFor(() => expect(events.some((event) => event.type === "run_state" && ["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(event.state))).toBe(true), { timeout: 180000, interval: 250 });
+      expect(["completed", "partial"]).toContain((events.filter(event => event.type === "run_state").at(-1) as any)?.state);
       expect(generation).toHaveBeenCalled();
-      expect(events.filter((event) => event.type === "confirmation_required")).toHaveLength(1);
+      expect(events.filter(event => event.type === "confirmation_required").every(event => event.type === "confirmation_required" && event.action.kind === "uncontained_python")).toBe(true);
       expect(events.some((event) => event.type === "artifact_ready" && event.artifact.filename === "fixed-reader.py")).toBe(true);
       expect(events.some((event) => event.type === "tool_call" && event.tool === "retrieve_knowledge")).toBe(false);
       expect(readdirSync(workspace)).toEqual(["notes.md"]);

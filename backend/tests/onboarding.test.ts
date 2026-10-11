@@ -126,8 +126,10 @@ describe("Onboarding Architecture & IPC Handlers", () => {
       expect(entries.filter(entry=>!entry.fallbackOnly)).toHaveLength(3);
       const primary = entries[0];
       expect(primary.id).toBe("primary-model");
-      expect(primary.capabilities).toEqual(expect.arrayContaining(["text", "image-input", "code-generation"]));
+      expect(primary.capabilities).toEqual(expect.arrayContaining(["text", "code-generation"]));
       expect(entries.find(entry=>entry.id==="vision-fallback")?.fallbackOnly).toBe(true);
+      expect(primary.capabilities).not.toContain("image-input");
+      expect(entries.find(entry => entry.model === "qwen2.5-vl:7b")?.capabilities).toContain("image-input");
       expect(primary.baseUrl).toBe("http://127.0.0.1:8000/v1");
       expect(primary.model).toBe("qwen3:8b");
 

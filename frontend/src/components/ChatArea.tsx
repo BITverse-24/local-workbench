@@ -94,7 +94,8 @@ function highlightCode(code: string): React.ReactNode[] {
 
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
-  const pattern = /\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|`([^`]+?)`|\[(.+?)\]\((.+?)\)/g;
+  // Underscores inside identifiers and paths are literal, not emphasis markers.
+  const pattern = /\*\*(.+?)\*\*|(?<![\p{L}\p{N}_])__(?!\s)(.+?)(?<!\s)__(?![\p{L}\p{N}_])|\*(.+?)\*|(?<![\p{L}\p{N}_])_(?!\s)(.+?)(?<!\s)_(?![\p{L}\p{N}_])|`([^`]+?)`|\[(.+?)\]\((.+?)\)|\\([\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e])/gu;
   let lastIndex = 0;
   let m: RegExpExecArray | null;
   let idx = 0;
@@ -114,6 +115,8 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
       nodes.push(<code key={`${keyPrefix}-c-${idx++}`} className="px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-sm font-mono text-[var(--text-primary)]">{m[5]}</code>);
     } else if (m[6] && m[7]) {
       nodes.push(<a key={`${keyPrefix}-a-${idx++}`} href={m[7]} target="_blank" rel="noreferrer" className="underline underline-offset-2 decoration-[var(--border-strong)] hover:text-[var(--accent)] text-[var(--text-primary)] transition-colors">{m[6]}</a>);
+    } else if (m[8]) {
+      nodes.push(m[8]);
     }
     lastIndex = pattern.lastIndex;
   }

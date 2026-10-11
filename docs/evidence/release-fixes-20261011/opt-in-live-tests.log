@@ -1,0 +1,239 @@
+
+> local-workbench@0.1.0 test
+> node scripts/test.cjs backend/tests/live-intention-verification.test.ts backend/tests/live-result-retrieval.test.ts
+
+
+ RUN  v3.2.7 /Users/krishay/projects/agent
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway
+Live classifier registry: [
+  {
+    id: 'primary-model',
+    runtime: 'ollama',
+    baseUrl: 'http://127.0.0.1:1234/v1',
+    model: 'qwen2.5-coder-7b-instruct-mlx',
+    capabilities: [ 'text', 'structured-output', 'code-generation' ],
+    requestTimeoutMs: 300000,
+    healthPath: '/models',
+    enabled: true,
+    toolCallingFormat: 'json',
+    temperature: 0,
+    maxOutputTokens: 1536
+  }
+]
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > classifies the reported attached repair as an isolated source artifact within its deadline
+[model-gateway:draft:primary-model:97ec8b5d] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: draft)
+
+┌─ [AI Request: DRAFT] (req:97ec8b5d)
+│ Model:   qwen2.5-coder-7b-instruct-mlx (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > classifies the reported attached repair as an isolated source artifact within its deadline
+┌─ [AI Response: DRAFT] (req:97ec8b5d)
+│ Status:  HTTP 200 in 4903ms (finish: stop, 917 chars)
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > classifies the reported attached repair as an isolated source artifact within its deadline
+Attached repair classification: 4916 ms {
+  status: 'resolved',
+  driverModel: 'primary-model',
+  taskType: 'code',
+  primaryGoal: 'Fix the crashing issue in the vendor log parser script.',
+  isActionable: true,
+  chatResponseOnly: false,
+  workspaceMutationRequested: false,
+  targetFiles: [],
+  protectedPaths: [],
+  restrictMutationsToTargets: false,
+  expectedDeliverables: [
+    {
+      filename: 'fixed-vendor-log-parser.py',
+      type: 'file',
+      description: 'fixed-vendor-log-parser.py'
+    }
+  ],
+  intentType: 'code_modification',
+  reason: 'validated natural language semantic classification',
+  confidence: undefined,
+  ambiguityDetails: undefined,
+  failureReason: undefined,
+  responseRequired: true,
+  validationRequested: false,
+  successMarker: undefined,
+  userConstraints: [],
+  workspaceOperations: [],
+  outputExpectation: {
+    chatResponse: true,
+    expectedFiles: [ 'fixed-vendor-log-parser.py' ],
+    workspaceMutationRequested: false,
+    targetFiles: [],
+    expectedDeliverables: [ [Object] ],
+    protectedPaths: [],
+    restrictMutationsToTargets: false
+  }
+}
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > preserves explicit workspace targets and protected files
+[model-gateway:draft:primary-model:708e4f0f] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: draft)
+
+┌─ [AI Request: DRAFT] (req:708e4f0f)
+│ Model:   qwen2.5-coder-7b-instruct-mlx (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+
+ ✓ backend/tests/live-result-retrieval.test.ts (1 test) 10154ms
+   ✓ Live local-model result retrieval > invokes native retrieval and recovers the original stored value without source documents  10153ms
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > preserves explicit workspace targets and protected files
+┌─ [AI Response: DRAFT] (req:708e4f0f)
+│ Status:  HTTP 200 in 6326ms (finish: stop, 974 chars)
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > keeps an explanation in chat despite a mounted workspace
+[model-gateway:draft:primary-model:f1658fb5] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: draft)
+
+┌─ [AI Request: DRAFT] (req:f1658fb5)
+│ Model:   qwen2.5-coder-7b-instruct-mlx (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > keeps an explanation in chat despite a mounted workspace
+┌─ [AI Response: DRAFT] (req:f1658fb5)
+│ Status:  HTTP 200 in 2408ms (finish: stop, 835 chars)
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > keeps an explanation in chat despite a mounted workspace
+Explanation classification: {
+  status: 'resolved',
+  driverModel: 'primary-model',
+  taskType: 'draft',
+  primaryGoal: 'Explain the difference between a CSV row and a column.',
+  isActionable: false,
+  chatResponseOnly: true,
+  workspaceMutationRequested: false,
+  targetFiles: [],
+  protectedPaths: [],
+  restrictMutationsToTargets: false,
+  expectedDeliverables: [],
+  intentType: 'general_qa',
+  reason: 'validated natural language semantic classification',
+  confidence: undefined,
+  ambiguityDetails: undefined,
+  failureReason: undefined,
+  responseRequired: true,
+  validationRequested: false,
+  successMarker: undefined,
+  userConstraints: [],
+  workspaceOperations: [],
+  outputExpectation: {
+    chatResponse: true,
+    expectedFiles: [],
+    workspaceMutationRequested: false,
+    targetFiles: [],
+    expectedDeliverables: [],
+    protectedPaths: [],
+    restrictMutationsToTargets: false
+  }
+}
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > reaches approval in RunManager before driver generation and stops cleanly on rejection
+[run:e925253f] ➜ classifying
+[model-gateway:draft:primary-model:27c81485] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: draft)
+
+┌─ [AI Request: DRAFT] (req:27c81485)
+│ Model:   qwen2.5-coder-7b-instruct-mlx (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > reaches approval in RunManager before driver generation and stops cleanly on rejection
+┌─ [AI Response: DRAFT] (req:27c81485)
+│ Status:  HTTP 200 in 3858ms (finish: stop, 554 chars)
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > reaches approval in RunManager before driver generation and stops cleanly on rejection
+[run:e925253f] ➜ planning
+[run:e925253f] ➜ acting
+[run:e925253f] ➜ awaiting_confirmation
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > delivers a genuinely repaired attachment after approval without changing the workspace
+[run:ba8ab3b4] ➜ classifying
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > delivers a genuinely repaired attachment after approval without changing the workspace
+[model-gateway:draft:primary-model:3a3f3600] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: draft)
+
+┌─ [AI Request: DRAFT] (req:3a3f3600)
+│ Model:   qwen2.5-coder-7b-instruct-mlx (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > delivers a genuinely repaired attachment after approval without changing the workspace
+┌─ [AI Response: DRAFT] (req:3a3f3600)
+│ Status:  HTTP 200 in 3695ms (finish: stop, 553 chars)
+└───────────────────────────────────────────────────────
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > delivers a genuinely repaired attachment after approval without changing the workspace
+[run:ba8ab3b4] ➜ planning
+[run:ba8ab3b4] ➜ acting
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > delivers a genuinely repaired attachment after approval without changing the workspace
+[run:ba8ab3b4] ➜ awaiting_confirmation
+[run:ba8ab3b4] ➜ acting
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > delivers a genuinely repaired attachment after approval without changing the workspace
+┌── [Artifact Ready: TXT] ────────────────────────────────────
+│ File:     fixed-reader.py (0.1 KB)
+│ Location: runs/ba8ab3b4-d725-42d0-bb3f-607befac4acd/output/fixed-reader.py
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > delivers a genuinely repaired attachment after approval without changing the workspace
+[run:ba8ab3b4] ➜ partial
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import runpy, sys; reader = runpy.run_path(sys.argv[1]); assert reader["read"](sys.argv[2]) == [["name", "note"], ["pump", "check, valve"]]
+                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+stdout | backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > delivers a genuinely repaired attachment after approval without changing the workspace
+Live failure evidence: /var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/workbench-live-intent-O28t27
+
+ ❯ backend/tests/live-intention-verification.test.ts (5 tests | 1 failed) 100667ms
+   ✓ Live intent classification through the production gateway > classifies the reported attached repair as an isolated source artifact within its deadline  4919ms
+   ✓ Live intent classification through the production gateway > preserves explicit workspace targets and protected files  6335ms
+   ✓ Live intent classification through the production gateway > keeps an explanation in chat despite a mounted workspace  2416ms
+   ✓ Live intent classification through the production gateway > reaches approval in RunManager before driver generation and stops cleanly on rejection  3892ms
+   × Live intent classification through the production gateway > delivers a genuinely repaired attachment after approval without changing the workspace 83103ms
+     → Command failed: python3 -B -c import runpy, sys; reader = runpy.run_path(sys.argv[1]); assert reader["read"](sys.argv[2]) == [["name", "note"], ["pump", "check, valve"]] /var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/workbench-live-intent-O28t27/data/runs/ba8ab3b4-d725-42d0-bb3f-607befac4acd/output/fixed-reader.py /var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/workbench-live-intent-O28t27/check.csv
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import runpy, sys; reader = runpy.run_path(sys.argv[1]); assert reader["read"](sys.argv[2]) == [["name", "note"], ["pump", "check, valve"]]
+                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  backend/tests/live-intention-verification.test.ts > Live intent classification through the production gateway > delivers a genuinely repaired attachment after approval without changing the workspace
+Error: Command failed: python3 -B -c import runpy, sys; reader = runpy.run_path(sys.argv[1]); assert reader["read"](sys.argv[2]) == [["name", "note"], ["pump", "check, valve"]] /var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/workbench-live-intent-O28t27/data/runs/ba8ab3b4-d725-42d0-bb3f-607befac4acd/output/fixed-reader.py /var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/workbench-live-intent-O28t27/check.csv
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import runpy, sys; reader = runpy.run_path(sys.argv[1]); assert reader["read"](sys.argv[2]) == [["name", "note"], ["pump", "check, valve"]]
+                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+ ❯ backend/tests/live-intention-verification.test.ts:167:7
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 5 passed (6)
+   Start at  11:47:15
+   Duration  101.26s (transform 265ms, setup 0ms, collect 596ms, tests 110.82s, environment 0ms, prepare 47ms)
+

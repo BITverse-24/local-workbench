@@ -7,6 +7,8 @@ import type { ModelConfigRow, RunEvent } from "../src/shared/contracts.js";
 import { closeDb, getDb, initDb } from "../src/main/persistence/db.js";
 import { createChat } from "../src/main/persistence/chats.js";
 import { createRun } from "../src/main/run/store.js";
+import { createRunDirectories, runRoot } from "../src/main/run/filesystem.js";
+import { buildExecutionEnvelope } from "../src/main/run/envelope.js";
 import { RunResultStore } from "../src/main/run/result-store.js";
 import { retrieveResultTool } from "../src/main/tools/result-retrieval.js";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
@@ -27,16 +29,20 @@ describe.skipIf(process.env.WORKBENCH_LIVE_RESULT_TESTS !== "1")("Live local-mod
       } finally { settings.close(); }
     }
     const root = mkdtempSync(path.join(os.tmpdir(), "p1-live-result-"));
+    const previousDataRoot = process.env.WORKBENCH_DATA_ROOT;
+    process.env.WORKBENCH_DATA_ROOT = root;
     try {
       initDb(path.join(root, "db.sqlite"));
       const runId = createRun(createChat(), "Live retrieval test");
-      const store = new RunResultStore(runId, getDb(), root);
+      createRunDirectories(runId);
+      const store = new RunResultStore(runId, getDb());
+      const driverModelId = registry.find(model => model.enabled && !model.fallbackOnly && model.capabilities.includes("text"))!.id;
       const record = store.registerResult({ type: "structured", status: "complete", origin: "source_extracted", producer: { tool: "read_file", callId: "live-fixture" }, summary: "Stored facts; source is unavailable", payload: { facts: [{ label: "early", value: "small" }, { label: "requested", value: "preserved-value-6187" }] }, sources: [{ filename: "removed-synthetic-source.txt", relation: "source" }] });
       const events: RunEvent[] = [];
-      const result = await new AgentLoop().run({ runId, driverModelId: "draft-qwen3", userPrompt: `Use retrieve_result to read result ${record.resultId} at JSON pointer /facts/1/value. Report its exact value. The source file is unavailable.`, systemPrompt: "Use native retrieval for stored data. Never guess its value.", tools: [retrieveResultTool], context: { runId, workspaceRoot: root, gateway: new ModelGateway(undefined, registry), resultStore: store }, maxTurns: 4, emitEvent: (event) => events.push(event) });
+      const result = await new AgentLoop().run({ runId, driverModelId, envelope: buildExecutionEnvelope({runId, mode:"work", modelId:driverModelId, hasWorkspace:false}), userPrompt: `Use retrieve_result to read result ${record.resultId} at JSON pointer /facts/1/value. Report its exact value. The source file is unavailable.`, systemPrompt: "Use native retrieval for stored data. Never guess its value.", tools: [retrieveResultTool], context: { runId, workspaceRoot: runRoot(runId), gateway: new ModelGateway(undefined, registry), resultStore: store }, maxTurns: 4, emitEvent: (event) => events.push(event) });
       expect(events.some((e) => e.type === "tool_call" && String(e.tool) === "retrieve_result")).toBe(true);
       expect(result.finalText).toContain("preserved-value-6187");
       expect(result.outcome).toBe("completed");
-    } finally { closeDb(); rmSync(root, { recursive: true, force: true }); }
+    } finally { closeDb(); if(previousDataRoot===undefined)delete process.env.WORKBENCH_DATA_ROOT;else process.env.WORKBENCH_DATA_ROOT=previousDataRoot; rmSync(root, { recursive: true, force: true }); }
   }, 120000);
 });

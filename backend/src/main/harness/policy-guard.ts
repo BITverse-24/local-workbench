@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { PermissionError } from "./path-guard.js";
 
 export type MutationOperation =
   | "write_file"
@@ -40,7 +39,7 @@ export function normalizePath(p?: string): string {
 
 export function normalizeCommand(c?: string): string {
   if (!c || typeof c !== "string") return "";
-  return c.trim().replace(/\s+/g, " ");
+  return c.trim();
 }
 
 export function isPathMatch(grantedPath: string, requestedPath: string): boolean {
@@ -56,39 +55,13 @@ export function isPathMatch(grantedPath: string, requestedPath: string): boolean
     const dir = gNorm.slice(0, -3);
     return rNorm.startsWith(dir + "/");
   }
-  // Allow stem / prefix variation for the same target file (e.g. fixed-foo.py vs foo.py)
-  const gBase = path.basename(gNorm).replace(/^(?:repaired-|fixed-|updated-|new-)/, "");
-  const rBase = path.basename(rNorm).replace(/^(?:repaired-|fixed-|updated-|new-)/, "");
-  if (gBase === rBase && path.dirname(gNorm) === path.dirname(rNorm)) {
-    return true;
-  }
   return false;
 }
 
 export function isCommandMatch(grantedCommand: string, requestedCommand: string): boolean {
-  if (grantedCommand === "*") return true;
   const gNorm = normalizeCommand(grantedCommand);
   const rNorm = normalizeCommand(requestedCommand);
-  if (gNorm === rNorm) return true;
-  if (gNorm.endsWith("*")) {
-    const prefix = gNorm.slice(0, -1).trim();
-    return rNorm.startsWith(prefix);
-  }
-  // Coarse-grained runner matching for Python scripts/runners:
-  // If user granted a python3 invocation, allow subsequent python3 test/assertion commands.
-  const isPython = (c: string) => /^(?:python3?|-m\s+pytest|pytest)\b/.test(c);
-  if (isPython(gNorm) && isPython(rNorm)) {
-    return true;
-  }
-  if (
-    rNorm.startsWith(gNorm + " ") ||
-    rNorm.startsWith(gNorm + "\n") ||
-    rNorm.startsWith(gNorm + "\r") ||
-    rNorm.startsWith(gNorm + "\t")
-  ) {
-    return true;
-  }
-  return false;
+  return gNorm === rNorm;
 }
 
 export function extractPathArg(args: Record<string, unknown>): string {
@@ -164,14 +137,15 @@ export class AsyncLockManager {
     const nextLock = new Promise<void>((resolve) => {
       release = resolve;
     });
-    this.locks.set(key, currentLock.then(() => nextLock, () => nextLock));
+    const tail = currentLock.then(() => nextLock, () => nextLock);
+    this.locks.set(key, tail);
 
     try {
       await currentLock;
       return await fn();
     } finally {
       release!();
-      if (this.locks.get(key) === nextLock) {
+      if (this.locks.get(key) === tail) {
         this.locks.delete(key);
       }
     }
@@ -220,10 +194,7 @@ export class MutationPolicyGuard {
     const set = new Set<string>();
     for (const t of allowedTargets) {
       const norm = normalizePath(t);
-      if (norm) {
-        set.add(norm.toLowerCase());
-        set.add(path.basename(norm).toLowerCase());
-      }
+      if (norm) set.add(norm.toLowerCase());
     }
     this.targetRestrictionsByRun.set(runId, { restricted, allowedTargets: set });
   }
@@ -242,8 +213,7 @@ export class MutationPolicyGuard {
     const restriction = this.targetRestrictionsByRun.get(runId);
     if (!restriction || !restriction.restricted) return false;
     const norm = normalizePath(targetPath).toLowerCase();
-    const base = path.basename(norm).toLowerCase();
-    return !restriction.allowedTargets.has(norm) && !restriction.allowedTargets.has(base);
+    return !restriction.allowedTargets.has(norm);
   }
 
   setEnforceExplicit(runId?: string, enforce: boolean = true): void {
@@ -361,8 +331,9 @@ export class MutationPolicyGuard {
         if (!isPathMatch(scope.targetPath, targetPath)) continue;
       }
 
-      // Check command if specified
-      if (scope.command && scope.command !== "*") {
+      // Commands always require an exact command scope, including quoted bytes.
+      if (operation === "run_command" && !scope.command) continue;
+      if (scope.command) {
         if (!command) continue;
         if (!isCommandMatch(scope.command, command)) continue;
       }

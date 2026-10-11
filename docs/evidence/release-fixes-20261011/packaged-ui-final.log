@@ -1,0 +1,31 @@
+[backend] restored user-configured model endpoints from persistence
+[backend] initialized
+[electron] production mode: loading file /private/tmp/workbench-fix-final-package/mac-arm64/Sovereign Workbench.app/Contents/Resources/app.asar/frontend/dist/index.html
+┌── [Tool Executing: list_dir] ────────────────────────────────────
+│ Path:     .
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: list_dir] ✔ (2 items) ────────────────────────
+│ Entries: smoke.txt, ui-check-saved-79a9.md
+└──────────────────────────────────────────────────────────
+[run:07c77f52] ➜ classifying
+[run:07c77f52] ➜ planning
+[run:07c77f52] ➜ acting
+┌── [Artifact Ready: MD] ────────────────────────────────────
+│ File:     ui-check.md (0.0 KB)
+│ Location: runs/07c77f52-016a-4502-9976-356ead9eb83c/output/ui-check.md
+└──────────────────────────────────────────────────────────
+[run:07c77f52] ➜ partial
+[run:5d412def] ➜ classifying
+[model-gateway:draft:primary-model:03f701cb] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: draft)
+
+┌─ [AI Request: DRAFT] (req:03f701cb)
+│ Model:   qwen2.5-coder-7b-instruct-mlx (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+┌─ [AI Response: DRAFT] (req:03f701cb)
+│ Status:  HTTP 200 in 2712ms (finish: stop, 372 chars)
+└───────────────────────────────────────────────────────
+[run:5d412def] ➜ planning
+[run:5d412def] ➜ acting
+[run:5d412def] ➜ awaiting_confirmation

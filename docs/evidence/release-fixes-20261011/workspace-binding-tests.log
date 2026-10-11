@@ -1,0 +1,65 @@
+
+> local-workbench@0.1.0 test
+> node scripts/test.cjs backend/tests/harness-manager.test.ts
+
+
+ RUN  v3.2.7 /Users/krishay/projects/agent
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes list_dir tool and emits events
+┌── [Tool Executing: list_dir] ────────────────────────────────────
+│ Path:     .
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: list_dir] ✔ (3 items) ────────────────────────
+│ Entries: package.json, src, src/app.ts
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes read_file tool
+┌── [Tool Executing: read_file] ───────────────────────────────────
+│ Reading:  package.json
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: read_file] ✔ ──────────────────────────────
+│ File:   package.json (2 lines, 25 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes search tool
+┌── [Tool Executing: search] ──────────────────────────────────────
+│ Query:    "hello world" in .
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: search] ✔ (1 matches) ────────────────────────
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes write_file tool and creates backup on overwrite
+┌── [Tool Executing: write_file] ──────────────────────────────────
+│ Target:   src/app.ts (24 chars)
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes write_file tool and creates backup on overwrite
+┌── [Tool Result: write_file] ✔ SUCCESS ────────────────────────
+│ File:   src/app.ts
+│ Status: Written to workspace disk
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes delete_file tool and emits workspace_tree event
+┌── [Tool Executing: delete_file] ─────────────────────────────────
+│ Args:     {"path":"src/app.ts"}
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes run_command tool
+┌── [Tool Executing: run_command] ─────────────────────────────────
+│ Command:  node src/app.ts
+│ CWD:      /private/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/hm-test-1791700274434-d0nlpc
+└──────────────────────────────────────────────────────────
+
+stdout | backend/tests/harness-manager.test.ts > HarnessManager > executes run_command tool
+┌── [Command Output] ✔ SUCCESS (exit 0 in 85ms) ────────────────────────
+├── Stdout ──────────────────────────────────────────────
+│   hello world
+└──────────────────────────────────────────────────────────
+
+ ✓ backend/tests/harness-manager.test.ts (11 tests) 111ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  12:01:14
+   Duration  429ms (transform 56ms, setup 0ms, collect 78ms, tests 111ms, environment 0ms, prepare 27ms)
+

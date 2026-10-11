@@ -1,5 +1,10 @@
+import { simulateCommandSandbox } from "./helpers/command-sandbox.js";
+vi.mock("../src/main/tools/child-process.js", async importOriginal => {
+  const actual = await importOriginal<typeof import("../src/main/tools/child-process.js")>();
+  return { ...actual, executeProcess: simulateCommandSandbox(actual.executeProcess) };
+});
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdirSync, writeFileSync, rmSync, realpathSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, realpathSync, readFileSync, existsSync, renameSync, symlinkSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { HarnessManager } from "../src/main/harness/harness-manager.js";
@@ -57,6 +62,25 @@ describe("HarnessManager", () => {
 
     const deregEvent = workspaceEvents.find((e) => e.type === "workspace_deregistered");
     expect(deregEvent).toBeDefined();
+  });
+
+  it("rejects a registered root redirected to another directory", async () => {
+    manager.registerWorkspace(root);
+    const moved = `${root}-original`;
+    const replacement = `${root}-replacement`;
+    mkdirSync(replacement);
+    writeFileSync(path.join(replacement, "secret.txt"), "outside source");
+    renameSync(root, moved);
+    symlinkSync(replacement, root, "dir");
+    try {
+      expect(() => manager.requireActiveWorkspace()).toThrow("workspace binding changed");
+      await expect(manager.executeTool({ tool: "read_file", args: { path: "secret.txt" } })).rejects.toThrow("workspace binding changed");
+      expect(readFileSync(path.join(replacement, "secret.txt"), "utf8")).toBe("outside source");
+    } finally {
+      rmSync(root, { force: true });
+      renameSync(moved, root);
+      rmSync(replacement, { recursive: true, force: true });
+    }
   });
 
   it("executes list_dir tool and emits events", async () => {

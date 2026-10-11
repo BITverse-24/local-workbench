@@ -2,12 +2,12 @@ import {
   copyFileSync,
   cpSync,
   existsSync,
-  mkdirSync,
   rmSync,
   statSync,
 } from "node:fs";
 import path from "node:path";
 import { resolveSafe } from "../path-guard.js";
+import { backupDestination } from "./backup.js";
 import { clearListDirCache } from "./list-dir.js";
 
 export interface DeleteResult {
@@ -39,23 +39,18 @@ export function deleteFile(
   let backupPath: string | undefined;
 
   const stat = statSync(target);
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const relFromRoot = path.relative(canonicalRoot, target);
-
-  const backupDir = path.join(canonicalRoot, ".harness_backups", timestamp);
-  const backupDest = path.join(backupDir, relFromRoot);
-
-  mkdirSync(path.dirname(backupDest), { recursive: true });
+  const backup = backupDestination(canonicalRoot, path.relative(canonicalRoot, target));
+  const backupDest = backup.destination;
 
   if (stat.isDirectory()) {
     cpSync(target, backupDest, { recursive: true });
     backedUp = true;
-    backupPath = path.join(".harness_backups", timestamp, relFromRoot);
+    backupPath = backup.relativePath;
     rmSync(target, { recursive: true, force: true });
   } else {
     copyFileSync(target, backupDest);
     backedUp = true;
-    backupPath = path.join(".harness_backups", timestamp, relFromRoot);
+    backupPath = backup.relativePath;
     rmSync(target, { force: true });
   }
 

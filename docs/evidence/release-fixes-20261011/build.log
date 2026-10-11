@@ -1,0 +1,29 @@
+
+> local-workbench@0.1.0 build
+> npm run build:frontend && npm run build:electron
+
+
+> local-workbench@0.1.0 build:frontend
+> vite build --config frontend/vite.config.ts
+
+vite v5.4.21 building for production...
+transforming...
+✓ 64 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.72 kB │ gzip:  0.40 kB
+dist/assets/index-COzAjUIg.css   62.98 kB │ gzip: 11.92 kB
+dist/assets/index-DvIE9Fgo.js   371.36 kB │ gzip: 99.81 kB
+✓ built in 846ms
+
+> local-workbench@0.1.0 build:electron
+> node scripts/build-electron.cjs
+
+
+  electron/dist-electron/main.cjs  17.6mb ⚠️
+
+⚡ Done in 182ms
+
+  electron/dist-electron/preload.cjs  5.2kb
+
+⚡ Done in 1ms

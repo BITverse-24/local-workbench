@@ -61,7 +61,7 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
     return {
       id: index === 0 ? "primary-model" : `model-${index + 1}`, runtime: "ollama",
       baseUrl, model: row.modelName,
-      capabilities: profile?.capabilities ?? ["text", "image-input", "structured-output", "code-generation"],
+      capabilities: profile?.capabilities ?? (candidates.some(candidate => candidate.role === "vision" && candidate.modelName.toLowerCase() === row.modelName.toLowerCase() && sanitizeHost(candidate.host) === host && (candidate.port || 11434) === port) ? ["text", "image-input", "structured-output"] : ["text", "structured-output", "code-generation"]),
       requestTimeoutMs: 300000, healthPath: "/models", enabled: true,
       contextLength: row.contextLength || 8192,
       maxOutputTokens: profile?.maxOutputTokens ?? (row.contextLength || 8192),

@@ -1,4 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { simulateCommandSandbox } from "./helpers/command-sandbox.js";
+vi.mock("../src/main/tools/child-process.js", async importOriginal => {
+  const actual = await importOriginal<typeof import("../src/main/tools/child-process.js")>();
+  return { ...actual, executeProcess: simulateCommandSandbox(actual.executeProcess) };
+});
+import { describe, it, expect, beforeEach, afterEach , vi } from "vitest";
 import {
   mkdirSync,
   writeFileSync,
@@ -181,7 +186,7 @@ module.exports = { parseCSV };
   });
 
   // ── Criterion 4: run_command executes with workspace as cwd ──────────
-  it("Criterion 4: run_command executes inside workspace directory as cwd", async () => {
+  it("Criterion 4: run_command executes inside a workspace snapshot as cwd", async () => {
     harness.registerWorkspace(workspaceRoot);
 
     const res = await harness.executeTool({
@@ -191,7 +196,7 @@ module.exports = { parseCSV };
 
     if (res.tool !== "run_command") throw new Error("expected run_command");
     expect(res.result.exitCode).toBe(0);
-    expect(res.result.stdout.trim()).toBe(workspaceRoot);
+    expect(res.result.stdout.trim()).toMatch(/workbench-command-.*[/\\]workspace$/);
   });
 
   // ── Criterion 5: Path escape rejected by EVERY tool ──────────────────

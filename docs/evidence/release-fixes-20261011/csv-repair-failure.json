@@ -1,0 +1,17 @@
+{
+  "runId": "ba8ab3b4-d725-42d0-bb3f-607befac4acd",
+  "state": "partial",
+  "sourceSha256": "ed2e4f23d6bd5fd753dbe983e99e7f3f26ae7006ae3f3434c0ce2352cf121ad8",
+  "input": "name,note\n\"pump\",\"check, valve\"\n\n",
+  "expected": [
+    [
+      "name",
+      "note"
+    ],
+    [
+      "pump",
+      "check, valve"
+    ]
+  ],
+  "failure": "split does not remove CSV quotes or parse a quoted comma. Independent assertion failed."
+}

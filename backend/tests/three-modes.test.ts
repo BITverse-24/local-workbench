@@ -19,6 +19,7 @@ import { InferenceScheduler } from '../src/main/gateway/inference-scheduler.js';
 import { withRuntimeScope } from '../src/main/run/runtime-scope.js';
 import { executePython } from '../src/main/tools/python.js';
 import { executeProcess } from '../src/main/tools/child-process.js';
+import { extractDocumentTool } from '../src/main/tools/specialist-tools.js';
 import { RunSessions } from '../../frontend/src/lib/run-sessions.js';
 import type { RunContract, RunEvent, ArtifactAcceptanceCheck } from '../src/shared/contracts.js';
 
@@ -37,6 +38,32 @@ describe('Chat: 30 varied requests stay on one response call',()=>{
   const {runId}=await manager.start({chatId,userText});await awaitTerminal(runId);
   expect(getState(runId)).toBe('completed');expect(call).toHaveBeenCalledTimes(1);expect(classify).not.toHaveBeenCalled();expect(getRunContract(runId)?.response.chatOnly).toBe(true);expect(manager.getRunSnapshot({runId})?.mode).toBe('chat');
  });
+});
+
+it('feeds fresh visual evidence into the real Chat path for an attachment follow-up', async () => {
+ const gateway=new ModelGateway();
+ const extract=vi.spyOn(extractDocumentTool,'execute').mockImplementation(async args=>({output:`CURRENT VISUAL EVIDENCE: ${args.query}`,summary:'Visual source read'}));
+ const finalPrompts:string[]=[];
+ vi.spyOn(gateway,'chatWithTools').mockImplementation(async (_model,messages,tools)=>{
+  expect(tools).toEqual([]);
+  finalPrompts.push(String(messages.at(-1)?.content));
+  return response('Answer from the current visual evidence');
+ });
+ const manager=new RunManager(gateway);
+ const chatId=createChat();
+ const source=Buffer.from(randomUUID());
+ const upload=manager.registerAttachment({chatId,filename:'panel.png',mediaType:'image/png',sizeBytes:source.length,base64OrBuffer:source});
+ const first=await manager.start({chatId,runId:upload.runId,mode:'chat',userText:'Describe the panel colors',attachmentToken:upload.attachment.attachmentId});
+ await awaitTerminal(first.runId);
+ const followup=await manager.start({chatId,mode:'chat',userText:'Read the panel serial number'});
+ await awaitTerminal(followup.runId);
+ expect(getState(first.runId)).toBe('completed');
+ expect(getState(followup.runId)).toBe('completed');
+ expect(extract).toHaveBeenCalledTimes(2);
+ expect(finalPrompts).toHaveLength(2);
+ expect(finalPrompts[0]).toContain('CURRENT VISUAL EVIDENCE: Describe the panel colors');
+ expect(finalPrompts[1]).toContain('CURRENT VISUAL EVIDENCE: Read the panel serial number');
+ expect(finalPrompts[1]).not.toContain('CURRENT VISUAL EVIDENCE: Describe the panel colors');
 });
 
 describe('Work: 30 varied saved-content checks',()=>{

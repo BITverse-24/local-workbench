@@ -1,15 +1,15 @@
 import path from "node:path";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { WorkspaceManager } from "./workspace-manager.js";
 import { resolveSafe, PermissionError } from "./path-guard.js";
 import { MutationPolicyGuard } from "./policy-guard.js";
 import { listDir, type DirEntry } from "./tools/list-dir.js";
 import { readFile } from "./tools/read-file.js";
-import { search, type SearchMatch } from "./tools/search.js";
-import { writeFile, type WriteResult } from "./tools/write-file.js";
-import { deleteFile, type DeleteResult } from "./tools/delete-file.js";
-import { runCommand, type CommandResult } from "./tools/run-command.js";
+import { search } from "./tools/search.js";
+import { writeFile } from "./tools/write-file.js";
+import { deleteFile } from "./tools/delete-file.js";
+import { runCommand } from "./tools/run-command.js";
 import { getDb } from "../persistence/db.js";
 import { writeRunFile } from "../run/filesystem.js";
 import { logArtifactReady, logHarnessToolCall, logHarnessToolResult } from "../logger.js";
@@ -170,7 +170,7 @@ export class HarnessManager {
       case "write_file": {
         const targetPath = call.args.path;
         if (this.policyGuard.isEnforcingExplicit(runId)) {
-          const isAuth = this.policyGuard.isAuthorized(runId, "write_file", { path: targetPath });
+          const isAuth = this.policyGuard.isAuthorized(runId, "write_file", { path: targetPath }) && this.policyGuard.isAuthorized(runId, "write_file", { path: path.relative(ws.root, resolveSafe(ws.root, targetPath)) });
           if (!isAuth) {
             throw new PermissionError(`Operation not authorized: write_file ${targetPath}`);
           }
@@ -186,7 +186,7 @@ export class HarnessManager {
       case "delete_file": {
         const targetPath = call.args.path;
         if (this.policyGuard.isEnforcingExplicit(runId)) {
-          const isAuth = this.policyGuard.isAuthorized(runId, "delete_file", { path: targetPath });
+          const isAuth = this.policyGuard.isAuthorized(runId, "delete_file", { path: targetPath }) && this.policyGuard.isAuthorized(runId, "delete_file", { path: path.relative(ws.root, resolveSafe(ws.root, targetPath)) });
           if (!isAuth) {
             throw new PermissionError(`Operation not authorized: delete_file ${targetPath}`);
           }
@@ -208,7 +208,7 @@ export class HarnessManager {
           }
         }
         const cmdRes = await this.policyGuard.withMutationLock("workspace:run_command", () =>
-          runCommand(ws.root, call.args.command),
+          runCommand(ws.root, call.args.command, 60000, { guard: this.policyGuard, runId, assertAuthority: () => { if (this.currentWorkspace()?.root !== ws.root) throw new PermissionError("Workspace binding changed during command execution."); } }),
         );
         result = { tool: "run_command", result: cmdRes };
         break;
@@ -342,29 +342,6 @@ export class HarnessManager {
     }
 
     this.createdArtifactsByRun.set(dedupeKey, artifact);
-    return artifact;
-  }
-
-  /**
-   * Safely copy an external file (e.g. from run output) into the active workspace.
-   * Path containment is enforced via resolveSafe().
-   */
-  copyArtifactToWorkspace(
-    sourceAbsPath: string,
-    destinationRelPath: string,
-    runId: string,
-  ): ArtifactRef {
-    const ws = this.workspace.requireActive();
-    const target = resolveSafe(ws.root, destinationRelPath);
-    const parentDir = path.dirname(target);
-    if (!existsSync(parentDir)) {
-      mkdirSync(parentDir, { recursive: true });
-    }
-    copyFileSync(sourceAbsPath, target);
-    const artifact = this.createWorkspaceArtifact(runId, destinationRelPath);
-    try {
-      this.emitWorkspace({ type: "workspace_tree", entries: this.getDirectoryTree() });
-    } catch {}
     return artifact;
   }
 

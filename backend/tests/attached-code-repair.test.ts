@@ -1,3 +1,8 @@
+import { simulateCommandSandbox } from "./helpers/command-sandbox.js";
+vi.mock("../src/main/tools/child-process.js", async importOriginal => {
+  const actual = await importOriginal<typeof import("../src/main/tools/child-process.js")>();
+  return { ...actual, executeProcess: simulateCommandSandbox(actual.executeProcess) };
+});
 import { approvedPythonTool as executePythonTool } from "./helpers/approved-python.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";

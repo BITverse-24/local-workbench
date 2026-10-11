@@ -219,11 +219,23 @@ export function initDb(dbPath?: string): Db {
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = FULL");
   db.pragma("foreign_keys = ON");
-  applySchema(db);
-  migrateArtifactsSchema(db);
-  migrateConfirmationsSchema(db);
-  migrateRunsSchema(db);
-  seedDefaults(db);
+  // Table rebuilds and version metadata must commit as one upgrade. Disable
+  // foreign keys outside the transaction so rebuilt parent tables do not cascade.
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      applySchema(db);
+      migrateArtifactsSchema(db);
+      migrateConfirmationsSchema(db);
+      migrateRunsSchema(db);
+      seedDefaults(db);
+    })();
+  } catch (error) {
+    db.close();
+    throw error;
+  } finally {
+    if (db.open) db.pragma("foreign_keys = ON");
+  }
   instance = db;
   instancePath = resolved;
   return db;

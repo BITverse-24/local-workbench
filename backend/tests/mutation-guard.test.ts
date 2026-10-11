@@ -174,21 +174,12 @@ describe("P0-06: Mutation Approvals and Containment Guard", () => {
       );
     });
 
-    it("allows approved safe workspace development tools when uncontained", () => {
-      expect(() => validateCommandSafety("echo 'hello'", false)).not.toThrow();
-      expect(() => validateCommandSafety("pwd", false)).not.toThrow();
-      expect(() => validateCommandSafety("node src/index.js", false)).not.toThrow();
-      expect(() => validateCommandSafety("npm test", false)).not.toThrow();
-      expect(() => validateCommandSafety("python3 script.py", false)).not.toThrow();
-      expect(() => validateCommandSafety("touch created.txt", false)).not.toThrow();
+    it("fails closed for every binary without effective isolation", () => {
+      for (const command of ["echo hello", "pwd", "node src/index.js", "npm test", "python3 script.py", "touch created.txt", "echo ok; node -e 'process.exit(0)'"]) {
+        expect(() => validateCommandSafety(command, false)).toThrow(/Unsupported sandbox containment/);
+      }
     });
 
-    it("fails closed when WORKBENCH_STRICT_SANDBOX=1 without containment", () => {
-      process.env.WORKBENCH_STRICT_SANDBOX = "1";
-      expect(() => validateCommandSafety("echo 'hello'", false)).toThrow(
-        /strict containment required but unavailable/,
-      );
-    });
   });
 
   // ── 4. Operation-Level Authorization in AgentLoop ────────────────

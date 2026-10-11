@@ -273,8 +273,12 @@ export function validateAndNormalizeIntent(
   const isEscapingPath = (p: string) =>
     p.startsWith("..") || p.includes("/../") || p.includes("\\..\\");
 
+  // Explicit user exclusions are authority constraints, not optional model facts.
+  const exclusions = [...context.userPrompt.matchAll(/\b(?:do\s+not|don['’]?t|never)\s+(?:modify|change|edit|write|delete|remove|overwrite|touch)\b([^\n!?]*?)(?=\.\s|[;\n!?]|$)/gi)].map(match => match[0]);
+  const explicitProtected = exclusions.flatMap(clause => clause.match(/[\w./-]+\.[a-z0-9]{1,10}\b/gi) ?? []);
+  const restrictToTargets = data.restrictMutationsToTargets || /\b(?:any\s+other\s+(?:existing\s+)?files?|all\s+other\s+files?)\b[^.!?\n]*\b(?:untouched|unchanged)\b|\b(?:do\s+not|don['’]?t)\s+(?:modify|change|edit|touch)\b[^!?\n]*\bany\s+other\s+(?:existing\s+)?file\b/i.test(context.userPrompt);
   const protectedPaths = Array.from(
-    new Set(data.protectedPaths.map(sanitize).filter((p) => p.length > 0 && !isEscapingPath(p))),
+    new Set([...data.protectedPaths, ...explicitProtected].map(sanitize).filter((p) => p.length > 0 && !isEscapingPath(p))),
   );
   const protectedSet = new Set(protectedPaths.map((p) => p.toLowerCase()));
   for (const p of protectedPaths) {
@@ -430,7 +434,7 @@ export function validateAndNormalizeIntent(
     workspaceMutationRequested,
     targetFiles,
     protectedPaths,
-    restrictMutationsToTargets: data.restrictMutationsToTargets,
+    restrictMutationsToTargets: restrictToTargets,
     expectedDeliverables,
     intentType,
     reason: data.reason || "validated natural language semantic classification",

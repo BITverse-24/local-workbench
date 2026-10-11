@@ -1,0 +1,9 @@
+[backend] restored user-configured model endpoints from persistence
+[backend] initialized
+[electron] production mode: loading file /private/tmp/workbench-fix-final-package/mac-arm64/Sovereign Workbench.app/Contents/Resources/app.asar/frontend/dist/index.html
+┌── [Tool Executing: list_dir] ────────────────────────────────────
+│ Path:     .
+└──────────────────────────────────────────────────────────
+┌── [Tool Result: list_dir] ✔ (1 items) ────────────────────────
+│ Entries: smoke.txt
+└──────────────────────────────────────────────────────────

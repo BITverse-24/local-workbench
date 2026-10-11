@@ -1,0 +1,16 @@
+{
+  "condition": "Remaining packaged UI verification cannot finish without human approval of Python fallback and a working UI observation/control path.",
+  "consecutiveGoalTurns": 3,
+  "goalTurnIds": [
+    "01a129b9-ec3d-7180-a7cb-381110879b11",
+    "01a12a72-2004-7ad0-a15f-fc4d4719e6ca",
+    "01a12a89-25ab-75a1-a21a-cd5d6b0cc02f"
+  ],
+  "classification": "Earlier turns made source/evidence progress while the positive UI approval remained unavailable. Current turn verified safe expiry and the persistent UI-tool limitation; no independent required work remains.",
+  "notCompleted": [
+    "Positive packaged Python fallback approval",
+    "Final visual layout",
+    "Return from different preferred mode to active background Work run"
+  ],
+  "nextAction": "Restore reliable desktop control and resume the goal. Prepare a fresh inspected fallback action, then obtain human confirmation at its approval step. Do not approve expired actions or treat automated continuation as confirmation."
+}

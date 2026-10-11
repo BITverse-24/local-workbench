@@ -1,0 +1,272 @@
+
+> local-workbench@0.1.0 certify:v0
+> npm run build:behavioral && node scripts/certify-v0.cjs
+
+
+> local-workbench@0.1.0 build:behavioral
+> node scripts/build-behavioral.cjs
+
+[document-normal:stderr] [log] [rag:embedding] Dispatching embedBatch (5 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+[document-normal] Worker ready! Model registry active.
+🧭 [document-normal] Model Selected: primary-model (Reason: Work stages)
+[document-normal:stderr] [log] [run:1c625dce] ➜ classifying
+📍 [document-normal] State: classifying
+🛠️ [document-normal] Tool Call: retrieve_knowledge({"query":"Read these inspection reports, pull out the key findings, and draft an approval note for the plant manager."})
+[document-normal:stderr] [log] [rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+✅ [document-normal] Tool Result: retrieve_knowledge (SUCCESS)
+[document-normal:stderr] [log] [model-gateway:draft:primary-model:315f924a] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: draft)
+[document-normal:stderr] [log] 
+┌─ [AI Request: DRAFT] (req:315f924a)
+│ Model:   qwen2.5-coder-7b-instruct-mlx (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+[document-normal:stderr] [log] ┌─ [AI Response: DRAFT] (req:315f924a)
+│ Status:  HTTP 200 in 4100ms (finish: stop, 465 chars)
+└───────────────────────────────────────────────────────
+[document-normal:stderr] [log] [run:1c625dce] ➜ planning
+📍 [document-normal] State: planning
+[document-normal:stderr] [log] [run:1c625dce] ➜ acting
+📍 [document-normal] State: acting
+🛠️ [document-normal] Tool Call: generate_deliverable({"type":"docx","filename":"approval_note.docx","content":"## inspection-report-E201-annotated.pdf\n\nSource identifiers:...)
+✅ [document-normal] Tool Result: generate_deliverable (SUCCESS)
+[document-normal:stderr] [log] ┌── [Artifact Ready: DOCX] ────────────────────────────────────
+│ File:     approval_note.docx (9.5 KB)
+│ Location: runs/1c625dce-708d-4e79-bd5a-6b554f5bc610/output/approval_note.docx
+└──────────────────────────────────────────────────────────
+📦 [document-normal] Artifact Ready: approval_note.docx (runs/1c625dce-708d-4e79-bd5a-6b554f5bc610/output/approval_note.docx)
+[document-normal:stderr] [log] [run:1c625dce] ➜ partial
+📍 [document-normal] State: partial
+document-normal: PASS; 50.6s; 
+📍 [document-normal] State: cancelled
+[document-paraphrase:stderr] [log] [rag:embedding] Dispatching embedBatch (5 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+[document-paraphrase] Worker ready! Model registry active.
+🧭 [document-paraphrase] Model Selected: primary-model (Reason: Work stages)
+[document-paraphrase:stderr] [log] [run:05d6a0c6] ➜ classifying
+📍 [document-paraphrase] State: classifying
+🛠️ [document-paraphrase] Tool Call: retrieve_knowledge({"query":"Can you put together a Word approval note for the plant manager from these two reports? Include the findings a...)
+[document-paraphrase:stderr] [log] [rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+✅ [document-paraphrase] Tool Result: retrieve_knowledge (SUCCESS)
+[document-paraphrase:stderr] [log] [model-gateway:draft:primary-model:3a7c83b8] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: draft)
+[document-paraphrase:stderr] [log] 
+┌─ [AI Request: DRAFT] (req:3a7c83b8)
+│ Model:   qwen2.5-coder-7b-instruct-mlx (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+[document-paraphrase:stderr] [log] ┌─ [AI Response: DRAFT] (req:3a7c83b8)
+│ Status:  HTTP 200 in 3086ms (finish: stop, 439 chars)
+└───────────────────────────────────────────────────────
+[document-paraphrase:stderr] [log] [run:05d6a0c6] ➜ planning
+📍 [document-paraphrase] State: planning
+[document-paraphrase:stderr] [log] [run:05d6a0c6] ➜ acting
+📍 [document-paraphrase] State: acting
+🛠️ [document-paraphrase] Tool Call: generate_deliverable({"type":"docx","filename":"approval_note.docx","content":"## inspection-report-E201-annotated.pdf\n\nSource identifiers:...)
+✅ [document-paraphrase] Tool Result: generate_deliverable (SUCCESS)
+[document-paraphrase:stderr] [log] ┌── [Artifact Ready: DOCX] ────────────────────────────────────
+│ File:     approval_note.docx (9.8 KB)
+│ Location: runs/05d6a0c6-856d-4d7e-8aa9-5eb96f11df84/output/approval_note.docx
+└──────────────────────────────────────────────────────────
+📦 [document-paraphrase] Artifact Ready: approval_note.docx (runs/05d6a0c6-856d-4d7e-8aa9-5eb96f11df84/output/approval_note.docx)
+[document-paraphrase:stderr] [log] [run:05d6a0c6] ➜ partial
+📍 [document-paraphrase] State: partial
+document-paraphrase: PASS; 82.7s; 
+📍 [document-paraphrase] State: cancelled
+[document-unrelated:stderr] [log] [rag:embedding] Dispatching embedBatch (3 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+[document-unrelated] Worker ready! Model registry active.
+🧭 [document-unrelated] Model Selected: primary-model (Reason: Work stages)
+[document-unrelated:stderr] [log] [run:675b1457] ➜ classifying
+📍 [document-unrelated] State: classifying
+🛠️ [document-unrelated] Tool Call: retrieve_knowledge({"query":"Make a Markdown review note from these training records and our policy. For each staff identifier, say whether...)
+[document-unrelated:stderr] [log] [rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+✅ [document-unrelated] Tool Result: retrieve_knowledge (SUCCESS)
+[document-unrelated:stderr] [log] [model-gateway:draft:primary-model:eeb5ad76] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: draft)
+[document-unrelated:stderr] [log] 
+┌─ [AI Request: DRAFT] (req:eeb5ad76)
+│ Model:   qwen2.5-coder-7b-instruct-mlx (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+[document-unrelated:stderr] [log] ┌─ [AI Response: DRAFT] (req:eeb5ad76)
+│ Status:  HTTP 200 in 3089ms (finish: stop, 439 chars)
+└───────────────────────────────────────────────────────
+[document-unrelated:stderr] [log] [run:675b1457] ➜ planning
+📍 [document-unrelated] State: planning
+[document-unrelated:stderr] [log] [run:675b1457] ➜ acting
+📍 [document-unrelated] State: acting
+🛠️ [document-unrelated] Tool Call: generate_deliverable({"type":"md","filename":"review-note.md","content":"# Review Note\n\n## Staff-Lark (Mira Sen)\n- **May handle records in...)
+✅ [document-unrelated] Tool Result: generate_deliverable (SUCCESS)
+[document-unrelated:stderr] [log] ┌── [Artifact Ready: MD] ────────────────────────────────────
+│ File:     review-note.md (0.9 KB)
+│ Location: runs/675b1457-1876-421d-8c5b-68d3fa518cce/output/review-note.md
+└──────────────────────────────────────────────────────────
+📦 [document-unrelated] Artifact Ready: review-note.md (runs/675b1457-1876-421d-8c5b-68d3fa518cce/output/review-note.md)
+🛠️ [document-unrelated] Tool Call: generate_deliverable({"type":"md","filename":"review-note.md","content":"# Review Note\n\n## Staff-Lark (Mira Sen)\n- **May handle records in...)
+✅ [document-unrelated] Tool Result: generate_deliverable (SUCCESS)
+[document-unrelated:stderr] [log] ┌── [Artifact Ready: MD] ────────────────────────────────────
+│ File:     review-note.md (0.9 KB)
+│ Location: runs/675b1457-1876-421d-8c5b-68d3fa518cce/output/review-note.md
+└──────────────────────────────────────────────────────────
+📦 [document-unrelated] Artifact Ready: review-note.md (runs/675b1457-1876-421d-8c5b-68d3fa518cce/output/review-note.md)
+🛠️ [document-unrelated] Tool Call: generate_deliverable({"type":"md","filename":"review-note.md","content":"# Review Note\n\n## Staff-Lark (Mira Sen)\n- **May handle records in...)
+✅ [document-unrelated] Tool Result: generate_deliverable (SUCCESS)
+[document-unrelated:stderr] [log] ┌── [Artifact Ready: MD] ────────────────────────────────────
+│ File:     review-note.md (0.9 KB)
+│ Location: runs/675b1457-1876-421d-8c5b-68d3fa518cce/output/review-note.md
+└──────────────────────────────────────────────────────────
+📦 [document-unrelated] Artifact Ready: review-note.md (runs/675b1457-1876-421d-8c5b-68d3fa518cce/output/review-note.md)
+[document-unrelated:stderr] [log] [run:675b1457] ➜ partial
+📍 [document-unrelated] State: partial
+document-unrelated: PARTIAL; 58.0s; Both staff identifiers are preserved
+[code-normal] Worker ready! Model registry active.
+🧭 [code-normal] Model Selected: primary-model (Reason: Work stages)
+[code-normal:stderr] [log] [run:117748cf] ➜ classifying
+📍 [code-normal] State: classifying
+[code-normal:stderr] [log] [model-gateway:draft:primary-model:ebed0bf2] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: draft)
+[code-normal:stderr] [log] 
+┌─ [AI Request: DRAFT] (req:ebed0bf2)
+│ Model:   qwen2.5-coder-7b-instruct-mlx (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+[code-normal:stderr] [log] ┌─ [AI Response: DRAFT] (req:ebed0bf2)
+│ Status:  HTTP 200 in 3470ms (finish: stop, 490 chars)
+└───────────────────────────────────────────────────────
+[code-normal:stderr] [log] [run:117748cf] ➜ planning
+📍 [code-normal] State: planning
+[code-normal:stderr] [log] [run:117748cf] ➜ acting
+📍 [code-normal] State: acting
+🛠️ [code-normal] Tool Call: execute_python({"source_file":"broken-vendor-log-parser.py","edits":[{"old":"temperature = float(row[\"temperature_c\"])","new":"try:\n...)
+[code-normal:stderr] [log] [run:117748cf] ➜ awaiting_confirmation
+📍 [code-normal] State: awaiting_confirmation
+
+🔔 [code-normal] Confirmation Required #1:
+   Action: uncontained_python
+   Preview: import ast, builtins, dis, inspect, pathlib, runpy, sys, types, typing
+_target = str((pathlib.Path(__file__).parent / "fixed-vendor-log-parser.py").re...
+   --> Auto-approving confirmation gate...
+[code-normal:stderr] [log] [run:117748cf] ➜ acting
+📍 [code-normal] State: acting
+✅ [code-normal] Tool Result: execute_python (SUCCESS)
+[code-normal:stderr] [log] ┌── [Artifact Ready: TXT] ────────────────────────────────────
+│ File:     fixed-vendor-log-parser.py (0.8 KB)
+│ Location: runs/117748cf-37eb-4c0d-a368-7e3799e42632/output/fixed-vendor-log-parser.py
+└──────────────────────────────────────────────────────────
+📦 [code-normal] Artifact Ready: fixed-vendor-log-parser.py (runs/117748cf-37eb-4c0d-a368-7e3799e42632/output/fixed-vendor-log-parser.py)
+[code-normal:stderr] [log] [run:117748cf] ➜ partial
+📍 [code-normal] State: partial
+code-normal: PASS; 61.1s; 
+📍 [code-normal] State: cancelled
+[code-paraphrase] Worker ready! Model registry active.
+🧭 [code-paraphrase] Model Selected: primary-model (Reason: Work stages)
+[code-paraphrase:stderr] [log] [run:62ea2654] ➜ classifying
+📍 [code-paraphrase] State: classifying
+[code-paraphrase:stderr] [log] [model-gateway:draft:primary-model:19bbba90] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: draft)
+[code-paraphrase:stderr] [log] 
+┌─ [AI Request: DRAFT] (req:19bbba90)
+│ Model:   qwen2.5-coder-7b-instruct-mlx (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+[code-paraphrase:stderr] [log] ┌─ [AI Response: DRAFT] (req:19bbba90)
+│ Status:  HTTP 200 in 3396ms (finish: stop, 472 chars)
+└───────────────────────────────────────────────────────
+[code-paraphrase:stderr] [log] [run:62ea2654] ➜ planning
+📍 [code-paraphrase] State: planning
+[code-paraphrase:stderr] [log] [run:62ea2654] ➜ acting
+📍 [code-paraphrase] State: acting
+🛠️ [code-paraphrase] Tool Call: execute_python({"source_file":"broken-vendor-log-parser.py","edits":[{"old":"temperature = float(row[\"temperature_c\"])","new":"try:\n...)
+[code-paraphrase:stderr] [log] [run:62ea2654] ➜ awaiting_confirmation
+📍 [code-paraphrase] State: awaiting_confirmation
+
+🔔 [code-paraphrase] Confirmation Required #1:
+   Action: uncontained_python
+   Preview: import ast, builtins, dis, inspect, pathlib, runpy, sys, types, typing
+_target = str((pathlib.Path(__file__).parent / "broken-vendor-log-parser.py").r...
+   --> Auto-approving confirmation gate...
+[code-paraphrase:stderr] [log] [run:62ea2654] ➜ acting
+📍 [code-paraphrase] State: acting
+✅ [code-paraphrase] Tool Result: execute_python (SUCCESS)
+[code-paraphrase:stderr] [log] ┌── [Artifact Ready: TXT] ────────────────────────────────────
+│ File:     broken-vendor-log-parser.py (0.8 KB)
+│ Location: runs/62ea2654-4fb3-4859-ad19-94005cbaca5e/output/broken-vendor-log-parser.py
+└──────────────────────────────────────────────────────────
+📦 [code-paraphrase] Artifact Ready: broken-vendor-log-parser.py (runs/62ea2654-4fb3-4859-ad19-94005cbaca5e/output/broken-vendor-log-parser.py)
+[code-paraphrase:stderr] [log] [run:62ea2654] ➜ partial
+📍 [code-paraphrase] State: partial
+code-paraphrase: PASS; 65.0s; 
+📍 [code-paraphrase] State: cancelled
+[code-unrelated] Worker ready! Model registry active.
+🧭 [code-unrelated] Model Selected: primary-model (Reason: Work stages)
+[code-unrelated:stderr] [log] [run:8f9fc536] ➜ classifying
+📍 [code-unrelated] State: classifying
+[code-unrelated:stderr] [log] [model-gateway:draft:primary-model:85b2cb1e] DB ENDPOINT: Dispatching to http://127.0.0.1:1234/v1 (qwen2.5-coder-7b-instruct-mlx, role: draft)
+[code-unrelated:stderr] [log] 
+┌─ [AI Request: DRAFT] (req:85b2cb1e)
+│ Model:   qwen2.5-coder-7b-instruct-mlx (primary-model)
+│ Params:  max_tokens=768 │ temp=0
+│ Prompt:  "CONVERSATION HISTORY: None (new session) RUNTIME CONTEXT (METADATA ONLY - UNTRUSTED SOURCE DATA): Wo..."
+└───────────────────────────────────────────────────────
+[code-unrelated:stderr] [log] ┌─ [AI Response: DRAFT] (req:85b2cb1e)
+│ Status:  HTTP 200 in 3419ms (finish: stop, 445 chars)
+└───────────────────────────────────────────────────────
+[code-unrelated:stderr] [log] [run:8f9fc536] ➜ planning
+📍 [code-unrelated] State: planning
+[code-unrelated:stderr] [log] [run:8f9fc536] ➜ acting
+📍 [code-unrelated] State: acting
+🛠️ [code-unrelated] Tool Call: execute_python({"source_file":"word-count.py","edits":[{"old":"counts[word] = 1","new":"counts[word] = counts.get(word, 0) + 1"}],"edit...)
+[code-unrelated:stderr] [log] [run:8f9fc536] ➜ awaiting_confirmation
+📍 [code-unrelated] State: awaiting_confirmation
+
+🔔 [code-unrelated] Confirmation Required #1:
+   Action: uncontained_python
+   Preview: import ast, builtins, dis, inspect, pathlib, runpy, sys, types, typing
+_target = str((pathlib.Path(__file__).parent / "word-count.py").resolve())
+_tre...
+   --> Auto-approving confirmation gate...
+[code-unrelated:stderr] [log] [run:8f9fc536] ➜ acting
+📍 [code-unrelated] State: acting
+✅ [code-unrelated] Tool Result: execute_python (SUCCESS)
+[code-unrelated:stderr] [log] ┌── [Artifact Ready: TXT] ────────────────────────────────────
+│ File:     word-count.py (0.6 KB)
+│ Location: runs/8f9fc536-e3d4-467d-a824-e1b912af754c/output/word-count.py
+└──────────────────────────────────────────────────────────
+📦 [code-unrelated] Artifact Ready: word-count.py (runs/8f9fc536-e3d4-467d-a824-e1b912af754c/output/word-count.py)
+[code-unrelated:stderr] [log] [run:8f9fc536] ➜ partial
+📍 [code-unrelated] State: partial
+code-unrelated: PASS; 69.3s; 
+📍 [code-unrelated] State: cancelled
+[inspection-normal:stderr] [log] [rag:embedding] Dispatching embedBatch (4 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+[inspection-normal] Worker ready! Model registry active.
+🧭 [inspection-normal] Model Selected: primary-model (Reason: Direct Chat response)
+[inspection-normal:stderr] [log] [run:e7fc6ef1] ➜ acting
+📍 [inspection-normal] State: acting
+🛠️ [inspection-normal] Tool Call: retrieve_knowledge({"query":"Check this against our piping spec and tell me if anything's non-compliant."})
+[inspection-normal:stderr] [log] [rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+✅ [inspection-normal] Tool Result: retrieve_knowledge (SUCCESS)
+[inspection-normal:stderr] [log] [run:e7fc6ef1] ➜ completed
+📍 [inspection-normal] State: completed
+inspection-normal: PASS; 18.8s; 
+[inspection-paraphrase:stderr] [log] [rag:embedding] Dispatching embedBatch (4 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+[inspection-paraphrase] Worker ready! Model registry active.
+🧭 [inspection-paraphrase] Model Selected: primary-model (Reason: Direct Chat response)
+[inspection-paraphrase:stderr] [log] [run:50e259da] ➜ acting
+📍 [inspection-paraphrase] State: acting
+🛠️ [inspection-paraphrase] Tool Call: retrieve_knowledge({"query":"Does this skid drawing meet our piping standard? Point out any mismatches and the changes needed before sign-o...)
+[inspection-paraphrase:stderr] [log] [rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+✅ [inspection-paraphrase] Tool Result: retrieve_knowledge (SUCCESS)
+[inspection-paraphrase:stderr] [log] [run:50e259da] ➜ completed
+📍 [inspection-paraphrase] State: completed
+inspection-paraphrase: PASS; 14.3s; 
+[inspection-unrelated:stderr] [log] [rag:embedding] Dispatching embedBatch (5 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+[inspection-unrelated] Worker ready! Model registry active.
+🧭 [inspection-unrelated] Model Selected: primary-model (Reason: Direct Chat response)
+[inspection-unrelated:stderr] [log] [run:5c1b7152] ➜ acting
+📍 [inspection-unrelated] State: acting
+🛠️ [inspection-unrelated] Tool Call: retrieve_knowledge({"query":"Check these parcel labels against our dispatch policy. Use the exact box identifiers, identify any defects and...)
+[inspection-unrelated:stderr] [log] [rag:embedding] Dispatching embedBatch (1 texts) to http://127.0.0.1:1234/v1/embeddings (model: text-embedding-nomic-embed-text-v1.5)
+✅ [inspection-unrelated] Tool Result: retrieve_knowledge (SUCCESS)
+[inspection-unrelated:stderr] [log] [run:5c1b7152] ➜ completed
+📍 [inspection-unrelated] State: completed
+inspection-unrelated: PASS; 14.3s; 
+V0 provisional result: 8/9 PASS; 0 harness failures. Review saved outputs before certification. Evidence: /Users/krishay/projects/agent/tests/.runtime/v0/2026-10-11T06-37-11-335Z

@@ -1,0 +1,14 @@
+
+> local-workbench@0.1.0 test
+> node scripts/test.cjs backend/tests/approval-presentation.test.ts
+
+
+ RUN  v3.2.7 /Users/krishay/projects/agent
+
+ ✓ backend/tests/approval-presentation.test.ts (3 tests) 46ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  11:57:17
+   Duration  280ms (transform 12ms, setup 0ms, collect 12ms, tests 46ms, environment 0ms, prepare 29ms)
+

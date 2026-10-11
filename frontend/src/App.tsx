@@ -977,7 +977,7 @@ export default function App() {
             disabled={isRunning}
             groundingEnabled={groundingEnabled}
             setGroundingEnabled={setGroundingEnabled}
-            mode={executionMode}
+            mode={isRunning && activeRunId ? sessions.current.modes.get(activeRunId) ?? executionMode : executionMode}
             onModeChange={handleModeChange}
             hasWorkspace={Boolean(activeWorkspace)}
           />

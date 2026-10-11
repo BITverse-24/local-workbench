@@ -835,14 +835,7 @@ export class AgentLoop {
           runId,
           operation: operation.name as any,
           targetPath: (operation.name === "execute_python" || operation.name === "generate_deliverable") ? "*" : targetPath || undefined,
-          command: operation.name === "run_command" ? (command || "*") : undefined,
-        });
-      }
-      if (runContract && (runContract.acceptance.validateWrittenCode || runContract.workspace.operations.some((op) => op.operation === "mutate" || op.operation === "execute"))) {
-        policyGuard.grantScope({
-          runId,
-          operation: "run_command",
-          command: "*",
+          command: operation.name === "run_command" ? command : undefined,
         });
       }
       if (semanticIntent?.workspaceMutationRequested && !semanticIntent?.restrictMutationsToTargets) {

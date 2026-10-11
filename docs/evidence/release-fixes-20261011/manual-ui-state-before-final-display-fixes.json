@@ -1,0 +1,152 @@
+{
+  "runs": [
+    {
+      "id": "1f2ea76f-abf9-44c5-91f8-0e79f9c8e41c",
+      "chat_id": "1d12e2a4-5477-45a3-a1f5-60eeb59574ef",
+      "state": "cancelled",
+      "user_text_summary": "Write a detailed explanation of heat transfer with many worked examples. Aim for 3000 words.",
+      "created_at": "2026-10-11T06:51:13.276Z",
+      "completed_at": "2026-10-11T06:51:33.285Z"
+    },
+    {
+      "id": "9d13086f-9994-4545-a291-b48cdcf19620",
+      "chat_id": "5baeea2e-2421-45ef-bd2d-bef0f5764101",
+      "state": "cancelled",
+      "user_text_summary": "Reply with exactly BETA_QUEUE_CHECK.",
+      "created_at": "2026-10-11T06:51:22.335Z",
+      "completed_at": "2026-10-11T06:51:26.632Z"
+    },
+    {
+      "id": "4a757720-2a4e-405e-a135-b1ec45ec38cf",
+      "chat_id": "8231922c-5b09-4817-95e6-f856292daa7a",
+      "state": "cancelled",
+      "user_text_summary": "Execute Python code print(7) once and report its stdout. Do not create a downloadable document or modify the workspace.",
+      "created_at": "2026-10-11T06:51:47.193Z",
+      "completed_at": "2026-10-11T06:57:09.808Z"
+    },
+    {
+      "id": "443d48d0-d22d-4a17-970d-2022aac750e4",
+      "chat_id": "bee2887b-e11a-4d83-bc55-204c1b125713",
+      "state": "completed",
+      "user_text_summary": "Replace smoke.txt with exactly AFTER_UI. Only change smoke.txt. Do not execute commands or generate any export.",
+      "created_at": "2026-10-11T10:14:35.281Z",
+      "completed_at": "2026-10-11T10:15:18.326Z"
+    },
+    {
+      "id": "07c77f52-016a-4502-9976-356ead9eb83c",
+      "chat_id": "d3e8769a-8a80-4943-b957-81f8460ffd85",
+      "state": "partial",
+      "user_text_summary": "Create a Markdown artifact named ui-check.md containing exactly UI_ARTIFACT_CHECK as the sole line. Do not modify the workspace.",
+      "created_at": "2026-10-11T10:15:10.027Z",
+      "completed_at": "2026-10-11T10:15:36.693Z"
+    },
+    {
+      "id": "e3521215-eead-411e-be71-af06909a7d70",
+      "chat_id": "a1b023bb-eab5-4337-a025-6eb0672c85a2",
+      "state": "cancelled",
+      "user_text_summary": "Execute Python code print(11) once and report stdout. Do not create a downloadable artifact or modify the workspace.",
+      "created_at": "2026-10-11T10:16:20.889Z",
+      "completed_at": "2026-10-11T10:19:48.231Z"
+    },
+    {
+      "id": "0367d2f8-0ba6-402c-a619-6d99b5e39cfe",
+      "chat_id": "1af06d58-55f7-4b26-9ad1-071cad65692c",
+      "state": "completed",
+      "user_text_summary": "Reply with exactly UI_ROUTING_OK.",
+      "created_at": "2026-10-11T10:16:29.207Z",
+      "completed_at": "2026-10-11T10:16:38.019Z"
+    }
+  ],
+  "confirmations": [
+    {
+      "run_id": "4a757720-2a4e-405e-a135-b1ec45ec38cf",
+      "kind": "uncontained_python",
+      "created_at": "2026-10-11T06:52:09.787Z",
+      "expires_at": "2026-10-11T06:57:09.787Z",
+      "outcome": "cancelled"
+    },
+    {
+      "run_id": "443d48d0-d22d-4a17-970d-2022aac750e4",
+      "kind": "plan_approval",
+      "created_at": "2026-10-11T10:14:41.525Z",
+      "expires_at": "2026-10-11T10:19:41.525Z",
+      "outcome": "approved"
+    },
+    {
+      "run_id": "e3521215-eead-411e-be71-af06909a7d70",
+      "kind": "uncontained_python",
+      "created_at": "2026-10-11T10:16:36.998Z",
+      "expires_at": "2026-10-11T10:21:36.998Z",
+      "outcome": "rejected"
+    }
+  ],
+  "messages": [
+    {
+      "chat_id": "1d12e2a4-5477-45a3-a1f5-60eeb59574ef",
+      "run_id": null,
+      "role": "user",
+      "content": "Write a detailed explanation of heat transfer with many worked examples. Aim for 3000 words."
+    },
+    {
+      "chat_id": "5baeea2e-2421-45ef-bd2d-bef0f5764101",
+      "run_id": null,
+      "role": "user",
+      "content": "Reply with exactly BETA_QUEUE_CHECK."
+    },
+    {
+      "chat_id": "1d12e2a4-5477-45a3-a1f5-60eeb59574ef",
+      "run_id": "1f2ea76f-abf9-44c5-91f8-0e79f9c8e41c",
+      "role": "assistant",
+      "content": "Heat transfer is a fundamental concept in physics that describes the exchange of thermal energy between two or more bodies due to their temperature difference. This process can occur through three primary mechanisms: conduction, convection, and radiation. Each method has unique characteristics and applications in various fields such as engineering, meteorology, and biology.\n\n### 1. Conduction\nConduction is the transfer of heat through direct contact between particles in a material. The rate of heat transfer by conduction depends on the temperature difference, the thermal conductivity of the material, and the area over which the heat is transferred.\n\n#### Formula for Conduction:\n\\[ Q = -kA \\frac{dT}{dx} \\]\nWhere:\n- \\( Q \\) is the rate of heat transfer (in watts, W),\n- \\( k \\) is the thermal conductivity of the material (in W/m·K),\n- \\( A \\) is the area through which heat is transferred (in square meters, m²),\n- \\( \\frac{dT}{dx} \\) is the temperature gradient (in K/m).\n\n#### Example 1: Heat Loss Through a Wall\nConsider a wall with dimensions \\( L = 2 \\) m, \\( W = 1.5 \\) m, and height \\( H = 2.5 \\) m. The wall is made of brick with a thermal conductivity \\( k = 1.7 \\) W/m·K. The temperature on one side of the wall is \\( T_1 = 20^\\circ C \\) and on the other side, it is \\( T_2 = 10^\\circ C \\). Calculate the rate of heat transfer through the wall.\n\n**Solution:"
+    },
+    {
+      "chat_id": "8231922c-5b09-4817-95e6-f856292daa7a",
+      "run_id": null,
+      "role": "user",
+      "content": "Execute Python code print(7) once and report its stdout. Do not create a downloadable document or modify the workspace."
+    },
+    {
+      "chat_id": "bee2887b-e11a-4d83-bc55-204c1b125713",
+      "run_id": null,
+      "role": "user",
+      "content": "Replace smoke.txt with exactly AFTER_UI. Only change smoke.txt. Do not execute commands or generate any export."
+    },
+    {
+      "chat_id": "d3e8769a-8a80-4943-b957-81f8460ffd85",
+      "run_id": null,
+      "role": "user",
+      "content": "Create a Markdown artifact named ui-check.md containing exactly UI_ARTIFACT_CHECK as the sole line. Do not modify the workspace."
+    },
+    {
+      "chat_id": "bee2887b-e11a-4d83-bc55-204c1b125713",
+      "run_id": "443d48d0-d22d-4a17-970d-2022aac750e4",
+      "role": "assistant",
+      "content": "**Final Findings:**\n\n| Identifier | Observation | Requirement | Assessment | Action | Evidence |\n|------------|-------------|-------------|------------|--------|----------|\n| smoke.txt  | \"AFTER_UI\"    | Replace smoke.txt with exactly AFTER_UI | Succeeded | None   |  |\n\n**Conclusion:**\nThe operation to replace `smoke.txt` with exactly \"AFTER_UI\" was successfully completed. The file has been updated, and a backup of the original file is available in `.harness_backups/2026-10-11T10-14-59-382Z-b14158f4-87d5-4de6-9aed-20c81c12ee6e/smoke.txt`."
+    },
+    {
+      "chat_id": "d3e8769a-8a80-4943-b957-81f8460ffd85",
+      "run_id": "07c77f52-016a-4502-9976-356ead9eb83c",
+      "role": "assistant",
+      "content": "**Partially complete**\n\n**Confirmed**\n\n- File saved: `ui-check.md`.\n\n**Still to check**\n\n- Acceptance not yet verified: Create a Markdown artifact named ui-check.md containing exactly UI\\_ARTIFACT\\_CHECK as the sole line. Do not modify the workspace..\n\n**Why it stopped:** Not all requested work was confirmed.\n\n**Details**\n\nui-check.md saved. Some required checks remain unverified."
+    },
+    {
+      "chat_id": "a1b023bb-eab5-4337-a025-6eb0672c85a2",
+      "run_id": null,
+      "role": "user",
+      "content": "Execute Python code print(11) once and report stdout. Do not create a downloadable artifact or modify the workspace."
+    },
+    {
+      "chat_id": "1af06d58-55f7-4b26-9ad1-071cad65692c",
+      "run_id": null,
+      "role": "user",
+      "content": "Reply with exactly UI_ROUTING_OK."
+    },
+    {
+      "chat_id": "1af06d58-55f7-4b26-9ad1-071cad65692c",
+      "run_id": "0367d2f8-0ba6-402c-a619-6d99b5e39cfe",
+      "role": "assistant",
+      "content": "UI_ROUTING_OK"
+    }
+  ],
+  "executionResults": []
+}

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { resolveSemanticIntent, extractReferencedFiles, inferAttachedPythonRepairFilename } from "../src/main/router/contextual-router.js";
+import { validateAndNormalizeIntent, resolveSemanticIntent, extractReferencedFiles, inferAttachedPythonRepairFilename } from "../src/main/router/contextual-router.js";
 
 describe("Contextual Semantic Intent & Routing Engine", () => {
+  it("retains explicit exclusions even when the classifier omits them", () => {
+    const intent = validateAndNormalizeIntent({ requestedAction: 'modify_software', responseMode: 'chat', primaryGoal: 'Update notes', workspaceMutationRequested: true, targetFiles: ['notes.md','config.json'], protectedPaths: [], restrictMutationsToTargets: false }, { hasWorkspace: true, workspaceFiles: ['notes.md','config.json','unrelated.md'], userPrompt: 'Update notes.md. Do not modify config.json, unrelated.md, or any other existing file.' });
+    expect(intent.protectedPaths).toEqual(expect.arrayContaining(['config.json','unrelated.md']));
+    expect(intent.targetFiles).toEqual(['notes.md']);
+    expect(intent.restrictMutationsToTargets).toBe(true);
+  });
   it("derives a repaired Python artifact only for an attached-source repair request", () => {
     const attachments = [{ filename: "broken-vendor-log-parser.py" }];
     expect(inferAttachedPythonRepairFilename("The attached script is breaking. Please fix the issue.", attachments)).toBe("fixed-vendor-log-parser.py");

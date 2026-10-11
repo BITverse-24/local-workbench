@@ -1,0 +1,179 @@
+{
+  "cohort": "/Users/krishay/projects/agent/tests/.runtime/v0/2026-10-11T06-37-11-335Z",
+  "fullPasses": 8,
+  "byFamily": {
+    "document": 2,
+    "code": 3,
+    "inspection": 3
+  },
+  "harnessFailures": 0,
+  "p50Sec": 57.97839295899999,
+  "p95Sec": 82.72310533300002,
+  "maximumRecoveries": 2,
+  "rows": [
+    {
+      "id": "document-normal",
+      "state": "partial",
+      "classification": "PASS",
+      "latencySec": 50.560958333,
+      "recoveries": 0,
+      "failedRequirements": [],
+      "toolPath": [
+        "retrieve_knowledge",
+        "generate_deliverable"
+      ],
+      "artifacts": [
+        {
+          "path": "/Users/krishay/projects/agent/tests/.runtime/v0/2026-10-11T06-37-11-335Z/document-normal/data/runs/1c625dce-708d-4e79-bd5a-6b554f5bc610/output/approval_note.docx",
+          "sha256": "36b436579413c698f16a72e5acd08d5ba757433315b1d6e9ff4ad4d3d8e3e635",
+          "metadataMatches": true,
+          "text": "inspection-report-E201-annotated.pdf\ninspection-report-E201-annotated.pdf\nSource identifiers: IR-E201-2026-08-20; E-201 Heat Exchanger\nApproval Note\nReport ID:\n IR-E201-2026-08-20 \nEquipment:\n E-201 Heat Exchanger\nFindings:\n1. \nTube Wall Thickness:\n Rows 12-15 measured 3.8-4.2 mm (minimum allowable: 4.6 mm).\nEvidence:\n Page 1, Rows 12-15.\n2. \nLocalised Pitting Corrosion:\n Maximum depth at the shell inlet nozzle is 1.8 mm.\nEvidence:\n Page 1.\n3. \nChannel-Head Gasket Degradation:\n Replacement recommended before return to service.\nEvidence:\n Page 2.\nRecommendation:\nConditional clearance pending retubing of the affected tubes and replacement of the channel-head gasket.\nGrounding References:\n[SOP-114 \u00a73.2] Approval criteria\n[SOP-114 \u00a72.1] Inspection evidence\n[SOP-114 \u00a71.0] Purpose\nNote:\n The approval note must not claim that final approval has already been granted.\nSource annotations\nSource annotation for IR-E201-2026-08-20:\n RECHECK WELD JOINT 4B (inspection-report-E201-annotated.pdf, p. 1)\ninspection-report-E202-followup.pdf\nSource identifiers: IR-E202-2026-08-21; E-202 Pressure Vessel\nApproval Note\nReport ID:\n IR-E202-2026-08-21 \nEquipment:\n E-202 Pressure Vessel\nFindings:\nTube Wall Thickness:\n Rows 12-15 measured 3.8-4.2 mm (Minimum allowable: 4.6 mm)\nLocalised Pitting Corrosion:\n At the shell inlet nozzle, maximum depth 1.8 mm\nRecommendation:\n Conditional clearance pending retubing of the affected tubes.\nGrounding References:\n [SOP-114 \u00a73.2] - Approval criteria for tube-wall measurements below minimum allowable value and localised pitting.\nNote:\n The report does not state an approval status. Follow-up visual inspection complete with no new defects observed.\nApproval Status:\n Pending\nThis approval note is based on the findings from the inspection report IR-E202-2026-08-21. The equipment, E-202 Pressure Vessel, has been found to have tube wall thicknesses below the minimum allowable value and localised pitting corrosion. Conditional clearance is pending retubing of the affected tubes as per SOP-114 \u00a73.2. The report does not indicate an approval status, and a follow-up visual inspection has confirmed no new defects.\nSource annotations\nSource annotation for IR-E202-2026-08-21:\n verify after repair (inspection-report-E202-followup.pdf, p. 1)\nSource documents\ninspection-report-E201-annotated.pdf, page 1\ninspection-report-E201-annotated.pdf, page 2\ninspection-report-E202-followup.pdf, page 1\ninspection-report-E202-followup.pdf, page 2",
+          "tableCount": 0
+        }
+      ]
+    },
+    {
+      "id": "document-paraphrase",
+      "state": "partial",
+      "classification": "PASS",
+      "latencySec": 82.72310533300002,
+      "recoveries": 2,
+      "failedRequirements": [],
+      "toolPath": [
+        "retrieve_knowledge",
+        "generate_deliverable"
+      ],
+      "artifacts": [
+        {
+          "path": "/Users/krishay/projects/agent/tests/.runtime/v0/2026-10-11T06-37-11-335Z/document-paraphrase/data/runs/05d6a0c6-856d-4d7e-8aa9-5eb96f11df84/output/approval_note.docx",
+          "sha256": "e6a76d1c717b935e6b20c8871e72618dd464af4ffdb680e64e2d19a76cfdaefe",
+          "metadataMatches": true,
+          "text": "inspection-report-E201-annotated.pdf\ninspection-report-E201-annotated.pdf\nSource identifiers: IR-E201-2026-08-20; E-201 Heat Exchanger\nNORTH ZONE REFINERY - INSPECTION REPORT\nReport ID:\n IR-E201-2026-08-20 \nEquipment:\n E-201 Heat Exchanger\nInspection Findings:\n1. \nTube Wall Thickness:\nRows 12-15 measured 3.8-4.2 mm.\nMinimum Allowable Tube Wall Thickness:\n 4.6 mm.\n2. \nLocalised Pitting Corrosion:\nAt the shell inlet nozzle; maximum depth 1.8 mm.\n3. \nChannel-Head Gasket Degradation:\nRecommended for replacement before return to service.\nApproval Note:\nEquipment:\n E-201 Heat Exchanger \nReport ID:\n IR-E201-2026-08-20\nFindings:\nTube Wall Thickness:\n Rows 12-15 measured 3.8-4.2 mm, below the minimum allowable value of 4.6 mm.\nLocalised Pitting Corrosion:\n At the shell inlet nozzle, maximum depth 1.8 mm.\nChannel-Head Gasket Degradation:\n Recommended for replacement before return to service.\nRecommendation:\nConditional clearance pending retubing of the affected tubes and replacement of the channel-head gasket.\nGrounding References:\n[SOP-114 \u00a73.2] Approval criteria\n[SOP-114 \u00a72.1] Inspection evidence\n[SOP-114 \u00a71.0] Purpose\nNote:\n The approval note must not claim that final approval has already been granted.\nApproval Note Prepared by:\n [Your Name] [Date]\nPlant Manager Approval Required:\nPlease review the findings and recommendation above. If approved, please sign below:\nPlant Manager Name\n \nTitle\n \nDate\nApproval Note Approved by:\n [Plant Manager Name] \nTitle\n \nDate\nThis approval note is based on the findings and criteria outlined in SOP-114. The equipment must be retubed and the gasket replaced before returning to service.\nSource annotations\nSource annotation for IR-E201-2026-08-20:\n RECHECK WELD JOINT 4B (inspection-report-E201-annotated.pdf, p. 1)\ninspection-report-E202-followup.pdf\nSource identifiers: IR-E202-2026-08-21; E-202 Pressure Vessel\nNORTH ZONE REFINERY - APPROVAL NOTE\nReport ID:\n IR-E202-2026-08-21 \nEquipment:\n E-202 Pressure Vessel\nInspection Findings:\n1. \nTube Wall Thickness:\nRows 12-15 measured 3.8-4.2 mm.\nMinimum Allowable Tube Wall Thickness:\n 4.6 mm.\n2. \nLocalised Pitting Corrosion:\nAt the shell inlet nozzle; maximum depth 1.8 mm.\nFollow-Up Observations:\nFollow-up visual inspection complete.\nNo new defects observed.\nApproval Conditions:\n1. \nConditional Clearance Pending Retubing:\nThe affected tubes (rows 12-15) are scheduled for retubing.\nAny recommended gasket replacement must be recorded.\nRecommendation:\nConditional clearance pending retubing of the affected tubes.\nGrounding References:\n[SOP-114 \u00a73.2]\nNote:\n The approval note must not claim that final approval has already been granted.\nInspector Annotation:\n\"verify after repair\" (Page 1)\nApproval Note Prepared by:\n [Your Name] [Date]\nPlant Manager Approval Required:\nPlease review the findings and conditions outlined above. If you approve, please sign below:\nPlant Manager Name\n \nTitle\nDate:\nSource documents\ninspection-report-E201-annotated.pdf, page 1\ninspection-report-E201-annotated.pdf, page 2\ninspection-report-E202-followup.pdf, page 1\ninspection-report-E202-followup.pdf, page 2",
+          "tableCount": 0
+        }
+      ]
+    },
+    {
+      "id": "document-unrelated",
+      "state": "partial",
+      "classification": "PARTIAL",
+      "latencySec": 57.97839295899999,
+      "recoveries": 2,
+      "failedRequirements": [
+        {
+          "name": "Both staff identifiers are preserved",
+          "severity": "major",
+          "passed": false,
+          "reason": "A staff identifier is absent"
+        }
+      ],
+      "toolPath": [
+        "retrieve_knowledge",
+        "generate_deliverable",
+        "generate_deliverable",
+        "generate_deliverable"
+      ],
+      "artifacts": [
+        {
+          "path": "/Users/krishay/projects/agent/tests/.runtime/v0/2026-10-11T06-37-11-335Z/document-unrelated/data/runs/675b1457-1876-421d-8c5b-68d3fa518cce/output/review-note.md",
+          "sha256": "3870e7fc933e7db412f623e64d122b6a42fcee56081e191d14e35baaacd3c48b",
+          "metadataMatches": true,
+          "text": "# Review Note\n\n## Staff-Lark (Mira Sen)\n- **May handle records independently:** Yes\n  - **Reason:** Completed training within the last twelve months (2026-09-10) and supervisor acknowledgement is recorded (2026-09-12).\n  - **Next Actions:** None\n  - **Policy Reference:** training-policy.md, section 2\n\n- **Source annotation for STAFF-LARK:** Retain the signed attendance sheet. (training-records.md, p. 1)\n\n## Staff-Fern (Owen Hale)\n- **May handle records independently:** No\n  - **Reason:** Training completed over a year ago (2025-08-02) and supervisor acknowledgement is not recorded.\n  - **Next Actions:** Arrange refresher training and obtain supervisor acknowledgement.\n  - **Policy Reference:** training-policy.md, section 2\n\n**Note:** Ensure that Owen Hale completes the refresher training and obtains supervisor acknowledgement before he can handle records independently.\n\n**Review Date:** 2026-09-30\n\n## Source documents\n- training-records.md, page 1"
+        }
+      ]
+    },
+    {
+      "id": "code-normal",
+      "state": "partial",
+      "classification": "PASS",
+      "latencySec": 61.135691166,
+      "recoveries": 0,
+      "failedRequirements": [],
+      "toolPath": [
+        "execute_python"
+      ],
+      "artifacts": [
+        {
+          "path": "/Users/krishay/projects/agent/tests/.runtime/v0/2026-10-11T06-37-11-335Z/code-normal/data/runs/117748cf-37eb-4c0d-a368-7e3799e42632/output/fixed-vendor-log-parser.py",
+          "sha256": "562a12b91a291d7a1fbb342b43c1db8881f1f9ce834b13e50a529c6d6e0137bf",
+          "metadataMatches": true,
+          "text": "\"\"\"Deliberately broken starting point for Flow B's repair demo.\"\"\"\n\nimport csv\nimport sys\n\n\ndef summarize(path: str) -> dict[str, int]:\n    counts = {\"ok\": 0, \"malformed\": 0, \"high\": 0}\n    with open(path, newline=\"\", encoding=\"utf-8\") as handle:\n        for row in csv.DictReader(handle):\n            # Bug 1: malformed rows have no temperature and crash the run.\n            try:\n                temperature = float(row[\"temperature_c\"])\n            except ValueError:\n                counts[\"malformed\"] += 1\n                continue\n            # Bug 2: the vendor's inclusive 350.0 upper limit is rejected.\n            if temperature >= 350.0:\n                counts[\"high\"] += 1\n            counts[\"ok\"] += 1\n    return counts\n\n\nif __name__ == \"__main__\":\n    print(summarize(sys.argv[1]))\n"
+        }
+      ]
+    },
+    {
+      "id": "code-paraphrase",
+      "state": "partial",
+      "classification": "PASS",
+      "latencySec": 65.00599595799999,
+      "recoveries": 1,
+      "failedRequirements": [],
+      "toolPath": [
+        "execute_python"
+      ],
+      "artifacts": [
+        {
+          "path": "/Users/krishay/projects/agent/tests/.runtime/v0/2026-10-11T06-37-11-335Z/code-paraphrase/data/runs/62ea2654-4fb3-4859-ad19-94005cbaca5e/output/broken-vendor-log-parser.py",
+          "sha256": "562a12b91a291d7a1fbb342b43c1db8881f1f9ce834b13e50a529c6d6e0137bf",
+          "metadataMatches": true,
+          "text": "\"\"\"Deliberately broken starting point for Flow B's repair demo.\"\"\"\n\nimport csv\nimport sys\n\n\ndef summarize(path: str) -> dict[str, int]:\n    counts = {\"ok\": 0, \"malformed\": 0, \"high\": 0}\n    with open(path, newline=\"\", encoding=\"utf-8\") as handle:\n        for row in csv.DictReader(handle):\n            # Bug 1: malformed rows have no temperature and crash the run.\n            try:\n                temperature = float(row[\"temperature_c\"])\n            except ValueError:\n                counts[\"malformed\"] += 1\n                continue\n            # Bug 2: the vendor's inclusive 350.0 upper limit is rejected.\n            if temperature >= 350.0:\n                counts[\"high\"] += 1\n            counts[\"ok\"] += 1\n    return counts\n\n\nif __name__ == \"__main__\":\n    print(summarize(sys.argv[1]))\n"
+        }
+      ]
+    },
+    {
+      "id": "code-unrelated",
+      "state": "partial",
+      "classification": "PASS",
+      "latencySec": 69.25266283400002,
+      "recoveries": 2,
+      "failedRequirements": [],
+      "toolPath": [
+        "execute_python"
+      ],
+      "artifacts": [
+        {
+          "path": "/Users/krishay/projects/agent/tests/.runtime/v0/2026-10-11T06-37-11-335Z/code-unrelated/data/runs/8f9fc536-e3d4-467d-a824-e1b912af754c/output/word-count.py",
+          "sha256": "d53ce33bb6ebd232cb14acfa31dbb80fa7bd14749e43881bee0a0a8d397c6052",
+          "metadataMatches": true,
+          "text": "\"\"\"Count each ASCII word in a UTF-8 text file, ignoring case and punctuation.\nRepeated words must accumulate. Preserve count_words(path) and the JSON CLI.\n\"\"\"\nimport json\nimport re\nimport sys\n\n\ndef count_words(path: str) -> dict[str, int]:\n    with open(path, encoding=\"utf-8\") as handle:\n        words = re.findall(r\"[A-Za-z]+\", handle.read().lower())\n    counts = {}\n    for word in words:\n        counts[word] = counts.get(word, 0) + 1  # BUG: repeated words overwrite the existing count\n    return counts\n\n\nif __name__ == \"__main__\":\n    print(json.dumps(count_words(sys.argv[1]), sort_keys=True))\n"
+        }
+      ]
+    },
+    {
+      "id": "inspection-normal",
+      "state": "completed",
+      "classification": "PASS",
+      "latencySec": 18.757021833000007,
+      "recoveries": 0,
+      "failedRequirements": [],
+      "toolPath": [
+        "retrieve_knowledge"
+      ],
+      "artifacts": []
+    },
+    {
+      "id": "inspection-paraphrase",
+      "state": "completed",
+      "classification": "PASS",
+      "latencySec": 14.316845874999999,
+      "recoveries": 0,
+      "failedRequirements": [],
+      "toolPath": [
+        "retrieve_knowledge"
+      ],
+      "artifacts": []
+    },
+    {
+      "id": "inspection-unrelated",
+      "state": "completed",
+      "classification": "PASS",
+      "latencySec": 14.326124583999976,
+      "recoveries": 0,
+      "failedRequirements": [],
+      "toolPath": [
+        "retrieve_knowledge"
+      ],
+      "artifacts": []
+    }
+  ]
+}

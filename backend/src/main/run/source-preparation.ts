@@ -31,27 +31,30 @@ export async function prepareSources(attachments: AttachmentReference[], text: s
     const file=resolveRunPath(context.runId,attachment.relativePath.slice(prefix.length),'input');
     const ext=path.extname(attachment.filename).slice(1).toLowerCase();
     const bytes=readFileSync(file);
-    const key=createHash('sha256').update(bytes).update('independent-reader-v4').digest('hex');
+    const key=createHash('sha256').update(bytes).update('independent-reader-v5:'+ext).digest('hex');
     const cached=cache.get(key);
     let content=cached?.text;let pages=cached?.pages??[1];
     if (content===undefined) {
-      let needsVisual=false;let annotationEvidence='';
+      let needsVisual=false;let annotationEvidence='';let usedVision=false;
       if (ext==='svg') {
         const source=await readDocumentContent(file);
         if(source.hasText)content=source.text;
       }
       if (!['png','jpg','jpeg','bmp','tif','tiff','svg'].includes(ext)) {
         try { const parsed=await parseFileIndependently(file,ext); content=parsed.text;needsVisual=ext==='pdf'&&!parsed.pages?.some(page=>page.text.trim());const annotations=[...(parsed.annotations??[]),...extractAttributedDocumentNotes(parsed.text)];if(annotations.length){annotationEvidence='\nSource annotations preceding reviewer/inspector attribution (verbatim evidence): '+JSON.stringify(annotations);content+=annotationEvidence;}
-          pages=(parsed.pages??[{pageNumber:1}]).map(page=>page.pageNumber); } catch (e) { assertRuntimeActive(); if (!['pdf','docx','xlsx'].includes(ext)) throw e; }
+          pages=(parsed.pages??[{pageNumber:1}]).map(page=>page.pageNumber); } catch (e) { assertRuntimeActive(); if (['csv','json'].includes(ext)) { content=new TextDecoder('utf-8',{fatal:true}).decode(bytes); } else if (!['pdf','docx','xlsx'].includes(ext)) throw e; }
       }
       if ((!content?.trim()||needsVisual) && ['pdf','svg','png','jpg','jpeg','bmp','tif','tiff'].includes(ext)) {
+        usedVision=true;
         const [result]=await new ToolDispatcher([extractDocumentTool]).dispatchConcurrent([{ id: key, name:'extract_document', arguments:{filename:attachment.filename,query:text} }],context);
         if (!result.result.ok) throw new Error(result.result.error.message);
         content=result.result.output+annotationEvidence;
       }
       if (content===undefined) throw new Error(`Cannot read ${attachment.filename}.`);
       if (cache.size>=64) cache.delete(cache.keys().next().value!);
-      if (content.length<=2_000_000) cache.set(key,{text:content,pages});
+      // Vision output depends on the query, selected model and run context.
+      // Cache only deterministic extraction, never a model's visual answer.
+      if (!usedVision && content.length<=2_000_000) cache.set(key,{text:content,pages});
     }
     context.sourceReferences??=[];context.sourceReferences.push(...pages.map(page=>({filename:attachment.filename,page})));
     const budget=Math.max(1000,Math.floor(limit/Math.max(attachments.length,1)));

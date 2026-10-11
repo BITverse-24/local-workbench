@@ -1,4 +1,9 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { simulateCommandSandbox } from "./helpers/command-sandbox.js";
+vi.mock("../src/main/tools/child-process.js", async importOriginal => {
+  const actual = await importOriginal<typeof import("../src/main/tools/child-process.js")>();
+  return { ...actual, executeProcess: simulateCommandSandbox(actual.executeProcess) };
+});
+import { describe, expect, it, beforeEach, afterEach , vi } from "vitest";
 import { parseToolCallArguments } from "../src/main/gateway/model-gateway.js";
 import {
   extractPathArg,

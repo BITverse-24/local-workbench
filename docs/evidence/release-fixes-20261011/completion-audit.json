@@ -1,0 +1,124 @@
+{
+  "objectiveComplete": false,
+  "remainingRequiredVerification": "Positive packaged Python fallback approval still needs human action-time confirmation. Final visual and background-mode return checks need reliable desktop observation/control; current tool returns a stale screenshot and does not enter the test prompt.",
+  "requirements": [
+    {
+      "requirement": "R1 commands contained or refused; exact approval",
+      "status": "verified within tested Mac scope",
+      "evidence": [
+        "safety-tests.log",
+        "write-plan-scope-tests.log",
+        "backend/tests/command-containment.test.ts",
+        "backend/tests/command-publication.test.ts"
+      ],
+      "limits": "Host refuses OS sandbox startup; positive sandbox execution remains untested and must not be advertised."
+    },
+    {
+      "requirement": "R2 no hidden workspace alias writes",
+      "status": "verified",
+      "evidence": [
+        "backend/tests/command-containment.test.ts",
+        "backend/src/main/tools/workspace-tools.ts"
+      ]
+    },
+    {
+      "requirement": "R3 fresh visual follow-up evidence",
+      "status": "verified",
+      "evidence": [
+        "chat-followup-tests.log",
+        "backend/tests/source-preparation.test.ts",
+        "vision.json"
+      ],
+      "limits": "Data-flow mocks establish follow-up freshness; live visual campaign establishes extraction separately."
+    },
+    {
+      "requirement": "R4 accurate fallback labels, warnings and approval handling",
+      "status": "Labels, warning, rejection, expiry and restart manually checked; positive approval pending",
+      "evidence": [
+        "approval-tests.log",
+        "backend/tests/three-modes.test.ts",
+        "manual-ui-state.json",
+        "manual-ui-checks.json"
+      ],
+      "limits": "No uncontained Python was approved in this desktop profile."
+    },
+    {
+      "requirement": "Stale/dead execution code cleaned",
+      "status": "verified",
+      "evidence": [
+        "backend/src/main/run/manager.ts",
+        "full-tests.log",
+        "typecheck.log"
+      ]
+    },
+    {
+      "requirement": "Framework nine-case reference model gates",
+      "status": "verified",
+      "fullPasses": 8,
+      "byFamily": {
+        "document": 2,
+        "code": 3,
+        "inspection": 3
+      },
+      "harnessFailures": 0,
+      "evidence": [
+        "canonical-nine.json",
+        "canonical-output-audit.json",
+        "canonical-provenance.json"
+      ]
+    },
+    {
+      "requirement": "Framework vision gate",
+      "status": "verified 3/3",
+      "evidence": [
+        "vision.json"
+      ]
+    },
+    {
+      "requirement": "Authentic A/B/C run records",
+      "status": "verified execution records",
+      "evidence": [
+        "canonical-nine.json",
+        "canonical-output-audit.json"
+      ],
+      "limits": "Execution transcripts and saved artifacts, not a desktop video."
+    },
+    {
+      "requirement": "Baseline can be restored",
+      "status": "verified",
+      "filesCompared": 375,
+      "evidence": [
+        "baseline-restore.json"
+      ]
+    },
+    {
+      "requirement": "Final build and package checks",
+      "status": "verified",
+      "evidence": [
+        "build.log",
+        "package.log",
+        "package-smoke.log",
+        "package-integrity.json",
+        "dmg-verify.log"
+      ]
+    },
+    {
+      "requirement": "Final package desktop checks",
+      "status": "Blocked: remaining manual checks need external action",
+      "evidence": [
+        "manual-ui-state.json",
+        "manual-ui-checks.json",
+        "packaged-ui-final.log"
+      ],
+      "limits": "Positive packaged Python fallback approval still needs human action-time confirmation. Final visual and background-mode return checks need reliable desktop observation/control; current tool returns a stale screenshot and does not enter the test prompt."
+    }
+  ],
+  "qualityLimit": "Five of six additional opt-in live checks pass. Quoted-CSV repair fails a retained independent assertion and remains production Partial. The framework minimums still pass.",
+  "distributionLimit": "Unsigned tested Mac arm64 package only. No public signing, notarization, clean-machine, Windows or Linux certification.",
+  "fullOrdinaryTests": {
+    "passed": 999,
+    "liveSkipped": 6,
+    "failed": 0
+  },
+  "lastUpdatedUtc": "2026-10-11T10:41:19.929177+00:00"
+}

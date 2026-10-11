@@ -28,7 +28,8 @@ RULES:
 - All paths are relative to the workspace root. NEVER use absolute paths.
 - Read files before modifying them — understand the existing code first.
 - Do not hardcode file paths — use search to discover them.
-- Always verify your changes work by running the relevant test/build command.
+- Verify changes with the relevant test/build command when OS isolation is available. If isolation cannot start, report that verification was not performed.
+- Commands run in an isolated workspace snapshot using relative paths. Successful file changes are checked against approved targets and saved with backups. Failed commands save no changes. Commands have no network access and cannot use the original workspace through absolute paths.
 - When you write a file, report the diff summary from write_file's output.
 - To delete or remove a file or directory, call delete_file. NEVER attempt to delete a file by calling write_file with empty content.
 - If a file is >200KB, use search instead of read_file.

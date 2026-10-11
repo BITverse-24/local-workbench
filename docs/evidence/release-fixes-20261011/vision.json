@@ -1,0 +1,216 @@
+{
+  "results": [
+    {
+      "filename": "image-only.pdf",
+      "runId": "7622c91f-5f6b-48b7-8baf-f3dc6361bd10",
+      "classification": "PASS",
+      "latencySec": 15.263746583,
+      "toolPath": [
+        "extract_document",
+        "ModelGateway.execute(vision)"
+      ],
+      "calls": [
+        {
+          "runId": "7622c91f-5f6b-48b7-8baf-f3dc6361bd10",
+          "requestId": "ef54a020-974b-4d09-bc0b-d8a8d7a2da46",
+          "parentCallId": "b12280b5-c198-4f92-bbe1-5ff5efedf71f",
+          "modelId": "vision-fallback",
+          "taskType": "vision",
+          "isRetry": false,
+          "latencyMs": 18,
+          "promptTokens": 68,
+          "outputTokens": 321,
+          "totalTokens": 389
+        }
+      ],
+      "payload": {
+        "sourceText": "The image shows three shapes on a white background. There are two blue circles side by side, and to the right of them, there is one red triangle.",
+        "findings": [
+          {
+            "findingId": "shape1",
+            "title": "First blue circle",
+            "value": "A solid blue circle positioned on the left side of the image.",
+            "pageReferenceIds": [
+              "page1"
+            ],
+            "confidence": "high",
+            "evidence": "The circle is solid blue and located on the left."
+          },
+          {
+            "findingId": "shape2",
+            "title": "Second blue circle",
+            "value": "A solid blue circle positioned to the right of the first blue circle, side by side with it.",
+            "pageReferenceIds": [
+              "page1"
+            ],
+            "confidence": "high",
+            "evidence": "The circle is solid blue and located to the right of the first circle, forming a pair."
+          },
+          {
+            "findingId": "shape3",
+            "title": "Red triangle",
+            "value": "A solid red triangle positioned to the right of the two blue circles.",
+            "pageReferenceIds": [
+              "page1"
+            ],
+            "confidence": "high",
+            "evidence": "The triangle is solid red and located to the right of the two circles, separated from them."
+          }
+        ],
+        "pageReferences": [
+          {
+            "id": "page1",
+            "page": 1,
+            "text": "The image shows three shapes on a white background. There are two blue circles side by side, and to the right of them, there is one red triangle."
+          }
+        ]
+      },
+      "manualReviewRequired": true
+    },
+    {
+      "filename": "shapes.png",
+      "runId": "2b326dc5-1743-4a15-ab29-1c6d7e8b960e",
+      "classification": "PASS",
+      "latencySec": 13.274740708,
+      "toolPath": [
+        "extract_document",
+        "ModelGateway.execute(vision)"
+      ],
+      "calls": [
+        {
+          "runId": "2b326dc5-1743-4a15-ab29-1c6d7e8b960e",
+          "requestId": "3a80a2ff-e173-46cf-9366-47171945d97f",
+          "parentCallId": "f0d53f0f-c431-40be-97a0-21707ee6a00f",
+          "modelId": "vision-fallback",
+          "taskType": "vision",
+          "isRetry": false,
+          "latencyMs": 6,
+          "promptTokens": 68,
+          "outputTokens": 470,
+          "totalTokens": 538
+        }
+      ],
+      "payload": {
+        "sourceText": "The image shows three shapes on a white background. There are two blue circles positioned side by side on the left, and one red triangle positioned to the right of the circles. The circles are identical in size and color, and the triangle is distinct in shape and color. The shapes are arranged horizontally with the circles on the left and the triangle on the right.",
+        "findings": [
+          {
+            "findingId": "shape1",
+            "title": "Blue Circle",
+            "value": "There are two blue circles on the left side of the image, positioned side by side.",
+            "pageReferenceIds": [
+              "page1"
+            ],
+            "confidence": "high",
+            "evidence": "The two blue circles are clearly visible and identical in size and color, located on the left side of the image, next to each other."
+          },
+          {
+            "findingId": "shape2",
+            "title": "Red Triangle",
+            "value": "There is one red triangle on the right side of the image, positioned to the right of the two blue circles.",
+            "pageReferenceIds": [
+              "page1"
+            ],
+            "confidence": "high",
+            "evidence": "The red triangle is clearly visible and distinct in shape and color, located on the right side of the image, to the right of the two blue circles."
+          },
+          {
+            "findingId": "shape3",
+            "title": "Spatial Relationship",
+            "value": "The two blue circles are positioned side by side on the left, and the red triangle is positioned to the right of the circles, forming a horizontal arrangement.",
+            "pageReferenceIds": [
+              "page1"
+            ],
+            "confidence": "high",
+            "evidence": "The spatial arrangement of the shapes is clear: the two blue circles are on the left, and the red triangle is on the right, with no overlap or other complex spatial relationships."
+          }
+        ],
+        "pageReferences": [
+          {
+            "id": "page1",
+            "page": 1,
+            "text": "The image shows three shapes on a white background. There are two blue circles positioned side by side on the left, and one red triangle positioned to the right of the circles. The circles are identical in size and color, and the triangle is distinct in shape and color. The shapes are arranged horizontally with the circles on the left and the triangle on the right."
+          }
+        ]
+      },
+      "manualReviewRequired": true
+    },
+    {
+      "filename": "geometry.svg",
+      "runId": "5a7b093f-a8a7-41b0-9704-101d7b959c9f",
+      "classification": "PASS",
+      "latencySec": 11.777286375,
+      "toolPath": [
+        "extract_document",
+        "ModelGateway.execute(vision)"
+      ],
+      "calls": [
+        {
+          "runId": "5a7b093f-a8a7-41b0-9704-101d7b959c9f",
+          "requestId": "ac18e29a-e783-4b67-9d06-f30f470455ce",
+          "parentCallId": "adb841f6-b840-41f6-b7b6-fa9c0be33a2e",
+          "modelId": "vision-fallback",
+          "taskType": "vision",
+          "isRetry": false,
+          "latencyMs": 5,
+          "promptTokens": 68,
+          "outputTokens": 417,
+          "totalTokens": 485
+        }
+      ],
+      "payload": {
+        "sourceText": "Describe the visible shapes, their colors, counts and spatial relationships. Report only what the image shows.",
+        "findings": [
+          {
+            "findingId": "shape1",
+            "title": "Blue Circles",
+            "value": "Two blue circles, one positioned above the other, on the left side of the image.",
+            "pageReferenceIds": [
+              "page1"
+            ],
+            "confidence": "high",
+            "evidence": "Two distinct blue circular shapes are visible on the left side of the image, stacked vertically with a vertical gap between them."
+          },
+          {
+            "findingId": "shape2",
+            "title": "Green Rectangle",
+            "value": "One green rectangle, positioned on the right side of the image.",
+            "pageReferenceIds": [
+              "page1"
+            ],
+            "confidence": "high",
+            "evidence": "A single green rectangular shape is visible on the right side of the image, aligned vertically with the two blue circles."
+          },
+          {
+            "findingId": "relationship1",
+            "title": "Horizontal Lines",
+            "value": "Two horizontal black lines, each connecting a blue circle to the green rectangle.",
+            "pageReferenceIds": [
+              "page1"
+            ],
+            "confidence": "high",
+            "evidence": "Two black horizontal lines extend from the right edge of each blue circle to the left edge of the green rectangle, connecting them."
+          },
+          {
+            "findingId": "relationship2",
+            "title": "Spatial Arrangement",
+            "value": "The two blue circles are vertically aligned on the left, and the green rectangle is positioned to the right, connected by horizontal lines to each circle.",
+            "pageReferenceIds": [
+              "page1"
+            ],
+            "confidence": "high",
+            "evidence": "The layout shows a clear left-to-right spatial arrangement with the blue circles on the left and the green rectangle on the right, connected by lines."
+          }
+        ],
+        "pageReferences": [
+          {
+            "id": "page1",
+            "page": 1,
+            "text": "Describe the visible shapes, their colors, counts and spatial relationships. Report only what the image shows."
+          }
+        ]
+      },
+      "manualReviewRequired": true
+    }
+  ],
+  "manualReviewRequired": true
+}

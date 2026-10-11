@@ -3,11 +3,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { initDb, closeDb, getDb } from "../src/main/persistence/db.js";
-import {
-  RunManager,
-  isMarkdownDeliverableRequested,
-  deriveMarkdownFilename,
-} from "../src/main/run/manager.js";
+import { RunManager } from "../src/main/run/manager.js";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { createChat } from "../src/main/persistence/chats.js";
 import type { ModelRequest, RunEvent } from "../src/shared/contracts.js";
@@ -54,35 +50,6 @@ describe("Generic Markdown Deliverable Generation", () => {
     try {
       rmSync(tempRoot, { recursive: true, force: true });
     } catch {}
-  });
-
-  describe("Helper Functions", () => {
-    it("identifies markdown deliverable requests accurately", () => {
-      expect(isMarkdownDeliverableRequested("Draft a compliance note for E-201")).toBe(true);
-      expect(isMarkdownDeliverableRequested("Write a review note on the inspection")).toBe(true);
-      expect(isMarkdownDeliverableRequested("Prepare an audit memo for the pump skid")).toBe(true);
-      expect(isMarkdownDeliverableRequested("Generate a corrective-action note")).toBe(true);
-      expect(isMarkdownDeliverableRequested("Provide an audit note for reactor shutdown")).toBe(true);
-      expect(isMarkdownDeliverableRequested("Create clearance note for vessel V-101")).toBe(true);
-      expect(isMarkdownDeliverableRequested("Save as memo.md")).toBe(true);
-      expect(isMarkdownDeliverableRequested("Save output to review-summary.md")).toBe(true);
-
-      // Excludes full Word document requests
-      expect(isMarkdownDeliverableRequested("Draft a compliance note and save as a word document")).toBe(false);
-      expect(isMarkdownDeliverableRequested("Review note as a .docx file")).toBe(false);
-      expect(isMarkdownDeliverableRequested("Approval note .docx")).toBe(false);
-      expect(isMarkdownDeliverableRequested("Draft an approval note")).toBe(false);
-    });
-
-    it("derives descriptive markdown filenames dynamically", () => {
-      expect(deriveMarkdownFilename("Draft a compliance note for E-201", "E-201")).toBe("E201-compliance-note.md");
-      expect(deriveMarkdownFilename("Write an audit memo for reactor P-102", "P-102")).toBe("P102-audit-memo.md");
-      expect(deriveMarkdownFilename("Create a corrective action note for pump-skid")).toBe("corrective-action-note.md");
-      expect(deriveMarkdownFilename("Draft a review note for vessel V101", "V101")).toBe("V101-review-note.md");
-      expect(deriveMarkdownFilename("Save output as final-inspection.md")).toBe("final-inspection.md");
-      expect(deriveMarkdownFilename("Generate an audit note")).toBe("audit-note.md");
-      expect(deriveMarkdownFilename("Write a clearance note for unit C-50", "C-50")).toBe("C50-clearance-note.md");
-    });
   });
 
   describe("Work Deliverable Generation", () => {
