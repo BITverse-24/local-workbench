@@ -7,10 +7,11 @@ if (typeof (Promise as any).try !== "function") {
 
 import { app, BrowserWindow, ClipboardItem, clipboard, dialog, ipcMain, shell, screen } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
-import { copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { initBackend } from "../backend/src/main/index.js";
 import { IPC_RUN } from "../backend/src/main/ipc/channels.js";
+import { initializeModelRegistry, resolveRuntimeMode, resolveStoragePaths } from "./storage.js";
 
 // Electron is the privileged desktop shell. It owns: app lifecycle,
 // BrowserWindow, the development Vite child process, packaged frontend
@@ -19,7 +20,18 @@ import { IPC_RUN } from "../backend/src/main/ipc/channels.js";
 // Python policy, or any other business rule (those live in /backend).
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const isDev = !app.isPackaged && process.env.NODE_ENV !== "production" && !process.env.WORKBENCH_PROD;
+const runtimeMode = resolveRuntimeMode(app.isPackaged, process.env);
+const isDev = runtimeMode === "development";
+const storagePaths = resolveStoragePaths({
+  mode: runtimeMode,
+  appDataPath: app.getPath("appData"),
+  repoRoot: REPO_ROOT,
+  resourcesPath: process.resourcesPath,
+  env: process.env,
+});
+mkdirSync(storagePaths.userDataPath, { recursive: true });
+app.setPath("userData", storagePaths.userDataPath);
+app.setPath("sessionData", storagePaths.userDataPath);
 const FRONTEND_DEV_URL =
   process.env.WORKBENCH_FRONTEND_URL ||
   process.env.VITE_DEV_SERVER_URL ||
@@ -174,22 +186,24 @@ app.whenReady().then(async () => {
 
   let manager: ReturnType<typeof initBackend> | null = null;
   try {
+    // Development .env can set the model path after the profile is selected.
+    const backendPaths = resolveStoragePaths({
+      mode: runtimeMode,
+      appDataPath: app.getPath("appData"),
+      repoRoot: REPO_ROOT,
+      resourcesPath: process.resourcesPath,
+      env: process.env,
+    });
+    initializeModelRegistry(runtimeMode, backendPaths.modelsPath);
     manager = initBackend(ipcMain, (event) => {
       if (win && !win.isDestroyed()) win.webContents.send("workbench:runEvent", event);
     }, {
       // Positive readiness signal: with this line and no failure line,
       // the main side is fully wired; any remaining local-only fallback
       // is a preload/renderer problem, not backend init.
-      dataDir: app.isPackaged
-        ? path.join(app.getPath("userData"), "data")
-        : path.join(REPO_ROOT, "data"),
-      modelsPath: process.env.WORKBENCH_MODELS_PATH ??
-        (app.isPackaged
-          ? path.join(process.resourcesPath, "config", "models.json")
-          : path.join(REPO_ROOT, "config", "models.json")),
-      schemaPath: app.isPackaged
-        ? path.join(process.resourcesPath, "backend", "schema.sql")
-        : path.join(REPO_ROOT, "backend", "src", "main", "persistence", "schema.sql"),
+      dataDir: backendPaths.dataDir,
+      modelsPath: backendPaths.modelsPath,
+      schemaPath: backendPaths.schemaPath,
     }, (wsEvent) => {
       if (win && !win.isDestroyed()) win.webContents.send("workspace:event", wsEvent);
     }, undefined, (chatEvent) => {

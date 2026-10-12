@@ -88,6 +88,14 @@ npm run package
 
 The packaging configuration defines a macOS DMG, a Windows x64 installer, and a Linux AppImage. Build and test each target on its supported platform. Check the release notes for the platforms and signing status of published binaries.
 
+Use root `icon.png` as the icon source. Run `npm run build:icons` to update the app icons, or run the normal build or package command. The build trims clear margins, keeps the logo's proportions, and preserves transparency. Final files are `build/icons/icon.icns` for macOS, `build/icons/icon.ico` for Windows, and `build/icons/icon.png` for Linux. The frontend copy is updated at the same time. The small icon variants are generated in a temporary folder and removed after conversion.
+
+The macOS package step also applies a custom file icon to the app bundle. This preserves the transparent logo in Finder on macOS Tahoe, which can place a gray tile behind the standard app icon. This step uses Swift from the Xcode command line tools. The DMG must preserve the custom icon's file metadata when the app is copied. Verify the icon in Finder after packaging or installing; PNG transparency alone does not verify the displayed app icon.
+
+Development, preview, and release use separate storage. Development keeps backend data in the repository's `data/` folder. Preview and release keep their databases, run files, model settings, and knowledge indexes under `<appData>/local-workbench/preview/` and `<appData>/local-workbench/production/`. Each mode also has its own Electron browser profile. On macOS, `<appData>` is `~/Library/Application Support`; Windows uses `%APPDATA%`; Linux uses `$XDG_CONFIG_HOME` or `~/.config`.
+
+Preview and release start with empty model settings and require onboarding. They ignore development model and database path overrides. Packages do not include the development model registry. The old shared profile stays on disk for recovery; the app does not import it into release storage.
+
 ## Execution support by platform
 
 The Work and Agent mode selector shows the current execution status. Use **Refresh** in Service health after you install Python or change the host isolation settings. The app probes the same isolation launcher used for execution. Commands also probe isolation again before they copy inputs or execute user code.

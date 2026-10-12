@@ -1,5 +1,5 @@
 // @see - https://www.electron.build/configuration/configuration
-// Package only the production UI, Electron bundles, model registry, schema,
+// Package only the production UI, Electron bundles, schema,
 // and production dependencies. Local data, credentials, and project source
 // are not part of the distributable.
 {
@@ -7,6 +7,7 @@
   "appId": "com.local.workbench",
   "asar": true,
   "publish": null,
+  "afterPack": "scripts/after-pack.cjs",
   "productName": "Local Workbench",
   "directories": {
     "output": "release/${version}"
@@ -17,7 +18,6 @@
   "files": [
     "frontend/dist/**/*",
     "electron/dist-electron/**/*",
-    "config/models.json",
     "backend/src/main/persistence/schema.sql",
     "!**/node_modules/**/test/**",
     "!**/node_modules/**/tests/**",
@@ -27,10 +27,6 @@
     "!**/node_modules/better-sqlite3/**/test_extension.*"
   ],
   "extraResources": [
-    {
-      "from": "config/models.json",
-      "to": "config/models.json"
-    },
     {
       "from": "backend/src/main/persistence/schema.sql",
       "to": "backend/schema.sql"

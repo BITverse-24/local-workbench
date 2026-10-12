@@ -44,6 +44,9 @@ export function configurePersistence(options: { dataDir?: string; schemaPath?: s
 
 export function resolveDbPath(override?: string): string {
   if (override) return override;
+  // Desktop configuration owns the environment boundary. A CLI override must
+  // not redirect a configured release to a development database.
+  if (configuredDataDir !== null) return path.join(configuredDataDir, "data", "workbench.db");
   const fromEnv = process.env.WORKBENCH_DB_PATH;
   if (fromEnv) return fromEnv;
   return path.join(configuredDataDir ?? BACKEND_ROOT, "data", "workbench.db");

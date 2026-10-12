@@ -63,6 +63,8 @@ RunManager validates and persists the mode before source preparation or intent c
 
 The run lifecycle and mode authority are implemented in `backend/src/main/run/`. Verification tests for mode boundaries are in `backend/tests/three-modes.test.ts` and related run tests.
 
+Desktop storage paths are selected in `electron/storage.ts`. Development uses the repository's `data/` folder for backend files. Preview and release use separate `local-workbench/preview/` and `local-workbench/production/` folders under Electron's `appData` path. Each mode sets its own `userData` and `sessionData` paths before Electron is ready. Preview and release use an environment-specific model registry and ignore development path overrides. Explicit backend persistence configuration takes priority over `WORKBENCH_DB_PATH`. Packages exclude the mutable development model registry. The old shared profile is retained without automatic import. Storage boundary tests are in `backend/tests/storage-isolation.test.ts`.
+
 ### Core Tech Stack
 - **Desktop Shell**: Electron 44 (44.7.0), TypeScript 5.6, esbuild
 - **Frontend Renderer**: React 18, Vite 5, Tailwind CSS v4, Lucide icons
