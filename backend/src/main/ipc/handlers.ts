@@ -6,7 +6,11 @@
 // Errors (incl. Zod validation failures) propagate as invoke rejections; the renderer
 // must try/catch. All returns are structured-clone / JSON-safe.
 
-import { archiveChat, createChat, listChats, renameChat } from "../persistence/chats.js";
+import { archiveChat, createChat, listChats, renameChat, initializeChatTitle, getChat, chatMetadata } from "../persistence/chats.js";
+import type { ChatTitleEvent } from "../../shared/contracts.js";
+import { getDb } from "../persistence/db.js";
+import { suggestWorkspacePaths } from "../harness/workspace-references.js";
+import { workspaceSuggestSchema } from "./validators.js";
 import { addMessage, editMessage, listMessages, type Message } from "../persistence/messages.js";
 import { getSetting, setSetting } from "../persistence/settings-store.js";
 import { IPC_CHAT, IPC_RUN, IPC_WORKSPACE } from "./channels.js";
@@ -83,15 +87,21 @@ export function handleGetMessages(input: unknown): { messages: Message[] } {
   return { messages: listMessages(parsed.chatId) };
 }
 
-export function handleSendMessage(input: unknown): { messageId: string; seq: number } {
+export function handleSendMessage(input: unknown): { messageId: string; seq: number; chatTitle?: ChatTitleEvent } {
   const parsed = sendMessageSchema.parse(input);
   const { id, seq } = addMessage({
     chat_id: parsed.chatId,
     role: parsed.role,
-    content: parsed.content,
+    content: parsed.content || " ",
     attachment_ids: parsed.attachmentIds,
   });
-  return { messageId: id, seq };
+  const first = parsed.role === "user" && !(getDb().prepare("SELECT id FROM messages WHERE chat_id=? AND role='user' AND id<>? LIMIT 1").get(parsed.chatId, id));
+  const names = (parsed.attachmentIds ?? []).flatMap(attachmentId => {
+    const row = getDb().prepare("SELECT filename FROM attachments WHERE attachment_id=? AND chat_id=?").get(attachmentId, parsed.chatId) as { filename: string } | undefined;
+    return row ? [row.filename] : [];
+  });
+  const chatTitle = first ? initializeChatTitle(parsed.chatId, parsed.content, names) : undefined;
+  return { messageId: id, seq, ...(chatTitle ? { chatTitle } : {}) };
 }
 
 export function handleEditMessage(input: unknown): void {
@@ -110,14 +120,19 @@ export function handleSetSetting(input: unknown): void {
 }
 
 /** Register all chat-persistence handlers. Safe to call once at app launch. */
-export function registerChatHandlers(ipcMain: MinimalIpcMain): void {
+export function registerChatHandlers(ipcMain: MinimalIpcMain, emitChat: (event: ChatTitleEvent) => void = () => undefined): void {
   const table: Record<string, (input: unknown) => unknown> = {
     [IPC_CHAT.CREATE_CHAT]: handleCreateChat,
     [IPC_CHAT.GET_CHAT_HISTORY]: handleGetChatHistory,
     [IPC_CHAT.ARCHIVE_CHAT]: handleArchiveChat,
-    [IPC_CHAT.RENAME_CHAT]: handleRenameChat,
+    [IPC_CHAT.RENAME_CHAT]: input => {
+      const parsed = renameChatSchema.parse(input);
+      handleRenameChat(parsed);
+      const chat = getChat(parsed.chatId)!;
+      emitChat({ type: "chat_title_changed", chatId: chat.id, title: chat.title, revision: Number(chatMetadata(chat).titleRevision) });
+    },
     [IPC_CHAT.GET_MESSAGES]: handleGetMessages,
-    [IPC_CHAT.SEND_MESSAGE]: handleSendMessage,
+    [IPC_CHAT.SEND_MESSAGE]: input => { const result = handleSendMessage(input); if (result.chatTitle) emitChat(result.chatTitle); return result; },
     [IPC_CHAT.EDIT_MESSAGE]: handleEditMessage,
     [IPC_CHAT.GET_SETTING]: handleGetSetting,
     [IPC_CHAT.SET_SETTING]: handleSetSetting,
@@ -144,6 +159,18 @@ export function registerRunHandlers(ipcMain: MinimalIpcMain, manager: RunManager
 }
 
 export function registerWorkspaceHandlers(ipcMain: MinimalIpcMain, harness: HarnessManager): void {
+  let suggestions: AbortController | undefined;
+  ipcMain.handle(IPC_WORKSPACE.SUGGEST_PATHS, async (_event, input) => {
+    const parsed = workspaceSuggestSchema.parse(input);
+    suggestions?.abort(); const controller = new AbortController(); suggestions = controller;
+    const sameWorkspace = () => {
+      const ws = harness.requireActiveWorkspace();
+      if (ws.root !== parsed.root || ws.registeredAt !== parsed.registeredAt) throw new Error("Workspace changed. Select the source again.");
+    };
+    sameWorkspace();
+    const result = await suggestWorkspacePaths(parsed.root, parsed.query, controller.signal);
+    sameWorkspace(); return result;
+  });
   ipcMain.handle(IPC_WORKSPACE.REGISTER, (_event, input) => {
     const parsed = registerWorkspaceSchema.parse(input);
     return harness.registerWorkspace(parsed.dirPath);

@@ -5,7 +5,7 @@ if (typeof (Promise as any).try !== "function") {
   };
 }
 
-import { app, BrowserWindow, ClipboardItem, clipboard, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ClipboardItem, clipboard, dialog, ipcMain, shell, screen } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -108,15 +108,16 @@ function frontendPublicDir(): string {
 
 function createWindow(): void {
   const iconPath = path.join(frontendPublicDir(), "icon.png");
+  const workArea = screen.getPrimaryDisplay().workAreaSize;
   win = new BrowserWindow({
     title: "Local Workbench",
     ...(existsSync(iconPath) ? { icon: iconPath } : {}),
     frame: false,
     fullscreen: true,
-    width: 1200,
-    height: 720,
-    minWidth: 1200,
-    minHeight: 720,
+    width: Math.min(1200, workArea.width),
+    height: Math.min(720, workArea.height),
+    minWidth: Math.min(720, workArea.width),
+    minHeight: Math.min(480, workArea.height),
     show: false,
     backgroundColor: "#181818",
     webPreferences: {
@@ -191,6 +192,8 @@ app.whenReady().then(async () => {
         : path.join(REPO_ROOT, "backend", "src", "main", "persistence", "schema.sql"),
     }, (wsEvent) => {
       if (win && !win.isDestroyed()) win.webContents.send("workspace:event", wsEvent);
+    }, undefined, (chatEvent) => {
+      if (win && !win.isDestroyed()) win.webContents.send("workbench:chatEvent", chatEvent);
     });
     console.log("[backend] initialized");
 

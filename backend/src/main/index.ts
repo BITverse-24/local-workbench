@@ -32,7 +32,7 @@ import { RunManager } from "./run/manager.js";
 import { recoverInterruptedModeRuns } from "./run/recovery.js";
 import { reconcileInterruptedExecutions } from "./run/execution-ledger.js";
 import type { ModelGateway } from "./gateway/model-gateway.js";
-import type { RunEvent } from "../shared/contracts.js";
+import type { RunEvent, ChatTitleEvent } from "../shared/contracts.js";
 import { HarnessManager, type WorkspaceEvent } from "./harness/harness-manager.js";
 import { registerKnowledgeBaseHandlers } from "./ipc/handlers.js";
 import { RAGService } from "./rag/rag-service.js";
@@ -85,6 +85,7 @@ export function initBackend(
   config?: BackendConfig,
   emitWorkspace?: (event: WorkspaceEvent) => void,
   gateway?: ModelGateway,
+  emitChat?: (event: ChatTitleEvent) => void,
 ): BackendInstance {
   if (config) {
     setDataDir(config.dataDir);
@@ -94,8 +95,8 @@ export function initBackend(
   initDb();
   reconcileInterruptedExecutions();
   recoverInterruptedModeRuns();
-  registerChatHandlers(ipcMain);
-  const manager = new RunManager(gateway, emit);
+  registerChatHandlers(ipcMain, emitChat);
+  const manager = new RunManager(gateway, emit, emitChat);
   registerRunHandlers(ipcMain, manager);
   const harness = new HarnessManager(event=>{manager.workspaceChanged();emitWorkspace?.(event);}, emit);
   registerWorkspaceHandlers(ipcMain, harness);
@@ -129,4 +130,3 @@ export function initBackend(
   (manager as any).harness = harness;
   return manager as BackendInstance;
 }
-

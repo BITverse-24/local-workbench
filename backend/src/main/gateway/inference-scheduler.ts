@@ -1,7 +1,7 @@
 import type { ExecutionMode } from "../../shared/contracts.js";
 import { abortError } from "../run/runtime-scope.js";
 
-type Priority = ExecutionMode | "maintenance";
+type Priority = ExecutionMode | "maintenance" | "title_retry";
 interface Ticket {
   mode: Priority;
   queuedAt: number;
@@ -14,7 +14,20 @@ interface Ticket {
 /** Admission is non-preemptive. A lease includes consumption of the response body. */
 export class InferenceScheduler {
   private readonly groups = new Map<string, { active: number; chatStreak: number; lastBackground: "work" | "agent"; queue: Ticket[] }>();
+  private readonly groupCapacities = new Map<string, number>();
   constructor(private readonly capacity = 1, private readonly now = () => Date.now()) {}
+
+  enableOptimisticConcurrency(group: string): void {
+    if (!this.groupCapacities.has(group)) this.groupCapacities.set(group, 2);
+  }
+
+  restrictToSingleRequest(group: string): void {
+    this.groupCapacities.set(group, 1);
+  }
+
+  hasSingleRequestLimit(group: string): boolean {
+    return this.groupCapacities.get(group) === 1;
+  }
 
   async acquire(mode: Priority, signal?: AbortSignal, group = "local-accelerator"): Promise<() => void> {
     signal?.throwIfAborted();
@@ -38,11 +51,27 @@ export class InferenceScheduler {
     try { signal?.throwIfAborted(); return await operation(); } finally { release(); }
   }
 
+  async runWithConcurrencyFallback<T>(mode: Priority, operation: () => Promise<T>, isLimit: (result: T) => boolean, signal: AbortSignal | undefined, group: string): Promise<T> {
+    let release: (() => void) | undefined = await this.acquire(mode, signal, group);
+    try {
+      signal?.throwIfAborted();
+      const result = await operation();
+      if (!isLimit(result)) return result;
+      this.restrictToSingleRequest(group);
+      const retry = this.acquire("title_retry", signal, group);
+      release(); release = undefined;
+      release = await retry;
+      signal?.throwIfAborted();
+      return await operation();
+    } finally { release?.(); }
+  }
+
   private drain(group: string): void {
     const state = this.groups.get(group)!;
-    while (state.active < this.capacity && state.queue.length) {
-      const tasks = state.queue.filter(t => t.mode !== "maintenance");
-      const candidates = tasks.length ? tasks : state.queue;
+    while (state.active < (this.groupCapacities.get(group) ?? this.capacity) && state.queue.length) {
+      const urgent = state.queue.filter(t => t.mode === "title_retry");
+      const tasks = state.queue.filter(t => t.mode !== "maintenance" && t.mode !== "title_retry");
+      const candidates = urgent.length ? urgent : tasks.length ? tasks : state.queue;
       let next = state.queue.find(t => this.now() - t.queuedAt >= 30000);
       if (!next) {
         const background = candidates.filter(t => t.mode === "work" || t.mode === "agent");
@@ -67,3 +96,14 @@ export const localInferenceScheduler = new InferenceScheduler();
 export const fileProcessingSlots = new InferenceScheduler(2);
 export const pythonProcessingSlots = new InferenceScheduler(1);
 export const workspaceExecutionSlots = new InferenceScheduler(1);
+
+export function modelInferenceGroup(url: string, model: string): string {
+  const endpoint = url.replace(/\/chat\/completions\/?$/i, "").replace(/\/$/, "");
+  return `model:${endpoint}:${model}`;
+}
+
+export function isInferenceConcurrencyError(status: number, body: string): boolean {
+  return (status === 409 || status === 429 || status === 503) &&
+    /concurr|parallel|busy|capacity|too many requests|overload|already in progress|only one request|maximum.*request/i.test(body);
+}
+

@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { StartRunInput } from "../backend/src/main/run/manager.js";
+import type { ChatTitleEvent } from "../backend/src/shared/contracts.js";
 
 // Window Controls
 contextBridge.exposeInMainWorld("electronAPI", {
@@ -32,7 +34,7 @@ contextBridge.exposeInMainWorld("workbench", {
     ipcRenderer.invoke("workbench:setSetting", { key, value }),
 
   // run protocol
-  startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean }) =>
+  startRun: (input: StartRunInput) =>
     ipcRenderer.invoke("workbench:startRun", input),
   getRunSnapshot: (input: {chatId?:string;runId?:string}) => ipcRenderer.invoke("workbench:getRunSnapshot",input),
   resumeRun: (input: { runId: string; largerGenerationAllowance?: boolean }) => ipcRenderer.invoke("workbench:resumeRun", input),
@@ -99,6 +101,8 @@ contextBridge.exposeInMainWorld("workbench", {
     ipcRenderer.invoke("workspace:getCurrent"),
   listWorkspaceDir: (path?: string) =>
     ipcRenderer.invoke("workspace:listDir", { path }),
+  suggestWorkspacePaths: (input: { query: string; root: string; registeredAt: string }) =>
+    ipcRenderer.invoke("workspace:suggestPaths", input),
   readWorkspaceFile: (path: string) =>
     ipcRenderer.invoke("workspace:readFile", { path }),
   searchWorkspace: (query: string, path?: string) =>
@@ -120,6 +124,11 @@ contextBridge.exposeInMainWorld("workbench", {
 
 
   // push events — returns unsubscribe
+  onChatEvent: (listener: (event: ChatTitleEvent) => void) => {
+    const wrapped = (_event: unknown, data: ChatTitleEvent) => listener(data);
+    ipcRenderer.on("workbench:chatEvent", wrapped);
+    return () => ipcRenderer.removeListener("workbench:chatEvent", wrapped);
+  },
   onRunEvent: (listener: (event: unknown) => void) => {
     const wrapped = (_event: unknown, data: unknown) => listener(data);
     ipcRenderer.on("workbench:runEvent", wrapped);

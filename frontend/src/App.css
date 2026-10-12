@@ -2,3 +2,31 @@
 * {
   font-feature-settings: "cv02","cv03","cv04","cv11";
 }
+
+/* Panel admission uses the available viewport in CSS pixels, including zoom. */
+.workbench-layout { height: 0; }
+.docked-panel { display: flex; flex-shrink: 0; min-height: 0; }
+.docked-panel[hidden] { display: none; }
+.docked-panel > aside { height: 100%; }
+.chat-panel { container-type: inline-size; }
+.panel-backdrop { position: fixed; inset: 0; z-index: 100; background: #0009; display: flex; }
+.panel-drawer { width: min(340px, calc(100vw - 32px)); height: 100%; min-height: 0; padding: 8px; outline: none; }
+.panel-drawer-right { margin-left: auto; }
+.panel-drawer > aside { width: 100% !important; min-width: 0 !important; height: 100%; animation: none; }
+.prompt-shell { padding: 12px; min-width: 0; }
+.prompt-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.prompt-tools { flex: 1 1 330px; min-width: 0; }
+.prompt-actions { flex: 0 0 auto; margin-left: auto; }
+.prompt-tray { max-height: min(120px, 18dvh); overflow-y: auto; }
+.chat-message-content { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.chat-message-content pre, .chat-message-content table { max-width: 100%; }
+.mention-list { position: absolute; bottom: calc(100% + 8px); left: 0; width: min(420px, 100%); max-height: min(280px, 45dvh); overflow-y: auto; z-index: 40; }
+@container (max-width: 580px) {
+  .prompt-tools { flex-basis: 100%; }
+  .prompt-shortcut { display: none; }
+}
+@media (max-height: 600px) {
+  .workbench-layout { padding: 6px; gap: 6px; }
+  .prompt-shell { padding: 6px; }
+  .prompt-tools { flex-basis: 0; }
+}

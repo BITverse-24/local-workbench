@@ -29,7 +29,10 @@ export function createChat(title?: string): string {
   prepareCached(
     db,
     "INSERT INTO chats(id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-  ).run(id, title?.trim() ? title.trim().slice(0, 200) : "Untitled Chat", now, now);
+  ).run(id, title?.trim() ? title.trim().slice(0, 200) : "New chat", now, now);
+  if (title?.trim() && !isPlaceholderTitle(title)) {
+    db.prepare("UPDATE chats SET metadata=? WHERE id=?").run(JSON.stringify({ titleOrigin: "manual", titleRevision: 1 }), id);
+  }
   return id;
 }
 
@@ -42,10 +45,18 @@ export function getChat(id: string): Chat | undefined {
 export function listChats(limit = 50): Pick<Chat, "id" | "title" | "updated_at">[] {
   const n = Math.max(1, Math.min(500, Math.floor(limit)));
   const db = getDb();
-  return prepareCached(
+  const chats = prepareCached(
     db,
     "SELECT id, title, updated_at FROM chats WHERE archived = 0 ORDER BY updated_at DESC LIMIT ?",
   ).all(n) as Pick<Chat, "id" | "title" | "updated_at">[];
+  for (const chat of chats) {
+    if (isPlaceholderTitle(chat.title)) {
+      const first = db.prepare("SELECT id, content FROM messages WHERE chat_id=? AND role='user' ORDER BY seq LIMIT 1").get(chat.id) as { id: string; content: string } | undefined;
+      const names = first ? (db.prepare("SELECT a.filename FROM attachments a JOIN message_attachments m ON m.attachment_id=a.attachment_id WHERE m.message_id=?").all(first.id) as { filename: string }[]).map(row => row.filename) : [];
+      if (first) chat.title = initializeChatTitle(chat.id, first.content, names)?.title ?? chat.title;
+    }
+  }
+  return chats;
 }
 
 /** Bump updated_at to now (called in the same transaction as addMessage). */
@@ -76,6 +87,66 @@ export function renameChat(id: string, title: string): void {
     new Date().toISOString(),
     id,
   );
+  const metadata = chatMetadata(getChat(id)!);
+  metadata.titleOrigin = "manual";
+  metadata.titleRevision = Number(metadata.titleRevision ?? 0) + 1;
+  db.prepare("UPDATE chats SET metadata=? WHERE id=?").run(JSON.stringify(metadata), id);
+}
+
+export function isPlaceholderTitle(title: string): boolean {
+  return /^(?:new chats?|untitled chat)$/i.test(title.trim());
+}
+
+export function fallbackChatTitle(text: string, filenames: string[] = []): string {
+  const clean = text.replace(/\s+/gu, " ").trim();
+  const candidate = clean || (filenames.length ? `Review ${filenames.join(", ")}` : "Review attachments");
+  const words = candidate.split(/\s+/u).filter(Boolean).slice(0, 4);
+  while (words.length < 3) words.push(words.length === 1 ? "chat" : "request");
+  let title = words.join(" ");
+  if (title.length > 60) {
+    title = words.slice(0, 3).join(" ");
+    if (title.length > 60) title = "Review workspace request";
+  }
+  return title;
+}
+
+export function chatMetadata(chat: Chat): Record<string, unknown> {
+  try { const value = JSON.parse(chat.metadata); return value && typeof value === "object" && !Array.isArray(value) ? value : {}; }
+  catch { return {}; }
+}
+
+export function initializeChatTitle(chatId: string, text: string, filenames: string[] = []) {
+  const chat = getChat(chatId);
+  if (!chat) return;
+  const metadata = chatMetadata(chat);
+  if (metadata.titleOrigin === "manual" || (!isPlaceholderTitle(chat.title) && metadata.titleOrigin !== "fallback")) return;
+  if (metadata.titleOrigin === "fallback") return;
+  const title = fallbackChatTitle(text, filenames);
+  const revision = Number(metadata.titleRevision ?? 0) + 1;
+  getDb().prepare("UPDATE chats SET title=?,metadata=? WHERE id=?").run(title,
+    JSON.stringify({ ...metadata, titleOrigin: "fallback", titleRevision: revision }), chatId);
+  return { type: "chat_title_changed" as const, chatId, title, revision };
+}
+
+/** Claim one model attempt; revision is used to protect manual renames. */
+export function claimChatTitle(chatId: string): number | undefined {
+  const chat = getChat(chatId);
+  if (!chat || chat.archived) return;
+  const metadata = chatMetadata(chat);
+  if (metadata.titleOrigin !== "fallback" || metadata.titleAttempted) return;
+  getDb().prepare("UPDATE chats SET metadata=? WHERE id=?").run(JSON.stringify({ ...metadata, titleAttempted: true }), chatId);
+  return Number(metadata.titleRevision);
+}
+
+export function applyGeneratedChatTitle(chatId: string, title: string, expectedRevision: number) {
+  const chat = getChat(chatId);
+  if (!chat || chat.archived) return;
+  const metadata = chatMetadata(chat);
+  if (metadata.titleOrigin !== "fallback" || metadata.titleRevision !== expectedRevision) return;
+  const revision = expectedRevision + 1;
+  getDb().prepare("UPDATE chats SET title=?,metadata=? WHERE id=?").run(title,
+    JSON.stringify({ ...metadata, titleOrigin: "model", titleRevision: revision }), chatId);
+  return { type: "chat_title_changed" as const, chatId, title, revision };
 }
 
 export function deleteChat(id: string): void {

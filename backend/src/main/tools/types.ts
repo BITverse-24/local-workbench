@@ -60,6 +60,7 @@ export interface ToolExecutionContext {
   signal?: AbortSignal;
   assertAuthority?: () => void;
   workspaceRoot: string;
+  workspaceReferenceEvidence?: string;
   gateway: ModelGateway;
   harness?: HarnessManager;
   grounding?: RAGGroundingProvider;

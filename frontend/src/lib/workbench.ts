@@ -38,7 +38,7 @@ export async function sendMessage(
   role: "user" | "assistant",
   content: string,
   attachmentIds?: string[],
-): Promise<{ messageId: string; seq: number }> {
+): Promise<{ messageId: string; seq: number; chatTitle?: ChatTitleEvent }> {
   return bridge().sendMessage(chatId, role, content, attachmentIds);
 }
 
@@ -113,6 +113,8 @@ export async function startRun(input: {
   preferredRoute?: string;
   selectedModel?: string;
   mode?: "chat" | "work" | "agent";
+  workspaceIdentity?: WorkspaceInfo;
+  workspaceReferences?: WorkspaceReference[];
 }): Promise<{ runId: string }> {
   return bridge().startRun(input);
 }

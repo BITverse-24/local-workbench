@@ -569,12 +569,12 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
 
   return (
     <div className={`flex group ${isUser ? 'justify-end' : 'justify-start'} select-text`}>
-      <div className={`flex flex-col gap-1 ${isUser ? 'items-end max-w-[88%] md:max-w-[72%]' : 'max-w-[88%] md:max-w-[72%] items-start'} select-text`}>
+      <div className={`chat-message-content flex flex-col gap-1 ${isUser ? 'items-end max-w-[88%] md:max-w-[72%]' : 'max-w-[88%] md:max-w-[72%] items-start'} select-text`}>
         <div
           className={`w-full select-text ${isUser ? 'px-5 py-3.5 rounded-[var(--radius-md)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-primary)]' : 'px-2 py-2 bg-transparent border-0 text-[var(--text-primary)]'}`}
         >
           {isEditing ? (
-            <div className="flex flex-col gap-2 min-w-[240px]">
+            <div className="flex flex-col gap-2 min-w-0 w-full">
               <textarea
                 value={editDraft}
                 onChange={(e) => onEditDraftChange(e.target.value)}
@@ -786,11 +786,13 @@ export default function ChatArea({
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
+    let frame = 0;
     const ro = new ResizeObserver(() => {
-      if (autoScroll) scrollToBottom('smooth');
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => { if (autoScroll) scrollToBottom('smooth'); });
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => { ro.disconnect(); cancelAnimationFrame(frame); };
   }, [autoScroll, scrollToBottom]);
 
   const handleCopy = useCallback(async (msg: ChatMessage) => {
@@ -875,7 +877,7 @@ export default function ChatArea({
 
   return (
     <div
-      className="flex-1 flex flex-col overflow-hidden relative bg-[var(--bg-canvas)] select-text"
+      className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden relative bg-[var(--bg-canvas)] select-text"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}

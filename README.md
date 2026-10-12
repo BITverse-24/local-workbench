@@ -30,6 +30,14 @@ Draft is the default choice in the model selector. Vision, Coding, Draft, and Em
 
 ## Main components
 
+Chat names update after the first message. The app saves a short fallback title, then asks the local model for a topic title after the run ends. A manual name takes priority.
+
+With a workspace open, type `@` in the prompt to select a file or folder. Use the arrow keys and Enter or Tab to select a suggestion. Use Escape to close the list. File mentions supply saved source copies. Folder mentions supply paths only. Chat and Work receive no workspace tool access from these mentions.
+
+The side panels adjust to the window width. Settings uses a drawer below 1280 pixels. Explorer also uses a drawer below 960 pixels. Use the header buttons to open either panel.
+
+To check the chat interface, first run `npm run build`. Then run `env -u ELECTRON_RUN_AS_NODE node_modules/.bin/electron scripts/test-chat-ux.cjs` on macOS or Linux. On Windows, clear `ELECTRON_RUN_AS_NODE` and run the Electron executable with the same script. The check uses a test bridge and writes screenshots to the system temporary folder.
+
 ```text
 React renderer
     │ typed Electron IPC

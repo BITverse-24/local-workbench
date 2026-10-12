@@ -37,6 +37,7 @@ export const IPC_WORKSPACE = {
   DEREGISTER: "workspace:deregister",
   GET_CURRENT: "workspace:getCurrent",
   LIST_DIR: "workspace:listDir",
+  SUGGEST_PATHS: "workspace:suggestPaths",
   READ_FILE: "workspace:readFile",
   SEARCH: "workspace:search",
   WRITE_FILE: "workspace:writeFile",

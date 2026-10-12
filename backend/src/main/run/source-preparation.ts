@@ -23,7 +23,7 @@ export function selectExcerpts(text: string, query: string, limit: number): stri
 }
 
 export async function prepareSources(attachments: AttachmentReference[], text: string, context: ToolExecutionContext, limit=16000): Promise<string> {
-  const parts: string[]=[];
+  const parts: string[]=context.workspaceReferenceEvidence ? [context.workspaceReferenceEvidence] : [];
   for (const attachment of attachments) {
     assertRuntimeActive();
     const prefix=`runs/${context.runId}/`;

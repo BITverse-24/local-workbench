@@ -1,5 +1,6 @@
 import ExecutionSupport from "./ExecutionSupport";
 import { useRef, useEffect, useState, useMemo } from 'react';
+import { formatWorkspaceMention, workspaceMentionQuery } from '../../../backend/src/shared/workspace-mentions';
 
 type Props = {
   input: string;
@@ -20,6 +21,7 @@ type Props = {
   mode?: ExecutionMode;
   onModeChange?: (mode:ExecutionMode) => void;
   hasWorkspace?: boolean;
+  workspace?: WorkspaceInfo | null;
   executionCapabilities?: ExecutionCapabilities | null;
   executionCapabilitiesError?: string | null;
 };
@@ -89,6 +91,7 @@ export default function InputBar({
   mode = "chat",
   onModeChange,
   hasWorkspace=false,
+  workspace=null,
   executionCapabilities=null,
   executionCapabilitiesError,
   onVoice,
@@ -97,6 +100,42 @@ export default function InputBar({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [caret, setCaret] = useState(input.length);
+  const [suggestions, setSuggestions] = useState<HarnessDirEntry[]>([]);
+  const [suggestionStatus, setSuggestionStatus] = useState<string | null>(null);
+  const [selectedSuggestion, setSelectedSuggestion] = useState(0);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const composing = useRef(false);
+  const mention = workspace && !disabled ? workspaceMentionQuery(input, caret) : null;
+  const mentionKey = mention ? `${mention.start}:${mention.end}:${input}` : null;
+  const mentionOpen = Boolean(mention && mentionKey !== dismissed);
+  const requestVersion = useRef(0);
+
+  useEffect(() => {
+    const version = ++requestVersion.current;
+    setSuggestions([]); setSelectedSuggestion(0); setSuggestionStatus(null);
+    if (!mentionOpen || !workspace || !mention || !window.workbench?.suggestWorkspacePaths) return;
+    setSuggestionStatus("Searching workspace…");
+    const timer = window.setTimeout(() => {
+      void window.workbench!.suggestWorkspacePaths({ query: mention.query, ...workspace }).then(result => {
+        if (version !== requestVersion.current) return;
+        setSuggestions(result.entries);
+        setSuggestionStatus(result.entries.length ? (result.truncated ? "Some workspace paths were omitted." : null) : result.truncated ? "No matches in the available workspace paths." : "No matching files or folders.");
+      }).catch(error => {
+        if (version === requestVersion.current) setSuggestionStatus(error instanceof Error ? error.message : "Could not search workspace.");
+      });
+    }, 100);
+    return () => { clearTimeout(timer); requestVersion.current++; };
+  }, [mentionOpen, mentionKey, workspace?.root, workspace?.registeredAt]);
+
+  const insertMention = (entry: HarnessDirEntry) => {
+    if (!mention) return;
+    const value = formatWorkspaceMention(entry.name, entry.type) + " ";
+    const next = input.slice(0, mention.start) + value + input.slice(mention.end);
+    const nextCaret = mention.start + value.length;
+    setInput(next); setCaret(nextCaret); setSuggestions([]);
+    requestAnimationFrame(() => { textareaRef.current?.focus(); textareaRef.current?.setSelectionRange(nextCaret, nextCaret); });
+  };
 
   const canSend = !disabled && (input.trim().length > 0 || attachedFiles.length > 0);
   const [hoveredMode, setHoveredMode] = useState<ExecutionMode | null>(null);
@@ -119,6 +158,20 @@ export default function InputBar({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (mentionOpen) {
+      if (e.key === "Escape") { e.preventDefault(); setDismissed(mentionKey); return; }
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedSuggestion(index => suggestions.length ? (index + (e.key === "ArrowDown" ? 1 : -1) + suggestions.length) % suggestions.length : 0);
+        return;
+      }
+      if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+        e.preventDefault();
+        if (suggestions[selectedSuggestion]) insertMention(suggestions[selectedSuggestion]);
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       if (canSend && onSend) onSend();
@@ -127,9 +180,8 @@ export default function InputBar({
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
-    const el = e.target;
-    el.style.height = 'auto';
-    el.style.height = Math.max(56, Math.min(el.scrollHeight, 180)) + 'px';
+    setCaret(e.target.selectionStart);
+    setDismissed(null);
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -147,10 +199,32 @@ export default function InputBar({
   };
 
   useEffect(() => {
-    if (input === '' && textareaRef.current) {
-      textareaRef.current.style.height = '56px';
-    }
-  }, [input]);
+    const el = textareaRef.current;
+    if (!el) return;
+    const mirror = document.createElement('div');
+    Object.assign(mirror.style, { position: 'fixed', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', boxSizing: 'border-box' });
+    document.body.appendChild(mirror);
+    const resize = () => {
+      const style = getComputedStyle(el);
+      Object.assign(mirror.style, { width: `${el.clientWidth}px`, fontFamily: style.fontFamily, fontSize: style.fontSize,
+        fontWeight: style.fontWeight, lineHeight: style.lineHeight, letterSpacing: style.letterSpacing,
+        paddingTop: style.paddingTop, paddingBottom: style.paddingBottom, paddingLeft: style.paddingLeft, paddingRight: style.paddingRight });
+      mirror.textContent = (el.value || el.placeholder) + '\u200b';
+      el.style.height = 'auto';
+      el.style.height = Math.max(56, Math.min(Math.max(el.scrollHeight, mirror.getBoundingClientRect().height), 180, window.innerHeight * 0.22)) + 'px';
+    };
+    resize();
+    let width = el.clientWidth;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (width !== el.clientWidth) {
+        width = el.clientWidth; cancelAnimationFrame(frame); frame = requestAnimationFrame(resize);
+      }
+    });
+    if (el.parentElement) observer.observe(el.parentElement);
+    window.addEventListener('resize', resize);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); mirror.remove(); window.removeEventListener('resize', resize); };
+  }, [input, attachedFiles.length, disabled]);
 
   // Image previews for attached images
   const imagePreviews = useMemo(() => {
@@ -171,7 +245,7 @@ export default function InputBar({
 
   return (
     <div
-      className="p-3 sm:p-4 md:px-6 md:pb-5 md:pt-3 flex-shrink-0 bg-[#0E1115] border-t border-[#262C34] transition-colors"
+      className="prompt-shell flex-shrink-0 bg-[#0E1115] border-t border-[#262C34] transition-colors"
       onDragOver={(e) => {
         e.preventDefault();
         setIsDragOver(true);
@@ -181,7 +255,7 @@ export default function InputBar({
       }}
       onDrop={handleDrop}
     >
-      <div className="w-full max-w-[96%] xl:max-w-[94%] 2xl:max-w-[90%] mx-auto flex flex-col gap-2.5">
+      <div className="w-full min-w-0 max-w-[960px] mx-auto flex flex-col gap-2.5">
         <ExecutionSupport capabilities={executionCapabilities} mode={mode} error={executionCapabilitiesError} />
         {/* Error notification banner */}
         {attachError && (
@@ -216,6 +290,19 @@ export default function InputBar({
             }
           `}
         >
+          {mentionOpen && (
+            <div id="workspace-mention-list" role="listbox" aria-label="Workspace files and folders"
+              className="mention-list rounded-xl border border-[#445060] bg-[#1A1F26] shadow-xl p-1">
+              {suggestions.map((entry, index) => <button key={entry.name} id={`workspace-mention-${index}`} role="option"
+                type="button" tabIndex={-1} aria-selected={selectedSuggestion === index}
+                onMouseDown={event => event.preventDefault()} onClick={() => insertMention(entry)}
+                className={`w-full min-w-0 text-left rounded-lg px-3 py-2 flex items-center gap-2 text-sm ${selectedSuggestion === index ? 'bg-[#303D4A] text-white' : 'text-[#D8DEE4] hover:bg-[#252A32]'}`}>
+                <span className="shrink-0 text-xs text-[#9AA2AD]">{entry.type === 'directory' ? 'Folder' : 'File'}</span>
+                <span className="truncate" title={entry.name}>{entry.name}{entry.type === 'directory' ? '/' : ''}</span>
+              </button>)}
+              {suggestionStatus && <div role="status" className="px-3 py-2 text-xs text-[#9AA2AD]">{suggestionStatus}</div>}
+            </div>
+          )}
           {/* Drag Over Overlay */}
           {isDragOver && (
             <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-[#1A1F26]/95 backdrop-blur-sm border-2 border-dashed border-[var(--accent)] pointer-events-none">
@@ -230,7 +317,7 @@ export default function InputBar({
 
           {/* Attachment Tray (Inside Card) */}
           {attachedFiles.length > 0 && (
-            <div className="flex flex-wrap gap-2 px-4 pt-3.5 pb-2 border-b border-[#2B333E]">
+            <div className="prompt-tray flex flex-wrap gap-2 px-4 pt-3.5 pb-2 border-b border-[#2B333E]">
               {attachedFiles.map((file, idx) => {
                 const preview = imagePreviews.get(file.name + file.size + file.lastModified);
                 return (
@@ -275,6 +362,16 @@ export default function InputBar({
             value={input}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
+            onSelect={event => setCaret(event.currentTarget.selectionStart)}
+            onCompositionStart={() => { composing.current = true; }}
+            onCompositionEnd={event => { composing.current = false; setCaret(event.currentTarget.selectionStart); }}
+            onBlur={() => setDismissed(mentionKey)}
+            role="combobox"
+            aria-label="Prompt"
+            aria-autocomplete="list"
+            aria-expanded={mentionOpen}
+            aria-controls={mentionOpen ? 'workspace-mention-list' : undefined}
+            aria-activedescendant={mentionOpen && suggestions.length ? `workspace-mention-${selectedSuggestion}` : undefined}
             onPaste={handlePaste}
             disabled={!!disabled}
             placeholder={
@@ -290,9 +387,9 @@ export default function InputBar({
           />
 
           {/* Bottom area: Toolbar with controls & Send */}
-          <div className="flex items-center justify-between px-3.5 pb-3 pt-2 gap-2 border-t border-[#262C34]">
+          <div className="prompt-toolbar px-3.5 pb-3 pt-2 border-t border-[#262C34]">
             {/* Left tool cluster */}
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="prompt-tools flex items-center gap-2 flex-wrap">
               {/* Attach Button */}
               <button
                 type="button"
@@ -411,8 +508,8 @@ export default function InputBar({
             </div>
 
             {/* Right actions: Shortcuts hint & Send button */}
-            <div className="flex items-center gap-3">
-              <span className="hidden md:inline-flex items-center gap-1.5 text-xs font-mono text-[#8D96A0] select-none font-medium">
+            <div className="prompt-actions flex items-center gap-3">
+              <span className="prompt-shortcut inline-flex items-center gap-1.5 text-xs font-mono text-[#8D96A0] select-none font-medium">
                 <span className="px-1.5 py-0.5 rounded bg-[#252A32] border border-[#3E4756] text-[#C4C9D0]">↵</span>
                 <span>send</span>
               </span>

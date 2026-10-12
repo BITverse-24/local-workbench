@@ -45,13 +45,13 @@ export default function LeftSidebar({
 
   return (
     <aside
-      className={`hidden md:flex flex-col neu-panel flex-shrink-0 overflow-hidden ${
+      className={`flex flex-col neu-panel flex-shrink-0 overflow-hidden ${
         !collapsed ? 'animate-apple-left' : ''
       }`}
       style={
         {
-          width: collapsed ? 0 : 310,
-          minWidth: collapsed ? 0 : 310,
+          width: collapsed ? 0 : 'clamp(240px, 21vw, 280px)',
+          minWidth: collapsed ? 0 : 240,
           opacity: collapsed ? 0 : 1,
           transform: collapsed ? 'translateX(-12px) scale(0.98)' : 'translateX(0) scale(1)',
           padding: collapsed ? 0 : '12px 10px',

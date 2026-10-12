@@ -31,9 +31,9 @@ export const getMessagesSchema = z.object({
 export const sendMessageSchema = z.object({
   chatId: chatIdSchema,
   role: z.enum(["user", "assistant"]),
-  content: z.string().min(1).max(MAX_CONTENT_CHARS),
+  content: z.string().max(MAX_CONTENT_CHARS),
   attachmentIds: z.array(z.string()).optional(),
-});
+}).refine(value => value.content.length > 0 || Boolean(value.attachmentIds?.length), "Message text or an attachment is required.");
 
 export const editMessageSchema = z.object({
   messageId: z.string().uuid(),
@@ -92,6 +92,8 @@ export const startRunSchema = z
     preferredRoute: z.string().optional(),
     selectedModel: z.string().optional(),
     mode: z.enum(["chat", "work", "agent"]).optional(),
+    workspaceIdentity: z.object({ root: z.string().min(1).max(4096), registeredAt: z.string().min(1).max(100) }).strict().optional(),
+    workspaceReferences: z.array(z.object({ path: z.string().min(1).max(1024), kind: z.enum(["file", "directory"]) }).strict()).max(20).optional(),
   })
   .strict()
   .refine(
@@ -119,6 +121,8 @@ export const registerWorkspaceSchema = z.object({
 export const harnessListDirSchema = z.object({
   path: z.string().max(1024).optional(),
 }).strict();
+export const workspaceSuggestSchema = z.object({ query: z.string().max(1024),
+  root: z.string().min(1).max(4096), registeredAt: z.string().min(1).max(100) }).strict();
 
 export const harnessReadFileSchema = z.object({
   path: z.string().min(1).max(1024),

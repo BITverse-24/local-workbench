@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import "./App.css";
 import TitleBar from "./components/TitleBar";
+import ResponsivePanel from "./components/ResponsivePanel";
+import { formatWorkspaceMention, parseWorkspaceMentions } from "../../backend/src/shared/workspace-mentions";
 import LeftSidebar, { type SidebarChat } from "./components/LeftSidebar";
 import ChatPanel from "./components/ChatPanel";
 import ChatArea, { type ChatMessage } from "./components/ChatArea";
@@ -42,11 +44,36 @@ function toChatMessages(rows: PersistedMessage[]): ChatMessage[] {
 
 export default function App() {
   const [input, setInput] = useState("");
+  const draftWorkspace = useRef<WorkspaceInfo | null>(null);
   const [temperature, setTemperature] = useState(0.7);
   const [selectedModel, setSelectedModel] = useState(MODELS[0]);
   const [modelOpen, setModelOpen] = useState(false);
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [leftCollapsed, setLeftCollapsed] = useState(() => localStorage.getItem("explorerCollapsed") === "true");
+  const [rightCollapsed, setRightCollapsed] = useState(() => localStorage.getItem("settingsCollapsed") === "true");
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const [drawer, setDrawer] = useState<"left" | "right" | null>(null);
+  const leftDocked = windowWidth >= 960;
+  const rightDocked = windowWidth >= 1280;
+  const leftOpen = leftDocked ? !leftCollapsed : drawer === "left";
+  const rightOpen = rightDocked ? !rightCollapsed : drawer === "right";
+  useEffect(() => {
+    const resize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+  useEffect(() => {
+    if ((drawer === "left" && leftDocked) || (drawer === "right" && rightDocked)) setDrawer(null);
+  }, [drawer, leftDocked, rightDocked]);
+  useEffect(() => {
+    localStorage.setItem("explorerCollapsed", String(leftCollapsed));
+    localStorage.setItem("settingsCollapsed", String(rightCollapsed));
+  }, [leftCollapsed, rightCollapsed]);
+  useEffect(() => {
+    if (!wb.isWorkbenchAvailable() || !window.workbench?.onChatEvent) return;
+    return window.workbench.onChatEvent(event => {
+      setHistory(prev => prev.map(chat => chat.id === event.chatId ? { ...chat, title: event.title } : chat));
+    });
+  }, []);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
@@ -129,6 +156,10 @@ export default function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceInfo | null>(null);
   const [workspaceTree, setWorkspaceTree] = useState<HarnessDirEntry[]>([]);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  useEffect(() => {
+    if (!parseWorkspaceMentions(input).length) draftWorkspace.current = null;
+    else if (!draftWorkspace.current && activeWorkspace) draftWorkspace.current = { ...activeWorkspace };
+  }, [input, activeWorkspace]);
 
   useEffect(()=>{if(!activeWorkspace&&executionMode==="agent")setExecutionMode("chat");},[activeWorkspace,executionMode]);
 
@@ -533,7 +564,8 @@ export default function App() {
   }, [activeWorkspace]);
 
   const handleSelectWorkspaceFile = useCallback((relPath: string) => {
-    setInput((prev) => (prev ? `${prev} ${relPath}` : `@${relPath} `));
+    setInput(prev => `${prev}${prev && !/\s$/.test(prev) ? " " : ""}${formatWorkspaceMention(relPath)} `);
+    setDrawer(null);
   }, []);
 
   const loadMessages = useCallback(async (id: string) => {
@@ -594,7 +626,7 @@ export default function App() {
     setGroundingStatus(null);
     if (persistent) {
       try {
-        const id = await wb.createChat("New chat");
+        const id = await wb.createChat();
         setHistory((prev) => [{ id, title: "New chat", updated_at: new Date().toISOString() }, ...prev]);
         setChatId(id);
         setMessages([]);
@@ -645,15 +677,15 @@ export default function App() {
     [persistent],
   );
 
-  const activeTitle = history.find((c) => c.id === chatId)?.title ?? "Untitled Chat";
+  const activeTitle = history.find((c) => c.id === chatId)?.title ?? "New chat";
 
   const ensureChatId = useCallback(
-    async (firstText: string): Promise<string | null> => {
+    async (): Promise<string | null> => {
       if (chatId && !chatId.startsWith("local-")) return chatId;
       if (!persistent) return null;
       try {
-        const title = firstText.trim().slice(0, 40) || "New chat";
-        const id = await wb.createChat(title);
+        const title = "New chat";
+        const id = await wb.createChat();
         if(chatIdRef.current===chatId)setChatId(id);
         setHistory((prev) => [{ id, title, updated_at: new Date().toISOString() }, ...prev]);
         await wb.setSetting("lastChatId", id);
@@ -744,11 +776,17 @@ export default function App() {
     try {
     const text = input;
     const currentFiles = [...attachedFiles];
+    const workspaceIdentity = draftWorkspace.current ?? (activeWorkspace ? { ...activeWorkspace } : undefined);
+    const workspaceReferences = workspaceIdentity ? parseWorkspaceMentions(text) : [];
+    if (workspaceReferences.length && (!activeWorkspace || activeWorkspace.root !== workspaceIdentity!.root || activeWorkspace.registeredAt !== workspaceIdentity!.registeredAt)) {
+      setRunError({ code: "workspace_changed", message: "The workspace changed. Remove the old mentions and select the sources again." });
+      return;
+    }
     if (currentFiles.length === 0) setInput("");
 
     // Persistent chat + backend run path
     if (persistent) {
-      const cid = await ensureChatId(text);
+      const cid = await ensureChatId();
       if (cid) {
         submittedChatId=cid;pendingSubmissions.current.add(cid);
         try {
@@ -766,7 +804,7 @@ export default function App() {
           }
 
           // Persist user message linked with attachment IDs (visible immediately)
-          const { messageId } = await wb.sendMessage(
+          const { messageId, chatTitle } = await wb.sendMessage(
             cid,
             "user",
             text,
@@ -781,7 +819,7 @@ export default function App() {
               files: currentFiles.length > 0 ? currentFiles.map((f) => ({ name: f.name, size: f.size })) : undefined,
             },
           ]);
-          setHistory((prev) => prev.map((c) => (c.id === cid ? { ...c, updated_at: new Date().toISOString() } : c)));
+          setHistory((prev) => prev.map((c) => (c.id === cid ? { ...c, ...(chatTitle ? { title: chatTitle.title } : {}), updated_at: new Date().toISOString() } : c)));
 
           // Only update the chat that owns this submission.
           if(chatIdRef.current===cid){
@@ -803,6 +841,8 @@ export default function App() {
 
           const { runId } = await wb.startRun({
             userText: text,
+            workspaceReferences,
+            workspaceIdentity,
             attachmentToken: attachmentTokens[0],
             attachmentTokens,
             runId: clientRunId,
@@ -833,10 +873,7 @@ export default function App() {
           return;
         } catch (e) {
           if(chatIdRef.current===cid)setRunError({ code: "send_failed", message: e instanceof Error ? e.message : String(e) });
-          // keep composer content if register/start failed
-          if (currentFiles.length > 0) {
-            // do not clear on failure — keep file for retry
-          }
+          if (chatIdRef.current === cid) { setInput(text); setAttachedFiles(currentFiles); }
           return;
         }
       }
@@ -930,13 +967,14 @@ export default function App() {
     <div className="flex flex-col h-screen w-full font-sans overflow-hidden relative page-apple-enter" style={{ background: "var(--bg-canvas)" }}>
       <TitleBar />
 
-      <div className="flex flex-1 overflow-hidden p-3 gap-3 relative z-10" style={{ background: "var(--bg-canvas)" }}>
+      <div className="workbench-layout flex flex-1 min-h-0 min-w-0 overflow-hidden p-3 gap-3 relative z-10" style={{ background: "var(--bg-canvas)" }}>
+        <ResponsivePanel side="left" docked={leftDocked} open={leftOpen} onClose={() => setDrawer(null)}>
         <LeftSidebar
-          collapsed={leftCollapsed}
-          onCollapse={() => setLeftCollapsed(true)}
+          collapsed={false}
+          onCollapse={() => leftDocked ? setLeftCollapsed(true) : setDrawer(null)}
           chats={history.map(chat=>({...chat,runState:sessions.current.states.get(sessions.current.latest.get(chat.id)??"")}))}
           activeId={chatId}
-          onSelect={handleSelectChat}
+          onSelect={id => { void handleSelectChat(id); setDrawer(null); }}
           onNewChat={handleNewChat}
           onDeleteChat={handleDeleteChat}
           onRename={handleRenameChat}
@@ -948,8 +986,9 @@ export default function App() {
           onSelectWorkspaceFile={handleSelectWorkspaceFile}
           workspaceLoading={workspaceLoading}
         />
+        </ResponsivePanel>
 
-        <ChatPanel title={activeTitle} leftCollapsed={leftCollapsed} rightCollapsed={rightCollapsed} onToggleLeft={() => setLeftCollapsed(!leftCollapsed)} onToggleRight={() => setRightCollapsed(!rightCollapsed)} onModelSettings={async () => {
+        <ChatPanel title={activeTitle} leftCollapsed={!leftOpen} rightCollapsed={!rightOpen} onToggleLeft={() => leftDocked ? setLeftCollapsed(!leftCollapsed) : setDrawer(drawer === "left" ? null : "left")} onToggleRight={() => rightDocked ? setRightCollapsed(!rightCollapsed) : setDrawer(drawer === "right" ? null : "right")} onModelSettings={async () => {
           try {
             const result = await wb.resetOnboarding();
             if (!result.ok) throw new Error("Could not open model settings.");
@@ -997,12 +1036,14 @@ export default function App() {
             executionCapabilities={executionCapabilities}
             executionCapabilitiesError={executionCapabilitiesError}
             hasWorkspace={Boolean(activeWorkspace)}
+            workspace={activeWorkspace}
           />
         </ChatPanel>
 
+        <ResponsivePanel side="right" docked={rightDocked} open={rightOpen} onClose={() => setDrawer(null)}>
         <RightSidebar
-          collapsed={rightCollapsed}
-          onCollapse={() => setRightCollapsed(true)}
+          collapsed={false}
+          onCollapse={() => rightDocked ? setRightCollapsed(true) : setDrawer(null)}
           models={availableModels}
           selectedModel={selectedModel}
           modelOpen={modelOpen}
@@ -1017,6 +1058,7 @@ export default function App() {
           runId={activeRunId}
           verificationReport={verificationReport}
         />
+        </ResponsivePanel>
       </div>
 
       <ModelDropdown open={modelOpen} pos={dropdownPos} models={availableModels} selected={selectedModel} onSelect={(m) => { setSelectedModel(m); try { localStorage.setItem("workbench_selected_model", m.id); } catch {} setModelOpen(false); }} onClose={() => setModelOpen(false)} />

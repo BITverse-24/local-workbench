@@ -6,6 +6,7 @@ import { preserveExtractedAnnotations } from '../agent/source-review.js';
 import { generateDeliverableTool } from '../tools/specialist-tools.js';
 import type { ArtifactAcceptanceCheck, AttachmentReference, ModelConversationMessage, RunContract, VerificationCheck } from '../../shared/contracts.js';
 import type { ToolExecutionContext } from '../tools/types.js';
+import { parseWorkspaceMentions } from '../../shared/workspace-mentions.js';
 import { resolveSemanticIntent } from '../router/contextual-router.js';
 import { getAllAvailableTools, filterToolsForTurn } from '../router/tool-compositor.js';
 import { normalizeRunContract, persistRunContract, RunContractSchema, matchesContractDeliverable } from './contract.js';
@@ -152,7 +153,8 @@ export class WorkOrchestrator {
     let contract=input.resume;
     // An exact format conversion has no semantic planning step.
     const conversion=text.trim().match(/^convert\s+(.+?)\s+to\s+(json|csv|markdown|text)(?:\s+as\s+([A-Za-z0-9_.-]+))?[.!]?$/i);
-    if(!contract&&conversion&&input.attachments.length===1&&input.attachments[0].filename===conversion[1]) {
+    const conversionPath = conversion ? parseWorkspaceMentions(conversion[1])[0]?.path ?? conversion[1] : undefined;
+    if(!contract&&conversion&&input.attachments.length===1&&(input.attachments[0].filename===conversionPath || input.attachments[0].sourcePath===conversionPath)) {
       const source=input.attachments[0];const from=path.extname(source.filename).slice(1).toLowerCase();const to=conversion[2].toLowerCase();const type=to==='markdown'?'md':to==='text'?'txt':to;
       if((from==='csv'&&type==='json')||(from==='json'&&type==='csv')||(['txt','md'].includes(from)&&['txt','md'].includes(type))) {
         const parsed=await parseFileIndependently(absoluteDataPath(source.relativePath),from);

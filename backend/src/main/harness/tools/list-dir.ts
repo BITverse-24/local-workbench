@@ -3,7 +3,7 @@ import path from "node:path";
 import { resolveSafe } from "../path-guard.js";
 
 /** Directories and files to skip during listing (HARNESS.md §3). */
-const IGNORE_LIST = new Set([
+export const IGNORE_LIST = new Set([
   ".git",
   "node_modules",
   "venv",

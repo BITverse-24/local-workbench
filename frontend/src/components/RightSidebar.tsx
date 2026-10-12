@@ -41,10 +41,10 @@ export default function RightSidebar({
   const isRunning = runState != null && !["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(runState);
   return (
     <aside
-      className={`hidden lg:flex flex-col neu-panel overflow-hidden flex-shrink-0 ${!collapsed ? "animate-apple-right delay-200" : ""}`}
+      className={`flex flex-col min-h-0 neu-panel overflow-hidden flex-shrink-0 ${!collapsed ? "animate-apple-right delay-200" : ""}`}
       style={{
-        width: collapsed ? 0 : 340,
-        minWidth: collapsed ? 0 : 340,
+        width: collapsed ? 0 : 'clamp(280px, 24vw, 320px)',
+        minWidth: collapsed ? 0 : 280,
         opacity: collapsed ? 0 : 1,
         transform: collapsed ? "translateX(12px) scale(0.98)" : "translateX(0) scale(1)",
         padding: collapsed ? 0 : undefined,

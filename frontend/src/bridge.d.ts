@@ -48,6 +48,7 @@ type RunState =
   | "limit_exceeded";
 
 interface AttachmentReference {
+  sourcePath?: string;
   attachmentId: string;
   filename: string;
   mediaType: string;
@@ -197,6 +198,8 @@ interface WorkspaceInfo {
   root: string;
   registeredAt: string;
 }
+interface WorkspaceReference { path: string; kind: "file" | "directory" }
+interface ChatTitleEvent { type: "chat_title_changed"; chatId: string; title: string; revision: number }
 
 interface HarnessDirEntry {
   name: string;
@@ -232,13 +235,13 @@ interface WorkbenchBridge {
   getChatHistory: (input?: { limit?: number }) => Promise<{ chats: ChatSummary[] }>;
   archiveChat: (chatId: string) => Promise<void>;
   getMessages: (chatId: string) => Promise<{ messages: PersistedMessage[] }>;
-  sendMessage: (chatId: string, role: "user" | "assistant", content: string, attachmentIds?: string[]) => Promise<{ messageId: string; seq: number }>;
+  sendMessage: (chatId: string, role: "user" | "assistant", content: string, attachmentIds?: string[]) => Promise<{ messageId: string; seq: number; chatTitle?: ChatTitleEvent }>;
   editMessage: (messageId: string, content: string) => Promise<void>;
   renameChat: (chatId: string, title: string) => Promise<void>;
   getSetting: (key: string) => Promise<{ value: unknown }>;
   setSetting: (key: string, value: unknown) => Promise<void>;
   getRunSnapshot: (input:{chatId?:string;runId?:string}) => Promise<RunSnapshot | undefined>;
-  startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string; selectedModel?: string; mode?: "chat" | "work" | "agent" }) => Promise<{ runId: string }>;
+  startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string; selectedModel?: string; mode?: "chat" | "work" | "agent"; workspaceIdentity?: WorkspaceInfo; workspaceReferences?: WorkspaceReference[] }) => Promise<{ runId: string }>;
   resumeRun: (input: { runId: string; largerGenerationAllowance?: boolean }) => Promise<{ runId: string }>;
   registerAttachment: (input: {
     chatId?: string;
@@ -260,6 +263,7 @@ interface WorkbenchBridge {
   getRunLogs: (input: { runId: string; limit?: number }) => Promise<{ runId: string; entries: unknown[]; files: string[]; recentFull: unknown }>;
   getRunLogFile: (input: { runId: string; filename: string }) => Promise<{ runId: string; filename: string; content: unknown }>;
   onRunEvent: (listener: (event: RunEvent) => void) => () => void;
+  onChatEvent: (listener: (event: ChatTitleEvent) => void) => () => void;
 
   // Knowledge base APIs
   kbListDocs: () => Promise<DocumentRecord[]>;
@@ -285,6 +289,7 @@ interface WorkbenchBridge {
   deregisterWorkspace: () => Promise<{ ok: boolean }>;
   getCurrentWorkspace: () => Promise<WorkspaceInfo | null>;
   listWorkspaceDir: (path?: string) => Promise<{ tool: "list_dir"; result: HarnessDirEntry[] }>;
+  suggestWorkspacePaths: (input: { query: string; root: string; registeredAt: string }) => Promise<{ entries: HarnessDirEntry[]; truncated: boolean }>;
   readWorkspaceFile: (path: string) => Promise<{ tool: "read_file"; result: string }>;
   searchWorkspace: (query: string, path?: string) => Promise<{ tool: "search"; result: HarnessSearchMatch[] }>;
   writeWorkspaceFile: (path: string, content: string) => Promise<{ tool: "write_file"; result: HarnessWriteResult }>;
