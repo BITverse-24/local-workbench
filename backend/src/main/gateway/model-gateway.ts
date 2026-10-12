@@ -20,7 +20,6 @@ import type {
 } from "../../shared/contracts.js";
 import type { ModelClient } from "../models/ports.js";
 import {
-  defaultLocalRegistry,
   loadProductionRegistryFromDb,
   loadProductionRegistryEntriesFromDb,
   loadRegistry,

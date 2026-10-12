@@ -6,7 +6,7 @@ import { isAllowedLocalModelEndpoint, isAllowedLocalModelHost } from "../../shar
 import { getSetting } from "../persistence/settings-store.js";
 
 const entry = z.object({ id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1).optional(), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url().refine(isAllowedLocalModelEndpoint, "Model endpoint must use localhost or a private IP address"), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), fallbackOnly: z.boolean().optional(), toolCallingFormat: z.enum(["native", "json"]).optional(), temperature: z.number().min(0).max(2).optional(), contextLength: z.number().int().positive().max(128000).optional(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
-const config = z.object({ $comment: z.string().optional(), models: z.array(entry).min(1) }).strict();
+const config = z.object({ $comment: z.string().optional(), models: z.array(entry) }).strict();
 
 
 let configuredModelsPath: string | null = null;
@@ -97,10 +97,7 @@ export function writeRegistryToFile(entries: ModelRegistryEntry[], filePath?: st
 }
 
 export function defaultLocalRegistry(): Map<ModelId, ModelRegistryEntry> {
-  const entries = buildRegistryFromRows([
-    { role: "draft", modelName: "qwen3:8b", host: "127.0.0.1", port: 11434, contextLength: 32768 },
-  ]);
-  return new Map(entries.map((e) => [e.id, e]));
+  return new Map();
 }
 
 export function loadProductionRegistryEntriesFromDb(dbModels?: ModelConfigRow[]): ModelRegistryEntry[] {

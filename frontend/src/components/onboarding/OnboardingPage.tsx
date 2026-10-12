@@ -36,7 +36,7 @@ const DEFAULT_CARDS: RoleCardState[] = [
     nodes: [
       {
         id: "vision-node-1",
-        modelName: "qwen3.5:9b",
+        modelName: "",
         host: "127.0.0.1",
         port: "11434",
         contextLength: "32768",
@@ -53,7 +53,7 @@ const DEFAULT_CARDS: RoleCardState[] = [
     nodes: [
       {
         id: "coding-node-1",
-        modelName: "qwen3.5:9b",
+        modelName: "",
         host: "127.0.0.1",
         port: "11434",
         contextLength: "32768",
@@ -70,7 +70,7 @@ const DEFAULT_CARDS: RoleCardState[] = [
     nodes: [
       {
         id: "draft-node-1",
-        modelName: "qwen3.5:9b",
+        modelName: "",
         host: "127.0.0.1",
         port: "11434",
         contextLength: "32768",
@@ -87,7 +87,7 @@ const DEFAULT_CARDS: RoleCardState[] = [
     nodes: [
       {
         id: "embedding-node-1",
-        modelName: "nomic-embed-text:v1.5",
+        modelName: "",
         host: "127.0.0.1",
         port: "11434",
         contextLength: "2048",
@@ -977,7 +977,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                                   onChange={(e) =>
                                     updateNode(cardIdx, nodeIdx, "modelName", e.target.value)
                                   }
-                                  placeholder="e.g. qwen3:8b"
+                                  placeholder="Enter a model name"
                                   className={`w-full h-10 px-3 rounded-[var(--radius-sm)] text-xs neu-input font-mono outline-none transition-all ${
                                     workerModelErr
                                       ? "border-[var(--status-error)] focus:border-[var(--status-error)]"

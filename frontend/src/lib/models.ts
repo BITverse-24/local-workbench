@@ -11,7 +11,7 @@ export type Model = {
  * The first route keeps the internal primary-model ID for compatibility.
  */
 export function getModelRoutes(configuredModels?: ModelConfigRow[] | null): Model[] {
-  if (!configuredModels) return [{ id: "primary-model", role: "primary", name: "qwen3.5:9b", desc: "Configured local model" }];
+  if (!configuredModels) return [{ id: "primary-model", role: "primary", name: "No model configured", desc: "Configure a local model to get started" }];
   const usable = configuredModels.filter((model) => model.role !== "embedding" && model.modelName?.trim());
   const primary = usable.filter((model) => model.role === "primary");
   const roleOrder: ModelRoleType[] = ["draft", "vision", "coding"];
