@@ -1,0 +1,1 @@
+This parser fails on the attached vendor maintenance log. Fix it, keep the `summarize` function and command-line interface, run it on the supplied CSV, and return the corrected Python file. Do not change the input CSV.

@@ -1,0 +1,10 @@
+{
+  "scenario": "C-3 utility-manifold drawing review",
+  "expected": [
+    "Branch U18-A is non-compliant: DN40 is below the DN50 minimum and Class 150 is below Class 300.",
+    "Branch U18-B meets both stated checks: DN50 and Class 300.",
+    "Correct U18-A to DN50 minimum and Class 300 before construction release.",
+    "Cite UT-9 sections 5.1 and 5.2."
+  ],
+  "requiredTerms": ["U18-A", "U18-B", "DN40", "DN50", "Class 150", "Class 300", "5.1", "5.2"]
+}

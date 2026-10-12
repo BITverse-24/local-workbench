@@ -1,0 +1,10 @@
+{
+  "scenario": "A-3 exchanger repair close-out review",
+  "expected": [
+    "Repair evidence is complete: 18 tubes and the gasket are recorded under WO-8831.",
+    "The pressure test meets EX-22 §7.2: 15.2 bar for 30 minutes with no leakage.",
+    "E-310 is pending and must remain isolated because the plant authority release signature is missing.",
+    "Cite EX-22 §§7.1, 7.2, and 7.3. Do not claim the test alone authorizes return to service."
+  ],
+  "requiredTerms": ["E-310", "WO-8831", "18 tubes", "15.2", "30 minutes", "no leakage", "pending", "isolated", "7.1", "7.2", "7.3"]
+}

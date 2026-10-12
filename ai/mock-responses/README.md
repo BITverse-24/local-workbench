@@ -17,5 +17,5 @@ Negative fixtures are intentionally untrusted model output.
 
 The OCR fixtures are validated with `validateVisionResult`; the code
 fixtures with `validateCodeDraftResult` (both in `ai/validation.ts`).
-Active demonstration fixtures and test oracles live under `demo/flow_a/`,
-`demo/flow_b/`, and `demo/flow_c/`.
+Active demonstration fixtures and test oracles live under `demo/flow_a/scenario-1/`,
+`demo/flow_b/scenario-1/`, and `demo/flow_c/scenario-1/`.

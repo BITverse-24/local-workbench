@@ -69,7 +69,7 @@ describe("Flow C End-to-End: Engineering Drawing Compliance Review", () => {
     const ragService = new RAGService(tempDir);
     await ragService.init();
 
-    const specPath = path.resolve(__dirname, "../../demo/flow_c/piping-spec-SOP-220.md");
+    const specPath = path.resolve(__dirname, "../../demo/flow_c/scenario-1/piping-spec-SOP-220.md");
     const specContent = readFileSync(specPath, "utf-8");
     const localSpecCopy = path.join(tempDir, "piping-spec-SOP-220.md");
     writeFileSync(localSpecCopy, specContent, "utf-8");
@@ -102,7 +102,7 @@ describe("Flow C End-to-End: Engineering Drawing Compliance Review", () => {
     const chatId = createChat("Flow C Drawing Compliance Review");
 
     // 3. Stage demo SVG engineering drawing
-    const svgPath = path.resolve(__dirname, "../../demo/flow_c/pump-skid-P204.svg");
+    const svgPath = path.resolve(__dirname, "../../demo/flow_c/scenario-1/pump-skid-P204.svg");
     const svgBuffer = readFileSync(svgPath);
     const { attachment } = manager.registerAttachment({
       chatId,

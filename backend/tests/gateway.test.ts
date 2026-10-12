@@ -76,7 +76,7 @@ describe("vision attachment payloads", () => {
     const relativePath = `runs/${RUN_ID}/input/report.pdf`;
     const abs = path.join(process.env.WORKBENCH_DATA_ROOT!, relativePath);
     mkdirSync(path.dirname(abs), { recursive: true });
-    writeFileSync(abs, readFileSync(path.resolve("demo/flow_a/inspection-report-E201.pdf")));
+    writeFileSync(abs, readFileSync(path.resolve("demo/flow_a/scenario-1/inspection-report-E201.pdf")));
     let sent: unknown[] = [];
     const gateway = new ModelGateway(
       {

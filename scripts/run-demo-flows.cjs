@@ -11,7 +11,13 @@ const ROOT = path.resolve(__dirname, "..");
 const WORKER_BUNDLE = path.join(ROOT, "tests/.runtime/build/worker.cjs");
 const SCHEMA_PATH = path.join(ROOT, "backend/src/main/persistence/schema.sql");
 
-const REGISTRY = JSON.parse(fs.readFileSync(path.join(ROOT, "config/models.json"), "utf8")).models;
+const configuredRegistry = JSON.parse(fs.readFileSync(path.join(ROOT, "config/models.json"), "utf8")).models;
+// The demo CLI is a local-model preflight. When onboarding has not saved a
+// registry yet, use the documented LM Studio profile; the app config itself
+// stays empty and unchanged.
+const REGISTRY = configuredRegistry.length
+  ? configuredRegistry
+  : JSON.parse(fs.readFileSync(path.join(ROOT, "config/models.v0.example.json"), "utf8")).models;
 
 const EMBEDDING = {
   baseUrl: "http://127.0.0.1:1234/v1",

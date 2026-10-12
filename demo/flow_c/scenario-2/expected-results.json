@@ -1,0 +1,10 @@
+{
+  "scenario": "C-2 relief-valve register review",
+  "expected": [
+    "RV-301 is non-compliant because its 10.2 bar setting is above the 10.0 bar MAWP; reset or replace it.",
+    "RV-302 has a setting within range, but the missing test date makes its test status unknown; keep V-302 out of service until a current test is recorded.",
+    "RV-303 has a 9.5 bar setting at the inclusive lower limit and a current test date; it meets the stated checks.",
+    "Cite PS-14 sections 6.1–6.3."
+  ],
+  "requiredTerms": ["RV-301", "RV-302", "RV-303", "10.2", "9.5", "10.0", "unknown", "out of service", "6.1", "6.2", "6.3"]
+}

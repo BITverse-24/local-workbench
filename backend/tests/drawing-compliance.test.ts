@@ -44,7 +44,7 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
   });
 
   it("extracts component tags, ratings, and diameters from SVG engineering drawing", () => {
-    const svgPath = path.resolve(__dirname, "../../demo/flow_c/pump-skid-P204.svg");
+    const svgPath = path.resolve(__dirname, "../../demo/flow_c/scenario-1/pump-skid-P204.svg");
     const svgBuffer = readFileSync(svgPath);
 
     const extraction = extractDrawingAttributes({
@@ -71,7 +71,7 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
   });
 
   it("dynamically ingests governing spec into RAG and retrieves exact clause citations", async () => {
-    const specPath = path.resolve(__dirname, "../../demo/flow_c/piping-spec-SOP-220.md");
+    const specPath = path.resolve(__dirname, "../../demo/flow_c/scenario-1/piping-spec-SOP-220.md");
     const specBuffer = readFileSync(specPath, "utf8");
 
     const specInfo = await ensureGoverningSpecIndexed(ragService, {
@@ -242,7 +242,7 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
   async function inspectDrawing(work:boolean){
     const fixture=modeGateway(fixtureIntent('Review drawing',work?[{type:'md',filename:'corrective-action-note.md'}]:[]),()=>note);
     const events:RunEvent[]=[];const manager=new RunManager(fixture.gateway,event=>events.push(event));manager.setRAGService(ragService);manager.setGrounding(new RAGGroundingProvider(ragService));
-    const chatId=createChat('Drawing review');const bytes=readFileSync(path.resolve('demo/flow_c/pump-skid-P204.svg'));
+    const chatId=createChat('Drawing review');const bytes=readFileSync(path.resolve('demo/flow_c/scenario-1/pump-skid-P204.svg'));
     const {attachment}=manager.registerAttachment({chatId,filename:'drawing.svg',mediaType:'image/svg+xml',sizeBytes:bytes.length,base64OrBuffer:bytes});
     const {runId}=await manager.start({chatId,mode:work?'work':'chat',groundingEnabled:true,userText:work?'Check this against the piping spec and create corrective-action-note.md':'Check this against the piping spec and describe required corrections',attachmentToken:attachment.attachmentId});
     await vi.waitFor(()=>expect(events.some(e=>e.runId===runId&&e.type==='run_state'&&e.state==='completed'),JSON.stringify(events.filter(e=>e.type==='error'))).toBe(true),{timeout:5000});

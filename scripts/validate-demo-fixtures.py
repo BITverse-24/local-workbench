@@ -12,10 +12,12 @@ import tempfile
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent
-FLOW_B = ROOT / "flow_b"
-FLOW_A = ROOT / "flow_a"
-FLOW_C = ROOT / "flow_c"
+PROJECT = Path(__file__).resolve().parent.parent
+ROOT = PROJECT / "demo"
+MANIFEST = Path(__file__).resolve().with_name("demo-manifest.json")
+FLOW_B = ROOT / "flow_b" / "scenario-1"
+FLOW_A = ROOT / "flow_a" / "scenario-1"
+FLOW_C = ROOT / "flow_c" / "scenario-1"
 
 
 def load(name: str):
@@ -52,14 +54,14 @@ def validate_flow_a() -> None:
     check("[section:3.2] Approval criteria" in sop, "SOP criteria section is missing")
     check("[SOP-114 §3.2]" in sop, "SOP citation is missing")
 
-    ocr = load("flow_a/expected-ocr.json")
+    ocr = load("flow_a/scenario-1/expected-ocr.json")
     check(len(ocr["findings"]) == 3, "OCR oracle must contain three findings")
     check({finding["findingId"] for finding in ocr["findings"]} == {"finding-1", "finding-2", "finding-3"},
           "OCR finding IDs are incorrect")
     check({reference["page"] for reference in ocr["pageReferences"]} == {1, 2},
           "OCR page references are incomplete")
 
-    assessment = load("flow_a/expected-assessment.json")
+    assessment = load("flow_a/scenario-1/expected-assessment.json")
     check(assessment["criteriaCitation"] == "[SOP-114 §3.2]", "assessment citation is incorrect")
     check({item["status"] for item in assessment["assessments"]} == {"fail", "pass", "unknown"},
           "assessment must demonstrate pass, fail, and unknown statuses")
@@ -69,18 +71,18 @@ def validate_flow_a() -> None:
     check(assessment["missingInformation"][0]["field"] == "approvalAuthority",
           "missing approval authority must be explicit")
 
-    note = load("flow_a/expected-approval-note.json")
+    note = load("flow_a/scenario-1/expected-approval-note.json")
     check("[SOP-114 §3.2]" in note["body"], "approval note lacks SOP citation")
     check(note["missingInformation"], "approval note must preserve missing information")
     check(any(section["id"] == "recommendation" for section in note["sections"]),
           "approval note recommendation section is missing")
-    bundle = load("flow_a/report-bundle.json")
+    bundle = load("flow_a/scenario-1/report-bundle.json")
     check(len(bundle["files"]) == 2, "Flow A must contain a two-report bundle")
-    extraction = load("flow_a/expected-bundle-extraction.json")
+    extraction = load("flow_a/scenario-1/expected-bundle-extraction.json")
     check(extraction["documentsProcessed"] == 2, "bundle extraction count is incorrect")
     check("RECHECK WELD JOINT 4B" in extraction["handwrittenAnnotations"][0]["text"],
           "handwritten annotation is missing")
-    sovereignty = load("flow_a/sovereignty-proof.json")
+    sovereignty = load("flow_a/scenario-1/sovereignty-proof.json")
     check(sovereignty["externalRequests"] == 0 and sovereignty["blockedAttempt"]["recorded"],
           "Flow A sovereignty proof is incomplete")
 
@@ -99,10 +101,10 @@ def validate_flow_b() -> None:
         check(250.0 <= float(row["temperature_c"]) <= 350.0 or row["timestamp"] in special_timestamps,
               f"unexpected out-of-range row: {row}")
 
-    execution = load("flow_b/expected-python-execution.json")
-    summary = load("flow_b/expected-out-of-range-summary.json")
+    execution = load("flow_b/scenario-1/expected-python-execution.json")
+    summary = load("flow_b/scenario-1/expected-out-of-range-summary.json")
     expected_rows = summary["rows"]
-    with tempfile.TemporaryDirectory(prefix=".preflight-", dir=ROOT) as temporary:
+    with tempfile.TemporaryDirectory(prefix=".preflight-", dir=PROJECT / "tests") as temporary:
         run_dir = Path(temporary)
         shutil.copy2(FLOW_B / "reactor-temperature-log.csv", run_dir / "reactor-temperature-log.csv")
         shutil.copy2(FLOW_B / "expected-task.py", run_dir / "task.py")
@@ -150,20 +152,20 @@ def validate_flow_c() -> None:
     check("CLASS 150" in drawing and "DN80" in drawing, "drawing discrepancies are missing")
     spec = (FLOW_C / "piping-spec-SOP-220.md").read_text(encoding="utf-8")
     check("[SOP-220 §4.2]" in spec and "[SOP-220 §4.3]" in spec, "piping criteria are missing")
-    assessment = load("flow_c/expected-compliance-assessment.json")
+    assessment = load("flow_c/scenario-1/expected-compliance-assessment.json")
     check(len(assessment["checks"]) == 2, "Flow C must contain two compliance checks")
     check(all(item["status"] == "non_compliant" for item in assessment["checks"]),
           "Flow C checks must be non-compliant")
     check({item["citation"] for item in assessment["checks"]} == {"[SOP-220 §4.2]", "[SOP-220 §4.3]"},
           "Flow C citations are incomplete")
     check(assessment["noApprovalClaim"] is True, "Flow C must not claim approval")
-    sovereignty = load("flow_c/sovereignty-proof.json")
+    sovereignty = load("flow_c/scenario-1/sovereignty-proof.json")
     check(sovereignty["externalRequests"] == 0 and sovereignty["blockedAttempt"]["recorded"],
           "Flow C sovereignty proof is incomplete")
 
 
 def validate_manifest() -> None:
-    manifest = load("manifest.json")
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     check(manifest["fixtureVersion"] == "2.0.0", "unexpected fixture version")
     for relative, details in manifest["files"].items():
         path = ROOT / relative

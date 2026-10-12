@@ -1,0 +1,10 @@
+{
+  "scenario": "A-2 gauge calibration release review",
+  "expected": [
+    "PG-G17 is eligible for release use: certificate is current and +0.6% is within the ±1.0% limit.",
+    "PG-G18 is not approved: its 2025-02-10 certificate is more than 12 months old as of 2026-10-12.",
+    "PG-G19 is not approved: no certificate is available, so calibration status is unknown.",
+    "Cite PG-7 sections 4.1 and 4.2. Do not describe G18 or G19 as passed."
+  ],
+  "requiredTerms": ["PG-G17", "PG-G18", "PG-G19", "G17-440", "G18-221", "G19-903", "PG-7", "4.1", "4.2", "0.6", "12 months", "certificate"]
+}

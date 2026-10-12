@@ -4,7 +4,7 @@ This prompt drafts an approval note from verified inspection findings,
 dynamic SOP-114 criteria evaluation, and template requirements. It produces a
 formal, citation-backed draft ready for OpenXML binary Word (`.docx`) deliverable
 generation. Active demonstration fixtures and governing criteria live under
-`demo/flow_a/`.
+`demo/flow_a/scenario-1/`.
 
 ## System prompt
 

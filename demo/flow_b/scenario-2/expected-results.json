@@ -1,0 +1,8 @@
+{
+  "scenario": "B-2 cold-room temperature incident summary",
+  "expected": [
+    "3 out-of-range rows: 5.1°C at 2026-10-11T08:30:00Z, 1.9°C at 2026-10-11T09:00:00Z, and 6.4°C at 2026-10-11T09:45:00Z.",
+    "The CSV keeps each timestamp paired with its correct temperature."
+  ],
+  "requiredTerms": ["5.1", "1.9", "6.4", "08:30:00Z", "09:00:00Z", "09:45:00Z"]
+}

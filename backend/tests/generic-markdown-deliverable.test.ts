@@ -173,7 +173,7 @@ describe("Generic Markdown Deliverable Generation", () => {
   describe("Work Multi-Document Deliverables", () => {
     it("generates markdown deliverable for multi-attachment bundle when compliance note requested", async () => {
       const chatId = createChat("Chat Vision");
-      const pdfBuffer = readFileSync(path.resolve("demo/flow_a/inspection-report-E201.pdf"));
+      const pdfBuffer = readFileSync(path.resolve("demo/flow_a/scenario-1/inspection-report-E201.pdf"));
 
       const att1 = manager.registerAttachment({
         chatId,

@@ -1,0 +1,10 @@
+{
+  "scenario": "B-3 agentic Python codebase boundary fix",
+  "expected": [
+    "Agent reads the module and its exact-boundary test.",
+    "The test test_exact_boundary_is_alert fails because 5.0 > 5.0 is false.",
+    "The smallest fix is to change > to >= in coldroom.py.",
+    "The CLI check confirms the exact-boundary test fails on the supplied code."
+  ],
+  "requiredTerms": ["coldroom.py", "test_coldroom.py", "5.0", ">=", "test_exact_boundary_is_alert"]
+}

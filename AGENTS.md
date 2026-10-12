@@ -288,17 +288,23 @@ agent/
 │   ├── profiles/                  # Test execution profiles (local, deployed)
 │   └── scenarios/                 # Test corpus and evaluation scenarios
 │
-├── demo/                          # Verification and demonstration fixtures
-│   ├── flow_a/                    # Inspection report bundle & SOP requirements
-│   ├── flow_b/                    # Sensor logs and vendor log parser script
-│   ├── flow_c/                    # Engineering drawing SVG & compliance requirements
-│   ├── manifest.json              # Demo fixture manifest
-│   ├── build_fixtures.py          # Fixture generator script
-│   └── validate_fixtures.py       # Fixture verification script
+├── demo/                          # Scenario assets only
+│   ├── flow_a/scenario-1/         # Original inspection review inputs and prompt
+│   ├── flow_a/scenario-2/         # Calibration certificate review
+│   ├── flow_a/scenario-3/         # Repair close-out review
+│   ├── flow_b/scenario-1/         # Original vendor parser repair inputs and prompt
+│   ├── flow_b/scenario-2/         # Cold-room incident review
+│   ├── flow_b/scenario-3/         # Agent-mode codebase review
+│   ├── flow_c/scenario-1/         # Original P-204 drawing review inputs and prompt
+│   ├── flow_c/scenario-2/         # Relief-valve compliance review
+│   └── flow_c/scenario-3/         # Utility-manifold compliance review
 │
 └── scripts/                       # Development, build, and test tooling
     ├── dev.cjs                    # Concurrently spawns Vite dev server and Electron
     ├── build-electron.cjs         # Esbuild bundler for electron main & preload
+    ├── build-demo-fixtures.py    # Deterministic scenario fixture generator
+    ├── validate-demo-fixtures.py # Scenario fixture verification
+    ├── demo-manifest.json        # Scenario asset hashes
     ├── portability-smoke.ts      # Opt-in native package backend checks
     ├── test-packaged-portability.cjs # Runs checks inside the native Electron package
     ├── preview.cjs                # Runs production Electron build against static frontend

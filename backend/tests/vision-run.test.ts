@@ -88,7 +88,7 @@ describe('Chat and Work visual source paths', () => {
 
   it('extracts digital PDF text without a vision call', async () => {
     const { manager, requests, fixture } = setup();
-    await run(manager, 'report.pdf', readFileSync(path.resolve('demo/flow_a/inspection-report-E201.pdf')), 'application/pdf', 'chat', 'Read this report');
+    await run(manager, 'report.pdf', readFileSync(path.resolve('demo/flow_a/scenario-1/inspection-report-E201.pdf')), 'application/pdf', 'chat', 'Read this report');
     expect(requests).toHaveLength(0);
     expect(fixture.turns[0].at(-1).content).toContain('4.6');
     expect(fixture.chat).toHaveBeenCalledTimes(1);
@@ -96,7 +96,7 @@ describe('Chat and Work visual source paths', () => {
 
   it('reads vector drawing labels deterministically even when the request mentions a drawing', async () => {
     const { manager, requests, fixture } = setup();
-    await run(manager, 'drawing.svg', readFileSync(path.resolve('demo/flow_c/pump-skid-P204.svg')), 'image/svg+xml', 'chat', 'Inspect this engineering drawing P&ID');
+    await run(manager, 'drawing.svg', readFileSync(path.resolve('demo/flow_c/scenario-1/pump-skid-P204.svg')), 'image/svg+xml', 'chat', 'Inspect this engineering drawing P&ID');
     expect(requests).toHaveLength(0);
     expect(fixture.turns[0].at(-1).content).toContain('XV-204');
     expect(fixture.turns[0].at(-1).content).toContain('DN80');

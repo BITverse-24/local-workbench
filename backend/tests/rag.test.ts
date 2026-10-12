@@ -210,7 +210,7 @@ A formal rejection notice and quarantine tag must be issued within 2 hours.
 
       await ragService.init();
 
-      const pdfPath = path.resolve(__dirname, "../../demo/flow_a/inspection-report-E201-annotated.pdf");
+      const pdfPath = path.resolve(__dirname, "../../demo/flow_a/scenario-1/inspection-report-E201-annotated.pdf");
       const docRecord = {
         doc_id: "ir-e201",
         title: "Inspection Report E201",

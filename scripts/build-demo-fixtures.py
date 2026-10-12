@@ -10,10 +10,11 @@ from pathlib import Path
 
 
 
-ROOT = Path(__file__).resolve().parent
-FLOW_B = ROOT / "flow_b"
-FLOW_A = ROOT / "flow_a"
-FLOW_C = ROOT / "flow_c"
+ROOT = Path(__file__).resolve().parent.parent / "demo"
+MANIFEST = Path(__file__).resolve().with_name("demo-manifest.json")
+FLOW_B = ROOT / "flow_b" / "scenario-1"
+FLOW_A = ROOT / "flow_a" / "scenario-1"
+FLOW_C = ROOT / "flow_c" / "scenario-1"
 
 
 def make_flow_a_scans() -> None:
@@ -124,7 +125,7 @@ def sha256(path: Path) -> str:
 def make_manifest() -> None:
     files = {}
     for path in sorted(ROOT.rglob("*")):
-        if path.is_file() and path.name not in {"manifest.json"}:
+        if path.is_file():
             files[str(path.relative_to(ROOT)).replace("\\", "/")] = {
                 "sha256": sha256(path),
                 "bytes": path.stat().st_size,
@@ -156,14 +157,22 @@ def make_manifest() -> None:
                 "nonCompliantChecks": 2,
                 "recommendation": "Replace XV-204 with Class 300 and revise discharge line to DN100 or larger.",
             },
+            "additionalScenarios": [
+                "flow_a/scenario-2: gauge calibration release review",
+                "flow_a/scenario-3: exchanger repair close-out review",
+                "flow_b/scenario-2: cold-room incident summary",
+                "flow_b/scenario-3: Agent-mode Python codebase boundary fix",
+                "flow_c/scenario-2: relief-valve register review",
+                "flow_c/scenario-3: utility-manifold drawing review",
+            ],
         },
         "files": files,
     }
-    (ROOT / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    MANIFEST.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
     make_flow_a_scans()
     make_csv(FLOW_B / "reactor-temperature-log.csv")
     make_manifest()
-    print("Built demo fixtures and manifest.")
+    print("Built scenario fixtures and manifest.")

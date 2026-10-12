@@ -15,7 +15,7 @@ const path=require('node:path'),fs=require('node:fs'),{createRequire}=require('n
 const packaged=createRequire(${JSON.stringify(packagedMain)});
 const {parseFileIndependently}=require('./reader.cjs');
 (async()=>{
- const pdf=await parseFileIndependently(${JSON.stringify(path.resolve('demo/flow_a/inspection-report-E201-annotated.pdf'))},'pdf');
+ const pdf=await parseFileIndependently(${JSON.stringify(path.resolve('demo/flow_a/scenario-1/inspection-report-E201-annotated.pdf'))},'pdf');
  if(pdf.pages.length!==2||!pdf.text.includes('E-201'))throw new Error('PDF content missing');
  const {Document,Paragraph,Packer}=packaged('docx');
  const word=path.join(__dirname,'report.docx');

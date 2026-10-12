@@ -1,0 +1,265 @@
+{
+  "fixtureVersion": "2.0.0",
+  "generatedAt": "2026-08-20T00:00:00Z",
+  "flows": {
+    "flowA": {
+      "reportId": "IR-E201-2026-08-20",
+      "equipmentId": "E-201",
+      "criteriaCitation": "[SOP-114 §3.2]",
+      "statuses": [
+        "fail",
+        "pass",
+        "unknown"
+      ],
+      "recommendation": "Conditional clearance pending retubing and recorded gasket replacement; final approval authority disposition required."
+    },
+    "flowB": {
+      "inputRows": 240,
+      "reactorId": "R-101",
+      "limitsCelsius": {
+        "lowExclusive": 250.0,
+        "highExclusive": 350.0
+      },
+      "outOfRangeRows": 7,
+      "highRows": 5,
+      "lowRows": 2,
+      "expectedStdout": "OUT_OF_RANGE 7/240 (high=5, low=2)",
+      "expectedExitCode": 0
+    },
+    "flowC": {
+      "drawingId": "PID-P204-REV-C",
+      "requiredCitations": [
+        "[SOP-220 §4.2]",
+        "[SOP-220 §4.3]"
+      ],
+      "nonCompliantChecks": 2,
+      "recommendation": "Replace XV-204 with Class 300 and revise discharge line to DN100 or larger."
+    },
+    "additionalScenarios": [
+      "flow_a/scenario-2: gauge calibration release review",
+      "flow_a/scenario-3: exchanger repair close-out review",
+      "flow_b/scenario-2: cold-room incident summary",
+      "flow_b/scenario-3: Agent-mode Python codebase boundary fix",
+      "flow_c/scenario-2: relief-valve register review",
+      "flow_c/scenario-3: utility-manifold drawing review"
+    ]
+  },
+  "files": {
+    "flow_a/scenario-1/approval-note-template-TPL-012.md": {
+      "sha256": "1559f0e177b35a5accc87132bb0ee7dc78988d482f348bb8aee3d9229d32be92",
+      "bytes": 681
+    },
+    "flow_a/scenario-1/expected-approval-note.json": {
+      "sha256": "d7c9b8bd6f9d1d25a32f3d72311b4c58a370c6259411887fd289732fc0d27f1e",
+      "bytes": 2230
+    },
+    "flow_a/scenario-1/expected-assessment.json": {
+      "sha256": "a9ddc429b0bfa3b2286b5217ef0a3b01065e762ff45bdc1b2bd7a337fd605e8e",
+      "bytes": 1983
+    },
+    "flow_a/scenario-1/expected-bundle-extraction.json": {
+      "sha256": "4d7c76e559846afd282c1362677f450047540d803bd8fa1cb1220c16f2890162",
+      "bytes": 511
+    },
+    "flow_a/scenario-1/expected-ocr.json": {
+      "sha256": "950501b123d2899fa49628e943ddaf4fa8721d43843b4fc1c88d5a25b085851d",
+      "bytes": 2160
+    },
+    "flow_a/scenario-1/inspection-report-E201-annotated.pdf": {
+      "sha256": "f7f23e32b5386874e76144d751e3ae44abd34a6b9798c7d0eb8128b5bd4da434",
+      "bytes": 1987
+    },
+    "flow_a/scenario-1/inspection-report-E201.pdf": {
+      "sha256": "c8a12e4c5b676b849ea1667ebc7d45239e4d7484dd0a64ca507ebe4ad887671c",
+      "bytes": 2094
+    },
+    "flow_a/scenario-1/inspection-report-E202-followup.pdf": {
+      "sha256": "ec575a8c990a0f0abca2553db43e7e41652d502f5398690d541edf01994c5437",
+      "bytes": 1966
+    },
+    "flow_a/scenario-1/prompt.md": {
+      "sha256": "4b5022c617ac94d7f639f597940188f5d447cb2aef8907b6cca0d502d330382c",
+      "bytes": 484
+    },
+    "flow_a/scenario-1/report-bundle.json": {
+      "sha256": "372a7bdff3b2673d5982c582f6030a40557ff72e7a39ab94cc096ce4e73ea1cc",
+      "bytes": 519
+    },
+    "flow_a/scenario-1/sop-114-pressure-equipment-inspection.md": {
+      "sha256": "67d904eba5994e00a0689e9f3b9389969f593be66364202c7ee91c2577ca05f2",
+      "bytes": 1432
+    },
+    "flow_a/scenario-1/sovereignty-proof.json": {
+      "sha256": "aefe8e95fd936cfb629a4f58a463fa4c2e6fd72e17596e80b529fb9b7c8c7aaf",
+      "bytes": 353
+    },
+    "flow_a/scenario-2/expected-results.json": {
+      "sha256": "15d3a91a3c2f92f878ba9a60754df57cca3266d38ee4295376cd973be71b4e99",
+      "bytes": 596
+    },
+    "flow_a/scenario-2/gauge-calibration-register.md": {
+      "sha256": "5bcb4e15111a20b0bf40841b9eec0c506b1f9a3855c921f2c1d3b73722e64760",
+      "bytes": 499
+    },
+    "flow_a/scenario-2/maintenance-procedure.md": {
+      "sha256": "6ca827cbd0c08d2f28b2348718b8c524269da1d7a3d8e6ddbf3dfcff7f1eef88",
+      "bytes": 628
+    },
+    "flow_a/scenario-2/prompt.md": {
+      "sha256": "1abb8f1eb8b4b2e5ddb1217129af60f16d9365fe1bb5b7e52b211b75d4172175",
+      "bytes": 481
+    },
+    "flow_a/scenario-3/closeout-procedure.md": {
+      "sha256": "dc318416ae9556572f4ca47c58255f705c82b51344973f9a86cbce3e1dafe16e",
+      "bytes": 656
+    },
+    "flow_a/scenario-3/expected-results.json": {
+      "sha256": "bfc264507c8b3d3136ea2e0b3e0e3dc8f8393e9fa697fae4881faf1fe0fcdac7",
+      "bytes": 590
+    },
+    "flow_a/scenario-3/prompt.md": {
+      "sha256": "fa79ec7369e6040598d3676d4957ab8c716c8611dae551e4f35d709285caf9c5",
+      "bytes": 418
+    },
+    "flow_a/scenario-3/repair-closeout-packet.md": {
+      "sha256": "b28c2fc222940f462da1ac86beef949b26ea212ab9dd8708cec1fe7756f5ca19",
+      "bytes": 480
+    },
+    "flow_b/scenario-1/broken-vendor-log-parser.py": {
+      "sha256": "9c4b59211748a6f258302716502cbd65323792b834b9011cc40b22879ffef43e",
+      "bytes": 677
+    },
+    "flow_b/scenario-1/expected-out-of-range-summary.csv": {
+      "sha256": "57c31bb6004654d6302a5def55e7827ab5ab5801d85060218ad616c8b22495bd",
+      "bytes": 281
+    },
+    "flow_b/scenario-1/expected-out-of-range-summary.json": {
+      "sha256": "9caa380411a1ab35b4fc09a60bc061eb648dcf7ebf399c43d17a19e83b9cca7b",
+      "bytes": 923
+    },
+    "flow_b/scenario-1/expected-python-execution.json": {
+      "sha256": "f02adba3178b643ad1214125f71bc06a61b65193cf0575cbf3bc0df6e1aa446c",
+      "bytes": 258
+    },
+    "flow_b/scenario-1/expected-repair-trace.json": {
+      "sha256": "8c6faaa1c9847f6f316b292529ba61cf1c9f6dc2655922c61b94f582177c6805",
+      "bytes": 608
+    },
+    "flow_b/scenario-1/expected-repaired-output.csv": {
+      "sha256": "d347fca9245ded96a133f653b4d462beaf2558d5bd5b2362a385b6f3db7611dc",
+      "bytes": 305
+    },
+    "flow_b/scenario-1/expected-task.py": {
+      "sha256": "6554f0b7e40dc4916a6ea7ab4697b23dea0e8042d97d629e474442c38d07b5c1",
+      "bytes": 1377
+    },
+    "flow_b/scenario-1/prompt.md": {
+      "sha256": "f1f9666621dffe00410d1fe682ad7caaba87c4d3c394ce56778760082bd835d3",
+      "bytes": 219
+    },
+    "flow_b/scenario-1/reactor-temperature-log.csv": {
+      "sha256": "b91e6fd5e0beac6fe66b0ed5a98766e0cfac2576b304c012ff691d34c2d027c9",
+      "bytes": 6995
+    },
+    "flow_b/scenario-1/sovereignty-proof.json": {
+      "sha256": "dbb5fedd692aa9bba35af882ef223d7bc974e57c6324c06c199ac84dc83affa0",
+      "bytes": 371
+    },
+    "flow_b/scenario-1/vendor-maintenance-log.csv": {
+      "sha256": "9fdd3c5ca00050dc884fec33b2c3b2e7f2ff581bb513e3bf3f18631b939ce777",
+      "bytes": 233
+    },
+    "flow_b/scenario-2/cold-room-readings.csv": {
+      "sha256": "ef5ffe5d62344632ae0375e7e22d038b59435739261d2315f183e76206858fdd",
+      "bytes": 259
+    },
+    "flow_b/scenario-2/expected-results.json": {
+      "sha256": "ec8035e5d70e6f11169c580bc0ea51e3dd7206014c1671a03363427d873a1c9b",
+      "bytes": 365
+    },
+    "flow_b/scenario-2/monitoring-rule.md": {
+      "sha256": "8eb83e62b7d7b57d8654164d95a599359f2b90d2ec8961ac866998cda5065aec",
+      "bytes": 337
+    },
+    "flow_b/scenario-2/prompt.md": {
+      "sha256": "ba794431382473035e9ab7d79a79de2f5f9c67e3dabf0664bd342e309222eb72",
+      "bytes": 330
+    },
+    "flow_b/scenario-3/expected-results.json": {
+      "sha256": "b68caf528302dbb5854ba59f8be691fe101b1c14b5abc57a5baaea72d1b47c95",
+      "bytes": 463
+    },
+    "flow_b/scenario-3/prompt.md": {
+      "sha256": "5cabe4ef334c98e94c5da91fe53b9a1f04677519fa007224a5de45a13892e46d",
+      "bytes": 415
+    },
+    "flow_b/scenario-3/workspace/README.md": {
+      "sha256": "c0c93b1eddc00640907e660a1afc0749abe016c291048677daf0227717096fa4",
+      "bytes": 167
+    },
+    "flow_b/scenario-3/workspace/coldroom.py": {
+      "sha256": "8da79377bcb95a72a2a54d30802993ca74bc755fe45c6499ece5d445fc71f669",
+      "bytes": 257
+    },
+    "flow_b/scenario-3/workspace/tests/test_coldroom.py": {
+      "sha256": "a2f88bf90477b73a0839ae173ca418406363baffc71a00c00835fdc15784ac40",
+      "bytes": 393
+    },
+    "flow_c/scenario-1/corrective-action-note.md": {
+      "sha256": "561ed9e94620c0c21a67ed654aa218ce2f15f60e4e9f9ab954ce8c01716c5e5b",
+      "bytes": 402
+    },
+    "flow_c/scenario-1/expected-compliance-assessment.json": {
+      "sha256": "d34374891c01d4ad93c4c9968280a39f014b39027759097f2c74276650c65822",
+      "bytes": 638
+    },
+    "flow_c/scenario-1/piping-spec-SOP-220.md": {
+      "sha256": "1ff4feff2f34ad0486fb9bd33574ac3e831d86c4cd2265929e74ae3709b224dc",
+      "bytes": 729
+    },
+    "flow_c/scenario-1/prompt.md": {
+      "sha256": "1e375466444e8260f57c8508b99a75b4bd8eff864e901679a282b1fab71b0cb9",
+      "bytes": 397
+    },
+    "flow_c/scenario-1/pump-skid-P204.svg": {
+      "sha256": "7060939e1257620647e1d21711cd5b7bb1959a28e490dbe8ee3a7822842e0c6e",
+      "bytes": 2116
+    },
+    "flow_c/scenario-1/sovereignty-proof.json": {
+      "sha256": "a27d657a0a8c941bef25e48a7bbc52085d8354c2666128e35fbb7762edb4da57",
+      "bytes": 383
+    },
+    "flow_c/scenario-2/expected-results.json": {
+      "sha256": "aff95d374bd6271663094f0c8ecbf2cac9948705f551b31ff6670d32b404f3bf",
+      "bytes": 621
+    },
+    "flow_c/scenario-2/process-safety-standard.md": {
+      "sha256": "7bc8965e9cfc2c861330fcd909ed5f2264429f4a824157bf4f12124f0509f5ee",
+      "bytes": 633
+    },
+    "flow_c/scenario-2/prompt.md": {
+      "sha256": "059cd9b56d714d740895f5f14a216f82727c45344ec536b59f3fc026896d25fc",
+      "bytes": 564
+    },
+    "flow_c/scenario-2/relief-valve-register.csv": {
+      "sha256": "3cdb15c24e68b46e61eef96bcb75cebb9ce171343731e2582965ab09de59de82",
+      "bytes": 151
+    },
+    "flow_c/scenario-3/expected-results.json": {
+      "sha256": "9367c92bf59fde5fa749170fc02146d36b6ee35b8565dc4d00af852a5eb094ac",
+      "bytes": 459
+    },
+    "flow_c/scenario-3/prompt.md": {
+      "sha256": "216b9e1e57fb851c0de4005a7282964934d95220569bdb100bebc53dcf3a228b",
+      "bytes": 363
+    },
+    "flow_c/scenario-3/utility-manifold-U18.svg": {
+      "sha256": "c9a201e2d0caac4e2010e94ce6efb04bb725954ca87972f5b65fa57c5abb7b06",
+      "bytes": 1153
+    },
+    "flow_c/scenario-3/utility-standard-UT-9.md": {
+      "sha256": "41f1c5195a77eb6dcd096011f62334e2c21b13dac1aec282b3d141c0c81a33c3",
+      "bytes": 392
+    }
+  }
+}
