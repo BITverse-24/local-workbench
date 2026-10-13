@@ -277,6 +277,7 @@ interface WorkbenchBridge {
     page_count?: number;
     ocr_used?: boolean;
   }) => Promise<{ ok: boolean; docId: string; chunkCount: number }>;
+  kbIngestFile: (file: File, input: Omit<Parameters<WorkbenchBridge["kbIngestDoc"]>[0], "source_path">) => Promise<{ ok: boolean; docId: string; chunkCount: number }>;
   kbDeleteDoc: (docId: string) => Promise<{ ok: boolean; docId: string }>;
   kbReindex: (docId?: string) => Promise<{ ok: boolean; chunksIndexed: number }>;
   kbQuery: (text: string, topK?: number) => Promise<{ ok: boolean; results: RetrievalResult[] }>;

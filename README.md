@@ -86,6 +86,8 @@ Create a desktop package for the current build host with:
 npm run package
 ```
 
+`npm run package` and `npm run package:dir` first clear saved development defaults. This resets the settings in the repository's desktop and CLI databases, clears `config/models.json` and the `data/models.json` backup, and removes saved model selection and browser preferences from the development profile. The next development launch requires model setup again. Close the development app before packaging. Chats, run files, knowledge files, and preview and release profiles remain available.
+
 The packaging configuration defines a macOS DMG, a Windows x64 installer, and a Linux AppImage. Build and test each target on its supported platform. Check the release notes for the platforms and signing status of published binaries.
 
 Use root `icon.png` as the icon source. Run `npm run build:icons` to update the app icons, or run the normal build or package command. The build trims clear margins, keeps the logo's proportions, and preserves transparency. Final files are `build/icons/icon.icns` for macOS, `build/icons/icon.ico` for Windows, and `build/icons/icon.png` for Linux. The frontend copy is updated at the same time. The small icon variants are generated in a temporary folder and removed after conversion.

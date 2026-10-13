@@ -1,6 +1,17 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { StartRunInput } from "../backend/src/main/run/manager.js";
 import type { ChatTitleEvent } from "../backend/src/shared/contracts.js";
+
+type KnowledgeDocumentInput = {
+  doc_id: string;
+  title: string;
+  source_path: string;
+  doc_type?: string;
+  department?: string;
+  effective_date?: string;
+  page_count?: number;
+  ocr_used?: boolean;
+};
 
 // Window Controls
 contextBridge.exposeInMainWorld("electronAPI", {
@@ -10,8 +21,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 });
 
 // Typed workbench bridge — no wildcard ipcRenderer exposure.
-// All run/protocol methods go through structured-clone IPC; attachments
-// are transferred as base64 strings, never as absolute paths.
+// Run attachments use base64 strings. Knowledge ingestion resolves selected
+// disk-backed Files here before sending their paths through structured-clone IPC.
 contextBridge.exposeInMainWorld("workbench", {
   // chat persistence
   createChat: (input?: { title?: string }) =>
@@ -71,16 +82,12 @@ contextBridge.exposeInMainWorld("workbench", {
   // knowledge base protocol
   kbListDocs: () =>
     ipcRenderer.invoke("kb:listDocs"),
-  kbIngestDoc: (input: {
-    doc_id: string;
-    title: string;
-    source_path: string;
-    doc_type?: string;
-    department?: string;
-    effective_date?: string;
-    page_count?: number;
-    ocr_used?: boolean;
-  }) => ipcRenderer.invoke("kb:ingestDoc", input),
+  kbIngestDoc: (input: KnowledgeDocumentInput) => ipcRenderer.invoke("kb:ingestDoc", input),
+  kbIngestFile: (file: File, input: Omit<KnowledgeDocumentInput, "source_path">) => {
+    const source_path = webUtils.getPathForFile(file);
+    if (!source_path) throw new Error("Select a file saved on your computer.");
+    return ipcRenderer.invoke("kb:ingestDoc", { ...input, source_path });
+  },
   kbDeleteDoc: (docId: string) =>
     ipcRenderer.invoke("kb:deleteDoc", { docId }),
   kbReindex: (docId?: string) =>

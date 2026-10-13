@@ -65,6 +65,8 @@ The run lifecycle and mode authority are implemented in `backend/src/main/run/`.
 
 Desktop storage paths are selected in `electron/storage.ts`. Development uses the repository's `data/` folder for backend files. Preview and release use separate `local-workbench/preview/` and `local-workbench/production/` folders under Electron's `appData` path. Each mode sets its own `userData` and `sessionData` paths before Electron is ready. Preview and release use an environment-specific model registry and ignore development path overrides. Explicit backend persistence configuration takes priority over `WORKBENCH_DB_PATH`. Packages exclude the mutable development model registry. The old shared profile is retained without automatic import. Storage boundary tests are in `backend/tests/storage-isolation.test.ts`.
 
+The `prepackage` and `prepackage:dir` hooks run `scripts/reset-dev-defaults.cjs` with Electron's Node runtime. They clear settings in both repository development databases, reset the source model registry, remove its onboarding backup, and clear development browser preferences. Chats, run files, knowledge indexes, preview storage, and production storage remain available. Reset checks are in `backend/tests/package-defaults.test.ts`.
+
 ### Core Tech Stack
 - **Desktop Shell**: Electron 44 (44.7.0), TypeScript 5.6, esbuild
 - **Frontend Renderer**: React 18, Vite 5, Tailwind CSS v4, Lucide icons

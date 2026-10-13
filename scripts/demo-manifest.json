@@ -54,8 +54,8 @@
       "bytes": 1966
     },
     "flow_a/scenario-1/prompt.md": {
-      "sha256": "aad23459a409083f03f41e4ce821e5f54055dccb220fefe2c8436e873e57af64",
-      "bytes": 667
+      "sha256": "517bd715758d9e5357f55e66fbaafa618c284ff795fe3e7114b74ec3cccb384e",
+      "bytes": 471
     },
     "flow_a/scenario-1/sop-114-pressure-equipment-inspection.md": {
       "sha256": "67d904eba5994e00a0689e9f3b9389969f593be66364202c7ee91c2577ca05f2",
@@ -70,28 +70,28 @@
       "bytes": 628
     },
     "flow_a/scenario-2/prompt.md": {
-      "sha256": "f94e4f594aadc439964cc0f00c662db13541c4cdd8470965c8a5708de0f0554f",
-      "bytes": 1025
+      "sha256": "7888fc112de4c55381dadfacc34fc15658a4c61f46de99ce80d802238d241f82",
+      "bytes": 892
     },
     "flow_a/scenario-3/closeout-procedure.md": {
       "sha256": "dc318416ae9556572f4ca47c58255f705c82b51344973f9a86cbce3e1dafe16e",
       "bytes": 656
     },
     "flow_a/scenario-3/prompt.md": {
-      "sha256": "13be7262b5296e4872822f4f9363b789efe3834e399faca51ed1a93854c55392",
-      "bytes": 696
+      "sha256": "7bf7bcfbb4303bcdf29e420b2f872d326bc78e4cd423e7b15cfc6f066171a00f",
+      "bytes": 509
     },
     "flow_a/scenario-3/workspace/repair-closeout-packet.md": {
       "sha256": "b28c2fc222940f462da1ac86beef949b26ea212ab9dd8708cec1fe7756f5ca19",
       "bytes": 480
     },
     "flow_b/scenario-1/broken-vendor-log-parser.py": {
-      "sha256": "9c4b59211748a6f258302716502cbd65323792b834b9011cc40b22879ffef43e",
-      "bytes": 677
+      "sha256": "2e32de2789022b8061db2bffda5446bcb95ec8bf0960671538cc420b759ff2ea",
+      "bytes": 964
     },
     "flow_b/scenario-1/prompt.md": {
-      "sha256": "957ec1f0cf4b7a31bd9e16e94e9b709d588e08413871c76c1d5304351398c0db",
-      "bytes": 358
+      "sha256": "73f552e4b8a9c3edbc131afe5104802ad7fa1230c75396321dd62337fc5db115",
+      "bytes": 279
     },
     "flow_b/scenario-1/vendor-maintenance-log.csv": {
       "sha256": "9fdd3c5ca00050dc884fec33b2c3b2e7f2ff581bb513e3bf3f18631b939ce777",
@@ -106,12 +106,12 @@
       "bytes": 337
     },
     "flow_b/scenario-2/prompt.md": {
-      "sha256": "6e5c233226a59079bcb647f7e7261f55a758efd91a3ba072cef4541567d0e1e0",
-      "bytes": 450
+      "sha256": "ba794431382473035e9ab7d79a79de2f5f9c67e3dabf0664bd342e309222eb72",
+      "bytes": 330
     },
     "flow_b/scenario-3/prompt.md": {
-      "sha256": "0a9ad389159a88ee07076f2b7eb7fe1f02808fd762b43070882c529effc3b59b",
-      "bytes": 489
+      "sha256": "e4eb90cb6575d84553321288f626d530b0239187bcacb9b9fb1280ca3d1038e6",
+      "bytes": 307
     },
     "flow_b/scenario-3/workspace/coldroom.py": {
       "sha256": "8da79377bcb95a72a2a54d30802993ca74bc755fe45c6499ece5d445fc71f669",

@@ -604,13 +604,20 @@ async function reviewAttachedPythonImpl(input: AttachedPythonInput, assess: (ass
   const allChecks = checks;
   const selectedChecks = prioritizeBehaviorChecks(allChecks);
   type CodeReviewItem = z.infer<typeof CodeReviewSchema>[number];
+  const normalize = (value: string) => value
+    .replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\t/g, "\t")
+    .replace(/\\\"/g, '"').replace(/\\'/g, "'")
+    .replace(/["'\x60]/g, "").replace(/,\s*(?=[A-Za-z_])/g, " ").replace(/\s+/g, " ").trim();
+  const source = normalize(input.request + "\n" + input.sourceEvidence);
+  const isGrounded = (item: CodeReviewItem) => Boolean(item.sourceEvidence.trim() && item.implementationEvidence.trim() &&
+    source.includes(normalize(item.sourceEvidence)) && normalize(input.currentSource).includes(normalize(item.implementationEvidence)));
   let incompleteReason="";
-  const reviewSubset = async (selectedChecks: string[]): Promise<CodeReviewItem[] | null> => {
+  const reviewSubset = async (selectedChecks: string[], reviewFeedback?: string): Promise<CodeReviewItem[] | null> => {
     const response = await input.gateway.chatWithTools(input.modelId, [
     { role: "system", content: "Review every source-derived behavior check against the supplied current code. The code may be proposed for its first execution or may have execution results. The request, source and input contract are authoritative; examples alone do not create new rules. Check the final behavior of each relevant input case through the actual control flow. Original statements marked as bugs are the faulty baseline, not behavior to preserve. For each documented defect, compare the intended correction with the effect of the current code. Merely repeating a buggy source fragment does not satisfy its repair check. Execution output is useful evidence, but a successful sample run alone is not proof. Return exactly one compact result per check, in the same order, with its zero-based index. Use the exact check text when possible. Return satisfied only when implemented, gap if not, or uncertain if evidence is insufficient. Return only JSON. For every result, include one exact source quote and one exact code quote, each no more than 16 words. For satisfied, state briefly how the code quote meets the check. Keep issue under 100 characters. Do not include reasoning, markdown or style comments." },
-      { role: "user", content: JSON.stringify({ request: input.request, behaviorChecks: selectedChecks, originalSourceEvidence: input.sourceEvidence, executedSource: input.currentSource, actualExecutionOutput: input.executionOutput }) },
+      { role: "user", content: JSON.stringify({ request: input.request, behaviorChecks: selectedChecks.map((check,index)=>({index,check})), originalSourceEvidence: input.sourceEvidence, executedSource: input.currentSource, actualExecutionOutput: input.executionOutput, ...(reviewFeedback ? { reviewFeedback } : {}) }) },
     ], [], { runId: input.runId, temperature: 0, maxTokens: 1536, responseSchema: {
-      name: "source_derived_code_behavior_review", schema: { type: "array", items: { type: "object", properties: {
+      name: "source_derived_code_behavior_review", schema: { type: "array", minItems: selectedChecks.length, maxItems: selectedChecks.length, items: { type: "object", properties: {
         index: { type: "integer", minimum: 0 }, check: { type: "string" }, status: { type: "string", enum: ["satisfied", "gap", "uncertain"] },
         issue: { type: "string", minLength: 1, maxLength: 120 }, sourceEvidence: { type: "string", maxLength: 180 }, implementationEvidence: { type: "string", maxLength: 180 },
       }, required: ["index", "status", "issue", "sourceEvidence", "implementationEvidence"], additionalProperties: false } },
@@ -623,20 +630,30 @@ async function reviewAttachedPythonImpl(input: AttachedPythonInput, assess: (ass
   const accepted = new Map<string, CodeReviewItem>();
   assess(0, allChecks.length);
   const primary = await reviewSubset(selectedChecks);
-  const addIndexed = (items: CodeReviewItem[], allowed: string[]) => {
+  const addIndexed = (items: CodeReviewItem[], allowed: string[], replace = false) => {
+    const seen = new Set<string>();
     for (const item of items) {
       const target = allowed[item.index];
-      if (target && !accepted.has(target)) accepted.set(target, { ...item, check: target });
+      if (target && !seen.has(target) && (replace || !accepted.has(target))) {
+        accepted.set(target, { ...item, check: target });
+        seen.add(target);
+      }
     }
     assess(accepted.size, allChecks.length);
   };
   if (primary) addIndexed(primary, selectedChecks);
   let missing = selectedChecks.filter(check => !accepted.has(check));
-  if (missing.length && takeWorkRecovery()) {
-    // Retry all missing items together. A malformed batch must not fan out into
-    // one model request per check.
-    const retry = await reviewSubset(missing);
-    if (retry) addIndexed(retry, missing);
+  const unsupported = currentRuntimeScope()?.mode === "work"
+    ? selectedChecks.filter(check => { const item = accepted.get(check); return item && (!isGrounded(item) || item.status === "uncertain"); })
+    : [];
+  const retryChecks = [...new Set([...missing, ...unsupported])];
+  if (retryChecks.length && takeWorkRecovery()) {
+    // Retry incomplete evidence as one review batch, without rerunning source.
+    // The same run recovery budget and strict grounding checks still apply.
+    const retry = await reviewSubset(retryChecks, unsupported.length
+      ? "The previous entries lacked exact evidence or were uncertain. Copy one exact contiguous quote from originalSourceEvidence or request and one from executedSource. Do not paraphrase, join separate fragments, or quote only the model-derived checklist. Check actual control flow. Return uncertain if the supplied evidence cannot prove a check."
+      : undefined);
+    if (retry) addIndexed(retry, retryChecks, true);
     missing = selectedChecks.filter(check => !accepted.has(check));
   }
   if (missing.length) {
@@ -644,23 +661,17 @@ async function reviewAttachedPythonImpl(input: AttachedPythonInput, assess: (ass
   }
   const results = selectedChecks.map(check => accepted.get(check)!);
   const byCheck = new Map(results.map(result => [result.check, result]));
-  const normalize = (value: string) => value
-    .replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\t/g, "\t")
-    .replace(/\\\"/g, '"').replace(/\\'/g, "'")
-    .replace(/["'\x60]/g, "").replace(/,\s*(?=[A-Za-z_])/g, " ").replace(/\s+/g, " ").trim();
-  const source = normalize(input.request + "\n" + input.sourceEvidence);
   const findings: Array<{ issue: string; evidence: string }> = [];
   for (const check of selectedChecks) {
     const result = byCheck.get(check)!;
-    const grounded = result.sourceEvidence.trim() && result.implementationEvidence.trim() &&
-      source.includes(normalize(result.sourceEvidence)) && normalize(input.currentSource).includes(normalize(result.implementationEvidence));
-    if(currentRuntimeScope()?.mode==="work" && (!grounded || result.status==="uncertain"))throw new CodeBehaviorReviewIncompleteError("The behavior review did not provide source and code evidence for every required check.");
+    const grounded = isGrounded(result);
     const actionable = (result.status === "gap" || result.status === "uncertain") && Boolean(result.issue.trim()) && Boolean(grounded);
     if (actionable) {
       findings.push({ issue: `${result.issue} (check: ${check})`, evidence: result.sourceEvidence });
     }
     writeRunFile(input.runId, "intermediate", `code-behavior-review-${randomUUID()}.json`,
       JSON.stringify({ ...result, groundingAccepted: Boolean(grounded), actionable }, null, 2));
+    if(currentRuntimeScope()?.mode==="work" && (!grounded || result.status==="uncertain"))throw new CodeBehaviorReviewIncompleteError("The behavior review did not provide source and code evidence for every required check.");
   }
   if (selectedChecks.length < allChecks.length) {
     if (findings.length) return findings;

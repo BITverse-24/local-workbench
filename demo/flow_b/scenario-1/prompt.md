@@ -1,9 +1,1 @@
-**Chat type:** work
-
-**Files to attach:**
-- `broken-vendor-log-parser.py`
-- `vendor-maintenance-log.csv`
-
-**Knowledge base files:** None.
-
-This parser fails on the attached vendor maintenance log. Fix it, keep the `summarize` function and command-line interface, run it on the supplied CSV, and return the corrected Python file. Do not change the input CSV.
+Fix the attached vendor log parser. Keep the `summarize` function. Keep the command-line interface. Run the repaired script on `vendor-maintenance-log.csv`. Return `fixed-vendor-log-parser.py`. Do not change the input CSV. The high alarm starts at 350.0 C and includes equality.

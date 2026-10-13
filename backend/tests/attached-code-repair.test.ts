@@ -204,7 +204,11 @@ describe("Attached code repair scope and validation", () => {
     mkdirSync(workspace);
     writeFileSync(path.join(workspace, "notes.md"), "workspace content\n");
     const events: any[] = [];
-    const gateway=new ModelGateway();
+    const gateway=new ModelGateway(undefined, [{
+      id: "primary-model", runtime: "ollama", baseUrl: "http://127.0.0.1:1234/v1", model: "test-model",
+      capabilities: ["text", "structured-output", "code-generation"], enabled: true,
+      requestTimeoutMs: 60000, healthPath: "/models",
+    }]);
     const execute = vi.spyOn(gateway,'execute').mockImplementation(classifyAttachedRepair as any);
     let turn = 0;
     vi.spyOn(gateway,'chatWithTools').mockImplementation(async (_model: any, messages: any[], definitions: any[], options: any) => {

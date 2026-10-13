@@ -87,6 +87,21 @@ async function evaluate(flow, text, artifacts, runner, outcome) {
       fs.writeFileSync(probe, "timestamp,asset_id,temperature_c,event\nx,a,350.0,limit\nx,a,349.9,normal\nx,a,,gap\nx,a,bad,bad\nx,a,400,high\n");
       const alternate = spawnSync("python3", [sourcePath, probe], { encoding: "utf8", timeout: 10000 });
       checks.unseenData = alternate.status === 0 && /['"]ok['"]\s*:\s*3/.test(alternate.stdout) && /['"]malformed['"]\s*:\s*2/.test(alternate.stdout) && /['"]high['"]\s*:\s*2/.test(alternate.stdout);
+      // Check each case separately: a missed boundary and a doubled increment
+      // can cancel each other in an aggregate count.
+      const cases = [
+        { name: "exactBoundary", rows: ["x,a,350.0,limit"], expected: { ok: 1, malformed: 0, high: 1 } },
+        { name: "highCountedOnce", rows: ["x,a,351.4,high"], expected: { ok: 1, malformed: 0, high: 1 } },
+        { name: "belowBoundary", rows: ["x,a,349.9,normal"], expected: { ok: 1, malformed: 0, high: 0 } },
+        { name: "malformedSkipped", rows: ["x,a,,empty", "x,a,bad,invalid", "x,a,   ,whitespace", "x,a"], expected: { ok: 0, malformed: 4, high: 0 } },
+      ];
+      for (const testCase of cases) {
+        const casePath = path.join(runner.sandboxDir, `${testCase.name}-probe.csv`);
+        fs.writeFileSync(casePath, `timestamp,asset_id,temperature_c,event\n${testCase.rows.join("\n")}\n`);
+        const execution = spawnSync("python3", [sourcePath, casePath], { encoding: "utf8", timeout: 10000 });
+        checks[testCase.name] = execution.status === 0 && Object.entries(testCase.expected).every(([key, count]) =>
+          new RegExp(`['"]${key}['"]\\s*:\\s*${count}(?!\\d)`).test(execution.stdout));
+      }
     }
   } else {
     checks.valve = /XV-204/i.test(text) && /150/.test(text) && /300/.test(text);

@@ -1,11 +1,3 @@
-**Chat type:** chat
-
-**Files to attach:**
-- `gauge-calibration-register.md`
-
-**Knowledge base files:**
-- `maintenance-procedure.md`
-
 Review the attached records against PG-7. Complete this table. Keep the supplied gauge IDs, serials, dates, and errors exactly as shown. Fill in certificate status, release decision, and citations.
 
 | Gauge ID | Serial | Certificate date | As-found error | Certificate status | Release decision | PG-7 citations |

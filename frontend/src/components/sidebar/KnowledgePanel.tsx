@@ -54,15 +54,13 @@ export default function KnowledgePanel({
     setStatusMessage(`Indexing ${file.name}...`);
 
     try {
-      const filePath = (file as any).path || file.name;
       const baseName = file.name.replace(/\.[^/.]+$/, '') || 'document';
       const docId = (baseName.toLowerCase().replace(/[^a-z0-9_-]/g, '-') || `doc-${Date.now()}`).slice(0, 80);
       const title = (baseName.trim() || 'Untitled Document').slice(0, 200);
 
-      const res = await wb.kbIngestDoc({
+      const res = await wb.kbIngestFile(file, {
         doc_id: docId,
         title,
-        source_path: filePath,
         doc_type: 'sop',
         department: 'Engineering Standards',
         effective_date: new Date().toISOString().split('T')[0],

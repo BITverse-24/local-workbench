@@ -99,6 +99,7 @@ describe("V0 attached-source transport and execution integrity", () => {
     const requests: any[] = [];
     const gateway = {
       registry: new Map([["primary-model", { id: "primary-model", enabled: true, model: "test-model", maxOutputTokens: 1536 }]]),
+      inferenceGroupFor: () => undefined,
       async execute() { return { ok: true, value: { result: {
         requestedAction: "modify_software", responseMode: "chat_and_files", primaryGoal: "Repair supplied source",
         workspaceMutationRequested: false, expectedDeliverables: [{ type: "file", filename: "corrected.py" }], validationRequested: true,

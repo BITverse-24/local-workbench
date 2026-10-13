@@ -146,6 +146,13 @@ export async function kbDeleteDoc(docId: string): Promise<{ ok: boolean; docId: 
   return bridge().kbDeleteDoc(docId);
 }
 
+export async function kbIngestFile(
+  file: File,
+  input: Omit<Parameters<WorkbenchBridge["kbIngestDoc"]>[0], "source_path">,
+): Promise<{ ok: boolean; docId: string; chunkCount: number }> {
+  return bridge().kbIngestFile(file, input);
+}
+
 export async function kbReindex(docId?: string): Promise<{ ok: boolean; chunksIndexed: number }> {
   return bridge().kbReindex(docId);
 }

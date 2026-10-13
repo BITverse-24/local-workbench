@@ -5,6 +5,7 @@ import { enforceSourceConditionalPreconditions, findingsTableAlignmentGaps, link
 import { runRoot } from "../src/main/run/filesystem.js";
 import type { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import type { ModelId } from "../src/shared/contracts.js";
+import { withRuntimeScope } from "../src/main/run/runtime-scope.js";
 
 function reviewGateway(content: string) {
   return { chatWithTools: vi.fn(async () => ({ ok: true, value: { content, finishReason: "stop" } })) } as unknown as ModelGateway;
@@ -32,6 +33,53 @@ const twoSatisfiedChecks = JSON.stringify([
 ]);
 
 describe("code review evidence contract", () => {
+  it.each([true, false, null])("retries unsupported Work review evidence within its budget: %s", async repaired => {
+    const runId = randomUUID();
+    const valid = JSON.parse(twoSatisfiedChecks);
+    const unsupported = { ...valid[1], sourceEvidence: "invented source quote" };
+    const gateway = { chatWithTools: vi.fn()
+      .mockResolvedValueOnce({ ok: true, value: { content: JSON.stringify([valid[0], unsupported]), finishReason: "stop" } })
+      .mockResolvedValueOnce({ ok: true, value: { content: JSON.stringify([{ ...(repaired ? valid[1] : unsupported), index: 0 }]), finishReason: "stop" } }) };
+    const source = "def summarize(path):\n    return read_rows(path)";
+    try {
+      const operation = withRuntimeScope({ runId, mode: "work", signal: new AbortController().signal,
+        remainingRecoveryAttempts: repaired === null ? 0 : 1,
+      }, () => reviewAttachedPython({ gateway: gateway as any, modelId: "primary-model" as ModelId, runId,
+        request: "Repair the source.", sourceEvidence: source,
+        sourceChecklist: JSON.stringify({ checks: ["Preserve the callable interface.", "Return the rows read from the input."] }),
+        currentSource: source, executionOutput: "[]",
+      }));
+      if (repaired) await expect(operation).resolves.toEqual([]);
+      else await expect(operation).rejects.toThrow("did not provide source and code evidence");
+      expect(gateway.chatWithTools).toHaveBeenCalledTimes(repaired === null ? 1 : 2);
+      if (repaired !== null) {
+        const retry = JSON.parse(gateway.chatWithTools.mock.calls[1][1][1].content);
+        expect(retry.behaviorChecks).toEqual([{ index: 0, check: "Return the rows read from the input." }]);
+        expect(retry.executedSource).toBe(source);
+        expect(retry.reviewFeedback).toContain("exact contiguous quote");
+      }
+    } finally { rmSync(runRoot(runId), { recursive: true, force: true }); }
+  });
+
+  it("requires a review entry for each indexed behavior check", async () => {
+    const runId = randomUUID();
+    const checks = ["Preserve the callable interface.", "Return the rows read from the input."];
+    const gateway = { chatWithTools: vi.fn(async (_model, messages, _tools, options) => {
+      const input = JSON.parse(messages[1].content);
+      expect(input.behaviorChecks).toEqual(checks.map((check, index) => ({ index, check })));
+      expect(options.responseSchema.schema).toMatchObject({ minItems: 2, maxItems: 2 });
+      return { ok: true, value: { content: twoSatisfiedChecks, finishReason: "stop" } };
+    }) };
+    try {
+      await expect(reviewAttachedPython({ gateway: gateway as any, modelId: "primary-model" as ModelId, runId,
+        request: "Repair the source.", sourceEvidence: "def summarize(path):\n    return read_rows(path)",
+        sourceChecklist: JSON.stringify({ checks }), currentSource: "def summarize(path):\n    return read_rows(path)",
+        executionOutput: "[]",
+      })).resolves.toEqual([]);
+      expect(gateway.chatWithTools).toHaveBeenCalledTimes(1);
+    } finally { rmSync(runRoot(runId), { recursive: true, force: true }); }
+  });
+
   it('detects an unconditional update moved into a new else branch',()=>{
     const source='for item in items:\n    if item.failed:\n        errors += 1\n    processed += 1\n';
     expect(unmarkedConditionalUpdateGaps(source,'for item in items:\n    if item.failed:\n        errors += 1\n    else:\n        processed += 1\n')).toEqual([expect.objectContaining({evidence:'processed += 1'})]);
