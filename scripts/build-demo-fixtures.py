@@ -11,6 +11,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent / "demo"
+PROJECT = ROOT.parent
+LEGACY_B = PROJECT / "tests" / "fixtures" / "demo" / "legacy" / "flow_b" / "scenario-1"
 MANIFEST = Path(__file__).resolve().with_name("demo-manifest.json")
 FLOW_B = ROOT / "flow_b" / "scenario-1"
 FLOW_A = ROOT / "flow_a" / "scenario-1"
@@ -173,6 +175,7 @@ def make_manifest() -> None:
 
 if __name__ == "__main__":
     make_flow_a_scans()
-    make_csv(FLOW_B / "reactor-temperature-log.csv")
+    LEGACY_B.mkdir(parents=True, exist_ok=True)
+    make_csv(LEGACY_B / "reactor-temperature-log.csv")
     make_manifest()
-    print("Built scenario fixtures and manifest.")
+    print("Built demo inputs, legacy test data, and manifest.")

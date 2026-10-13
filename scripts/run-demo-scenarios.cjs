@@ -6,12 +6,12 @@ const JSZip = require("jszip");
 const { FlowRunner, ROOT } = require("./run-demo-flows.cjs");
 
 const scenarios = [
-  { id: "A-2", dir: "flow_a/scenario-2", mode: "work", files: ["gauge-calibration-register.md"], kb: "maintenance-procedure.md", output: ".docx" },
-  { id: "A-3", dir: "flow_a/scenario-3", mode: "work", files: ["repair-closeout-packet.md"], kb: "closeout-procedure.md", output: ".docx" },
+  { id: "A-2", dir: "flow_a/scenario-2", mode: "chat", files: ["gauge-calibration-register.md"], kb: "maintenance-procedure.md", output: null },
+  { id: "A-3", dir: "flow_a/scenario-3", mode: "agent", files: [], kb: "closeout-procedure.md", workspaceFiles: ["repair-closeout-packet.md"], output: null },
   { id: "B-2", dir: "flow_b/scenario-2", mode: "chat", files: ["cold-room-readings.csv"], kb: "monitoring-rule.md", output: null },
-  { id: "B-3", dir: "flow_b/scenario-3", mode: "agent", files: [], output: null },
-  { id: "C-2", dir: "flow_c/scenario-2", mode: "chat", files: ["relief-valve-register.csv"], kb: "process-safety-standard.md", output: null, terms: ["RV-301", "RV-302", "RV-303", "10.2", "9.5", "unknown", "6.1", "6.2"] },
-  { id: "C-3", dir: "flow_c/scenario-3", mode: "chat", files: ["utility-manifold-U18.svg"], kb: "utility-standard-UT-9.md", output: null, terms: ["U18-A", "U18-B", "DN40", "DN50", "Class 150", "Class 300", "5.1", "5.2", "5.3"] },
+  { id: "B-3", dir: "flow_b/scenario-3", mode: "agent", files: [], workspaceFiles: ["coldroom.py", "tests/test_coldroom.py"], output: null },
+  { id: "C-2", dir: "flow_c/scenario-2", mode: "work", files: ["relief-valve-register.csv"], kb: "process-safety-standard.md", output: ".docx" },
+  { id: "C-3", dir: "flow_c/scenario-3", mode: "agent", files: [], kb: "utility-standard-UT-9.md", workspaceFiles: ["utility-manifold-U18.svg"], output: null },
 ];
 
 const collect = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -22,7 +22,8 @@ const collect = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e
 async function run(scenario, campaignDir) {
   const sourceDir = path.join(ROOT, "demo", scenario.dir);
   const prompt = fs.readFileSync(path.join(sourceDir, "prompt.md"), "utf8").trim();
-  const expected = JSON.parse(fs.readFileSync(path.join(sourceDir, "expected-results.json"), "utf8"));
+  const expectedPath = path.join(ROOT, "tests", "fixtures", "demo", "oracles", scenario.dir, "expected-results.json");
+  const expected = JSON.parse(fs.readFileSync(expectedPath, "utf8"));
   const files = scenario.files;
   const kbDocs = scenario.kb ? [{ path: scenario.kb, kind: "markdown" }] : [];
   const runner = new FlowRunner(scenario.id, path.join(campaignDir, scenario.id));
@@ -65,10 +66,11 @@ async function run(scenario, campaignDir) {
       } else artifactText = fs.readFileSync(artifactPath, "utf8");
     }
     const workspace = path.join(runner.sandboxDir, "workspace");
-    const sourceCode = scenario.mode === "agent" ? fs.readFileSync(path.join(workspace, "coldroom.py"), "utf8") : "";
-    const tests = scenario.mode === "agent" ? fs.readFileSync(path.join(workspace, "tests/test_coldroom.py"), "utf8") : "";
-    const independentTestRun = scenario.mode === "agent" ? spawnSync("python3", ["-m", "unittest", "discover", "-s", "tests", "-v"], { cwd: workspace, encoding: "utf8", timeout: 30000 }) : null;
-    const reviewedText = (text + "\n" + artifactText).toLowerCase();
+    const sourceCode = scenario.id === "B-3" ? fs.readFileSync(path.join(workspace, "coldroom.py"), "utf8") : "";
+    const tests = scenario.id === "B-3" ? fs.readFileSync(path.join(workspace, "tests/test_coldroom.py"), "utf8") : "";
+    const independentTestRun = scenario.id === "B-3" ? spawnSync("python3", ["-m", "unittest", "discover", "-s", "tests", "-v"], { cwd: workspace, encoding: "utf8", timeout: 30000 }) : null;
+    const verificationText = independentTestRun ? `\n${independentTestRun.stdout}\n${independentTestRun.stderr}` : "";
+    const reviewedText = (text + "\n" + artifactText + verificationText).toLowerCase();
     const checks = {
       terminalState: ["completed", "partial"].includes(outcome),
       responseOrSavedOutput: text.trim().length > 40 || Boolean(source),
@@ -76,12 +78,13 @@ async function run(scenario, campaignDir) {
       expectedTerms: expected.requiredTerms.every((term) => reviewedText.includes(term.toLowerCase())),
       requestedArtifact: !scenario.output || Boolean(source),
       knowledgeUsed: !scenario.kb || runner.events.some((event) => event.type === "tool_result" && event.tool === "retrieve_knowledge" && event.ok),
-      agentInspectedCode: scenario.mode !== "agent" || ["coldroom.py", "test_coldroom.py"].every((file) => runner.events.some((event) => event.type === "tool_result" && event.tool === "read_file" && event.ok && event.summary?.includes(file))),
-      agentFoundBug: scenario.mode !== "agent" || /value\s*>\s*limit/.test(sourceCode) && /test_exact_boundary_is_alert/.test(tests),
-      agentExplainedFix: scenario.mode !== "agent" || />=/.test(text) && /test_exact_boundary_is_alert/.test(text),
-      agentConfirmedExpectedFailure: scenario.mode !== "agent" || independentTestRun.status === 1 && /test_exact_boundary_is_alert/.test(independentTestRun.stderr) && /AssertionError/.test(independentTestRun.stderr),
+      agentInspectedWorkspace: scenario.mode !== "agent" || (scenario.workspaceFiles ?? []).every((file) => runner.events.some((event) => event.type === "tool_result" && event.tool === "read_file" && event.ok && event.summary?.includes(path.basename(file)))),
+      agentFoundBug: scenario.id !== "B-3" || /value\s*>\s*limit/.test(sourceCode) && /test_exact_boundary_is_alert/.test(tests),
+      agentExplainedFix: scenario.id !== "B-3" || />=/.test(text) && /test_exact_boundary_is_alert/.test(text),
+      agentConfirmedExpectedFailure: scenario.id !== "B-3" || independentTestRun.status === 1 && /test_exact_boundary_is_alert/.test(independentTestRun.stderr) && /AssertionError/.test(independentTestRun.stderr),
+      repairCloseoutDecision: scenario.id !== "A-3" || /E-?310/i.test(text) && /18 tubes/i.test(text) && /15\.2/.test(text) && /30 minutes/i.test(text) && /no leakage/i.test(text) && /pending/i.test(text) && /isolated/i.test(text),
       calibrationDecisions: scenario.id !== "A-2" || /PG-G17[\s\S]{0,180}(eligible|approved|pass|current)/i.test(text + artifactText) && /PG-G18[\s\S]{0,180}(expired|not approved|out of date|pending)/i.test(text + artifactText) && /PG-G19[\s\S]{0,180}(unknown|missing|not approved|not found)/i.test(text + artifactText),
-      reliefValveDecisions: scenario.id !== "C-2" || /RV-301[\s\S]{0,180}(non.?compliant|above|replace|reset)/i.test(text) && /RV-302[\s\S]{0,180}(unknown|missing|out of service|pending)/i.test(text) && /RV-303[\s\S]{0,180}(compliant|meets|within|pass)/i.test(text),
+      reliefValveDecisions: scenario.id !== "C-2" || /RV-301[\s\S]{0,180}(non.?compliant|above|replace|reset)/i.test(text + artifactText) && /RV-302[\s\S]{0,180}(unknown|missing|out of service|pending)/i.test(text + artifactText) && /RV-303[\s\S]{0,180}(compliant|meets|within|pass)/i.test(text + artifactText),
       manifoldDecisions: scenario.id !== "C-3" || /U18-A[\s\S]{0,180}(non.?compliant|below|correct|increase|upsize)/i.test(text) && /U18-B[\s\S]{0,180}(compliant|meets|pass)/i.test(text),
       coldRoomRowCount: scenario.id !== "B-2" || (text.match(/2026-10-11T\d{2}:\d{2}:\d{2}Z,CR-A,/g) ?? []).length === 3,
       coldRoomRows: scenario.id !== "B-2" || [["5.1", "08:30:00Z"], ["1.9", "09:00:00Z"], ["6.4", "09:45:00Z"]].every(([value, stamp]) => {

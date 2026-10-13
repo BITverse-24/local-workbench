@@ -1,1 +1,9 @@
-Agent mode: inspect `coldroom.py` and `tests/test_coldroom.py` with `read_file`. Verify this exact case: the source uses `value > limit`, and the test calls `is_alert(5.0)` with a limit of 5.0. Since `5.0 > 5.0` is false, the regression test should fail. The requirement is to alert at or above the limit. State the one-line fix `value >= limit` and name the failing test. Do not edit files or shift the threshold.
+**Chat type:** agent
+
+**Files to attach:** None.
+
+**Knowledge base files:** None.
+
+**Agent workspace:** Select `workspace/`. It contains `coldroom.py` and `tests/test_coldroom.py`.
+
+Use `read_file` to inspect `coldroom.py` and `tests/test_coldroom.py`. In a short finding, state the current comparison, why `test_exact_boundary_is_alert` fails when it calls `is_alert(5.0)`, and the exact one-line fix: `return value >= limit`. Name the failing test exactly. Keep the workspace unchanged.

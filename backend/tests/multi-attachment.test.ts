@@ -153,7 +153,7 @@ describe("Multi-Attachment Support & Persistence", () => {
 
     const chatId = createChat('Two PDFs');
 
-    const a = upload(chatId, 'first.pdf', readFileSync(path.resolve('demo/flow_a/scenario-1/inspection-report-E201.pdf')), 'application/pdf');
+    const a = upload(chatId, 'first.pdf', readFileSync(path.resolve('tests/fixtures/demo/flow_a/scenario-1/inspection-report-E201.pdf')), 'application/pdf');
 
     const b = upload(chatId, 'second.pdf', readFileSync(path.resolve('demo/flow_a/scenario-1/inspection-report-E202-followup.pdf')), 'application/pdf');
 

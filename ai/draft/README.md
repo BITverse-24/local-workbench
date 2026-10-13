@@ -47,5 +47,5 @@ rejections. Runtime validation is owned by the backend.
 Stateless drafting step executed by `draft-qwen3`. Orchestrated by `RunManager`
 during Flow A (inspection bundle -> SOP-114 criteria -> `.docx` approval note)
 and Flow C (engineering drawing review -> SOP-220 criteria -> `.md` compliance note).
-Active demonstration fixtures and governing criteria live under `demo/flow_a/scenario-1/`
-and `demo/flow_c/scenario-1/`.
+Film-ready demonstration fixtures and governing criteria live under `demo/flow_a/scenario-1/`
+and `demo/flow_c/scenario-1/`. Evaluation oracles live under `tests/fixtures/demo/oracles/`.
