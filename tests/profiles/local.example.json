@@ -3,9 +3,9 @@
   "name": "explicit-local-models",
   "target": {
     "registry": [
-      { "id": "draft-qwen3", "taskTypes": ["draft"], "runtime": "ollama", "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen3:8b", "capabilities": ["text", "structured-output"], "requestTimeoutMs": 45000, "healthPath": "/models", "enabled": true, "maxOutputTokens": 8192 },
-      { "id": "code-qwen25coder", "taskTypes": ["code"], "runtime": "ollama", "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen2.5-coder:7b", "capabilities": ["text", "code-generation"], "requestTimeoutMs": 60000, "healthPath": "/models", "enabled": true, "maxOutputTokens": 8192 },
-      { "id": "vision-qwen25vl", "taskTypes": ["vision"], "runtime": "ollama", "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen2.5vl:3b", "capabilities": ["text", "image-input", "structured-output"], "requestTimeoutMs": 60000, "healthPath": "/models", "enabled": true, "maxOutputTokens": 4096 }
+      { "id": "primary-model", "taskTypes": ["draft"], "runtime": "ollama", "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen3:8b", "capabilities": ["text", "structured-output"], "requestTimeoutMs": 45000, "healthPath": "/models", "enabled": true, "maxOutputTokens": 8192 },
+      { "id": "code-model", "taskTypes": ["code"], "runtime": "ollama", "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen2.5-coder:7b", "capabilities": ["text", "code-generation"], "requestTimeoutMs": 60000, "healthPath": "/models", "enabled": true, "maxOutputTokens": 8192 },
+      { "id": "vision-model", "taskTypes": ["vision"], "runtime": "ollama", "baseUrl": "http://127.0.0.1:11434/v1", "model": "qwen2.5vl:3b", "capabilities": ["text", "image-input", "structured-output"], "requestTimeoutMs": 60000, "healthPath": "/models", "enabled": true, "maxOutputTokens": 4096 }
     ],
     "embedding": { "baseUrl": "http://127.0.0.1:11434/v1", "model": "nomic-embed-text:v1.5" }
   },

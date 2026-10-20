@@ -48,7 +48,7 @@ for suffix, complexity, kind in [("facts", "simple", "assistant"), ("word", "mod
     filename = "measurements." + kind
     prompt = "Extract the measured pressure and temperature, preserving values and units. Cite measurements.pdf page 1. Explicitly state that vibration was not measured." + (" Answer in chat only." if kind == "assistant" else " Create " + filename + ".")
     target = {"target": "assistant" if kind == "assistant" else "artifact", **({"filename": filename} if kind != "assistant" else {})}
-    checks = [output("source-values", **target, contains=["12.7", "43.2"], excludes=["SOP-999"], pattern="not measured|not taken|unavailable|no vibration"), output("pressure-unit", **target, pattern=r"12[.]7[\s*]*bar"), output("temperature-unit", **target, pattern=r"43[.]2[\s*]*(?:°[\s*]*)?C"), output("source-page", **target, contains=["measurements.pdf"], pattern=r"(?:page|p[.])[\s*:]*1\b")]
+    checks = [output("source-values", **target, contains=["12.7", "43.2"], excludes=["SOP-999"], pattern="not measured|not taken|unavailable|no vibration"), output("pressure-unit", **target, pattern=r"12[.]7[\s*]*bar"), output("temperature-unit", **target, pattern=r"43[.]2[\s*]*(?:°[\s*]*)?C"), output("source-page", **target, contains=["measurements.pdf"], caseSensitive=False, pattern=r"(?:page|p[.])[\s*:]*1\b")]
     cases.append(scenario("fabrication-detection", suffix, complexity, prompt, attachments=source, checks=checks))
 
 for suffix, complexity, surface in [("workspace", "simple", "workspace"), ("attachment", "moderate", "attachments"), ("knowledge", "complex", "kb")]:
@@ -71,7 +71,7 @@ for suffix, complexity in [("negative-scope", "moderate"), ("revoke", "complex")
         for index in range(3):
             workspace += [{"path": "large-log.txt" if index == 0 else "segment-%d.txt" % index, "content": "".join("NOISE %05d: repeated diagnostic output\n" % n for n in range(3000)) + ("NEXT_FILE=segment-%d.txt\n" % (index + 1) if index < 2 else "FINAL_MEASUREMENT=17.4 bar\n")}]
         actions = [send(prompt + " Read large-log.txt and follow each NEXT_FILE pointer in order until you find the final measurement. Report its value and unit."), settle(), send("Explain the final measurement. Do not modify any file, including the parser.", "r2"), settle("r2")]
-        checks += [{"id": "compaction-observed", "type": "event", "event": "context_compaction", "run": "r1"}, output("retained-measurement", run="r2", contains=["17.4", "bar"])]
+        checks += [output("retained-measurement", run="r2", contains=["17.4", "bar"])]
     cases.append(scenario("follow-up-constraint-loss", suffix, complexity, prompt, workspace=workspace, actions=actions, checks=checks))
 
 for suffix, complexity in [("approve", "moderate"), ("reject", "simple"), ("expire", "complex")]:

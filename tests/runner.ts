@@ -14,6 +14,7 @@ import { scenarioSchema, type Scenario } from "./scenarios/schema.js";
 import { Recorder, type ExecutionRecord, type TrafficRecord } from "./recorder.js";
 import { evaluate, verdict } from "./evaluator/evaluator.js";
 import { parseArtifact } from "./evaluator/checks/artifact-parser.js";
+import { observedReplayState } from "./harness/replay-observations.js";
 import type { EffortProvider } from "./gremlin/provider.js";
 
 export interface RunOptions { runtimeRoot: string; profile: Profile; mode: "real" | "replay" | "mock"; campaignId: string; signal?: AbortSignal; mock?: MockHandler; mockFactory?: () => MockHandler; replay?: TrafficRecord[]; judge?: EffortProvider; modelMetadata?: Record<string, unknown>; followup?: (view: { events: ExecutionRecord["events"]; artifactContents: Record<string, string> }, deadline: number) => Promise<string | undefined>; }
@@ -39,29 +40,9 @@ export async function runScenario(input: Scenario, options: RunOptions): Promise
   const fixtureHashes = snapshot(box.root);
   const canaryBefore = snapshot(box.canary);
   let client: WorkerClient | undefined;
-  const relay = new ModelRelay(options.profile, options.mode, (r) => recorder.append("model-traffic", r), options.mockFactory?.() ?? options.mock, options.replay, () => {
-    const identities: Record<string, string> = { [box.root]: "<scenario-root>" };
-    const runs = [...new Set((client?.events ?? []).map((e) => e.event.runId))];
-    for (const [index, run] of runs.entries()) identities[run] = `<run:${index}>`;
-    const backups = new Set<string>();
-    for (const entry of client?.events ?? []) if (entry.event.type === "tool_result" && (entry.event.tool as string) === "write_file" && entry.event.ok) {
-      try {
-        const value = JSON.parse(entry.event.output ?? "{}");
-        if (typeof value.backupPath === "string" && value.backupPath.startsWith(".harness_backups/")) backups.add(value.backupPath.split("/").slice(0, 2).join("/"));
-      } catch { /* non-JSON tool output is preserved exactly */ }
-    }
-    for (const [index, backup] of [...backups].entries()) identities[backup] = `<backup:${index}>`;
-    return identities;
-  }, () => {
-    const telemetry: Record<string, string> = {};
-    for (const entry of client?.events ?? []) if (entry.event.type === "tool_result" && (entry.event.tool as string) === "run_command" && entry.event.output) {
-      try {
-        const result = JSON.parse(entry.event.output);
-        if (typeof result.durationMs === "number" && typeof result.exitCode === "number" && typeof result.stdout === "string" && typeof result.stderr === "string") telemetry[entry.event.output] = JSON.stringify({ ...result, durationMs: "<observed-command-duration>" });
-      } catch { /* Preserve output without an observed runtime telemetry field */ }
-    }
-    return telemetry;
-  });
+  const replayState = () => observedReplayState(client?.events ?? [], box.root);
+  const relay = new ModelRelay(options.profile, options.mode, (r) => recorder.append("model-traffic", r), options.mockFactory?.() ?? options.mock, options.replay,
+    () => replayState().identities, () => replayState().toolTelemetry, () => replayState().summaries);
   let stopWatch: (() => void) | undefined;
   let record: ExecutionRecord;
   let healthError: string | undefined;
@@ -87,7 +68,7 @@ export async function runScenario(input: Scenario, options: RunOptions): Promise
     throwIfInterrupted(options.signal);
     const electron = realpathSync(path.join(options.runtimeRoot, "node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"));
     const bundle = realpathSync(path.join(options.runtimeRoot, "tests/.runtime/build/worker.cjs"));
-    const reads = [path.join(options.runtimeRoot, "node_modules"), bundle, ...runtimeReadPaths()];
+    const reads = [path.join(options.runtimeRoot, "node_modules"), bundle, ...runtimeReadPaths(options.runtimeRoot)];
     if (options.profile.sharedGPU) recorder.append("environment", { sharedGPU: true });
     const profile = macProfile(box, reads, Number(new URL(origin).port));
     const child = spawnContained(box, profile, electron, [bundle, configPath]);

@@ -77,7 +77,12 @@ export class WorkerClient {
     });
   }
   async settle(runId: string, policy: "approve" | "reject" | "none" | "read-only", deadlineMs: number): Promise<string> {
-    const decided = new Set<string>();
+    if (this.stopped) throw this.stopped;
+    // A later settle must not decide or score an old request after cancellation,
+    // rejection, or an explicit confirmation has already settled that request.
+    const terminal = [...this.events].reverse().find(entry => entry.event.runId === runId && entry.event.type === "run_state" && terminalStates.has(entry.event.state));
+    if (terminal?.event.type === "run_state") return terminal.event.state;
+    const decided = new Set(this.changes.filter(change => change.runId === runId && change.actionId).map(change => change.actionId!));
     let cursor = 0;
     const expires = Date.now() + deadlineMs;
     while (Date.now() < expires) {
@@ -88,6 +93,7 @@ export class WorkerClient {
         cursor = entry.sequence;
         if (e.type === "run_state" && terminalStates.has(e.state)) return e.state;
         if (e.type === "confirmation_required" && !decided.has(e.action.actionId)) {
+          if (this.changes.some(change => change.runId === runId && change.decision === "cancel" && (change.sequence ?? 0) >= entry.sequence)) continue;
           decided.add(e.action.actionId);
           let decision: "approve" | "reject" = policy === "approve" ? "approve" : "reject";
           if (policy === "read-only") {

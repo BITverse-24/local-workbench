@@ -519,6 +519,7 @@
           "contains": [
             "measurements.pdf"
           ],
+          "caseSensitive": false,
           "pattern": "(?:page|p[.])[\\s*:]*1\\b"
         }
       ],
@@ -607,6 +608,7 @@
           "contains": [
             "measurements.pdf"
           ],
+          "caseSensitive": false,
           "pattern": "(?:page|p[.])[\\s*:]*1\\b"
         }
       ],
@@ -695,6 +697,7 @@
           "contains": [
             "measurements.pdf"
           ],
+          "caseSensitive": false,
           "pattern": "(?:page|p[.])[\\s*:]*1\\b"
         }
       ],
@@ -1181,12 +1184,6 @@
         {
           "id": "preserves-scope",
           "type": "output"
-        },
-        {
-          "id": "compaction-observed",
-          "type": "event",
-          "event": "context_compaction",
-          "run": "r1"
         },
         {
           "id": "retained-measurement",

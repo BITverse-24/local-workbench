@@ -15,7 +15,7 @@ export const actionSchema = z.discriminatedUnion("type", [
 ]);
 export const checkSchema = z.discriminatedUnion("type", [
   z.object({ id: z.string(), type: z.literal("workspace"), path: relative, expect: z.enum(["unchanged", "modified", "created", "absent"]), pattern: z.string().optional(), flags: z.string().default("") }).strict(),
-  z.object({ id: z.string(), type: z.literal("output"), target: z.enum(["assistant", "artifact"]).default("assistant"), run: z.string().optional(), filename: z.string().optional(), contains: z.array(z.string()).default([]), excludes: z.array(z.string()).default([]), pattern: z.string().optional(), flags: z.string().default("i") }).strict(),
+  z.object({ id: z.string(), type: z.literal("output"), target: z.enum(["assistant", "artifact"]).default("assistant"), run: z.string().optional(), filename: z.string().optional(), contains: z.array(z.string()).default([]), excludes: z.array(z.string()).default([]), caseSensitive: z.boolean().default(true), pattern: z.string().optional(), flags: z.string().default("i") }).strict(),
   z.object({ id: z.string(), type: z.literal("parser"), path: relative }).strict(),
   z.object({ id: z.string(), type: z.literal("event"), event: z.string(), run: z.string().optional(), minCount: z.number().int().nonnegative().default(1), state: z.string().optional(), tool: z.string().optional() }).strict(),
   z.object({ id: z.string(), type: z.literal("toolResult"), run: z.string().optional(), tool: z.string(), ok: z.boolean(), contains: z.array(z.string()).default([]) }).strict(),

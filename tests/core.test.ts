@@ -97,6 +97,11 @@ describe("framework trust boundaries", () => {
     expect(compareBenchmarks(report, { ...report, complete: false }).compatible).toBe(false);
   });
   it("validates all 36 fixed scenarios across 12 families", () => { const corpus = loadCorpus(process.cwd()); expect(corpus.scenarios).toHaveLength(36); for (const family of families) expect(corpus.scenarios.filter((s) => s.family === family)).toHaveLength(3); });
+  it("scores retained facts rather than requiring a particular compaction mechanism", () => {
+    const scenario = loadCorpus(process.cwd()).scenarios.find(s => s.id === "follow-up-constraint-loss-compaction")!;
+    expect(scenario.checks.some(check => check.type === "event" && check.event === "context_compaction")).toBe(false);
+    expect(scenario.checks.find(check => check.id === "retained-measurement")).toMatchObject({ type: "output", run: "r2", contains: ["17.4", "bar"] });
+  });
   it("keeps binding requirements and verification immutable during mutation", () => { const mutated = mutateScenario(parserScenario, { kind: "paraphrase", content: "Try a different approach" }); expect(mutated.checks).toEqual(parserScenario.checks); expect(mutated.objective).toEqual(parserScenario.objective); expect(JSON.stringify(mutated.actions)).toContain(parserScenario.objective.request); });
   it("reserves execution effort for triage", () => { const effort = new CampaignEffort({ executions: 6, attackerCalls: 4, judgeCalls: 4, durationMs: 10000, reservedExecutions: 2 }); for (let n = 0; n < 4; n++) effort.take(); expect(effort.available()).toBe(false); expect(effort.available(true)).toBe(true); effort.take(true); effort.take(true); expect(effort.available(true)).toBe(false); });
   it("early reproduction cannot consume discovery coverage slots", () => { const effort = new CampaignEffort({ executions: 6, attackerCalls: 4, judgeCalls: 4, durationMs: 10000, reservedExecutions: 2 }); effort.take(true); effort.take(true); expect(effort.available(true)).toBe(false); for (let n = 0; n < 4; n++) { expect(effort.available()).toBe(true); effort.take(); } expect(effort.executions).toBe(6); });

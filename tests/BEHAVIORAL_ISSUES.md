@@ -5194,3 +5194,11 @@ Full local evidence: [84febb7e-c040-4aca-a40b-3422d191c19b](.runtime/evidence/15
 Replay investigation: `npm run behavioral -- run --target=replay --profile=tests/.runtime/evidence/15b0a56d-d1e9-497f-914d-8da02a0bf18d/84febb7e-c040-4aca-a40b-3422d191c19b/profile.json --scenario=tests/.runtime/evidence/15b0a56d-d1e9-497f-914d-8da02a0bf18d/84febb7e-c040-4aca-a40b-3422d191c19b/scenario.json --record=tests/.runtime/evidence/15b0a56d-d1e9-497f-914d-8da02a0bf18d/84febb7e-c040-4aca-a40b-3422d191c19b/record.json`
 
 Real reproduction: rerun the recorded scenario with the same explicit target profile; replay does not establish real-model occurrence rates.
+
+### Additional occurrence: 96a3d340ef06ee05
+
+<!-- finding-execution:96a3d340ef06ee05:17d7e598-0dbb-4eab-84e3-cc51c5571d82 -->
+<!-- execution:17d7e598-0dbb-4eab-84e3-cc51c5571d82 -->
+Date: 2026-10-20T09:52:24.466Z; commit: f29f28e230b9e29bd83bafb8cc343e62517b102f; reproduced 1/1.
+
+Evidence: [17d7e598-0dbb-4eab-84e3-cc51c5571d82](.runtime/evidence/a674602a-a3d1-46bf-b8d4-d15db0918c95/17d7e598-0dbb-4eab-84e3-cc51c5571d82/record.json)

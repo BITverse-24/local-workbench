@@ -6,7 +6,7 @@ import { sha256 } from "../helpers/files.js";
 import { pause } from "../helpers/cancellation.js";
 
 export type MockHandler = (route: string, body: Record<string, unknown>, index: number) => { status?: number; body?: unknown; raw?: string; chunks?: string[]; delayMs?: number; contentType?: string };
-export function canonicalRequest(value: unknown, identities: Record<string, string> = {}, toolTelemetry: Record<string, string> = {}): unknown {
+export function canonicalRequest(value: unknown, identities: Record<string, string> = {}, toolTelemetry: Record<string, string> = {}, summaries: Record<string, string> = {}): unknown {
   if (typeof value === "string") {
     // Only supervisor-observed generated identities may vary. Source UUIDs,
     // dates, measurements, tool arguments and model settings remain exact.
@@ -14,10 +14,21 @@ export function canonicalRequest(value: unknown, identities: Record<string, stri
     for (const [generated, alias] of Object.entries(identities).sort(([a], [b]) => b.length - a.length)) result = result.split(generated).join(alias);
     return result;
   }
-  if (Array.isArray(value)) return value.map((item) => canonicalRequest(item, identities, toolTelemetry));
+  if (Array.isArray(value)) return value.map((item) => canonicalRequest(item, identities, toolTelemetry, summaries));
   if (value && typeof value === "object") {
     const object = value as Record<string, unknown>;
-    return Object.fromEntries(Object.entries(object).sort(([a], [b]) => a.localeCompare(b)).map(([key, v]) => [key, canonicalRequest(object.role === "tool" && key === "content" && typeof v === "string" ? toolTelemetry[v] ?? v : v, identities, toolTelemetry)]));
+    return Object.fromEntries(Object.entries(object).sort(([a], [b]) => a.localeCompare(b)).map(([key, v]) => {
+      let content = v;
+      if (key === "content" && typeof content === "string") {
+        if (object.role === "tool" || (object.role === "user" && content.startsWith("[Observed result from run_command]:\n"))) content = toolTelemetry[content] ?? content;
+        else if (object.role === "system") content = content.split("\n").map(line => {
+          if (!line.startsWith("Completed operations:")) return line;
+          for (const [observed, normalized] of Object.entries(summaries)) line = line.split(observed).join(normalized);
+          return line;
+        }).join("\n");
+      }
+      return [key, canonicalRequest(content, identities, toolTelemetry, summaries)];
+    }));
   }
   return value;
 }
@@ -29,7 +40,7 @@ export class ModelRelay {
   private controllers = new Set<AbortController>();
   private pending = new Set<Promise<void>>();
   origin = "";
-  constructor(private profile: Profile, private mode: "real" | "replay" | "mock", private record: (r: TrafficRecord) => void, private mock?: MockHandler, private replay: TrafficRecord[] = [], private identities: () => Record<string, string> = () => ({}), private toolTelemetry: () => Record<string, string> = () => ({})) {
+  constructor(private profile: Profile, private mode: "real" | "replay" | "mock", private record: (r: TrafficRecord) => void, private mock?: MockHandler, private replay: TrafficRecord[] = [], private identities: () => Record<string, string> = () => ({}), private toolTelemetry: () => Record<string, string> = () => ({}), private summaries: () => Record<string, string> = () => ({})) {
     this.server = createServer((req, res) => {
       const controller = new AbortController();
       this.controllers.add(controller);
@@ -45,7 +56,7 @@ export class ModelRelay {
       for await (const chunk of req) { raw += chunk; if (Buffer.byteLength(raw) > 32 * 1024 ** 2) throw new Error("Model request exceeds evidence limit"); }
       const body = raw ? JSON.parse(raw) as Record<string, unknown> : {};
       if (req.method === "POST" && body.model !== model.model) { res.writeHead(403); res.end("Model selection does not match fixed profile"); return; }
-      const entry: TrafficRecord = { route, method: req.method!, request: body, canonicalRequest: canonicalRequest(body, this.identities(), this.toolTelemetry()), status: 0, chunks: [], headers: {} };
+      const entry: TrafficRecord = { route, method: req.method!, request: body, canonicalRequest: canonicalRequest(body, this.identities(), this.toolTelemetry(), this.summaries()), status: 0, chunks: [], headers: {} };
       this.records.push(entry);
       const index = this.records.length - 1;
       let last = performance.now();
