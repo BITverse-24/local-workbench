@@ -14,6 +14,7 @@ import { getState, transition, createRun } from "../src/main/run/store.js";
 import { createChat } from "../src/main/persistence/chats.js";
 import type { AgentOutcome, RunEvent } from "../src/shared/contracts.js";
 import type { ModelGateway } from "../src/main/gateway/model-gateway.js";
+import { testModelRegistry } from "./helpers/test-model-registry.js";
 
 describe("P0-02: Truthful Completion Semantics", () => {
   let tempDir: string;
@@ -495,6 +496,8 @@ describe("P0-02: Truthful Completion Semantics", () => {
 
       const events: RunEvent[] = [];
       const mockGateway = {
+        registry: new Map(testModelRegistry().map(model => [model.id, model])),
+        inferenceGroupFor: () => "test-inference",
         async execute() { return { ok: true, value: { result: { intentType: "document_drafting", driverModel: "primary-model", taskType: "draft", primaryGoal: "Draft approval note", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [{ type: "docx", filename: "approval-note.docx" }] } } }; },
         async chatWithTools() {
           // Model finishes without creating requested docx

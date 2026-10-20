@@ -10,6 +10,7 @@ import { resolveSafe, PermissionError } from "../path-guard.js";
 import { writeFile } from "./write-file.js";
 import { deleteFile } from "./delete-file.js";
 import type { MutationPolicyGuard } from "../policy-guard.js";
+import { agentManifestDigest, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, parseAgentTestReport, type AgentTestExecutionEvidence, type AgentTestExecutionRequest } from "../../agent/test-verification.js";
 
 export interface CommandResult {
   stdout: string;
@@ -21,6 +22,7 @@ export interface CommandResult {
   backupPaths: string[];
   isolationStatus: "os_isolated" | "unisolated";
   isolationMessage: string;
+  verification?: AgentTestExecutionEvidence;
 }
 
 // A usability guard, not an OS security boundary. Approval is still required.
@@ -95,9 +97,9 @@ function snapshot(root: string, rejectLinks: boolean): Snapshot {
 
 const literal = (value: string) => JSON.stringify(value);
 
-function sandboxLaunch(workspace: string, scratch: string, command: string): CommandLaunch {
+function sandboxLaunch(workspace: string, scratch: string, command: string, extraEnv: NodeJS.ProcessEnv = {}): CommandLaunch {
   const trustedPath = [...new Set(["/usr/bin", "/bin", "/usr/local/bin", "/opt/homebrew/bin", ...(process.env.PATH ?? "").split(path.delimiter).filter(directory => /^(?:\/usr\/|\/bin$|\/opt\/homebrew\/)/.test(directory))])].join(path.delimiter);
-  const env: NodeJS.ProcessEnv = { PATH: trustedPath, HOME: scratch, TMPDIR: scratch, LANG: "en_US.UTF-8", PYTHONDONTWRITEBYTECODE: "1", PYTHONNOUSERSITE: "1" };
+  const env: NodeJS.ProcessEnv = { PATH: trustedPath, HOME: scratch, TMPDIR: scratch, LANG: "en_US.UTF-8", PYTHONDONTWRITEBYTECODE: "1", PYTHONNOUSERSITE: "1", ...extraEnv };
   if (process.platform === "darwin" && process.env.WORKBENCH_USE_MAC_SANDBOX !== "0" && existsSync("/usr/bin/sandbox-exec")) {
     const roots = ["/usr", "/bin", "/sbin", "/System", "/Library", "/opt/homebrew"].filter(existsSync).map(root => realpathSync(root));
     const profile = [
@@ -133,10 +135,10 @@ export const COMMAND_FALLBACK_DISCLOSURE = "The app tries OS isolation first. If
 
 type CommandLaunch = { binary: string; args: string[]; env: NodeJS.ProcessEnv; windowsVerbatimArguments?: boolean };
 
-function directLaunch(scratch: string, command: string): CommandLaunch {
+function directLaunch(scratch: string, command: string, extraEnv: NodeJS.ProcessEnv = {}): CommandLaunch {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH ?? process.env.Path, HOME: scratch, TMPDIR: scratch,
-    LANG: "en_US.UTF-8", PYTHONDONTWRITEBYTECODE: "1", PYTHONNOUSERSITE: "1",
+    LANG: "en_US.UTF-8", PYTHONDONTWRITEBYTECODE: "1", PYTHONNOUSERSITE: "1", ...extraEnv,
   };
   if (process.platform === "win32") {
     const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? "C:\\Windows";
@@ -152,16 +154,16 @@ function directLaunch(scratch: string, command: string): CommandLaunch {
 }
 
 /** Probe fixed code only. Select fallback before, never after, running user code. */
-async function selectCommandLaunch(workspace: string, scratch: string, command: string) {
+async function selectCommandLaunch(workspace: string, scratch: string, command: string, extraEnv: NodeJS.ProcessEnv = {}) {
   try {
     const probe = sandboxLaunch(workspace, scratch, "printf WORKBENCH_ISOLATED");
     const result = await executeProcess(probe.binary, probe.args, { cwd: workspace, env: probe.env, timeout: 5000, maxBuffer: 4096 });
     if (result.stdout !== "WORKBENCH_ISOLATED") throw new Error("Invalid isolation probe response.");
-    return { launch: sandboxLaunch(workspace, scratch, command), status: "os_isolated" as const,
+    return { launch: sandboxLaunch(workspace, scratch, command, extraEnv), status: "os_isolated" as const,
       message: "Command uses OS isolation. The network is blocked." };
   } catch (error) {
     assertRuntimeActive();
-    return { launch: directLaunch(scratch, command), status: "unisolated" as const,
+    return { launch: directLaunch(scratch, command, extraEnv), status: "unisolated" as const,
       message: `OS isolation is unavailable. ${String(error).slice(0, 500)} ${COMMAND_FALLBACK_DISCLOSURE}` };
   }
 }
@@ -193,19 +195,24 @@ export async function getCommandCapability(): Promise<ExecutionCapability> {
  * guarded writers with backups. Failed/cancelled commands publish no changes.
  */
 export async function runCommand(workspaceRoot: string, command: string, timeoutMs = 60000,
-  policy?: { guard: MutationPolicyGuard; runId?: string; assertAuthority?: () => void }): Promise<CommandResult> {
+  policy?: { guard: MutationPolicyGuard; runId?: string; assertAuthority?: () => void }, verification?: AgentTestExecutionRequest): Promise<CommandResult> {
   assertRuntimeActive();
   if (currentRuntimeScope() && currentRuntimeScope()!.mode !== "agent") throw new PermissionError("Only Agent may execute workspace commands.");
   policy?.assertAuthority?.();
   const root = resolveSafe(workspaceRoot, ".");
   validateCommandSafety(command);
+  if (verification && verification.command !== command) throw new PermissionError("The verification command does not match its approved test plan.");
   const started = Date.now();
   const temporary = realpathSync(mkdtempSync(path.join(tmpdir(), "workbench-command-")));
   const work = path.join(temporary, "workspace");
   const scratch = path.join(temporary, "scratch");
   mkdirSync(work, { mode: 0o700 }); mkdirSync(scratch, { mode: 0o700 });
   try {
-    const selected = await selectCommandLaunch(work, scratch, command);
+    const reportPath = path.join(scratch, "test-report");
+    const reporterPath = path.join(scratch, "node-reporter.cjs");
+    if (verification?.runner === "node") writeFileSync(reporterPath, NODE_EXISTING_TEST_REPORTER);
+    const selected = await selectCommandLaunch(work, scratch, command, verification ? { WORKBENCH_TEST_REPORT: reportPath, WORKBENCH_TEST_REPORTER: reporterPath,
+      ...(verification.runner === "node" ? { NODE_OPTIONS: `--test-reporter=${JSON.stringify(reporterPath)}` } : {}) } : {});
     const fallbackApproved = () => Boolean(policy?.guard.isUnisolatedCommandAuthorized(policy.runId, command));
     if (selected.status === "unisolated" && !fallbackApproved()) {
       throw new PermissionError(`Unsupported sandbox containment: command execution without OS isolation requires approval for this exact command and run. No command was executed. ${selected.message}`);
@@ -214,6 +221,8 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
     policy?.assertAuthority?.();
     if (policy && !policy.guard.isAuthorized(policy.runId, "run_command", { command })) throw new PermissionError("Command approval was revoked before execution.");
     const before = snapshot(root, false);
+    const beforeFiles = Object.fromEntries([...before].map(([name, file]) => [name.split(path.sep).join("/"), file.hash]));
+    if (verification && agentManifestDigest(beforeFiles) !== verification.workspaceManifestSha256) throw new PermissionError("Test plan is stale: workspace inputs changed before execution.");
     for (const directory of before.directories) mkdirSync(path.join(work, directory), { recursive: true });
     for (const [name, file] of before) {
       const destination = path.join(work, name);
@@ -233,6 +242,56 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
     }
     assertRuntimeActive();
     const result: CommandResult = { stdout: stdout.slice(0,8000), stderr: stderr.slice(0,8000), exitCode, timedOut, durationMs: Date.now()-started, changes: [], backupPaths: [], isolationStatus: selected.status, isolationMessage: selected.message };
+    if (verification) {
+      policy?.assertAuthority?.();
+      if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", { command }) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before verification completed.");
+      const evidence: AgentTestExecutionEvidence = { planId: verification.planId, command, runner: verification.runner, phase: verification.phase,
+        manifestSha256: verification.workspaceManifestSha256, sourceManifest: beforeFiles, exitCode, timedOut, executed: 0, failed: 0, skipped: 0,
+        testFiles: [], isolationStatus: selected.status,
+        ...(verification.successMarker ? { successMarker: verification.successMarker, successMarkerObserved: stdout.split(/\r?\n/).some(line => line.trim() === verification.successMarker) } : {}) };
+      result.verification = evidence;
+      try {
+        if (timedOut) { evidence.reason = "test_timeout"; evidence.detail = "The test command exceeded its time limit."; }
+        else {
+          if (verification.reportFormat === "tap") evidence.report = stdout;
+          else {
+            const safeReport = resolveSafe(scratch, "test-report");
+            if (!existsSync(safeReport) || !lstatSync(safeReport).isFile() || lstatSync(safeReport).isSymbolicLink()) throw new Error("The test runner did not write a regular machine report.");
+            if (lstatSync(safeReport).size > 16 * 1024 * 1024) throw new Error("Test report exceeds its 16 MiB limit.");
+            evidence.report = readFileSync(safeReport, "utf8");
+          }
+          Object.assign(evidence, parseAgentTestReport(verification, evidence.report!, work));
+          if (evidence.failed > 0) { evidence.reason = "test_failure"; evidence.detail = `${evidence.failed} tests failed.`; }
+          else if (evidence.executed === 0) { evidence.reason = "zero_tests"; evidence.detail = "No non-skipped test executed."; }
+          else if (exitCode !== 0) { evidence.reason = "test_failure"; evidence.detail = `The test runner exited with code ${exitCode}. ${stderr.slice(0, 1000)}`; }
+          else if (verification.changedTestPaths.some(file => !evidence.testFiles.includes(file))) { evidence.reason = "missing_test_coverage"; evidence.detail = "The report does not show execution of every changed test file."; }
+        }
+      } catch (error) {
+        evidence.reason = /not write/.test(String(error)) && /not found|No module named|cannot find|is not recognized|permission denied|cannot execute/i.test(stderr) ? "test_dependency_unavailable" : "invalid_test_report";
+        evidence.detail = `${error instanceof Error ? error.message : String(error)}${stderr ? ` ${stderr.slice(0, 1000)}` : ""}`;
+      }
+      // Test outputs, caches, and coverage stay in the disposable copy. Existing
+      // input files must keep their bytes; generated outputs cannot repair code.
+      for (const [name, file] of before) {
+        if (/(?:^|[/\\])(?:coverage|\.pytest_cache|\.cache|__pycache__|dist|build)(?:[/\\]|$)/.test(name)) continue;
+        try {
+          const target = resolveSafe(work, name);
+          if (!lstatSync(target).isFile() || digest(readFileSync(target)) !== file.hash) { evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command changed an input file: ${name}.`; break; }
+        } catch { evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command removed or replaced an input file: ${name}.`; break; }
+      }
+      try {
+        for (const name of snapshot(work, true).keys()) {
+          if (!before.has(name) && !/(?:^|[/\\])(?:coverage|\.pytest_cache|\.cache|__pycache__|dist|build)(?:[/\\]|$)/.test(name) && isCodeVerificationPath(name)) {
+            evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command created a source, test, or configuration file: ${name}.`; break;
+          }
+        }
+      } catch (error) { evidence.reason = "test_snapshot_invalid"; evidence.detail = String(error); }
+      try {
+        if (captureAgentVerificationManifest(root).sha256 !== verification.workspaceManifestSha256) { evidence.reason = "stale_test_evidence"; evidence.detail = "Workspace inputs changed during test execution."; }
+      } catch (error) { evidence.reason = "stale_test_evidence"; evidence.detail = String(error); }
+      result.durationMs = Date.now() - started;
+      return result;
+    }
     if (exitCode !== 0) return result;
     const after = snapshot(work, true);
     // A directory-only operation cannot be represented by the guarded file writer.

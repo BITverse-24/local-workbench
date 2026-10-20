@@ -1,4 +1,4 @@
-import { reviewProposedPython, reviewAttachedPython } from "../agent/source-review.js";
+import { reviewProposedPython } from "../agent/source-review.js";
 import { assertRuntimeActive } from "../run/runtime-scope.js";
 import { parseFileIndependently } from "./file-worker.js";
 import { withTaskProgress } from "../run/task-progress.js";
@@ -756,11 +756,10 @@ export const executePythonTool: AgentTool = {
       ? "Calculations completed successfully. Proceed immediately to invoke 'generate_deliverable' to generate the requested document using the computed figures."
       : "The executed source is already exported and ran successfully against the supplied inputs. Report the observed output and any limits; do not create another export or helper script.";
 
-    let behaviorReview:{status:string;reason?:string;gaps?:unknown[]} | undefined;
-    if(attachedRepair && context.envelope?.mode==="work"){
-      try {const gaps=await reviewAttachedPython({...sharedReviewInput,currentSource:code,executionOutput:execResult.stdout});behaviorReview={status:gaps.length?"failed":"passed",gaps};}
-      catch(error){assertRuntimeActive();behaviorReview={status:"unverified",reason:String(error)};}
-    }
+    // Work reviews saved source and immutable execution evidence in its separate
+    // verification stage. A reviewer retry must not execute this tool again.
+    const behaviorReview=attachedRepair&&context.envelope?.mode==="work"
+      ? {status:"unverified",reason:"Post-execution behavior review is pending."}:undefined;
     return {
       output: JSON.stringify({
         ...observation,

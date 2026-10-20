@@ -1,10 +1,10 @@
 import { vi } from 'vitest';
-import { ModelGateway } from '../../src/main/gateway/model-gateway.js';
+import { testModelGateway } from './test-model-registry.js';
 
 /** Provider responses only. File readers, persistence, policy and subprocesses stay real. */
 export function modeGateway(intent: Record<string, unknown>, generate: (messages: any[], tools: any[], options: any) => any) {
 
-  const gateway = new ModelGateway();
+  const gateway = testModelGateway();
 
   const execute = vi.spyOn(gateway, 'execute').mockResolvedValue({ ok: true, value: { result: intent } } as any);
 

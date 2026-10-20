@@ -139,7 +139,7 @@ export async function runScenario(input: Scenario, options: RunOptions): Promise
           const lastSettle = scenario.actions.filter((a) => a.type === "settle").at(-1);
           const bind = "gremlin-interactive";
           if (bindings.has(bind)) throw new Error("Interactive binding collision");
-          scenario.actions.push({ type: "send", bind, chat: lastSend?.type === "send" ? lastSend.chat : "main", text: `Additional context: ${text}\n\nOriginal binding requirements remain: ${scenario.objective.request}`, attachments: [], groundingEnabled: lastSend?.type === "send" ? lastSend.groundingEnabled : false }, { type: "settle", run: bind, approvals: lastSettle?.type === "settle" ? lastSettle.approvals : "read-only" });
+          scenario.actions.push({ type: "send", mode: lastSend?.type === "send" ? lastSend.mode : undefined, bind, chat: lastSend?.type === "send" ? lastSend.chat : "main", text: `Additional context: ${text}\n\nOriginal binding requirements remain: ${scenario.objective.request}`, attachments: [], groundingEnabled: lastSend?.type === "send" ? lastSend.groundingEnabled : false }, { type: "settle", run: bind, approvals: lastSettle?.type === "settle" ? lastSettle.approvals : "read-only" });
           scenarioSchema.parse(scenario);
         }
       }

@@ -191,7 +191,8 @@ describe('Workspace execution through explicit modes', () => {
     let turn = 0;
     setup({ ...mutation(['old.py', 'repaired.py']), workspaceOperations: [{ operation: 'delete', targetPath: 'old.py' }, { operation: 'write', targetPath: 'repaired.py' }], validationRequested: false }, () => ++turn === 1 ? { content: null, tool_calls: [{ id: 'delete', name: 'delete_file', arguments: { path: 'old.py' } }, { id: 'write', name: 'write_file', arguments: { path: 'repaired.py', content: "print('all fixed')\n" } }] } : 'Deleted old.py and saved repaired.py');
     const { runId } = await manager.start({ mode: 'agent', userText: 'Delete old.py and write repaired.py containing print(\'all fixed\')' });
-    await terminal(runId);
+    await terminal(runId,'partial');
+    expect(manager.getRunSnapshot({runId})?.verification?.checks.find(check=>check.criterionId==='acceptance:validate-written-code')?.status).toBe('unverified');
     expect(existsSync(path.join(workspace, 'old.py'))).toBe(false);
     expect(readFileSync(path.join(workspace, 'repaired.py'), 'utf8')).toBe("print('all fixed')\n");
     expect(events.some(e => e.type === 'confirmation_required')).toBe(true);
@@ -202,7 +203,8 @@ describe('Workspace execution through explicit modes', () => {
     let turn = 0;
     setup(mutation(['obsolete.py'], 'delete'), () => ++turn === 1 ? action('delete_file', { path: 'obsolete.py' }) : 'Deleted obsolete.py');
     const { runId } = await manager.start({ mode: 'agent', userText: 'Delete obsolete.py from the workspace' });
-    await terminal(runId);
+    await terminal(runId,'partial');
+    expect(manager.getRunSnapshot({runId})?.verification?.checks.find(check=>check.criterionId==='acceptance:validate-written-code')?.status).toBe('unverified');
     expect(existsSync(path.join(workspace, 'obsolete.py'))).toBe(false);
     expect(events.filter(e => e.type === 'artifact_ready')).toHaveLength(0);
   });
@@ -212,7 +214,8 @@ describe('Workspace execution through explicit modes', () => {
     let turn = 0;
     setup(mutation(['obsolete.py'], 'delete'), () => ++turn === 1 ? action('write_file', { path: 'obsolete.py', content: '' }) : action('delete_file', { path: 'obsolete.py' }));
     const { runId } = await manager.start({ mode: 'agent', userText: 'Delete obsolete.py from the workspace' });
-    await terminal(runId);
+    await terminal(runId,'partial');
+    expect(manager.getRunSnapshot({runId})?.verification?.checks.find(check=>check.criterionId==='acceptance:validate-written-code')?.status).toBe('unverified');
     expect(existsSync(path.join(workspace, 'obsolete.py'))).toBe(false);
     expect(events.some(e => e.type === 'tool_result' && e.tool === 'delete_file' && e.ok)).toBe(true);
     expect(events.filter(e => e.type === 'artifact_ready')).toHaveLength(0);

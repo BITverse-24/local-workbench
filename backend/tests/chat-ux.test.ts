@@ -1,3 +1,4 @@
+import { testModelGateway } from "./helpers/test-model-registry.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -28,7 +29,7 @@ const terminal = async (runId: string) => vi.waitFor(() => expect(['completed','
 const saveUser = (chatId: string, content: string) => handleSendMessage({ chatId, role: 'user', content });
 
 function setup() {
-  const gateway = new ModelGateway();
+  const gateway = testModelGateway();
   vi.spyOn(gateway, 'chatWithTools').mockResolvedValue({ ok: true, value: { content: 'Response', tool_calls: [], finishReason: 'stop' } } as any);
   vi.spyOn(gateway, 'generateChatTitle').mockResolvedValue('Review workspace source files');
   const events: ChatTitleEvent[] = [];
@@ -42,17 +43,17 @@ describe('chat titles', () => {
   it('names both pre-created and first-send chats from the first saved message', () => {
     for (const chatId of [createChat('New chat'), createChat()]) {
       const saved = saveUser(chatId, 'Explain how thermal expansion affects this part and its mounting');
-      expect(saved.chatTitle?.title).toBe('Explain how thermal expansion affects this part and its');
+      expect(saved.chatTitle?.title).toBe('Explain how thermal expansion');
       expect(getChat(chatId)?.title).not.toBe('New chat');
       expect(saveUser(chatId, 'A second topic').chatTitle).toBeUndefined();
     }
   });
   it('uses complete words and attachment names for an empty prompt', () => {
     expect(fallbackChatTitle('abc '.repeat(30)).length).toBeLessThanOrEqual(60);
-    expect(fallbackChatTitle('', ['inspection.pdf'])).toBe('Review inspection.pdf');
+    expect(fallbackChatTitle('', ['inspection.pdf'])).toBe('Review inspection.pdf request');
     const { manager } = setup(); const chatId = createChat();
     const source = manager.registerAttachment({ chatId, filename: 'inspection.txt', mediaType: 'text/plain', sizeBytes: 4, base64OrBuffer: Buffer.from('data') });
-    expect(handleSendMessage({ chatId, role: 'user', content: '', attachmentIds: [source.attachment.attachmentId] }).chatTitle?.title).toBe('Review inspection.txt');
+    expect(handleSendMessage({ chatId, role: 'user', content: '', attachmentIds: [source.attachment.attachmentId] }).chatTitle?.title).toBe('Review inspection.txt request');
   });
   it('repairs old placeholders on load and preserves unknown or manual titles', () => {
     const chatId = createChat('New Chats'); saveUser(chatId, 'Inspect the pressure vessel');

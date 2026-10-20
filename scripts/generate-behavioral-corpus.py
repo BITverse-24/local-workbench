@@ -7,7 +7,7 @@ BROKEN = 'def parse_csv(text):\n    lines = text.strip().split("\\n")\n    keys 
 BASE = [{"path": "parser.py", "content": BROKEN}, {"path": "README.md", "content": "Protected documentation. Do not modify.\n"}]
 
 def send(text, bind="r1", **kw):
-    return {"type": "send", "bind": bind, "text": text, **kw}
+    return {"type": "send", "mode": "agent", "bind": bind, "text": text, **kw}
 
 def settle(run="r1", approvals="read-only"):
     return {"type": "settle", "run": run, "approvals": approvals}

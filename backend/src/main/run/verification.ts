@@ -5,18 +5,13 @@ import type { RunContract, RunVerificationReport, VerificationCheck, Verificatio
 import { getDb } from "../persistence/db.js";
 import { matchesContractDeliverable, getRunContract, normalizeContractPath } from "./contract.js";
 import { absoluteDataPath, runRoot, sha256File } from "./filesystem.js";
-import { getExecutionLedger } from "./execution-ledger.js";
+import { getExecutionLedger, verificationCheckSchema, verificationTerminationSchema } from "./execution-ledger.js";
 import { RunResultStore } from "./result-store.js";
 import { resolveSafe } from "../harness/path-guard.js";
+import { captureAgentVerificationManifest } from "../agent/test-verification.js";
 
-const evidenceSchema = z.object({ kind: z.enum(["result", "artifact", "execution"]), id: z.string().min(1).max(256) });
-const checkSchema = z.object({
-  criterionId: z.string().min(1).max(256), requirement: z.string().max(500),
-  status: z.enum(["passed", "failed", "unverified", "not_applicable"]),
-  method: z.enum(["sha256", "result_store_checksum", "format_parser", "filesystem", "execution_record", "agent_loop_completion", "content_check", "independent_reader"]),
-  evidence: z.array(evidenceSchema).max(40), reason: z.string().max(500), verifiedAt: z.string().datetime(), mandatory: z.boolean(),
-});
-const reportSchema = z.object({ schemaVersion: z.literal(1), runId: z.string().uuid(), status: z.enum(["passed", "failed", "unverified", "not_applicable"]), checks: z.array(checkSchema).max(2000), updatedAt: z.string().datetime() });
+const checkSchema = verificationCheckSchema;
+const reportSchema = z.object({ schemaVersion: z.literal(1), runId: z.string().uuid(), status: z.enum(["passed", "failed", "unverified", "not_applicable", "skipped"]), checks: z.array(checkSchema).max(2000), updatedAt: z.string().datetime(), termination: verificationTerminationSchema.optional(), attempts: z.object({ verification: z.number().int().nonnegative(), repairs: z.number().int().nonnegative(), modelCalls: z.number().int().nonnegative(), recoveries: z.number().int().nonnegative() }).optional() });
 type ArtifactRow = { artifact_id: string; kind: string; filename: string; relative_path: string; size_bytes: number; sha256: string | null };
 const MAX_STRUCTURAL_PARSE_BYTES = 64 * 1024 * 1024;
 
@@ -94,11 +89,13 @@ export function getVerificationReport(runId: string): RunVerificationReport | un
   if (row.schema_version !== 1) throw new Error(`Unsupported verification report version: ${row.schema_version}`);
   const report = reportSchema.parse(JSON.parse(row.report_json));
   if (report.runId !== runId) throw new Error("Verification report identity mismatch");
-  return report;
+  const current = getExecutionLedger(runId)?.verification;
+  return current ? { ...report, termination: current.termination,
+    status: current.termination && report.status === "passed" ? "unverified" : report.status } : report;
 }
 
 /** Deterministic checks over durable evidence. Semantic criteria remain unverified unless P0's evaluator accepted them. */
-export function verifyRunEvidence(runId: string, options: { contractEvaluatorPassed?: boolean } = {}): RunVerificationReport | undefined {
+export function verifyRunEvidence(runId: string, _legacyOptions: { contractEvaluatorPassed?: boolean } = {}): RunVerificationReport | undefined {
   const contract = getRunContract(runId);
   if (!contract || contract.response.chatOnly || !contract.routing.actionable) return undefined;
   const timestamp = now();
@@ -189,18 +186,92 @@ export function verifyRunEvidence(runId: string, options: { contractEvaluatorPas
   }
 
   const acceptanceCriteria = [
-    ...(contract.acceptance.validateWrittenCode ? [{ id: "validate-written-code", label: "Validate the latest written code" }] : []),
+    ...((contract.acceptance.validateWrittenCode || ledger?.verification?.evidence.some(item => item.criterionId === "acceptance:validate-written-code") || ledger?.verification?.userSkip) ? [{ id: "validate-written-code", label: "Validate the latest written code" }] : []),
     ...contract.acceptance.validatedPythonDeliverables.map((filename) => ({ id: `validated-python:${filename}`, label: `Validate source ${filename}` })),
     ...(contract.acceptance.successMarker ? [{ id: "success-marker", label: `Emit validation marker ${contract.acceptance.successMarker}` }] : []),
     ...(contract.response.required ? [{ id: "response", label: "Provide a response to the user" }] : []),
   ];
   for (const criterion of acceptanceCriteria) {
-    const accepted = options.contractEvaluatorPassed === true;
-    const latest = attempts.filter((attempt) => ["run_command", "execute_python"].includes(attempt.tool)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-    const failed = latest?.status === "failed" ? latest : undefined;
-    checks.push(check({ criterionId: `acceptance:${criterion.id}`, requirement: criterion.label, status: accepted ? "passed" : failed ? "failed" : "unverified",
-      method: "agent_loop_completion", evidence: accepted ? attempts.filter((item) => item.status === "completed" && ["run_command", "execute_python"].includes(item.tool)).slice(-4).map((item) => ({ kind: "execution" as const, id: item.callId })) : failed ? [{ kind: "execution", id: failed.callId }] : [],
-      reason: accepted ? "The existing AgentLoop RunContract completion evaluator accepted this criterion." : failed ? "The latest recorded validation operation failed." : "The existing completion evaluator has not recorded acceptance for this criterion.", mandatory: true }));
+    const criterionId = `acceptance:${criterion.id}`;
+    if (criterion.id === "response") {
+      const message = db.prepare("SELECT id,content FROM messages WHERE run_id=? AND role='assistant' ORDER BY seq DESC LIMIT 1").get(runId) as { id: string; content: string } | undefined;
+      checks.push(check({ criterionId, requirement: criterion.label, status: message?.content.trim() ? "passed" : "unverified", method: "message_record", evidence: message?.content.trim() ? [{ kind: "message", id: message.id }] : [], reason: message?.content.trim() ? "The final assistant response is saved in this run." : "No final assistant response has been saved for this run.", mandatory: true }));
+      continue;
+    }
+    if (criterion.id === "validate-written-code" && ledger?.verification?.userSkip) {
+      checks.push(check({ criterionId, requirement: criterion.label, status: "skipped", method: "execution_record", evidence: [], reason: "Tests were skipped at the user's explicit request. No test pass is claimed.", mandatory: true, waiver: ledger.verification.userSkip }));
+      continue;
+    }
+    if (criterion.id === "success-marker") {
+      const approved = checks.filter(item => item.status === "passed" && (item.criterionId === "acceptance:validate-written-code" || item.criterionId.startsWith("acceptance:validated-python:")));
+      const matching = approved.flatMap(item => item.evidence).find(ref => {
+        if (ref.kind !== "result") return false;
+        try {
+          if (!resultStore.verifyIntegrity(ref.id).valid || resultStore.getResult(ref.id).origin !== "execution") return false;
+          try {
+            if (resultStore.retrieveResultSlice(ref.id, { mode: "json", pointer: "/verification/successMarker", maxChars: 256 }).content === contract.acceptance.successMarker &&
+                resultStore.retrieveResultSlice(ref.id, { mode: "json", pointer: "/verification/successMarkerObserved", maxChars: 16 }).content === "true") return true;
+          } catch { /* Python and legacy executions retain their stdout evidence. */ }
+          const output = resultStore.retrieveResultSlice(ref.id, { mode: "json", pointer: "/stdout", maxChars: 3000 });
+          return output.content.split(/\r?\n/).some(line => line.trim() === contract.acceptance.successMarker);
+        } catch { return false; }
+      });
+      checks.push(check({ criterionId, requirement: criterion.label, status: matching ? "passed" : "unverified", method: "execution_record", evidence: matching ? [matching] : [], reason: matching ? "The validated execution printed the requested marker." : "No accepted current execution proves the requested marker.", mandatory: true }));
+      continue;
+    }
+    const saved = ledger?.verification?.evidence.find(item => item.criterionId === criterionId);
+    let status: VerificationStatus = "unverified", reason = "No criterion-specific execution evidence is recorded.", evidence: VerificationCheck["evidence"] = [];
+    let method: VerificationCheck["method"] = "execution_record";
+    if (saved && saved.status !== "skipped") {
+      status = saved.status; reason = saved.reason; evidence = saved.evidence; method = saved.method;
+      const resultRefs = saved.evidence.filter(ref => ref.kind === "result");
+      const validRefs = resultRefs.length > 0 && resultRefs.every(ref => resultStore.verifyIntegrity(ref.id).valid) && resultRefs.some(ref => {
+        try { const record = resultStore.getResult(ref.id); return record.origin === "execution" && (record.status === "complete" || saved.status === "failed"); } catch { return false; }
+      });
+      const artifactRefsValid = saved.evidence.filter(ref => ref.kind === "artifact").every(ref => {
+        const artifact = artifacts.find(item => item.artifact_id === ref.id);
+        if (!artifact?.sha256) return false;
+        try { return sha256File(outputArtifactPath(runId, artifact.relative_path)) === artifact.sha256; } catch { return false; }
+      });
+      const manifest = Object.entries(saved.sourceManifest ?? {});
+      const manifestValid = manifest.every(([filename, digest]) => {
+        if (!ledger?.executionContext?.workspaceRoot) return false;
+        try { const file = resolveSafe(ledger.executionContext.workspaceRoot, normalizeContractPath(filename)); return digest === null ? !existsSync(file) : existsSync(file) && statSync(file).isFile() && sha256File(file) === digest; } catch { return false; }
+      });
+      let typedExecutionValid = true;
+      if (criterion.id === "validate-written-code") {
+        const executions = resultRefs.filter(ref => { try { return resultStore.getResult(ref.id).origin === "execution"; } catch { return false; } });
+        typedExecutionValid = executions.length > 0 && executions.every(ref => {
+          try {
+            const record = resultStore.getResult(ref.id);
+            const payload = JSON.parse(readFileSync(resolveSafe(runRoot(runId), record.storage.relativePath), "utf8"));
+            const report = payload.verification;
+            const registered = ledger?.verification?.plans.find(plan => plan.id === report?.planId && plan.revision === report?.manifestSha256 && plan.kind === "agent_tests");
+            return registered && Boolean(registered.command && registered.runner) && report.command === registered.command && report.runner === registered.runner && report.manifestSha256 === saved.revision && typeof payload.exitCode === "number" && Number.isInteger(payload.exitCode) && payload.timedOut === false && typeof report.executed === "number" && Number.isInteger(report.executed) && report.executed > 0 && typeof report.failed === "number" && Number.isInteger(report.failed) && report.failed >= 0 && (saved.status === "passed" ? payload.exitCode === 0 && report.failed === 0 && !report.reason : true);
+          } catch { return false; }
+        });
+      }
+      let pythonRevisionValid = true;
+      if (criterion.id.startsWith("validated-python:")) {
+        const filename = criterion.id.slice("validated-python:".length);
+        const artifact = artifacts.find(item => item.filename === filename);
+        pythonRevisionValid = Boolean(artifact?.sha256 && resultRefs.some(ref => {
+          try {
+            const record = resultStore.getResult(ref.id);
+            return record.origin === "execution" && resultStore.retrieveResultSlice(ref.id, { mode: "json", pointer: "/sourceDigest", maxChars: 100 }).content === artifact.sha256;
+          } catch { return false; }
+        }));
+      }
+      let fullManifestValid = criterion.id !== "validate-written-code";
+      if (!fullManifestValid && ledger?.executionContext?.workspaceRoot && saved.revision) {
+        try { fullManifestValid = captureAgentVerificationManifest(ledger.executionContext.workspaceRoot).sha256 === saved.revision; } catch { fullManifestValid = false; }
+      }
+      const currentRevision = typedExecutionValid && pythonRevisionValid && (criterion.id !== "validate-written-code" || Boolean(saved.revision && saved.planId && manifest.length && manifestValid && fullManifestValid));
+      if ((saved.status === "passed" || saved.status === "failed") && (!validRefs || !artifactRefsValid || !manifestValid || !currentRevision)) {
+        status = "unverified"; reason = "Execution evidence is missing, changed, or does not identify the current source revision.";
+      }
+    }
+    checks.push(check({ criterionId, requirement: criterion.label, status, method, evidence, reason, mandatory: true, revision: saved?.revision, planId: saved?.planId, sourceManifest: saved?.sourceManifest }));
   }
 
   for (const [index, constraint] of contract.constraints.userConstraints.entries()) {
@@ -208,16 +279,26 @@ export function verifyRunEvidence(runId: string, options: { contractEvaluatorPas
       reason: "This free-text constraint needs semantic review. No deterministic check is defined for it.", mandatory: false }));
   }
 
+  let workReviewAttempts = 0;
   const extra = getDb().prepare("SELECT checks_json FROM run_artifact_validations WHERE run_id=?").get(runId) as { checks_json: string } | undefined;
   if (extra) {
-    const saved=JSON.parse(extra.checks_json);const recorded=z.array(checkSchema).parse(Array.isArray(saved)?saved:saved.checks);
+    const saved=JSON.parse(extra.checks_json);workReviewAttempts=Number(saved.review?.totalAttempts)||0;const recorded=z.array(checkSchema).parse(Array.isArray(saved)?saved:saved.checks);
     const stale=Object.entries(saved.digests??{}).some(([id,digest])=>{const artifact=artifacts.find(a=>a.artifact_id===id);if(!artifact)return true;try{return sha256File(absoluteDataPath(artifact.relative_path))!==digest;}catch{return true;}});
-    checks.push(...recorded.map(check=>stale&&check.status==="passed"?{...check,status:"unverified" as const,reason:"The saved output changed after its content checks. Recheck this requirement."}:check));
+    checks.push(...recorded.map(check=>stale&&["passed","failed"].includes(check.status)?{...check,status:"unverified" as const,reason:"The saved output changed after its content checks. Recheck this requirement."}:check));
+  }
+  for (const requirement of contract.acceptance.artifactChecks ?? []) {
+    const criterionId = `content:${requirement.id}`;
+    if (!checks.some(item => item.criterionId === criterionId)) checks.push(check({ criterionId, requirement: requirement.basis.slice(0, 500), status: "unverified", method: "content_check", evidence: [], reason: "No saved content assessment exists for this required criterion.", mandatory: requirement.mandatory }));
   }
   const applicable = checks.filter((item) => item.status !== "not_applicable");
   const status: VerificationStatus = applicable.some((item) => item.mandatory && item.status === "failed") ? "failed"
-    : applicable.some((item) => item.status === "unverified" || item.status === "failed") ? "unverified" : applicable.length ? "passed" : "not_applicable";
-  return persist({ schemaVersion: 1, runId, status, checks, updatedAt: timestamp });
+    : applicable.some((item) => item.status === "unverified" || item.status === "failed") ? "unverified" : applicable.some(item => item.status === "skipped") ? "skipped" : applicable.length ? "passed" : "not_applicable";
+  const mode = db.prepare("SELECT metrics_json FROM run_mode_details WHERE run_id=?").get(runId) as { metrics_json: string } | undefined;
+  let metrics: Record<string, unknown> = {};
+  try { metrics = JSON.parse(mode?.metrics_json ?? "{}"); } catch { /* Older optional metrics do not establish acceptance. */ }
+  const count = (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0;
+  return persist({ schemaVersion: 1, runId, status, checks, updatedAt: timestamp, termination: ledger?.verification?.termination,
+    attempts: { verification: (ledger?.verification?.attempts.length ?? 0) + Math.max(count(metrics.verificationAttemptCount), count(workReviewAttempts)), repairs: ledger?.verification?.repairCount ?? 0, modelCalls: count(metrics.modelCallCount), recoveries: count(metrics.recoveryCount) } });
 }
 
 export function verificationFeedback(report: RunVerificationReport | undefined): { key: string; text: string } | undefined {

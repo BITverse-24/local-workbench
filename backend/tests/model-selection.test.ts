@@ -1,3 +1,4 @@
+import { testModelGateway, testModelRegistry } from "./helpers/test-model-registry.js";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   getUsableConfiguredModels,
@@ -187,6 +188,8 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       const events: RunEvent[] = [];
 
       const mockGateway = {
+      registry: new Map(testModelRegistry().map(model => [model.id, model])),
+      inferenceGroupFor: () => "fixture",
         async execute() {
           classifications++;
           return {
@@ -254,6 +257,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       const events: RunEvent[] = [];
 
       const mockGateway = {
+      inferenceGroupFor: () => "fixture",
         registry: new Map([["primary-model", { id: "primary-model", model: "first", enabled: true, capabilities:["text"] }], ["model-2", { id: "model-2", model: "second", enabled: true, capabilities:["text"] }]]),
         async execute() {
           classifications++;
@@ -306,6 +310,8 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
 
       const events: RunEvent[] = [];
       const mockGateway = {
+      registry: new Map(testModelRegistry().map(model => [model.id, model])),
+      inferenceGroupFor: () => "fixture",
         async execute() { return { ok: true, value: {} }; },
         async chatWithTools() { return { ok: true, value: { content: "ok", tool_calls: null } }; },
         health() { return Promise.resolve([]); },
@@ -338,6 +344,7 @@ describe("Phase 1: Model Selection & Classification Removal", () => {
       const events: RunEvent[] = [];
 
       const mockGateway = {
+      inferenceGroupFor: () => "fixture",
         registry: new Map([["model-2", { id:"model-2",model:"selected",enabled:true,capabilities:["text"] }]]),
         async execute() {
           classifications++;

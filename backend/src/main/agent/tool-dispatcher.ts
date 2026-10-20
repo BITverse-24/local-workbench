@@ -457,11 +457,13 @@ export class ToolDispatcher {
                 durationMs,
               };
             }
-          } else if (call.name === "run_command" && rawOutput) {
+          } else if (call.name === "run_command") {
             let commandError: ToolErrorDetail | null = null;
             try {
               const parsed = JSON.parse(rawOutput);
-              if (parsed.timedOut) {
+              if (!parsed || typeof parsed !== "object" || !Number.isSafeInteger(parsed.exitCode) || (parsed.timedOut !== undefined && typeof parsed.timedOut !== "boolean")) {
+                commandError = { code: "validation_failure", message: "Command returned no valid explicit exit code or timeout state.", retryable: false };
+              } else if (parsed.timedOut) {
                 commandError = {
                   code: "timeout",
                   message: "Command execution timed out",
@@ -476,7 +478,7 @@ export class ToolDispatcher {
                   details: parsed,
                 };
               }
-            } catch {}
+            } catch { commandError = { code: "validation_failure", message: "Command returned malformed execution evidence.", retryable: false }; }
 
             if (commandError) {
               normalizedResult = {
@@ -511,6 +513,13 @@ export class ToolDispatcher {
             };
           }
 
+          // Control evidence is separate from prompt text and remains available
+          // after the full report is saved and the observation is compacted.
+          if (call.name === "run_command") normalizedResult = { ...normalizedResult, data: rawResult.data ?? tryParseJson(rawOutput) };
+          if (call.name === "run_command" && context.agentVerification && rawResult.executionEvidence) {
+            normalizedResult = { ...normalizedResult, executionEvidence: rawResult.executionEvidence };
+          }
+
           if (normalizedResult.ok && (call.name === "extract_document" || call.name === "ocr_extract")) {
             const data = normalizedResult.data as { pageReferences?: Array<{ page?: number }> } | undefined;
             const filename = call.arguments.filename ?? call.arguments.path ?? call.arguments.file;
@@ -527,7 +536,7 @@ export class ToolDispatcher {
           // Persist before returning success or publishing the observation. The store is run-bound;
           // standalone/legacy callers without it retain their original tool contract.
           if (context.resultStore && call.name !== "retrieve_result" && (
-            rawResult.intermediate || ["read_file", "extract_document", "execute_python"].includes(call.name) ||
+            rawResult.intermediate || ["read_file", "extract_document", "execute_python", "run_command"].includes(call.name) ||
             // Command output also drives P0 verification inside AgentLoop; retain that typed control result.
             (call.name !== "run_command" && rawOutput.length > 4000 && !normalizedResult.artifacts?.length)
           )) {
@@ -535,9 +544,9 @@ export class ToolDispatcher {
             const data = rawResult.data ?? tryParseJson(rawOutput);
             const filename = call.arguments.filename ?? call.arguments.path ?? call.arguments.file;
             const sources: SourceReference[] = typeof filename === "string" && call.name !== "execute_python" ? [{ filename, relation: "source" }] : [];
-            const origin = call.name === "read_file" ? "source_extracted" : call.name === "execute_python" ? "execution" : "model_derived";
+            const origin = call.name === "read_file" ? "source_extracted" : ["execute_python", "run_command"].includes(call.name) ? "execution" : "model_derived";
             const intermediate: Omit<IntermediateResultInput, "producer" | "summary"> = rawResult.intermediate ?? {
-              type: call.name === "read_file" ? "text" : call.name === "execute_python" ? "execution" : typeof data === "object" && data !== null ? "structured" : "text",
+              type: call.name === "read_file" ? "text" : ["execute_python", "run_command"].includes(call.name) ? "execution" : typeof data === "object" && data !== null ? "structured" : "text",
               payload: typeof data === "string" || (data !== null && typeof data === "object") ? data as string | Record<string, unknown> | unknown[] : rawOutput,
               status: normalizedResult.ok ? "complete" : "partial", origin, sources,
             };
@@ -554,7 +563,8 @@ export class ToolDispatcher {
             }
             const body = compactToolObservation({ content: rawOutput, toolName: call.name, source: filename as string | undefined, resultId: record.resultId, isOlderTurn: false });
             normalizedResult = { ...normalizedResult, output: body.content, resultRef: record,
-              ...(normalizedResult.ok ? { data: { resultId: record.resultId, type: record.type, status: record.status } } : {}),
+              ...(normalizedResult.executionEvidence ? { executionEvidence: { ...normalizedResult.executionEvidence, resultId: record.resultId } } : {}),
+              ...(normalizedResult.ok && call.name !== "run_command" ? { data: { resultId: record.resultId, type: record.type, status: record.status } } : {}),
             };
           }
 

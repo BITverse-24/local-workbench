@@ -8,7 +8,7 @@ export function parserMock(options: { brokenRepair?: boolean; fault?: "invalid-j
     if (route.endsWith("/embeddings")) { const input = Array.isArray(body.input) ? body.input : [body.input]; return { body: { data: input.map((_, index) => ({ index, embedding: [1, 0, 0, 0] })) } }; }
     const messages = body.messages as Array<{ role: string; content: string }>;
     const system = messages?.find((m) => m.role === "system")?.content ?? "";
-    if ((body.response_format as any)?.json_schema?.name === "semantic_intent") return completion(body, JSON.stringify({ intentType: "code_modification", taskType: "code", driverModel: "code-qwen25coder", primaryGoal: "Repair CSV parser", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: ["parser.py"], protectedPaths: ["README.md"], restrictMutationsToTargets: true, expectedDeliverables: [], reason: "Scripted framework calibration" }));
+    if ((body.response_format as any)?.json_schema?.name === "semantic_intent") return completion(body, JSON.stringify({ requestedAction: "modify_software", responseMode: "chat", primaryGoal: "Repair CSV parser", workspaceMutationRequested: true, workspaceOperations: [{ operation: "write", targetPath: "parser.py" }], targetFiles: ["parser.py"], protectedPaths: ["README.md", "test_parser.py"], restrictMutationsToTargets: true, validationRequested: true, expectedDeliverables: [] }));
     if (options.fault === "http-429") return { status: 429, body: { error: { message: "Fixture rate limit" } } };
     if (options.fault === "http-500") return { status: 500, body: { error: { message: "Fixture provider failure" } } };
     if (options.fault === "invalid-json") return { raw: "this is not JSON" };
@@ -22,6 +22,10 @@ export function parserMock(options: { brokenRepair?: boolean; fault?: "invalid-j
   };
 }
 export function completion(body: Record<string, unknown>, content: string, calls?: Array<{ name: string; arguments: unknown }>): ReturnType<MockHandler> {
+  if (calls && !body.tools && JSON.stringify(body.messages).includes("AVAILABLE TOOLS:")) {
+    content = JSON.stringify({ tool_calls: calls, content });
+    calls = undefined;
+  }
   const tool_calls = calls?.map((c, index) => ({ index, id: `mock_call_${index}`, type: "function", function: { name: c.name, arguments: JSON.stringify(c.arguments) } }));
   if (body.stream) return { contentType: "text/event-stream", chunks: [`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content, tool_calls }, finish_reason: calls ? "tool_calls" : "stop" }] })}\n\n`, "data: [DONE]\n\n"] };
   return { body: { choices: [{ message: { role: "assistant", content, tool_calls }, finish_reason: calls ? "tool_calls" : "stop" }], usage: { prompt_tokens: 0, completion_tokens: 0 } } };

@@ -34,14 +34,17 @@ it("suppresses late checkpoints after cancellation while preserving the work res
   expect(events.map(event => [event.status, event.assessedChecks])).toEqual([["active", undefined], ["active", 0]]);
 });
 
-it("counts only complete parsed and index-matched assessments, without exposing response fragments", async () => {
+it.each([
+  {kind:"valid partial",items:[item(0)],counts:[0,1,1],assessed:1},
+  {kind:"duplicate or unknown",items:[item(0),item(0),item(99)],counts:[0,0],assessed:0},
+])("counts only accepted $kind assessments, without exposing response fragments", async ({items,counts,assessed}) => {
   const events: TaskProgressEvent[] = [];
-  const chat = vi.fn().mockResolvedValueOnce(response(JSON.stringify([item(0), item(0), item(99)])))
+  const chat = vi.fn().mockResolvedValueOnce(response(JSON.stringify(items)))
     .mockResolvedValueOnce(response("PRIVATE INVALID RESPONSE"))
     .mockResolvedValueOnce(response(JSON.stringify([item(0)])));
   await expect(reviewAttachedPython({ ...reviewInput(), gateway: { chatWithTools: chat } as unknown as ModelGateway, emitProgress: event => events.push(event) })).rejects.toThrow("did not assess every");
-  expect(events.filter(event => event.assessedChecks !== undefined).map(event => event.assessedChecks)).toEqual([0, 1, 1]);
-  expect(events[events.length - 1]).toMatchObject({ status: "blocked", assessedChecks: 1, totalChecks: 3 });
+  expect(events.filter(event => event.assessedChecks !== undefined).map(event => event.assessedChecks)).toEqual(counts);
+  expect(events[events.length - 1]).toMatchObject({ status: "blocked", assessedChecks: assessed, totalChecks: 3 });
   expect(new Set(events.map(event => event.activityId)).size).toBe(1);
   expect(JSON.stringify(events)).not.toContain("PRIVATE");
   expect(chat).toHaveBeenCalledTimes(2);

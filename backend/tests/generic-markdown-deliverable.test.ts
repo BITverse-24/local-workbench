@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { initDb, closeDb, getDb } from "../src/main/persistence/db.js";
 import { RunManager } from "../src/main/run/manager.js";
-import { ModelGateway } from "../src/main/gateway/model-gateway.js";
+import { testModelGateway } from "./helpers/test-model-registry.js";
 import { createChat } from "../src/main/persistence/chats.js";
 import type { ModelRequest, RunEvent } from "../src/shared/contracts.js";
 
@@ -22,7 +22,7 @@ describe("Generic Markdown Deliverable Generation", () => {
     runEvents = [];
     capturedRequests = [];
 
-    const mockGateway=new ModelGateway();
+    const mockGateway=testModelGateway();
     const names=[['Draft a compliance note for E-201','E201-compliance-note.md'],['Please draft an audit memo','audit-memo.md'],['custom-review-note.md','custom-review-note.md'],['word document','approval-note.docx'],['Read these inspection reports','E201-compliance-note.md']];
     vi.spyOn(mockGateway,'execute').mockImplementation(async req=>{
       capturedRequests.push(req);

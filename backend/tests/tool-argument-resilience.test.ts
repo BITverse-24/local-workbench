@@ -204,7 +204,7 @@ describe("Tool Argument Parsing Resilience", () => {
       expect(existsSync(path.join(tmpDir, "forbidden"))).toBe(false);
     });
 
-    it("binds requested CSV validation defaults before approval and executes real assertions", async () => {
+    it("does not accept proposed CSV checks when the mandatory test stage has no durable execution context", async () => {
       writeFileSync(path.join(tmpDir, "README.md"), "protected\n");
       const runId = randomUUID(), events: any[] = [], approvals: any[] = [];
       const turns = [
@@ -220,14 +220,11 @@ describe("Tool Argument Parsing Resilience", () => {
         tools: [writeFileTool, runCommandTool], context: { runId, workspaceRoot: tmpDir, gateway: gateway as any }, emitEvent(event) { events.push(event); },
         async onPlanConfirmationRequired(_plan, calls) { approvals.push(...calls); return true; },
       });
-      expect(result.outcome).toBe("completed");
-      const approved = approvals.find((call) => call.name === "run_command").arguments;
-      expect(approved.python_reference_pipeline).toEqual(["io:StringIO", "csv:DictReader", "builtins:list"]);
-      expect(approved.success_marker).toBe("CHECK_OK");
-      expect(approved.command).toContain("assert actual == expected");
-      const validation = events.find((event) => event.type === "tool_result" && event.tool === "run_command");
-      expect(validation.ok).toBe(true);
-      expect(JSON.parse(validation.output).stdout).toContain("CHECK_OK");
+      expect(result.outcome).toBe("partial");
+      expect(result.finalText).toContain("durable test execution context");
+      expect(readFileSync(path.join(tmpDir, "module.py"), "utf8")).toContain("def read_csv");
+      expect(approvals.some(call => call.name === "run_command")).toBe(false);
+      expect(events.some(event => event.type === "tool_result" && event.tool === "run_command")).toBe(false);
       expect(existsSync(path.join(tmpDir, "__pycache__"))).toBe(false);
     });
 

@@ -11,6 +11,7 @@ import { normalizeRunContract, persistRunContract } from "../src/main/run/contra
 import { RunResultStore } from "../src/main/run/result-store.js";
 import { compactConversationHistory, type AgentMessage } from "../src/main/agent/context-manager.js";
 import { addExecutionLedgerBlocker, configureExecutionLedger, getExecutionLedger, initializeExecutionLedger, markAuthorizationPending, markExecutionTokenLimit, prepareExecutionResume, recordAuthorizationDecision, recordExecutionToolOutcome, recordExecutionToolStarted, reopenPartialRun, reconcileInterruptedExecutions, updateExecutionLedgerState, executionLedgerSummary } from "../src/main/run/execution-ledger.js";
+import { getRunVerificationState, registerVerificationPlan, startVerificationAttempt, finishVerificationAttempt, takeAgentVerificationRepair, takeVerificationFullSuiteFallback, recordVerificationUserSkip, recordVerificationEvidence, mandatoryVerificationSatisfied, nextVerificationAction, extractVerificationSkipBasis } from "../src/main/run/verification-controller.js";
 import { transition } from "../src/main/run/store.js";
 
 describe("P1-C1 execution ledger", () => {
@@ -28,6 +29,48 @@ describe("P1-C1 execution ledger", () => {
     initializeExecutionLedger(contract);
   });
   afterEach(() => { closeDb(); rmSync(dir, { recursive: true, force: true }); });
+
+  it("persists verification attempts, repairs and full-suite fallback across restart", () => {
+    registerVerificationPlan(runId, { id: "test-plan", kind: "agent_tests", revision: "first", criterionIds: ["acceptance:validate-written-code"] });
+    const attempt = startVerificationAttempt(runId, "test-plan");
+    finishVerificationAttempt(runId, attempt.id, { status: "failed", reason: "One assertion failed." });
+    expect(takeAgentVerificationRepair(runId)).toBe(true);
+    expect(takeVerificationFullSuiteFallback(runId, "first")).toBe(true);
+    closeDb(); initDb(path.join(dir, "workbench.sqlite"));
+    expect(getRunVerificationState(runId)?.attempts[0].status).toBe("failed");
+    expect(takeVerificationFullSuiteFallback(runId, "first")).toBe(false);
+    expect(takeAgentVerificationRepair(runId)).toBe(true);
+    expect(takeAgentVerificationRepair(runId)).toBe(false);
+  });
+
+  it("marks interrupted verification uncertain and retains its repair counter", () => {
+    registerVerificationPlan(runId, { id: "test-plan", kind: "agent_tests", revision: "first", criterionIds: ["acceptance:validate-written-code"] });
+    takeAgentVerificationRepair(runId);
+    startVerificationAttempt(runId, "test-plan");
+    reconcileInterruptedExecutions();
+    expect(getRunVerificationState(runId)?.attempts[0].status).toBe("unverified");
+    expect(getRunVerificationState(runId)?.repairCount).toBe(1);
+    expect(getRunVerificationState(runId)?.termination?.reason).toBe("interrupted");
+  });
+
+  it("does not confuse quoted skip text or a test requirement with a user waiver", () => {
+    expect(extractVerificationSkipBasis("Do not skip tests")).toBeUndefined();
+    expect(extractVerificationSkipBasis("Add the words `skip tests` to the document")).toBeUndefined();
+    expect(extractVerificationSkipBasis("Explain this:\n> do not run tests")).toBeUndefined();
+    expect(extractVerificationSkipBasis("Fix the parser and skip tests")).toBe("skip tests");
+    expect(extractVerificationSkipBasis("Please do not run tests")).toBe("do not run tests");
+  });
+
+  it("permits only a specific explicit user test waiver", () => {
+    recordVerificationUserSkip(runId, "Do not run tests");
+    expect(getRunVerificationState(runId)?.userSkip?.basis).toBe("Do not run tests");
+    const pending = { criterionId: "content:requirement", requirement: "Required content", status: "unverified" as const, method: "content_check" as const, evidence: [], reason: "Pending review", mandatory: true, verifiedAt: new Date().toISOString() };
+    expect(mandatoryVerificationSatisfied([pending])).toBe(false);
+    expect(nextVerificationAction([pending], { verificationRetryAvailable: true, repairAvailable: true })).toBe("verify");
+    expect(nextVerificationAction([{ ...pending, status: "failed" }], { verificationRetryAvailable: true, repairAvailable: true })).toBe("repair");
+    expect(() => recordVerificationEvidence(runId, [{ ...pending, status: "skipped", waiver: getRunVerificationState(runId)!.userSkip }])).toThrow(/user waiver/i);
+    expect(mandatoryVerificationSatisfied([{ ...pending, status: "skipped", waiver: getRunVerificationState(runId)!.userSkip }])).toBe(false);
+  });
 
   it("records meaningful operations, result IDs and contract work idempotently", () => {
     const store = new RunResultStore(runId, undefined, dir);

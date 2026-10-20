@@ -13,6 +13,7 @@ import { runCommand } from "../harness/tools/run-command.js";
 import { PermissionError, resolveSafe } from "../harness/path-guard.js";
 import { resolveRunPath } from "../run/filesystem.js";
 import { isTextExtractableDocument, readDocumentContent } from "./document-reader.js";
+import { assessAgentTestExecution } from "../agent/test-verification.js";
 
 export function extractPathArg(args: Record<string, unknown>): string {
   if (!args) return "";
@@ -616,15 +617,20 @@ export const runCommandTool: AgentTool = {
 
     const res = context.policyGuard
       ? await context.policyGuard.withMutationLock("workspace:run_command", () =>
-          runCommand(context.workspaceRoot, command, 60000, context.policyGuard ? { guard: context.policyGuard, runId: context.runId, assertAuthority: context.assertAuthority } : undefined),
+          runCommand(context.workspaceRoot, command, 60000, context.policyGuard ? { guard: context.policyGuard, runId: context.runId, assertAuthority: context.assertAuthority } : undefined, context.agentVerification),
         )
-      : await runCommand(context.workspaceRoot, command, 60000, context.policyGuard ? { guard: context.policyGuard, runId: context.runId, assertAuthority: context.assertAuthority } : undefined);
+      : await runCommand(context.workspaceRoot, command, 60000, context.policyGuard ? { guard: context.policyGuard, runId: context.runId, assertAuthority: context.assertAuthority } : undefined, context.agentVerification);
 
     const summary = `Command exit ${res.exitCode} in ${res.durationMs}ms${res.isolationStatus === "unisolated" ? "; ran without OS isolation" : "; OS isolation active"}: "${command.slice(0, 40)}"`;
+    const assessment = res.verification ? assessAgentTestExecution(res.verification) : undefined;
+    const executionEvidence = res.verification ? { ...res.verification, report: undefined } : undefined;
     return {
-      output: JSON.stringify(res),
+      output: JSON.stringify({ ...res, verification: executionEvidence }),
       summary,
       sideEffects: [`executed:${command.slice(0, 30)}`, ...res.changes],
+      ...(executionEvidence ? { executionEvidence } : {}),
+      ...(assessment && assessment.status !== "passed" ? { ok: false, error: { code: "validation_failure" as const, message: assessment.detail, retryable: assessment.status === "failed" || assessment.fallbackAllowed } } : {}),
+      intermediate: { type: "execution", status: res.exitCode === 0 && (!assessment || assessment.status === "passed") ? "complete" : "partial", origin: "execution", payload: res as unknown as Record<string, unknown>, sources: [] },
     };
   },
 };

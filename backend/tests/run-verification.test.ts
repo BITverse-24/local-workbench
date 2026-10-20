@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { closeDb, getDb, initDb } from "../src/main/persistence/db.js";
@@ -9,10 +9,13 @@ import { createRun } from "../src/main/run/store.js";
 import { setDataDir, absoluteDataPath, createRunDirectories, writeRunFile, artifactRef } from "../src/main/run/filesystem.js";
 import { normalizeRunContract, persistRunContract } from "../src/main/run/contract.js";
 import { validateAndNormalizeIntent } from "../src/main/router/contextual-router.js";
-import { initializeExecutionLedger, recordExecutionToolOutcome } from "../src/main/run/execution-ledger.js";
+import { initializeExecutionLedger, configureExecutionLedger, recordExecutionToolOutcome } from "../src/main/run/execution-ledger.js";
 import { RunResultStore } from "../src/main/run/result-store.js";
 import { getVerificationReport, verifyRunEvidence } from "../src/main/run/verification.js";
 import { RunManager } from "../src/main/run/manager.js";
+import { addMessage } from "../src/main/persistence/messages.js";
+import { captureAgentVerificationManifest } from "../src/main/agent/test-verification.js";
+import { registerVerificationPlan, recordVerificationEvidence, recordVerificationTermination, recordVerificationUserSkip, mandatoryVerificationSatisfied } from "../src/main/run/verification-controller.js";
 import { getState } from "../src/main/run/store.js";
 
 describe("P1-D durable outcome verification", () => {
@@ -46,6 +49,54 @@ describe("P1-D durable outcome verification", () => {
     createContract();
   });
   afterEach(() => { closeDb(); rmSync(dir, { recursive: true, force: true }); });
+
+  it("does not let the old completion flag establish acceptance and checks only saved responses", () => {
+    registerMarkdown();
+    expect(verifyRunEvidence(runId, { contractEvaluatorPassed: true })!.checks.find(item => item.criterionId === "acceptance:response")?.status).toBe("unverified");
+    const row = getDb().prepare("SELECT chat_id FROM runs WHERE id=?").get(runId) as { chat_id: string };
+    const message = addMessage({ chat_id: row.chat_id, run_id: runId, role: "assistant", content: "Saved report is ready." });
+    expect(verifyRunEvidence(runId)!.checks.find(item => item.criterionId === "acceptance:response")).toMatchObject({ status: "passed", evidence: [{ kind: "message", id: message.id }] });
+  });
+
+  it("rechecks exact typed test execution evidence and invalidates added source files", () => {
+    const workspace = path.join(dir, "workspace"); mkdirSync(workspace); writeFileSync(path.join(workspace, "module.py"), "value = 1\n");
+    configureExecutionLedger(runId, { modelId: "primary-model", mode: "agent", workspaceRoot: workspace, groundingEnabled: false });
+    const manifest = captureAgentVerificationManifest(workspace);
+    registerVerificationPlan(runId, { id: "tests", kind: "agent_tests", revision: manifest.sha256, criterionIds: ["acceptance:validate-written-code"], command: "node --test", runner: "node" });
+    const store = new RunResultStore(runId);
+    const result = store.registerResult({ type: "execution", status: "complete", origin: "execution", producer: { tool: "run_command", callId: "tests" }, summary: "One test passed", payload: { exitCode: 0, timedOut: false, verification: { planId: "tests", command: "node --test", runner: "node", manifestSha256: manifest.sha256, executed: 1, failed: 0 } } });
+    recordVerificationEvidence(runId, [{ criterionId: "acceptance:validate-written-code", requirement: "Test current code", status: "passed", method: "execution_record", evidence: [{ kind: "result", id: result.resultId }], reason: "One current test passed", mandatory: true, verifiedAt: new Date().toISOString(), revision: manifest.sha256, planId: "tests", sourceManifest: manifest.files }]);
+    expect(verifyRunEvidence(runId)!.checks.find(item => item.criterionId === "acceptance:validate-written-code")?.status).toBe("passed");
+    writeFileSync(path.join(workspace, "dependency.py"), "value = 2\n");
+    expect(verifyRunEvidence(runId)!.checks.find(item => item.criterionId === "acceptance:validate-written-code")?.status).toBe("unverified");
+  });
+
+  it.each([
+    { exitCode: undefined, timedOut: false, executed: 1, failed: 0 },
+    { exitCode: "0", timedOut: false, executed: 1, failed: 0 },
+    { exitCode: 0, timedOut: true, executed: 1, failed: 0 },
+    { exitCode: 0, timedOut: false, executed: 0, failed: 0 },
+    { exitCode: 0, timedOut: false, executed: "1", failed: 0 },
+    { exitCode: 0, timedOut: false, executed: 1, failed: 1 },
+  ])("rejects incomplete typed execution evidence: %j", values => {
+    const workspace = path.join(dir, "workspace"); mkdirSync(workspace); writeFileSync(path.join(workspace, "module.py"), "value = 1\n");
+    configureExecutionLedger(runId, { modelId: "primary-model", mode: "agent", workspaceRoot: workspace, groundingEnabled: false });
+    const manifest = captureAgentVerificationManifest(workspace);
+    registerVerificationPlan(runId, { id: "tests", kind: "agent_tests", revision: manifest.sha256, criterionIds: ["acceptance:validate-written-code"], command: "node --test", runner: "node" });
+    const payload = { ...(values.exitCode === undefined ? {} : { exitCode: values.exitCode }), timedOut: values.timedOut, verification: { planId: "tests", command: "node --test", runner: "node", manifestSha256: manifest.sha256, executed: values.executed, failed: values.failed } };
+    const result = new RunResultStore(runId).registerResult({ type: "execution", status: "complete", origin: "execution", producer: { tool: "run_command", callId: "tests" }, summary: "Claimed test result", payload });
+    recordVerificationEvidence(runId, [{ criterionId: "acceptance:validate-written-code", requirement: "Test current code", status: "passed", method: "execution_record", evidence: [{ kind: "result", id: result.resultId }], reason: "Claimed pass", mandatory: true, verifiedAt: new Date().toISOString(), revision: manifest.sha256, planId: "tests", sourceManifest: manifest.files }]);
+    expect(verifyRunEvidence(runId)!.checks.find(item => item.criterionId === "acceptance:validate-written-code")?.status).toBe("unverified");
+  });
+
+  it("never promotes an explicit test skip to a pass or waives content checks", () => {
+    recordVerificationUserSkip(runId, "Do not run tests");
+    const report = verifyRunEvidence(runId)!;
+    const skipped = report.checks.find(item => item.criterionId === "acceptance:validate-written-code")!;
+    expect(skipped.status).toBe("skipped");
+    expect(mandatoryVerificationSatisfied([skipped])).toBe(true);
+    expect(mandatoryVerificationSatisfied([{ ...skipped, criterionId: "content:required" }])).toBe(false);
+  });
 
   it("checks a matching artifact digest and supported structure", () => {
     const artifact = registerMarkdown();
@@ -100,7 +151,7 @@ describe("P1-D durable outcome verification", () => {
     expect(getState(runId)).toBe("partial");
   });
 
-  it("records explicit validation failures and leaves semantic constraints unverified", () => {
+  it("does not infer test acceptance from unrelated failed commands and leaves semantic constraints unverified", () => {
     const intent = makeIntent({ intentType: "code_modification", primaryGoal: "Update module", workspaceMutationRequested: true,
       targetFiles: ["module.py"], workspaceOperations: [{ operation: "mutate", targetPath: "module.py" }], expectedDeliverables: [], validationRequested: true,
       userConstraints: ["Preserve the public API"] });
@@ -109,7 +160,7 @@ describe("P1-D durable outcome verification", () => {
     initializeExecutionLedger(nextContract);
     recordExecutionToolOutcome({ runId: nextRun, callId: "validation-1", tool: "run_command", args: { command: "pytest" }, summary: "Validation failed", ok: false, error: "assertion failed" });
     const report = verifyRunEvidence(nextRun)!;
-    expect(report.checks.find((item) => item.criterionId === "acceptance:validate-written-code")?.status).toBe("failed");
+    expect(report.checks.find((item) => item.criterionId === "acceptance:validate-written-code")?.status).toBe("unverified");
     expect(report.checks.find((item) => item.criterionId === "constraint:1")?.status).toBe("unverified");
   });
 
@@ -120,6 +171,12 @@ describe("P1-D durable outcome verification", () => {
     closeDb();
     initDb(path.join(dir, "workbench.sqlite"));
     expect(getVerificationReport(runId)).toEqual(report);
+  });
+  it("shows a durable interruption reason in an already saved report", () => {
+    registerMarkdown(); verifyRunEvidence(runId);
+    recordVerificationTermination(runId, { reason: "interrupted", criterionIds: [], detail: "The application stopped. Resume explicitly." });
+    closeDb(); initDb(path.join(dir, "workbench.sqlite"));
+    expect(getVerificationReport(runId)?.termination).toMatchObject({ reason: "interrupted", detail: "The application stopped. Resume explicitly." });
   });
 
   it("checks ResultStore digests without copying payloads into the report", () => {
@@ -158,6 +215,8 @@ describe("P1-D durable outcome verification", () => {
     const nextContract = persistRunContract(normalizeRunContract(nextRun, intent));
     initializeExecutionLedger(nextContract);
     registerMarkdownFor(nextRun);
+    const chat = getDb().prepare("SELECT chat_id FROM runs WHERE id=?").get(nextRun) as { chat_id: string };
+    addMessage({ chat_id: chat.chat_id, run_id: nextRun, role: "assistant", content: "Report saved." });
     const manager = new RunManager({} as any);
     (manager as any).complete(nextRun, true);
     expect(getState(nextRun)).toBe("completed");

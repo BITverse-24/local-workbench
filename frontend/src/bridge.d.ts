@@ -56,23 +56,8 @@ interface AttachmentReference {
   relativePath: string;
 }
 
-interface VerificationCheck {
-  criterionId: string;
-  requirement: string;
-  status: "passed" | "failed" | "unverified" | "not_applicable";
-  method: "sha256" | "result_store_checksum" | "format_parser" | "filesystem" | "execution_record" | "agent_loop_completion" | "content_check" | "independent_reader";
-  evidence: Array<{ kind: "result" | "artifact" | "execution"; id: string }>;
-  reason: string;
-  verifiedAt: string;
-  mandatory: boolean;
-}
-interface RunVerificationReport {
-  schemaVersion: 1;
-  runId: string;
-  status: "passed" | "failed" | "unverified" | "not_applicable";
-  checks: VerificationCheck[];
-  updatedAt: string;
-}
+type VerificationCheck = import("../../backend/src/shared/contracts.js").VerificationCheck;
+type RunVerificationReport = import("../../backend/src/shared/contracts.js").RunVerificationReport;
 
 interface ArtifactRef {
   artifactId: string;

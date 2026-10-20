@@ -13,7 +13,7 @@ import { createSandbox, destroySandbox, sanitizedEnvironment, type Sandbox } fro
 import { EventStore } from "./harness/event-store.js";
 import { redact } from "./helpers/redact.js";
 import { EffortProvider } from "./gremlin/provider.js";
-import { providerSchema } from "./config.js";
+import { providerSchema, registryEntrySchema } from "./config.js";
 import { appendFinding, findingFingerprint, confirmedChecks } from "./findings.js";
 import { reproduceAndMinimize } from "./gremlin/reproducer.js";
 import { policyChecks, verdict } from "./evaluator/evaluator.js";
@@ -40,6 +40,11 @@ async function providerServer(status: number, result: string) {
   return { config: providerSchema.parse({ name: result, baseUrl: `http://127.0.0.1:${a.port}`, model: "fixture" }), calls: () => calls };
 }
 describe("framework trust boundaries", () => {
+  it("retains configured transport and context limits and gives corpus runs an explicit mode", () => {
+    const entry = registryEntrySchema.parse({ id: "primary-model", taskTypes: ["code", "draft"], runtime: "mlx-lm", baseUrl: "http://127.0.0.1:1234/v1", model: "configured-model", capabilities: ["text"], requestTimeoutMs: 180000, healthPath: "/models", enabled: true, contextLength: 8192, toolCallingFormat: "json", temperature: 0.1 });
+    expect(entry).toMatchObject({ contextLength: 8192, toolCallingFormat: "json", temperature: 0.1 });
+    for (const scenario of [...loadCorpus(process.cwd()).scenarios, parserScenario]) for (const action of scenario.actions) if (action.type === "send") expect(action.mode).toBe("agent");
+  });
   it("mirrors attachment registration, user persistence and complete start parameters", async () => {
     const b = box(); writeFileSync(path.join(b.attachments, "input.txt"), "source");
     const ipc = new FakeIpcRegistrar(), seen: Array<{ channel: string; input: any }> = [];
