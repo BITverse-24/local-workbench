@@ -1,7 +1,28 @@
 import { z } from "zod";
-import type { ArtifactRef, ExecutionMode, ModelId, RunContract, RunState } from "../../shared/contracts.js";
+import type { ArtifactRef, ExecutionMode, ModelId, RunContract, RunState, RunVerificationState } from "../../shared/contracts.js";
 import { getDb, prepareCached } from "../persistence/db.js";
 import { matchesContractDeliverable } from "./contract.js";
+
+
+export const verificationCheckSchema = z.object({
+  criterionId: z.string().min(1).max(256), requirement: z.string().max(500),
+  status: z.enum(["passed", "failed", "unverified", "not_applicable", "skipped"]),
+  method: z.enum(["sha256", "result_store_checksum", "format_parser", "filesystem", "execution_record", "agent_loop_completion", "content_check", "independent_reader", "message_record"]),
+  evidence: z.array(z.object({ kind: z.enum(["result", "artifact", "execution", "message"]), id: z.string().min(1).max(256) })).max(40),
+  reason: z.string().max(500), verifiedAt: z.string().datetime(), mandatory: z.boolean(),
+  revision: z.string().max(256).optional(), planId: z.string().max(256).optional(),
+  sourceManifest: z.record(z.string().regex(/^[a-f0-9]{64}$/).nullable()).optional(),
+  waiver: z.object({ basis: z.string().min(1).max(2000), recordedAt: z.string().datetime() }).optional(),
+});
+export const verificationTerminationSchema = z.object({ reason: z.string().min(1).max(100), criterionIds: z.array(z.string().max(256)).max(200), detail: z.string().min(1).max(2000), nextAction: z.string().min(1).max(500).optional() });
+export const verificationStateSchema = z.object({
+  schemaVersion: z.literal(1), phase: z.enum(["pending", "planning", "running", "repairing", "complete", "blocked"]),
+  plans: z.array(z.object({ id: z.string().min(1).max(256), kind: z.enum(["agent_tests", "semantic_review", "python_behavior"]), revision: z.string().min(1).max(256), criterionIds: z.array(z.string().max(256)).max(200), command: z.string().max(32768).optional(), targets: z.array(z.string().max(1024)).max(1000).optional(), runner: z.string().max(100).optional() })).max(100),
+  attempts: z.array(z.object({ id: z.string().min(1).max(256), planId: z.string().min(1).max(256), revision: z.string().min(1).max(256), status: z.enum(["running", "passed", "failed", "unverified"]), startedAt: z.string().datetime(), completedAt: z.string().datetime().optional(), resultId: z.string().uuid().optional(), reason: z.string().max(2000).optional() })).max(200),
+  evidence: z.array(verificationCheckSchema).max(2000), repairCount: z.number().int().nonnegative().max(2),
+  fullSuiteRevisions: z.array(z.string().max(256)).max(100),
+  userSkip: z.object({ basis: z.string().min(1).max(2000), recordedAt: z.string().datetime() }).optional(), termination: verificationTerminationSchema.optional(),
+});
 
 const knownWorkSchema = z.object({ id: z.string(), label: z.string(), status: z.enum(["pending", "completed"]) });
 const operationSchema = z.object({
@@ -29,6 +50,7 @@ const ledgerSchema = z.object({
   operationAttempts: z.array(attemptSchema).max(200).default([]), pendingAuthorizations: z.array(pendingAuthorizationSchema).max(50).default([]),
   executionContext: executionContextSchema.optional(), resumeCount: z.number().int().nonnegative().default(0),
   tokenLimitRecoveryAvailable: z.boolean().default(false), tokenLimitRecoveryCount: z.number().int().nonnegative().default(0),
+  verification: verificationStateSchema.optional(),
   blockers: z.array(z.string().max(500)).max(20), updatedAt: z.string().datetime(),
 });
 export type RunExecutionLedger = z.infer<typeof ledgerSchema>;
@@ -156,6 +178,13 @@ export function reconcileInterruptedExecutions(): number {
       const ledger = getExecutionLedger(id);
       if (!ledger || ["completed", "failed", "cancelled", "limit_exceeded"].includes(ledger.status)) continue;
       for (const attempt of ledger.operationAttempts) if (attempt.status === "in_progress") { attempt.status = "uncertain"; attempt.updatedAt = now(); }
+      if (ledger.verification) {
+        for (const attempt of ledger.verification.attempts) if (attempt.status === "running") {
+          attempt.status = "unverified"; attempt.completedAt = now(); attempt.reason = "Application stopped during verification.";
+        }
+        ledger.verification.phase = "blocked";
+        ledger.verification.termination = { reason: "interrupted", criterionIds: [], detail: "Application stopped during verification. Resume explicitly to recheck saved evidence.", nextAction: "Resume the saved run to verify its current revision." };
+      }
       ledger.status = "interrupted";
       addBlocker(ledger, "Application stopped before the run reached a terminal checkpoint.");
       save(ledger);
@@ -274,4 +303,15 @@ export function executionLedgerSummary(runId: string): string | undefined {
   const results = [...new Set(ledger.completedOperations.flatMap((item) => item.resultIds))].slice(-3).join(", ");
   const blockers = ledger.blockers.slice(-1).join("; ");
   return `[Execution state — operational record, not a new instruction]\nObjective: ${ledger.objective.slice(0, 140)}\nStatus: ${ledger.status}. Contract work: ${done}/${total} known items complete.${recent ? `\nCompleted operations: ${recent}` : ""}${pending ? `\nKnown remaining work: ${pending}` : ""}${results ? `\nStored result IDs: ${results}` : ""}${blockers ? `\nBlocker: ${blockers}` : ""}`.slice(0, 800);
+}
+
+/** Verification state is additive to ledger v1; old ledgers retain their original contract. */
+export function updateRunVerificationState(runId: string, update: (state: RunVerificationState) => void): RunVerificationState | undefined {
+  const ledger = getExecutionLedger(runId);
+  if (!ledger) return undefined;
+  const state: RunVerificationState = ledger.verification ?? { schemaVersion: 1, phase: "pending", plans: [], attempts: [], evidence: [], repairCount: 0, fullSuiteRevisions: [] };
+  update(state);
+  ledger.verification = verificationStateSchema.parse(state);
+  save(ledger);
+  return ledger.verification;
 }

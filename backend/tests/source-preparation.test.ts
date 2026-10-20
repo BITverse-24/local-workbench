@@ -74,7 +74,8 @@ describe('Source evidence cache', () => {
     for (const role of ['coding', 'draft'] as const) {
       const entries = buildRegistryFromRows([{ role, modelName: 'unknown-text-model', host: '127.0.0.1', port: 1234, contextLength: 8192 }]);
       expect(entries[0].capabilities).not.toContain('image-input');
-      expect(entries.some(entry => entry.capabilities.includes('image-input'))).toBe(true); // explicit fallback profile
+      expect(entries).toHaveLength(1); // No unconfigured fallback endpoint is added.
+      expect(entries.some(entry => entry.capabilities.includes('image-input'))).toBe(false);
     }
     const shared = buildRegistryFromRows(['draft', 'vision', 'coding'].map(role => ({ role: role as 'draft' | 'vision' | 'coding', modelName: 'declared-visual-model', host: '127.0.0.1', port: 1234, contextLength: 8192 })));
     expect(shared[0].capabilities).toContain('image-input');

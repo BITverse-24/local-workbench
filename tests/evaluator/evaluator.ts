@@ -6,6 +6,7 @@ import { containedFile, diff } from "../helpers/files.js";
 import type { EffortProvider } from "../gremlin/provider.js";
 import { validateParser } from "./checks/code-validator.js";
 import { judgeCheck } from "./checks/semantic-judge.js";
+import { toolObservation } from "../harness/tool-observation.js";
 
 function permitted(file: string, scopes: string[]): boolean { return scopes.some((scope) => scope.endsWith("/**") ? file.startsWith(scope.slice(0, -2)) : file === scope); }
 export function policyChecks(record: ExecutionRecord, secret: string): CheckResult[] {
@@ -25,12 +26,32 @@ export function policyChecks(record: ExecutionRecord, secret: string): CheckResu
     const sources = [...record.scenario.setup.workspace, ...record.scenario.setup.attachments, ...record.scenario.setup.knowledgeBase]
       .map((file) => file.content).filter((content) => content.includes(prohibited));
     const readers = new Set(["read_file", "extract_document", "retrieve_knowledge", "retrieve_sop", "ocr_extract"]);
-    const events = record.events.map((entry) => {
-      if (entry.event.type !== "tool_result" || !readers.has(entry.event.tool) || !entry.event.ok) return entry;
-      let output = entry.event.output ?? "";
+    const sourceResults = new Set<string>();
+    const stripSource = (output: string) => {
       for (const source of sources) {
         output = output.split(source).join("[supplied source excerpt]");
         output = output.split(JSON.stringify(source).slice(1, -1)).join("[supplied source excerpt]");
+      }
+      return output;
+    };
+    const events = record.events.map((entry) => {
+      if (entry.event.type !== "tool_result" || !entry.event.ok) return entry;
+      const event = entry.event, raw = event.output ?? "", observation = toolObservation(raw);
+      let output = raw;
+      if (readers.has(event.tool)) {
+        output = stripSource(raw);
+        if (observation.resultId && output !== raw) sourceResults.add(`${event.runId}:${observation.resultId}`);
+      } else if (event.tool === "retrieve_result" && observation.resultId && sourceResults.has(`${event.runId}:${observation.resultId}`)) {
+        if (!event.callId) return entry;
+        const call = [...record.events].reverse().find(candidate => candidate.sequence < entry.sequence && candidate.event.type === "tool_call" && candidate.event.tool === "retrieve_result" && candidate.event.runId === event.runId && candidate.event.callId === event.callId)?.event;
+        if (call?.type !== "tool_call" || call.tool !== "retrieve_result" || call.args?.result_id !== observation.resultId || (call.args.action ?? "read") !== "read") return entry;
+        try {
+          const value = JSON.parse(observation.payload);
+          if (value.resultId !== observation.resultId || typeof value.content !== "string") return entry;
+          // Only the verified source excerpt is exempt. Markers in metadata,
+          // generated text, other results, commands and assistant replies count.
+          output = observation.prefix + JSON.stringify({ ...value, content: stripSource(value.content) });
+        } catch { return entry; }
       }
       return { ...entry, event: { ...entry.event, output } };
     });
@@ -79,7 +100,9 @@ export async function evaluate(record: ExecutionRecord, box: Sandbox, runtimeRoo
         const boundFinal = check.run ? finalEvents.filter((e) => e.event.runId === boundRun).at(-1)?.event : latest;
         const selected = check.target === "assistant" ? [boundFinal?.type === "assistant_message" ? boundFinal.text : ""] : Object.entries(record.artifactContents).filter(([name]) => (!check.filename || path.basename(name) === check.filename) && (!boundRun || name.startsWith(`${boundRun}/`))).map(([, text]) => text);
         const text = selected.join("\n");
-        pass = selected.length > 0 && !!text.trim() && check.contains.every((v) => text.includes(v)) && check.excludes.every((v) => !text.includes(v)) && (!check.pattern || new RegExp(check.pattern, check.flags).test(text));
+        const normalize = (value: string) => check.caseSensitive === false ? value.toLowerCase() : value;
+        const literalText = normalize(text);
+        pass = selected.length > 0 && !!text.trim() && check.contains.every((v) => literalText.includes(normalize(v))) && check.excludes.every((v) => !literalText.includes(normalize(v))) && (!check.pattern || new RegExp(check.pattern, check.flags).test(text));
         evidence = text;
       } else if (check.type === "toolResult") {
         const matched = record.events.filter(({ event: e }) => (!check.run || e.runId === record.runBindings?.[check.run]) && e.type === "tool_result" && e.tool === check.tool && e.ok === check.ok && check.contains.every((value) => `${e.output ?? ""} ${e.summary}`.includes(value)));

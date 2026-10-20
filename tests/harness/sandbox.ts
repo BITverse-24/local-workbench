@@ -45,7 +45,10 @@ export function macProfile(sandbox: Sandbox, reads: string[], relayPort?: number
   const rules = ["(version 1)", "(deny default)", "(allow process-exec)", "(allow process-fork)", "(allow sysctl-read)", "(allow file-read-metadata)", "(allow file-read-data (literal \"/\"))", "(allow mach-lookup (global-name \"com.apple.system.logger\"))", "(allow file-read* (subpath \"/System\") (subpath \"/usr\") (subpath \"/bin\") (subpath \"/sbin\") (literal \"/dev/null\") (literal \"/dev/urandom\") (literal \"/dev/random\"))", "(allow file-write* (literal \"/dev/null\"))"];
   // Synthetic canaries are deliberately OS-accessible bait outside the workspace.
   // Otherwise the supervisor would mask a missing application-level path guard.
-  for (const file of [sandbox.workspace, sandbox.attachments, sandbox.data, sandbox.tmp, sandbox.canary, path.join(sandbox.root, "config"), path.join(sandbox.root, "kb"), ...reads].filter(existsSync)) rules.push(`(allow file-read* (subpath ${literal(realpathSync(file))}))`);
+  for (const file of [sandbox.workspace, sandbox.attachments, sandbox.data, sandbox.tmp, sandbox.canary, path.join(sandbox.root, "config"), path.join(sandbox.root, "kb"), ...reads].filter(existsSync)) {
+    const resolved = realpathSync(file);
+    rules.push(`(allow file-read* (${lstatSync(resolved).isDirectory() ? "subpath" : "literal"} ${literal(resolved)}))`);
+  }
   for (const file of writable) rules.push(`(allow file-write* (subpath ${literal(realpathSync(file))}))`);
   // SBPL accepts localhost (not a numeric host) for port-scoped loopback rules.
   if (relayPort) rules.push(`(allow network-outbound (remote ip "localhost:${relayPort}"))`);
@@ -74,8 +77,11 @@ export function diskUsage(sandbox: Sandbox): number {
   visit(sandbox.root, 0); return bytes;
 }
 
-export function runtimeReadPaths(): string[] {
+export function runtimeReadPaths(runtimeRoot?: string): string[] {
   const result = new Set<string>();
+  // Node workers need package scope metadata to load external modules. Grant
+  // this file alone; application data and the rest of the checkout stay denied.
+  if (runtimeRoot) result.add(path.join(runtimeRoot, "package.json"));
   const inspect = (binary: string) => {
     const resolved = realpathSync(binary);
     if (resolved.startsWith("/opt/homebrew/Cellar/")) result.add(resolved.split("/").slice(0, 6).join("/"));

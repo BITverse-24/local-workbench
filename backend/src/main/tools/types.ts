@@ -13,6 +13,7 @@ import type { ModelGateway } from "../gateway/model-gateway.js";
 import type { HarnessManager } from "../harness/harness-manager.js";
 import type { MutationPolicyGuard } from "../harness/policy-guard.js";
 import type { RAGGroundingProvider } from "../grounding/rag-grounding-provider.js";
+import type { AgentTestExecutionEvidence, AgentTestExecutionRequest } from "../agent/test-verification.js";
 
 export type ToolErrorCode =
   | "invalid_arguments"
@@ -43,16 +44,19 @@ export type ToolResult =
       output: string;
       summary: string;
       resultRef?: IntermediateResultRecord;
+      executionEvidence?: AgentTestExecutionEvidence;
     }
   | {
       ok: false;
       toolName: string;
       error: ToolErrorDetail;
+      data?: unknown;
       durationMs: number;
       artifacts?: ArtifactRef[];
       output: string;
       summary: string;
       resultRef?: IntermediateResultRecord;
+      executionEvidence?: AgentTestExecutionEvidence;
     };
 
 export interface ToolExecutionContext {
@@ -90,6 +94,9 @@ export interface ToolExecutionContext {
   currentCallId?: string;
   envelope?: ExecutionEnvelope;
   activeCapabilities?: Set<CapabilityGroup>;
+  /** Backend controller authority; model arguments cannot enable verification. */
+  agentVerification?: AgentTestExecutionRequest;
+  automaticCodeValidation?: boolean;
 }
 
 export interface ToolExecutionResult {
@@ -100,6 +107,7 @@ export interface ToolExecutionResult {
   data?: unknown;
   artifacts?: ArtifactRef[];
   sideEffects?: string[];
+  executionEvidence?: AgentTestExecutionEvidence;
   /** Full pre-observation-budget payload; registered by the dispatcher when a store is present. */
   intermediate?: Omit<IntermediateResultInput, "producer" | "summary">;
 }

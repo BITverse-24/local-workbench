@@ -262,17 +262,36 @@ export type RunState =
   | "limit_exceeded";
 export interface PendingAction { actionId: string; runId: string; kind: "generate_docx" | "execute_python" | "generate_xlsx" | "plan_approval" | "uncontained_python"; prompt: string; createdAt: string; expiresAt: string; preview?: string; }
 export interface ArtifactRef { artifactId: string; runId: string; kind: ArtifactKind; filename: string; relativePath: string; sizeBytes: number; sha256?: string; createdAt: string; content?: string; isBinary?: boolean; verified?: boolean; verificationDetails?: Record<string, unknown>; }
-export type VerificationStatus = "passed" | "failed" | "unverified" | "not_applicable";
-export interface VerificationEvidenceRef { kind: "result" | "artifact" | "execution"; id: string; }
+export type VerificationStatus = "passed" | "failed" | "unverified" | "not_applicable" | "skipped";
+export interface VerificationEvidenceRef { kind: "result" | "artifact" | "execution" | "message"; id: string; }
+export interface VerificationTermination { reason: string; criterionIds: string[]; detail: string; nextAction?: string; }
+export interface VerificationPlan {
+  id: string; kind: "agent_tests" | "semantic_review" | "python_behavior"; revision: string; criterionIds: string[];
+  command?: string; targets?: string[]; runner?: string;
+}
+export interface VerificationAttempt {
+  id: string; planId: string; revision: string; status: "running" | "passed" | "failed" | "unverified";
+  startedAt: string; completedAt?: string; resultId?: string; reason?: string;
+}
+export interface RunVerificationState {
+  schemaVersion: 1; phase: "pending" | "planning" | "running" | "repairing" | "complete" | "blocked";
+  plans: VerificationPlan[]; attempts: VerificationAttempt[]; evidence: VerificationCheck[];
+  repairCount: number; fullSuiteRevisions: string[];
+  userSkip?: { basis: string; recordedAt: string }; termination?: VerificationTermination;
+}
 export interface VerificationCheck {
   criterionId: string;
   requirement: string;
   status: VerificationStatus;
-  method: "sha256" | "result_store_checksum" | "format_parser" | "filesystem" | "execution_record" | "agent_loop_completion" | "content_check" | "independent_reader";
+  method: "sha256" | "result_store_checksum" | "format_parser" | "filesystem" | "execution_record" | "agent_loop_completion" | "content_check" | "independent_reader" | "message_record";
   evidence: VerificationEvidenceRef[];
   reason: string;
   verifiedAt: string;
   mandatory: boolean;
+  revision?: string;
+  planId?: string;
+  sourceManifest?: Record<string, string | null>;
+  waiver?: { basis: string; recordedAt: string };
 }
 export interface RunVerificationReport {
   schemaVersion: 1;
@@ -280,6 +299,8 @@ export interface RunVerificationReport {
   status: VerificationStatus;
   checks: VerificationCheck[];
   updatedAt: string;
+  termination?: VerificationTermination;
+  attempts?: { verification: number; repairs: number; modelCalls: number; recoveries: number };
 }
 export interface GroundingChunk {
   chunkId: string;

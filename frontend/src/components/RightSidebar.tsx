@@ -73,14 +73,21 @@ export default function RightSidebar({
               <span className="text-sm font-medium text-[var(--text-secondary)]">Outcome verification</span>
               <span className="text-xs capitalize text-[var(--text-primary)]">{verificationReport.status.replace(/_/g, " ")}</span>
             </div>
-            {verificationReport.checks.filter((item) => item.status === "failed" || item.status === "unverified").slice(0, 5).map((item) => (
+            {verificationReport.attempts && <div className="text-xs text-[var(--text-tertiary)]">Verification attempts: {verificationReport.attempts.verification}. Repairs: {verificationReport.attempts.repairs}. Model calls: {verificationReport.attempts.modelCalls}.</div>}
+            {verificationReport.termination && (
+              <div className="text-xs text-[var(--text-secondary)]" role="status">
+                <div>Why verification stopped: {verificationReport.termination.detail}</div>
+                {verificationReport.termination.nextAction && <div>Next step: {verificationReport.termination.nextAction}</div>}
+              </div>
+            )}
+            {verificationReport.checks.filter((item) => item.status === "failed" || item.status === "unverified" || item.status === "skipped").slice(0, 5).map((item) => (
               <div key={item.criterionId} className="text-xs text-[var(--text-secondary)]">
-                <div><span className="capitalize">{item.status}</span>: {item.requirement}</div>
+                <div><span className="capitalize">{item.status === "skipped" ? "Skipped by user" : item.status}</span>: {item.requirement}</div>
                 <div className="text-[var(--text-tertiary)]">{item.reason}</div>
                 {item.evidence.length > 0 && <div className="text-[var(--text-tertiary)] font-mono">Evidence: {item.evidence.map((ref) => `${ref.kind}:${ref.id}`).join(", ")}</div>}
               </div>
             ))}
-            {!verificationReport.checks.some((item) => item.status === "failed" || item.status === "unverified") && <div className="text-xs text-[var(--text-tertiary)]">All supported checks passed.</div>}
+            {!verificationReport.checks.some((item) => item.status === "failed" || item.status === "unverified") && <div className="text-xs text-[var(--text-tertiary)]">{verificationReport.checks.some(item => item.status === "skipped") ? "Required checks passed. Tests were skipped by user request." : "All supported checks passed."}</div>}
           </section>
         )}
         {/* Service health (top of right sidebar, above model route preference) */}

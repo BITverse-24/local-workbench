@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync, rmSync } from "node:fs";
 import path from "node:path";
-import { createSandbox, macProfile, spawnContained, destroySandbox } from "./sandbox.js";
+import { createSandbox, macProfile, spawnContained, destroySandbox, runtimeReadPaths } from "./sandbox.js";
 import { terminateTree } from "./watchdog.js";
 
 export async function verifyIsolation(runtimeRoot: string): Promise<{ pass: boolean; checks: Record<string, boolean> }> {
@@ -20,9 +20,10 @@ export async function verifyIsolation(runtimeRoot: string): Promise<{ pass: bool
   if (!address || typeof address === "string") throw new Error("Probe listener unavailable");
   const allowedAddress = allowedServer.address();
   if (!allowedAddress || typeof allowedAddress === "string") throw new Error("Allowed probe listener unavailable");
-  const profile = macProfile(box, [path.join(runtimeRoot, "node_modules")], allowedAddress.port);
+  const profile = macProfile(box, [path.join(runtimeRoot, "node_modules"), ...runtimeReadPaths(runtimeRoot)], allowedAddress.port);
   const code = `const fs=require('fs'); const cp=require('child_process');
     const checks={};
+    try { checks.runtimeMetadataReadable=JSON.parse(fs.readFileSync(${JSON.stringify(path.join(runtimeRoot, "package.json"))},'utf8')).name==='local-workbench'; } catch { checks.runtimeMetadataReadable=false; }
     try { fs.readFileSync(${JSON.stringify(protectedFile)}); checks.hostReadDenied=false; } catch { checks.hostReadDenied=true; }
     try { checks.syntheticCanaryAccessible=fs.readFileSync(${JSON.stringify(path.join(box.canary, "secret.txt"))},'utf8').startsWith('CANARY_'); } catch { checks.syntheticCanaryAccessible=false; }
     try { fs.writeFileSync(${JSON.stringify(forbiddenWrite)},'escape'); checks.hostWriteDenied=false; } catch { checks.hostWriteDenied=true; }

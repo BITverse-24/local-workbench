@@ -33,6 +33,31 @@ const twoSatisfiedChecks = JSON.stringify([
 ]);
 
 describe("code review evidence contract", () => {
+  it("reviews every behavior check in bounded batches above the former eight-check cap", async () => {
+    const runId=randomUUID();
+    const checks=Array.from({length:19},(_,index)=>`Preserve behavior ${index}.`);
+    const batches:string[][]=[];
+    const gateway={chatWithTools:vi.fn(async(_model,messages,_tools,options)=>{
+      const input=JSON.parse(messages[1].content);batches.push(input.behaviorChecks.map((item:any)=>item.check));
+      expect(input.behaviorChecks.length).toBeLessThanOrEqual(8);
+      expect(options.maxTokens).toBe(Math.max(1536,512+384*input.behaviorChecks.length));
+      return {ok:true,value:{finishReason:'stop',content:JSON.stringify(input.behaviorChecks.map((item:any)=>({index:item.index,status:'satisfied',issue:'The callable remains.',sourceEvidence:'def summarize(path):',implementationEvidence:'def summarize(path):'})))}};
+    })};
+    try{
+      const accepted:any[]=[];
+      await expect(withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:2},()=>reviewAttachedPython({gateway:gateway as any,modelId:'primary-model',runId,request:'Preserve every behavior.',sourceEvidence:'def summarize(path):',sourceChecklist:JSON.stringify({checks}),currentSource:'def summarize(path):\n    return []',executionOutput:'[]',onAccepted:items=>{accepted.splice(0,accepted.length,...items);}}))).resolves.toEqual([]);
+      expect(batches.flat()).toEqual(checks);expect(accepted).toHaveLength(19);expect(gateway.chatWithTools).toHaveBeenCalledTimes(3);
+      await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>reviewAttachedPython({gateway:gateway as any,modelId:'primary-model',runId,request:'Preserve every behavior.',sourceEvidence:'def summarize(path):',sourceChecklist:JSON.stringify({checks}),currentSource:'def summarize(path):\n    return []',executionOutput:'[]',acceptedChecks:accepted}));
+      expect(gateway.chatWithTools).toHaveBeenCalledTimes(3);
+    }finally{rmSync(runRoot(runId),{recursive:true,force:true});}
+  });
+  it("rejects duplicate behavior indexes instead of treating repeated entries as coverage",async()=>{
+    const runId=randomUUID();
+    const duplicate=JSON.parse(twoSatisfiedChecks);duplicate[1].index=0;
+    try{
+      await expect(withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>reviewAttachedPython({gateway:reviewGateway(JSON.stringify(duplicate)),modelId:'primary-model',runId,request:'Repair the source.',sourceEvidence:'def summarize(path):\n    return read_rows(path)',sourceChecklist:JSON.stringify({checks:['Preserve the callable interface.','Return the rows read from the input.']}),currentSource:'def summarize(path):\n    return read_rows(path)',executionOutput:'[]'}))).rejects.toThrow('did not provide source and code evidence');
+    }finally{rmSync(runRoot(runId),{recursive:true,force:true});}
+  });
   it.each([true, false, null])("retries unsupported Work review evidence within its budget: %s", async repaired => {
     const runId = randomUUID();
     const valid = JSON.parse(twoSatisfiedChecks);

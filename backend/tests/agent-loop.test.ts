@@ -2,7 +2,12 @@ vi.mock("../src/main/harness/tools/run-command.js", async () => {
   const commands = await vi.importActual<typeof import("../src/main/harness/tools/run-command.js")>("../src/main/harness/tools/run-command.js");
   return { ...commands, getCommandCapability: vi.fn(async () => ({ status: "os_isolated", message: "Unit fixture: command isolation available." })) };
 });
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { closeDb, initDb } from "../src/main/persistence/db.js";
+import { setDataDir } from "../src/main/run/filesystem.js";
 import { getCommandCapability } from "../src/main/harness/tools/run-command.js";
 import { MutationPolicyGuard } from "../src/main/harness/policy-guard.js";
 import { compactConversationHistory, compactToolResult, type AgentMessage } from "../src/main/agent/context-manager.js";
@@ -10,6 +15,14 @@ import { ToolDispatcher } from "../src/main/agent/tool-dispatcher.js";
 import { AgentLoop } from "./helpers/agent-loop-fixture.js";
 import { extractInChatFindings, deriveFormalPlan, isSubstantiveReportOrFindings } from "../src/main/agent/agent-loop.js";
 import type { AgentTool } from "../src/main/tools/types.js";
+
+let testRoot: string;
+beforeEach(() => {
+  testRoot = mkdtempSync(path.join(tmpdir(), "agent-loop-unit-"));
+  setDataDir(testRoot);
+  initDb(path.join(testRoot, "workbench.sqlite"));
+});
+afterEach(() => { closeDb(); rmSync(testRoot, { recursive: true, force: true }); });
 
 describe("Agent Loop Engine & Context Manager", () => {
   it("compacts tool outputs older than keepFullTurns (sliding window)", () => {
@@ -106,7 +119,7 @@ describe("Agent Loop Engine & Context Manager", () => {
     if (!result.result.ok) expect(result.result.error.code).toBe("invalid_arguments");
   });
 
-  it("continues past an empty module launch until written-code assertions produce the requested marker", async () => {
+  it("stops without durable project evidence instead of accepting inline assertions or markers", async () => {
     const calls = [
       { name: "write_file", arguments: { path: "module.py", content: "def calculate(): return 5" } },
       { name: "run_command", arguments: { command: "python3 -B module.py" } },
@@ -126,9 +139,10 @@ describe("Agent Loop Engine & Context Manager", () => {
       { name: "run_command", definition: { type: "function", function: { name: "run_command", description: "run", parameters: { type: "object", properties: {} } } }, async execute(args) { return { summary: "ran", output: JSON.stringify({ exitCode: 0, stdout: String(args.command).includes("assert") ? "CHECK_OK" : "" }) }; } },
     ];
     const result = await new AgentLoop().run({ runId: "validation", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py, validate the written code and print CHECK_OK only if it passes.", systemPrompt: "repair", semanticIntent: { intentType: "code_modification", workspaceMutationRequested: true, targetFiles: ["module.py"] }, tools, context: { runId: "validation", workspaceRoot: ".", gateway: gateway as any }, emitEvent() {} });
-    expect(sawFeedback).toBe(true);
-    expect(index).toBe(5);
-    expect(result.outcome).toBe("completed");
+    expect(sawFeedback).toBe(false);
+    expect(index).toBe(1);
+    expect(result.outcome).toBe("partial");
+    expect(result.finalText).toContain("durable test execution context");
   });
 
   it("records actual extracted page references before dependent deliverable generation", async () => {
@@ -141,7 +155,7 @@ describe("Agent Loop Engine & Context Manager", () => {
     expect(result.every((item) => item.result.ok)).toBe(true);
   });
 
-  it("allows a bounded correction after repeated validation syntax errors", async () => {
+  it("does not substitute model-created validation for a missing durable test setup", async () => {
     const broken = { id: "bad", name: "run_command", arguments: { command: "python3 -B", python_code: "assert (" } };
     const turns = [
       { content: null, tool_calls: [{ id: "write", name: "write_file", arguments: { path: "module.py", content: "value = 1" } }] },
@@ -165,9 +179,10 @@ describe("Agent Loop Engine & Context Manager", () => {
       } },
     ];
     const result = await new AgentLoop().run({ runId: "retry", driverModelId: "code-qwen25coder", userPrompt: "Repair module.py and validate it. Print CHECK_OK only on success.", systemPrompt: "repair", semanticIntent: { intentType: "code_modification", workspaceMutationRequested: true, targetFiles: ["module.py"] }, tools, context: { runId: "retry", workspaceRoot: ".", gateway: gateway as any }, emitEvent() {} });
-    expect(result.outcome).toBe("completed");
-    expect(sawCorrection).toBe(true);
-    expect(executions).toBe(2);
+    expect(result.outcome).toBe("partial");
+    expect(sawCorrection).toBe(false);
+    expect(executions).toBe(0);
+    expect(result.finalText).toContain("durable test execution context");
   });
 
   it("removes unavailable commands before the first model call and returns Partial without retries", async () => {
@@ -371,7 +386,7 @@ describe("Agent Loop Engine & Context Manager", () => {
     expect(result.finalText).toContain("Earlier operations remain recorded");
   });
 
-  it("replaces pending validation feedback and removes it after validation succeeds", async () => {
+  it("does not ask the model to replace missing project test evidence with helpers", async () => {
     const calls = [
       { id: "write-1", name: "write_file", arguments: { path: "module.py", content: "source one" } },
       { id: "write-2", name: "write_file", arguments: { path: "module.py", content: "source two" } },
@@ -394,8 +409,9 @@ describe("Agent Loop Engine & Context Manager", () => {
         },
       } as any }, onPlanConfirmationRequired: async () => true, emitEvent() {},
     });
-    expect(result.outcome).toBe("completed");
-    expect(pendingCounts).toEqual([0, 1, 1, 0]);
+    expect(result.outcome).toBe("partial");
+    expect(pendingCounts).toEqual([0]);
+    expect(result.finalText).toContain("durable test execution context");
   });
 
   it("intercepts markdown code blocks as write_file tool calls when model outputs files as chat", async () => {

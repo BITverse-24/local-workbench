@@ -144,9 +144,9 @@ describe("V0 attached-source transport and execution integrity", () => {
       expect(finalMessage.content).toContain("Behavior validation is incomplete");
       expect(finalMessage.content).toContain("actual supplied text");
       expect(finalMessage.artifacts?.map(artifact => artifact.filename)).toEqual(["corrected.py"]);
-      expect(requests).toHaveLength(7);
+      expect(requests).toHaveLength(8);
       expect(events.filter(event=>event.type==='tool_call'&&event.tool==='execute_python')).toHaveLength(1);
-      expect(requests.filter(options => options.responseSchema?.name === "source_derived_code_behavior_review").map(options => options.maxTokens)).toEqual([1536, 1536]);
+      expect(requests.filter(options => options.responseSchema?.name === "source_derived_code_behavior_review").map(options => options.maxTokens)).toEqual([1536, 1536, 1536]);
       closeDb();
       initDb(path.join(root, "workbench.sqlite"));
       expect(listMessages(savedRun.chat_id).find(message => message.id === finalMessage.id)?.content).toBe(finalMessage.content);

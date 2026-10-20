@@ -1,3 +1,4 @@
+import { testModelGateway, testModelRegistry } from "./helpers/test-model-registry.js";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { RunManager } from "../src/main/run/manager.js";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
@@ -27,6 +28,8 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     const events: RunEvent[] = [];
 
     const mockGateway = {
+      registry: new Map(testModelRegistry().map(model => [model.id, model])),
+      inferenceGroupFor: () => "fixture",
       async execute() { return { ok: true, value: { result: { intentType: "general_qa", driverModel: "primary-model", taskType: "draft", primaryGoal: "Calculate thermal efficiency", isActionable: false, chatResponseOnly: true, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [] } } }; },
       async chatWithTools() {
         return {
@@ -69,7 +72,8 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     let resultId = "";
     const events: RunEvent[] = [];
     const gateway = {
-      registry: new Map([["primary-model", { ...new ModelGateway().registry.get("primary-model")!, contextLength: 32768 }]]),
+      inferenceGroupFor: () => "fixture",
+      registry: new Map([["primary-model", { ...testModelGateway().registry.get("primary-model")!, contextLength: 32768 }]]),
       async execute() { classifications++; return { ok: true, value: { result: { intentType: "file_inspection", primaryGoal: "Explain stored facts", isActionable: false, chatResponseOnly: true, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [] } } }; },
       async chatWithTools(_model: unknown, messages: any[], tools: any[], options: { runId: string }) {
         if(String(messages[0].content).startsWith("Check this candidate"))return {ok:true,value:{content:JSON.stringify({sourceCoverage:[{subject:"facts",sourceQuote:"fact 350: preserved-350",status:"covered",candidateQuote:"fact 350: preserved-350"}],edits:[],coverageGaps:[],unresolvedIssues:[]})}};
@@ -112,6 +116,8 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     let callTurn = 0;
 
     const mockGateway = {
+      registry: new Map(testModelRegistry().map(model => [model.id, model])),
+      inferenceGroupFor: () => "fixture",
       async execute() { return { ok: true, value: { result: { intentType: "code_modification", driverModel: "primary-model", taskType: "code", primaryGoal: "Write temp.txt", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: ["temp.txt"], expectedDeliverables: [] } } }; },
       async chatWithTools(_model: unknown, messages: any[]) {
         expect(messages[0].content).not.toContain("then validate the written implementation");
@@ -199,6 +205,8 @@ describe("Unified Agent Loop v2 RunManager Integration", () => {
     let callTurn = 0;
 
     const mockGateway = {
+      registry: new Map(testModelRegistry().map(model => [model.id, model])),
+      inferenceGroupFor: () => "fixture",
       async execute() { return { ok: true, value: { result: { intentType: "file_inspection", driverModel: "primary-model", taskType: "code", primaryGoal: "Search syntax errors", isActionable: false, chatResponseOnly: false, workspaceMutationRequested: false, targetFiles: [], expectedDeliverables: [] } } }; },
       async chatWithTools() {
         callTurn++;

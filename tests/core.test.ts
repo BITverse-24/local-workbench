@@ -13,7 +13,7 @@ import { createSandbox, destroySandbox, sanitizedEnvironment, type Sandbox } fro
 import { EventStore } from "./harness/event-store.js";
 import { redact } from "./helpers/redact.js";
 import { EffortProvider } from "./gremlin/provider.js";
-import { providerSchema } from "./config.js";
+import { providerSchema, registryEntrySchema } from "./config.js";
 import { appendFinding, findingFingerprint, confirmedChecks } from "./findings.js";
 import { reproduceAndMinimize } from "./gremlin/reproducer.js";
 import { policyChecks, verdict } from "./evaluator/evaluator.js";
@@ -40,6 +40,11 @@ async function providerServer(status: number, result: string) {
   return { config: providerSchema.parse({ name: result, baseUrl: `http://127.0.0.1:${a.port}`, model: "fixture" }), calls: () => calls };
 }
 describe("framework trust boundaries", () => {
+  it("retains configured transport and context limits and gives corpus runs an explicit mode", () => {
+    const entry = registryEntrySchema.parse({ id: "primary-model", taskTypes: ["code", "draft"], runtime: "mlx-lm", baseUrl: "http://127.0.0.1:1234/v1", model: "configured-model", capabilities: ["text"], requestTimeoutMs: 180000, healthPath: "/models", enabled: true, contextLength: 8192, toolCallingFormat: "json", temperature: 0.1 });
+    expect(entry).toMatchObject({ contextLength: 8192, toolCallingFormat: "json", temperature: 0.1 });
+    for (const scenario of [...loadCorpus(process.cwd()).scenarios, parserScenario]) for (const action of scenario.actions) if (action.type === "send") expect(action.mode).toBe("agent");
+  });
   it("mirrors attachment registration, user persistence and complete start parameters", async () => {
     const b = box(); writeFileSync(path.join(b.attachments, "input.txt"), "source");
     const ipc = new FakeIpcRegistrar(), seen: Array<{ channel: string; input: any }> = [];
@@ -92,6 +97,11 @@ describe("framework trust boundaries", () => {
     expect(compareBenchmarks(report, { ...report, complete: false }).compatible).toBe(false);
   });
   it("validates all 36 fixed scenarios across 12 families", () => { const corpus = loadCorpus(process.cwd()); expect(corpus.scenarios).toHaveLength(36); for (const family of families) expect(corpus.scenarios.filter((s) => s.family === family)).toHaveLength(3); });
+  it("scores retained facts rather than requiring a particular compaction mechanism", () => {
+    const scenario = loadCorpus(process.cwd()).scenarios.find(s => s.id === "follow-up-constraint-loss-compaction")!;
+    expect(scenario.checks.some(check => check.type === "event" && check.event === "context_compaction")).toBe(false);
+    expect(scenario.checks.find(check => check.id === "retained-measurement")).toMatchObject({ type: "output", run: "r2", contains: ["17.4", "bar"] });
+  });
   it("keeps binding requirements and verification immutable during mutation", () => { const mutated = mutateScenario(parserScenario, { kind: "paraphrase", content: "Try a different approach" }); expect(mutated.checks).toEqual(parserScenario.checks); expect(mutated.objective).toEqual(parserScenario.objective); expect(JSON.stringify(mutated.actions)).toContain(parserScenario.objective.request); });
   it("reserves execution effort for triage", () => { const effort = new CampaignEffort({ executions: 6, attackerCalls: 4, judgeCalls: 4, durationMs: 10000, reservedExecutions: 2 }); for (let n = 0; n < 4; n++) effort.take(); expect(effort.available()).toBe(false); expect(effort.available(true)).toBe(true); effort.take(true); effort.take(true); expect(effort.available(true)).toBe(false); });
   it("early reproduction cannot consume discovery coverage slots", () => { const effort = new CampaignEffort({ executions: 6, attackerCalls: 4, judgeCalls: 4, durationMs: 10000, reservedExecutions: 2 }); effort.take(true); effort.take(true); expect(effort.available(true)).toBe(false); for (let n = 0; n < 4; n++) { expect(effort.available()).toBe(true); effort.take(); } expect(effort.executions).toBe(6); });

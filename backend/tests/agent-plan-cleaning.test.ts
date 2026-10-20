@@ -99,7 +99,7 @@ Run node app.js`,
         },
       },
       async execute() {
-        return { output: "Dependencies installed.", summary: "installed" };
+        return { output: JSON.stringify({ exitCode: 0, timedOut: false, stdout: "Dependencies installed.", stderr: "" }), summary: "installed" };
       },
     };
 

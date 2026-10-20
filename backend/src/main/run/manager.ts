@@ -48,10 +48,12 @@ import { resolveArtifactTransfer } from "./artifact-transfer.js";
 import { ToolDispatcher } from "../agent/tool-dispatcher.js";
 import { extractDocumentTool } from "../tools/specialist-tools.js";
 import { AgentLoop } from "../agent/agent-loop.js";
+import { isCodeVerificationPath } from "../agent/test-verification.js";
 import { normalizeRunContract, persistRunContract, intentFromContract, getRunContract } from "./contract.js";
 import { configureExecutionLedger, getExecutionLedger, initializeExecutionLedger, prepareExecutionResume, reopenPartialRun, updateExecutionLedgerState } from "./execution-ledger.js";
 import { RunResultStore, RESULT_SLICE_MAX_CHARS } from "./result-store.js";
 import { getVerificationReport, verificationFeedback, verifyRunEvidence } from "./verification.js";
+import { mandatoryVerificationSatisfied, recordVerificationTermination } from "./verification-controller.js";
 
 
 
@@ -432,9 +434,10 @@ export class RunManager {
     if(stagedId && this.chatIdForRunIfPresent(stagedId) && (getState(stagedId)!=="created"||db.prepare("SELECT run_id FROM run_mode_details WHERE run_id=?").get(stagedId)))throw new Error("An executing or finished run cannot be started again or change mode.");
     const runId=createRun(chatId,text,requested[0]?.attachmentId,stagedId);
     createRunDirectories(runId);
-    db.prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,?,?,?)").run(runId,mode,`${mode}-v1`,root??null);
+    const engineVersion = mode === "chat" ? "chat-v1" : `${mode}-v2`;
+    db.prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,?,?,?)").run(runId,mode,engineVersion,root??null);
     this.activeChats.set(chatId,runId);this.controllers.set(runId,new AbortController());this.runModes.set(runId,mode);
-    this.runMetrics.set(runId,{requestReceivedAt:Date.now(),mode,engineVersion:`${mode}-v1`,modelCallCount:0,originalRequest:text,queueWaitMs:0,toolTimeMs:0,recoveryCount:0,isolationStatus:"not_used"});
+    this.runMetrics.set(runId,{requestReceivedAt:Date.now(),mode,engineVersion,modelCallCount:0,originalRequest:text,queueWaitMs:0,toolTimeMs:0,recoveryCount:0,isolationStatus:"not_used"});
     if(input.temperature!==undefined)this.runTemperatures.set(runId,input.temperature);
     this.runGroundingEnabled.set(runId,input.groundingEnabled===true);
     if(input.selectedModel??input.preferredRoute)this.runSelectedModels.set(runId,(input.selectedModel??input.preferredRoute)!);
@@ -502,7 +505,7 @@ export class RunManager {
     if(approval){
       if(this.pendingActions.get(input.runId)?.actionId!==input.actionId)throw new Error("Approval belongs to another run.");
       try { decide(input.runId,input.actionId,input.approved); this.assertRunAuthority(input.runId);this.state(input.runId,"acting");approval(true); }
-      catch(error){approval(false);this.cancel(input.runId);if(input.approved)throw error;}
+      catch(error){approval(false);if(!input.approved)recordVerificationTermination(input.runId,{reason:"approval_denied",criterionIds:[],detail:"Execution approval was declined. Saved work remains available."});this.cancel(input.runId);if(input.approved)throw error;}
       return;
     }
     const existing = this.confirming.get(input.actionId);
@@ -521,6 +524,7 @@ export class RunManager {
         await continuation();
       } catch (error) {
         if (!input.approved) {
+          recordVerificationTermination(input.runId, { reason: "approval_denied", criterionIds: [], detail: "Execution approval was declined. Saved work remains available." });
           this.persistAssistant(input.runId, "Action was rejected by user. Execution stopped.", "primary-model");
           this.cancel(input.runId);
           this.continuations.delete(input.actionId);
@@ -539,6 +543,7 @@ export class RunManager {
   }
   cancel(runId: string): void {
     if (["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(getState(runId))) return;
+    if (!getExecutionLedger(runId)?.verification?.termination) recordVerificationTermination(runId, { reason: "cancelled", criterionIds: [], detail: "The user cancelled execution. Resume explicitly to continue required checks." });
     this.controllers.get(runId)?.abort(Object.assign(new Error("Run cancelled."),{cancelledAt:Date.now()}));
     const pending=this.pendingActions.get(runId);
     if(pending){const continuation=this.continuations.get(pending.actionId);this.continuations.delete(pending.actionId);this.pendingActions.delete(runId);void continuation?.();}
@@ -549,6 +554,7 @@ export class RunManager {
     cancelPending(runId);
     transition(runId, "cancelled");
     updateExecutionLedgerState(runId, "cancelled", "Run was cancelled.");
+    this.publishVerificationReport(runId);
     this.emit({ type: "run_state", runId, state: "cancelled" });
   }
   history(limit?: number) {
@@ -729,7 +735,7 @@ export class RunManager {
   private state(runId: string, state: RunState) {
     if (["completed","partial","failed","cancelled","limit_exceeded"].includes(getState(runId))) return;
     transition(runId, state);
-    updateExecutionLedgerState(runId, state, state === "partial" ? "Run ended before all known work was confirmed." : undefined);
+    updateExecutionLedgerState(runId, state, state === "partial" ? getVerificationReport(runId)?.termination?.detail : undefined);
     logRunTransition(runId, state);
     this.emit({ type: "run_state", runId, state });
   }
@@ -874,11 +880,11 @@ export class RunManager {
         this.state(runId,"acting");
         const result=await new ChatResponder().respond({text,modelId,history,attachments,context,emit:e=>this.emit(e),temperature:this.runTemperatures.get(runId)});
         this.persistAssistant(runId,result.text,modelId,result.messageId);
-        if(result.truncated)this.partial(runId,["The response reached the generation limit."]);else this.complete(runId,true);
+        if(result.truncated)this.partial(runId,["The response reached the generation limit."]);else this.complete(runId);
       }else{
         const result=await new WorkOrchestrator().run({text,modelId,history,attachments,context,resume:resume?.contract,temperature:this.runTemperatures.get(runId),state:state=>this.state(runId,state)});
         assertRuntimeActive();this.persistAssistant(runId,result.text,modelId);this.publishVerificationReport(runId);
-        if(result.outcome==="completed")this.complete(runId,true);else if(result.outcome==="partial")this.partial(runId);else this.fail(runId,new Error(result.text));
+        if(result.outcome==="completed")this.complete(runId);else if(result.outcome==="partial")this.partial(runId);else this.fail(runId,new Error(result.text));
       }
     });
   }
@@ -958,7 +964,7 @@ export class RunManager {
       this.emit({ type: "routing", runId, taskType, modelId: driverModelId, reason: routingReason });
 
       // Persist the interpretation before any execution.
-      const normalizedContract = resume?.contract ?? normalizeRunContract(runId, resolvedIntent);
+      const normalizedContract = resume?.contract ?? normalizeRunContract(runId, resolvedIntent, { mode: "agent", newRun: true });
       if (transfer) {
         const source = attachments.find(a => a.attachmentId === transfer.sourceId);
         if (!source) throw new Error("Saved artifact was not staged for this run.");
@@ -971,6 +977,10 @@ export class RunManager {
         ? (initializeExecutionLedger(runContract), getExecutionLedger(runId))
         : undefined;
       const semanticIntent = intentFromContract(runContract);
+      const automaticCodeValidation = this.runMetrics.get(runId)?.engineVersion === "agent-v2";
+      if (automaticCodeValidation && runContract.workspace.requested && runContract.workspace.operations.some(operation => operation.targetPath && isCodeVerificationPath(operation.targetPath))) {
+        semanticIntent.validationRequested = true;
+      }
       if (resolvedIntent.status === "failed") {
         const errorMsg = resolvedIntent.failureReason || "Failed to process user intent";
         this.emit({
@@ -1079,6 +1089,7 @@ export class RunManager {
         isCancelled: () => getState(runId) === "cancelled",
         runContract,
         executionLedger,
+        automaticCodeValidation,
         resultStore,
         sourceReferences: [] as Array<{ filename: string; page: number }>,
         inlineResultIds: new Set<string>(),
@@ -1372,7 +1383,7 @@ ${referencedFilesSection}`;
 
         switch (outcome) {
           case "completed":
-            this.complete(runId, true);
+            this.complete(runId);
             break;
           case "partial":
             this.partial(runId, loopResult.deliverables?.missing);
@@ -1413,15 +1424,21 @@ ${referencedFilesSection}`;
     this.state(runId, "awaiting_confirmation");
     this.emit({ type: "confirmation_required", runId, action });
   }
-  private complete(runId: string, contractEvaluatorPassed = false) {
+  private complete(runId: string) {
+    if (this.controllers.get(runId)?.signal.aborted || ["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(getState(runId))) return;
     const report = withTaskProgressSync({ runId, emitProgress: event => this.emit(event) }, "result_verification", activity => {
-      const report = verifyRunEvidence(runId, { contractEvaluatorPassed });
-      if (report?.checks.some(check => check.mandatory && check.status === "failed")) activity.block("Saved result checks found an unmet requirement.");
+      const report = verifyRunEvidence(runId);
+      if (report && !mandatoryVerificationSatisfied(report.checks, { includeResponse: true })) activity.block("Required checks remain unresolved.");
       return report;
     });
     if (report) {
       this.emit({ type: "verification_report", runId, report });
-      if (report.checks.some((item) => item.mandatory && (item.status === "failed" || (this.runModes.get(runId)==="work" && item.status === "unverified")))) {
+      if (!mandatoryVerificationSatisfied(report.checks, { includeResponse: true })) {
+        if (!report.termination) recordVerificationTermination(runId, {
+          reason: "verification_incomplete", criterionIds: report.checks.filter(check => check.mandatory && check.status !== "passed" && check.status !== "skipped").map(check => check.criterionId),
+          detail: "Required verification has no current accepted evidence. Review the unresolved checks before resuming.",
+        });
+        this.publishVerificationReport(runId);
         this.partial(runId);
         return;
       }
@@ -1432,6 +1449,14 @@ ${referencedFilesSection}`;
     this.state(runId, "completed");
   }
   private partial(runId: string, missing: string[] = []) {
+    if (this.controllers.get(runId)?.signal.aborted || ["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(getState(runId))) return;
+    const currentReport = getVerificationReport(runId);
+    if (!getExecutionLedger(runId)?.verification?.termination) recordVerificationTermination(runId, {
+      reason: missing.some(item => /generation limit|output limit/i.test(item)) ? "generation_limit" : "verification_incomplete",
+      criterionIds: currentReport?.checks.filter(check => check.mandatory && check.status !== "passed" && check.status !== "skipped" && check.criterionId !== "acceptance:response").map(check => check.criterionId) ?? [],
+      detail: missing[0] ?? "Required checks remain unresolved. Inspect their evidence and resume to continue verification.",
+    });
+    this.publishVerificationReport(runId);
     // Read only existing evidence. Formatting cannot affect the execution outcome.
     try {
       const message = listMessages(this.chatIdForRun(runId)).filter(item => item.run_id === runId && item.role === "assistant").pop();
@@ -1441,6 +1466,7 @@ ${referencedFilesSection}`;
         const checkpoints = [...(this.taskCheckpoints.get(runId)?.values() ?? [])];
         const evidence: PartialResultEvidence = { savedFiles: [], executions: [], missing,
           checkpoints,
+          stopReason: report?.termination?.detail ?? missing[0] ?? ledger?.blockers.at(-1),
           verificationFailures: report?.checks.filter(check => check.mandatory && check.status === "failed").map(check => check.requirement) ?? [],
           verificationPending: report?.checks.filter(check => check.mandatory && check.status === "unverified" && check.criterionId !== "acceptance:response" &&
             !(check.criterionId.startsWith("acceptance:validated-python:") && checkpoints.some(event => event.stage === "post_execution_review" && event.target === check.criterionId.slice("acceptance:validated-python:".length))))
@@ -1481,6 +1507,8 @@ ${referencedFilesSection}`;
     this.state(runId, "partial");
   }
   private limitExceeded(runId: string) {
+    if (this.controllers.get(runId)?.signal.aborted || ["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(getState(runId))) return;
+    recordVerificationTermination(runId, { reason: "execution_limit", criterionIds: [], detail: "Execution reached its configured limit. Review saved evidence before an explicit resume." });
     finalizeRunTelemetry(runId, "limit_exceeded", this.runMetrics.get(runId));
     this.policyGuard.revokeRunScopes(runId);
     this.runTemperatures.delete(runId);
@@ -1492,6 +1520,7 @@ ${referencedFilesSection}`;
     const mode=getDb().prepare("SELECT mode FROM run_mode_details WHERE run_id=?").get(runId) as {mode:string}|undefined;
     if(mode?.mode==="work"&&!['completed','partial','failed','cancelled','limit_exceeded'].includes(getState(runId))&&getDb().prepare("SELECT artifact_id FROM artifacts WHERE run_id=? LIMIT 1").get(runId)) {
       const message=error instanceof Error?error.message:"Work stopped before all checks passed.";
+      recordVerificationTermination(runId,{reason:/24 model-call limit/.test(message)?"model_budget_exhausted":"execution_error",criterionIds:[],detail:message});
       if(!getDb().prepare("SELECT id FROM messages WHERE run_id=? AND role='assistant'").get(runId))this.persistAssistant(runId,`Saved outputs remain available. Required work is incomplete: ${message}`,getRunContract(runId)?.routing.driverModel??"primary-model");
       this.partial(runId,[message]);return;
     }

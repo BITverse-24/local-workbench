@@ -28,6 +28,15 @@ describe("P1 canonical run contract", () => {
     closeDb(); initDb(path.join(dir, "db.sqlite"));
     expect(getRunContract(runId)).toEqual(contract);
   });
+  it("requires validation for new Agent software changes without changing old defaults", () => {
+    const classified = intent({ validationRequested: false });
+    expect(normalizeRunContract(runId, classified).acceptance.validateWrittenCode).toBe(false);
+    expect(normalizeRunContract(runId, classified, { mode: "agent", newRun: true }).acceptance.validateWrittenCode).toBe(true);
+    expect(normalizeRunContract(runId, intent({ targetFiles: ["notes.md"], validationRequested: false }), { mode: "agent", newRun: true }).acceptance.validateWrittenCode).toBe(false);
+    expect(normalizeRunContract(runId, classified, { mode: "agent", newRun: false }).acceptance.validateWrittenCode).toBe(false);
+    expect(normalizeRunContract(runId, classified, { mode: "work", newRun: true }).acceptance.validateWrittenCode).toBe(false);
+    expect(normalizeRunContract(runId, intent({ intentType: "document_drafting" }), { mode: "agent", newRun: true }).acceptance.validateWrittenCode).toBe(false);
+  });
   it("separates workspace documents from exported artifacts and ignores contradictory compatibility output expectations", () => {
     const resolved = intent({ intentType: "document_drafting", targetFiles: ["notes.md", "plan.docx"], expectedDeliverables: [{ filename: "notes.md", type: "md" }, { filename: "plan.docx", type: "docx" }, { filename: "report.docx", type: "docx" }] });
     resolved.outputExpectation = { chatResponse: true, expectedFiles: ["wrong.xlsx"], workspaceMutationRequested: false };

@@ -5,10 +5,11 @@ import type { ModelRegistryEntry } from "../backend/src/shared/contracts.js";
 
 const endpoint = z.string().url().refine((v) => ["http:", "https:"].includes(new URL(v).protocol), "HTTP endpoint required");
 export const registryEntrySchema = z.object({
-  id: z.enum(["vision-qwen25vl", "draft-qwen3", "code-qwen25coder"]), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1),
+  id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1),
   runtime: z.enum(["ollama", "mlx-lm", "llama-server"]), baseUrl: endpoint, model: z.string().min(1),
   capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])),
   requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), maxOutputTokens: z.number().int().positive().optional(),
+  contextLength: z.number().int().positive().max(128000).optional(), toolCallingFormat: z.enum(["native", "json"]).optional(), temperature: z.number().min(0).max(2).optional(),
 }).strict();
 export const providerSchema = z.object({
   name: z.string(), baseUrl: endpoint, model: z.string().min(1), apiKeyEnv: z.string().optional(), maxTokens: z.number().int().positive().max(16384).default(4096),

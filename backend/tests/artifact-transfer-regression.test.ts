@@ -1,3 +1,4 @@
+import { testModelGateway } from "./helpers/test-model-registry.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -41,7 +42,7 @@ function saveSource(chatId: string, filename: string, content: Buffer | string, 
   return artifact;
 }
 function setup() {
-  const gateway = new ModelGateway();
+  const gateway = testModelGateway();
   const classify = vi.spyOn(gateway, "execute").mockRejectedValue(new Error("Copy must not classify"));
   const generate = vi.spyOn(gateway, "chatWithTools").mockRejectedValue(new Error("Copy must not generate"));
   const events: RunEvent[] = []; const manager = new RunManager(gateway, event => events.push(event));
@@ -181,7 +182,7 @@ describe("Intent and generator request boundaries", () => {
   });
   it.each([undefined, [], null])("drafts a sourced document without a report table when optional rows are %j", async report_rows => {
     const runId = createRun(createChat(), "Create document"); createRunDirectories(runId);
-    const context = { runId, workspaceRoot: workspace, gateway: new ModelGateway(), sourceReferences: [{ filename: "source.pdf", page: 1 }, { filename: "source.pdf", page: 2 }] };
+    const context = { runId, workspaceRoot: workspace, gateway: testModelGateway(), sourceReferences: [{ filename: "source.pdf", page: 1 }, { filename: "source.pdf", page: 2 }] };
     const args = { type: "docx", filename: "plain.docx", content: "# Letter\nThank you for the proposal.", ...(report_rows !== undefined ? { report_rows } : {}) };
     const result = await generateDeliverableTool.execute(args, context);
     const text = (await extractDocxText(path.join(dir, result.artifacts![0].relativePath))).text;
@@ -195,13 +196,13 @@ describe("Intent and generator request boundaries", () => {
   it("allows empty optional report rows for plain documents without sources", async () => {
     const runId = createRun(createChat(), "Create document"); createRunDirectories(runId);
     const result = await generateDeliverableTool.execute({ type: "docx", filename: "plain.docx", content: "Hello, World!", report_rows: [] },
-      { runId, workspaceRoot: workspace, gateway: new ModelGateway() });
+      { runId, workspaceRoot: workspace, gateway: testModelGateway() });
     expect((await extractDocxText(path.join(dir, result.artifacts![0].relativePath))).text).toContain("Hello, World!");
   });
   it.each([{ report_rows: [{}] }, { report_rows: [{ source: "" }] }, { report_rows: "invalid" }])("rejects malformed non-empty legacy rows: %j", async ({ report_rows }) => {
     const runId = createRun(createChat(), "Create document"); createRunDirectories(runId);
     await expect(generateDeliverableTool.execute({ type: "docx", filename: "plain.docx", content: "Hello", report_rows },
-      { runId, workspaceRoot: workspace, gateway: new ModelGateway() }))
+      { runId, workspaceRoot: workspace, gateway: testModelGateway() }))
       .rejects.toMatchObject({ code: "invalid_arguments" });
     expect(readdirSync(path.join(runRoot(runId), "output"))).toEqual([]);
   });
@@ -209,7 +210,7 @@ describe("Intent and generator request boundaries", () => {
     const runId = createRun(createChat(), "Fix source"); createRunDirectories(runId);
     const intent = validateAndNormalizeIntent(raw, { hasWorkspace: true, workspaceFiles: [], userPrompt: "Fix module.py in my workspace" });
     await expect(generateDeliverableTool.execute({ type: "docx", filename: "invented.docx", content: "Hello" }, {
-      runId, workspaceRoot: workspace, gateway: new ModelGateway(), runContract: normalizeRunContract(runId, intent),
+      runId, workspaceRoot: workspace, gateway: testModelGateway(), runContract: normalizeRunContract(runId, intent),
     })).rejects.toMatchObject({ code: "permission_denied" });
     const environment = { hasWorkspace: true, hasAttachments: false, hasKnowledgeBaseDocs: false };
     const contract = normalizeRunContract(runId, intent);
@@ -283,7 +284,7 @@ describe("Transfer resolution safety", () => {
     const runId = createRun(createChat(), "Copy"); createRunDirectories(runId);
     const input = path.join(runRoot(runId), "input/file.md"); writeFileSync(input, "real content");
     const sha256 = createHash("sha256").update("real content").digest("hex");
-    const context = { runId, workspaceRoot: workspace, gateway: new ModelGateway(), inputSources: [{ id: "saved-id", filename: "file.md", relativePath: `runs/${runId}/input/file.md`, sha256 }] };
+    const context = { runId, workspaceRoot: workspace, gateway: testModelGateway(), inputSources: [{ id: "saved-id", filename: "file.md", relativePath: `runs/${runId}/input/file.md`, sha256 }] };
     await expect(writeFileTool.execute({ path: "file.md", source_id: "forged-id" }, context)).rejects.toThrow("not an authorized input");
     await expect(writeFileTool.execute({ path: "file.md", source_id: "saved-id", content: "replacement" }, context)).rejects.toMatchObject({ code: "invalid_arguments" });
     expect(existsSync(path.join(workspace, "file.md"))).toBe(false);

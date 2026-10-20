@@ -32,6 +32,23 @@ persistence and a scripted model. Neither establishes real-model behavior.
 
 `test:behavioral` checks framework and evaluator calibration; its passing count
 does not establish that an application request works with a live model.
+
+The native sandbox grants read access to the application `package.json` as one
+file so independent document workers can load their dependencies. Other checkout
+files remain outside that grant. A contained Word-reader test also checks that a
+sibling host file cannot be read.
+
+Output checks use exact literals by default. Citation checks can explicitly allow
+case differences; numeric values, page numbers and other identifiers keep their
+own checks. Stored source echoes are exempt from injection scoring only when the
+retrieval points to an earlier source result in the same run. Assistant output,
+commands and generated marker text remain checked. Cancelled or already decided
+approval requests are not decided again by a later settle action.
+
+Replay normalizes only observed generated IDs and command timing. It retains
+source UUIDs, measurements, exit codes, assertion results and request settings.
+Compaction events remain telemetry; a corpus case must retain the requested facts
+and restrictions, without needing a particular internal compaction mechanism.
 For the intent/approval/attachment regression checks against the application's
 currently saved model configuration, run:
 

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { z } from "zod";
-import type { AgentOutcome, OutputExpectation, RunContract } from "../../shared/contracts.js";
+import type { AgentOutcome, ExecutionMode, OutputExpectation, RunContract } from "../../shared/contracts.js";
 import type { SemanticIntent } from "../router/contextual-router.js";
 import { getDb, prepareCached } from "../persistence/db.js";
 import { assertSafeRelativePath } from "../persistence/paths.js";
@@ -43,7 +43,7 @@ function protectedTarget(target: string, protectedPaths: string[]): boolean {
 }
 
 /** Normalize only the semantic interpreter's fields; never parse the raw request again. */
-export function normalizeRunContract(runId: string, intent: SemanticIntent): RunContract {
+export function normalizeRunContract(runId: string, intent: SemanticIntent, options: { mode?: ExecutionMode; newRun?: boolean } = {}): RunContract {
   const protectedPaths = [...new Set(intent.protectedPaths.map(normalizePath))];
   const chatOnly = intent.chatResponseOnly || intent.status !== "resolved";
   const requested = !chatOnly && intent.workspaceMutationRequested;
@@ -64,6 +64,8 @@ export function normalizeRunContract(runId: string, intent: SemanticIntent): Run
     operations.push({ id: `workspace-${operations.length + 1}`, operation: "execute" });
   }
   if (requested && operations.length === 0) operations.push({ id: "workspace-1", operation: "mutate" });
+  const plannedTargets = operations.flatMap(operation => operation.targetPath ? [operation.targetPath] : []);
+  const documentsOnly = plannedTargets.length > 0 && plannedTargets.every(target => /\.(?:md|mdx|rst|txt|adoc|docx|xlsx|pdf|png|jpe?g|gif|svg|webp|ico|avif|bmp|tiff?|woff2?|ttf|otf)$/i.test(target));
   const deliverables: RunContract["deliverables"] = [];
   if (!chatOnly) {
     for (const d of intent.expectedDeliverables) {
@@ -82,7 +84,7 @@ export function normalizeRunContract(runId: string, intent: SemanticIntent): Run
     workspace: { requested, operations }, deliverables,
     constraints: { protectedPaths, restrictMutationsToTargets: intent.restrictMutationsToTargets, userConstraints: intent.userConstraints ?? [] },
     acceptance: {
-      validateWrittenCode: requested && intent.intentType === "code_modification" && Boolean(intent.validationRequested),
+      validateWrittenCode: requested && intent.intentType === "code_modification" && (Boolean(intent.validationRequested) || (options.mode === "agent" && options.newRun === true && !documentsOnly)),
       validatedPythonDeliverables: intent.intentType === "code_modification" ? deliverables.filter((d) => d.filename?.endsWith(".py")).map((d) => d.filename!) : [],
       successMarker: normalizeSuccessMarker(intent.successMarker),
     },

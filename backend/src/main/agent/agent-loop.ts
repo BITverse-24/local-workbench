@@ -31,6 +31,9 @@ import { determineOutputExpectation, isInformationalInquiry, extractNegativeFile
 import { MutationPolicyGuard, extractPathArg, extractCommandArg } from "../harness/policy-guard.js";
 import { executionLedgerSummary, markAuthorizationPending, recordAuthorizationDecision, markExecutionTokenLimit } from "../run/execution-ledger.js";
 import { CodeBehaviorReviewIncompleteError, reviewAttachedPython, reviewProposedPython, reviewSourceResponse } from "./source-review.js";
+import { isCodeVerificationPath } from "./test-verification.js";
+import { runAgentVerificationStage } from "./verification-stage.js";
+import { extractVerificationSkipBasis, getRunVerificationState, recordVerificationEvidence, recordVerificationUserSkip } from "../run/verification-controller.js";
 
 export interface AgentLoopOptions {
   runId: string;
@@ -689,7 +692,7 @@ export class AgentLoop {
     });
 
     const requestedSuccessMarker = runContract ? runContract.acceptance.successMarker : userPrompt.match(/\b(?:print|emit)\s+[`"']?([A-Z][A-Z0-9_]+)\b/)?.[1];
-    const requiresWrittenValidation = runContract ? runContract.acceptance.validateWrittenCode : semanticIntent?.intentType === "code_modification" && semanticIntent.workspaceMutationRequested !== false &&
+    let requiresWrittenValidation = runContract ? runContract.acceptance.validateWrittenCode : semanticIntent?.intentType === "code_modification" && semanticIntent.workspaceMutationRequested !== false &&
       /\b(?:validat(?:e|ion)|test|verify|verification)\b/i.test(userPrompt);
     const completeAttachedSourceRequired = toolDefinitions.find(definition => definition?.function?.name === "execute_python")?.function.parameters.required?.includes("code");
     const chatResponseOnly = runContract?.response.chatOnly ?? semanticIntent?.chatResponseOnly;
@@ -698,7 +701,7 @@ export class AgentLoop {
       : semanticIntent?.intentType === "code_modification" && semanticIntent.workspaceMutationRequested === false
       ? `Attached repair: use execute_python with ${completeAttachedSourceRequired ? "code containing the entire corrected implementation" : "complete corrected source or exact edits"}, filename and real input_files. Inspect the complete source, including comments, interface and declared return types. Resolve every requested or source-marked defect. Preserve behavior outside those defects; a statement marked faulty is not behavior to preserve. Use the request and source documentation to identify the intended correction, then trace whether the modified program implements it. Do not leave a documented defect unchanged merely because another defect no longer crashes. Inspect actual input fields and values. A present field may still be blank or malformed. Trace each lookup and conversion through missing, empty, whitespace and malformed values before the first execution; handle only cases supported by source, request or input contract. Preserve documented boundary behavior and the public interface outside the requested repair. Correct defects supported by the source and requested behavior. Return the full source with the smallest supported changes. Preserve existing operations and the paths on which they execute unless the requested fix requires changing them. Prefer complete current source when exact edits are uncertain. Before execution, compare the proposed source with every source-derived checklist item and confirm that each documented defect is fixed in behavior, not only described in comments, and that all normal paths meet the existing return contract. Add checks only when their expected behavior is supported by the request, source, or supplied input; validation_code is optional. Never invent expected values or use model-invented assertions to direct a repair. After an execution failure, use the latest source and actual error, change the code that caused the failure, and do not repeat unchanged source or stale edits. Keep unrelated source unchanged. The tool runs and exports the repaired source. After successful execution report actual output and finish.`
       : semanticIntent?.workspaceMutationRequested
-      ? `Write only authorized workspace paths with write_file. Validate the saved implementation using run_command when required. Do not write test helpers. Dependent operations belong in later turns. Report successful validation only after exit 0 on the latest saved code.`
+      ? `Write only authorized workspace paths with write_file. The runtime runs existing project tests after implementation. Correct the saved code when real test failures identify a defect. Do not substitute a program launch or printed marker for tests. Do not create replacement test helpers when the project has no usable test setup. Dependent operations belong in later turns. Report successful validation only after the runtime accepts the latest saved revision.`
       : `Use supplied source evidence directly. Batch independent reads and knowledge retrieval. Dependent calls belong in later turns. For requested files, call generate_deliverable with type docx/xlsx/md/file, filename and complete source-grounded content. After the artifact succeeds, summarize findings and finish. For inspection without requested files, answer in chat. Python is standard library only; document compilation is built in.`;
     const interactionDiscipline = chatResponseOnly
       ? "Give the useful answer directly. Do not announce operations or claim that examples were executed."
@@ -780,10 +783,10 @@ export class AgentLoop {
       outcome: AgentOutcome,
       deliverableEval?: { missingDeliverables: string[]; producedDeliverables: string[] },
     ): AgentLoopResult => ({
-      finalText: resultText,
+      finalText: resultText + (requiresWrittenValidation && getRunVerificationState(runId)?.userSkip && !/tests (?:were )?skipped/i.test(resultText) ? "\n\nTests were skipped by user request." : ""),
       turns: turn,
-      completed: outcome === "completed",
-      outcome,
+      completed: outcome === "completed" && (!requiresWrittenValidation || validationAfterWrite),
+      outcome: outcome === "completed" && requiresWrittenValidation && !validationAfterWrite ? "partial" : outcome,
       ...(outcome === "failed" && lastExecutionHadError ? { error: { code: lastErrorCode, message: lastErrorMessage } } : {}),
       modelId: driverModelId,
       messageId: assistantMessageId,
@@ -801,6 +804,50 @@ export class AgentLoop {
         totalCompactedCount: compactionHistory.length,
       },
     });
+
+    let lastTestFeedback: string | undefined;
+    const runPendingTests = async (force = false) => {
+      const changedPaths = [...new Set([...writtenFiles, ...deletedFiles])];
+      if (context.automaticCodeValidation && changedPaths.some(isCodeVerificationPath)) requiresWrittenValidation = true;
+      if (!requiresWrittenValidation || !changedPaths.length) return undefined;
+      const pending = evaluateCurrentCompletion("response pending");
+      if (!force && (pending.missingMutations ?? []).some(item => item !== "requested command execution")) return undefined;
+      const skipBasis = extractVerificationSkipBasis(userPrompt);
+      if (skipBasis) recordVerificationUserSkip(runId, skipBasis);
+      const namedCommand = userPrompt.match(/\b(?:run|execute|(?:test|validate)\s+(?:using|with))\s+`([^`\r\n]+)`/i)?.[1];
+      const explicitCommand = namedCommand && /\b(?:test|pytest|unittest|vitest|jest)\b|--(?:test-)?reporter|--junitxml/i.test(namedCommand) ? namedCommand : undefined;
+      const result = await runAgentVerificationStage({ context, dispatcher, changedPaths,
+        userCommand: explicitCommand,
+        successMarker: requestedSuccessMarker,
+        authorize: async calls => {
+          const unauthorized = calls.filter(call => !policyGuard.isAuthorized(runId, call.name as any, call.arguments) ||
+            (commandCapability?.status === "approval_required" && !policyGuard.isUnisolatedCommandAuthorized(runId, extractCommandArg(call.arguments))));
+          if (!unauthorized.length) return true;
+          if (!onPlanConfirmationRequired) return !policyGuard.isEnforcingExplicit(runId);
+          const description = `### Run project tests\n${unauthorized.map(call => formatToolActionSummary(call.name, call.arguments)).join("\n")}\n\n${COMMAND_FALLBACK_DISCLOSURE}`;
+          markAuthorizationPending(runId, unauthorized.map(call => ({ ...call, summary: formatToolActionSummary(call.name, call.arguments) })));
+          const approved = await onPlanConfirmationRequired(description, unauthorized);
+          recordAuthorizationDecision(runId);
+          if (!approved || options.isCancelled?.()) return false;
+          for (const call of unauthorized) policyGuard.grantScope({ runId, operation: "run_command", command: extractCommandArg(call.arguments), allowUnisolated: true });
+          return true;
+        },
+      });
+      validationAfterWrite = result.action === "passed" || result.action === "skipped";
+      if (result.action === "repair") {
+        lastExecutionHadError = true;
+        lastExecutionFailedTool = "run_command";
+        lastErrorCode = "validation_failure";
+        lastErrorMessage = result.detail;
+        if (lastTestFeedback !== result.detail) {
+          lastTestFeedback = result.detail;
+          messages.push({ role: "user", content: `[Runtime test failure]\n${result.detail}`, turn });
+        }
+      } else if (validationAfterWrite && lastExecutionFailedTool === "run_command") {
+        lastExecutionHadError = false;
+      }
+      return result;
+    };
 
     // Put the approval gate before the first action-model turn. The approval preview
     // comes from the already-resolved intent and requested targets, so no source code
@@ -869,6 +916,8 @@ export class AgentLoop {
 
     if (options.deterministicCalls?.length === 0) {
       const text = "The saved artifact copy is already recorded. No workspace operation was repeated.";
+      const verification = await runPendingTests(true);
+      if (verification?.action === "stop" || verification?.action === "cancelled" || verification?.action === "repair") return buildResult(`${text}\n\n${verification.detail}`, verification.action === "cancelled" ? "cancelled" : "partial");
       const completion = evaluateCurrentCompletion(text);
       return buildResult(text, completion.outcome, completion);
     }
@@ -879,6 +928,11 @@ export class AgentLoop {
       }
 
       turn++;
+
+      const scheduledVerification = await runPendingTests();
+      if (scheduledVerification?.action === "stop" || scheduledVerification?.action === "cancelled") {
+        return buildResult(scheduledVerification.detail, scheduledVerification.action === "cancelled" ? "cancelled" : "partial", evaluateCurrentCompletion(scheduledVerification.detail));
+      }
 
       const verification = context.verificationFeedback?.();
       if (verification && verification.key !== lastVerificationFeedbackKey) {
@@ -897,7 +951,7 @@ export class AgentLoop {
         activeCapabilities.add("result_retrieval");
       }
       const actionsComplete = hasExecutedDiskMutations && !lastExecutionHadError &&
-        evaluateCurrentCompletion("response pending").outcome === "completed";
+        (!requiresWrittenValidation || validationAfterWrite) && evaluateCurrentCompletion("response pending").outcome === "completed";
       const currentToolDefinitions = actionsComplete ? [] : toolDefinitions.filter((def) => {
         const toolName = def?.function?.name;
         if (!toolName) return false;
@@ -1395,6 +1449,10 @@ export class AgentLoop {
 
       // Keep the model working when it tries to finalize before fulfilling the request.
       if (!effectiveToolCalls || effectiveToolCalls.length === 0) {
+        const verification = await runPendingTests(true);
+        if (verification?.action === "stop" || verification?.action === "cancelled") {
+          return buildResult(verification.detail, verification.action === "cancelled" ? "cancelled" : "partial", evaluateCurrentCompletion(verification.detail));
+        }
         if (lastExecutionHadError && runContract && completionRetries >= 3) {
           const text = `Execution failed: [${lastErrorCode}] ${lastErrorMessage}`;
           emitEvent({ type: "assistant_message_reset", runId, messageId: assistantMessageId });
@@ -1413,7 +1471,7 @@ export class AgentLoop {
         const validationMissing = (requiresWrittenValidation && !validationAfterWrite) || artifactValidationMissing;
         const validationFeedback = artifactValidationMissing
           ? "Use execute_python with the complete repaired code, filename and real input_files. The exact repaired source must execute successfully against the supplied input. Add assertions only when their actual values and function signature are known; do not invent expected results."
-          : "Run validation with run_command against the latest written workspace implementation. Import the written module and assert the requested edge cases. Running a module without invoking and asserting its function is not validation. Use python_code for filename inputs or custom logic.";
+          : "The runtime requires the existing project tests against the latest saved implementation. Correct the actual reported test failure. Do not replace the test suite with an interpreter launch, printed marker, or new test helper.";
         if ((missing.length || validationMissing || lastExecutionHadError) && completionRetries < 3) {
           completionRetries++;
           emitEvent({ type: "assistant_message_reset", runId, messageId: assistantMessageId });
@@ -1802,14 +1860,15 @@ export class AgentLoop {
             } else if (exec.name === "run_command") {
               const cmd = (effectiveToolCalls.find((c: any) => c.id === exec.id)?.arguments as any)?.command;
               if (cmd) executedCommands.push(cmd);
-              if (modifiedFiles.size > 0) {
-                try {
-                  const result = JSON.parse(exec.result.output);
-                  const stdout = typeof result.stdout === "string" ? result.stdout : "";
-                  const exitCode = typeof result.exitCode === "number" ? result.exitCode : 0;
-                  const testsExecuted = exitCode === 0 && (/\b(?:assert|unittest|pytest|test|check|validate|validation|verify|verification|python[0-9.]*|node)\b/i.test(cmd || "") || !requiresWrittenValidation);
-                  validationAfterWrite = testsExecuted && (requestedSuccessMarker ? stdout.includes(requestedSuccessMarker) : true);
-                } catch { validationAfterWrite = false; }
+              const commandData = exec.result.data as { changes?: unknown } | undefined;
+              if (Array.isArray(commandData?.changes)) for (const change of commandData.changes) {
+                if (typeof change !== "string") continue;
+                const match = change.match(/^(written|deleted):(.+)$/);
+                if (!match) continue;
+                const changedPath = runContract ? normalizeContractPath(match[2]) : match[2];
+                modifiedFiles.add(changedPath);
+                (match[1] === "written" ? writtenFiles : deletedFiles).add(changedPath);
+                validationAfterWrite = false;
               }
               hasExecutedDiskMutations = true;
             } else if (exec.name === "generate_deliverable") {
@@ -1916,6 +1975,10 @@ export class AgentLoop {
       if (options.deterministicCalls) {
         const text = lastExecutionHadError ? `Workspace copy failed: ${lastErrorMessage}`
           : executed.map(exec => exec.result.summary).join("\n") + "\nThe workspace file matches the saved artifact bytes.";
+        if (!lastExecutionHadError) {
+          const verification = await runPendingTests(true);
+          if (verification?.action === "stop" || verification?.action === "repair" || verification?.action === "cancelled") return buildResult(`${text}\n\n${verification.detail}`, verification.action === "cancelled" ? "cancelled" : "partial");
+        }
         const completion = evaluateCurrentCompletion(text);
         return buildResult(text, lastExecutionHadError ? "failed" : completion.outcome, completion);
       }
@@ -1978,6 +2041,17 @@ export class AgentLoop {
           lastErrorMessage = `Source-grounded behavior gaps: ${feedback}`;
           continue;
         }
+        if (context.resultStore && successfulAttachedPythonRepair.result.resultRef) {
+          const executionResultId = successfulAttachedPythonRepair.result.resultRef.resultId;
+          const reviewResult = context.resultStore.registerResult({ type: "structured", status: "complete", origin: "model_derived",
+            producer: { tool: "agent_behavior_review", callId: randomUUID() }, summary: "Source-derived behavior review passed for the executed Python revision.",
+            payload: { executionResultId, status: "passed", source: repairedSource, checklist: options.sourceReviewChecklist ?? "", gaps: codeReview },
+            sources: [{ resultId: executionResultId, relation: "source" }] });
+          recordVerificationEvidence(runId, [{ criterionId: `acceptance:validated-python:${repairedPythonArtifact.filename}`,
+            requirement: `Validate source ${repairedPythonArtifact.filename}`, status: "passed", method: "execution_record",
+            evidence: [{ kind: "result", id: executionResultId }, { kind: "result", id: reviewResult.resultId }, { kind: "artifact", id: repairedPythonArtifact.artifactId }],
+            reason: "The saved Python source matches its execution and passed the source-derived behavior review.", verifiedAt: new Date().toISOString(), mandatory: true }]);
+        }
         const repairSummary = [
           accumulatedCodeDiagnosis || "The edited Python source was executed.",
           "The corrected source ran successfully against the supplied input files (exit code 0).",
@@ -2007,8 +2081,7 @@ export class AgentLoop {
       const existingValidationFeedback = messages.findIndex((message) =>
         message.role === "user" && message.content?.startsWith(validationFeedbackPrefix));
       if (requiresWrittenValidation && modifiedFiles.size > 0 && !validationAfterWrite && !lastExecutionHadError) {
-        const markerHint = requestedSuccessMarker ? ` Set "success_marker" to "${requestedSuccessMarker}".` : "";
-        const feedback = `${validationFeedbackPrefix} The latest write operation succeeded for ${Array.from(modifiedFiles).join(", ")}; use its observed result as the record of what was written. Next, validate the latest implementation with run_command (e.g. {"command": "python3 -B <script> <args>"} or assertions with python_code).${markerHint} The command must exit with code 0. Do not repeat a successful write unless validation provides concrete evidence that the file needs correction. Do not write test helper files.`;
+        const feedback = `${validationFeedbackPrefix} The latest write operation succeeded for ${Array.from(modifiedFiles).join(", ")}. Finish the planned implementation changes. The runtime will run the existing project tests. Change saved code again only when the actual test evidence or remaining requested work requires it. Do not replace the test suite with an interpreter launch or printed marker.`;
         if (existingValidationFeedback >= 0) {
           messages[existingValidationFeedback] = { ...messages[existingValidationFeedback], content: feedback, turn };
         } else {
