@@ -999,7 +999,6 @@ export default function App() {
           }
         }}>
           {modelSettingsError && <div className="mx-4 mt-2 px-3 py-2 rounded-[var(--radius-sm)] border border-[var(--status-error)]/40 text-xs text-[var(--status-error)] flex items-center justify-between gap-3"><span>{modelSettingsError}</span><button onClick={() => setModelSettingsError(null)} aria-label="Dismiss model settings error">×</button></div>}
-          {runState==="partial"&&activeRunId&&["work","agent"].includes(sessions.current.modes.get(activeRunId)??"")&&<button className="mx-4 mt-2 text-sm text-[var(--accent)]" onClick={()=>{const id=activeRunId;void wb.resumeRun({runId:id}).then(()=>{if(activeRunRef.current===id)setRunState("created");}).catch(error=>setRunError({code:"resume_failed",message:String(error)}));}}>Resume from saved evidence</button>}
           {activeRoute && <RouteBadge route={activeRoute} state={runState} />}
           {runError && (
             <div className="mx-4 mt-2 px-3.5 py-2.5 rounded-[var(--radius-sm)] bg-[var(--status-error)]/15 border border-[var(--status-error)]/30 text-sm text-[var(--status-error)] flex flex-col gap-1 select-text">

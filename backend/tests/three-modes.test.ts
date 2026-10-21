@@ -20,6 +20,7 @@ import { getAllAvailableTools, filterToolsForTurn } from '../src/main/router/too
 import { InferenceScheduler } from '../src/main/gateway/inference-scheduler.js';
 import { withRuntimeScope } from '../src/main/run/runtime-scope.js';
 import { executePython } from '../src/main/tools/python.js';
+import * as pythonRuntime from '../src/main/tools/python-runtime.js';
 import { executeProcess } from '../src/main/tools/child-process.js';
 import { extractDocumentTool } from '../src/main/tools/specialist-tools.js';
 import { RunSessions } from '../../frontend/src/lib/run-sessions.js';
@@ -129,6 +130,8 @@ describe('Lifecycle and scheduling',()=>{
   writeRunFile(runId,'intermediate','compute.py','from pathlib import Path\nprint(Path("reader.py").read_text())\nPath("result.txt").write_text("computed result")\n');
   const result=await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,approveUncontainedPython:async()=>true},()=>executePython(runId,'compute.py',['reader.py']));
   expect(result.exitCode).toBe(0);expect(result.stdout).toContain('original source');expect(result.outputFiles).toEqual(['result.txt']);
+  const digest=createHash('sha256').update(original).digest('hex');
+  expect(result.inputEvidence).toEqual([{filename:'reader.py',originalFilename:'reader.py',beforeSha256:digest,afterSha256:digest,originalAfterSha256:digest}]);
   expect(readFileSync(path.join(runRoot(runId),'output/reader.py'),'utf8')).toBe(published);
   expect(readFileSync(path.join(runRoot(runId),'input/reader.py'),'utf8')).toBe(original);
   expect(readFileSync(path.join(runRoot(runId),'output/result.txt'),'utf8')).toBe('computed result');
@@ -136,6 +139,17 @@ describe('Lifecycle and scheduling',()=>{
   const second=await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,approveUncontainedPython:async()=>true},()=>executePython(runId,'compute.py',['reader.py']));
   expect(second.exitCode).toBe(0);expect(second.outputFiles).toEqual([]);
   expect(readFileSync(path.join(runRoot(runId),'output/reader.py'),'utf8')).toBe(published);
+ });
+ it('records changed staged input bytes without changing the original attachment',async()=>{
+  vi.spyOn(pythonRuntime,'probePythonIsolation').mockResolvedValue({status:'approval_required',message:'Isolation unavailable in this fallback fixture.'});
+  const runId=createRun(createChat(),'Check input integrity');createRunDirectories(runId);
+  writeRunFile(runId,'input','sample.csv','value\n7\n');
+  writeRunFile(runId,'intermediate','change.py','from pathlib import Path\np=Path("sample.csv")\np.chmod(0o600)\np.write_text("changed")\n');
+  const result=await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,approveUncontainedPython:async()=>true},()=>executePython(runId,'change.py',['sample.csv']));
+  expect(result.exitCode).toBe(0);
+  expect(result.inputEvidence?.[0].beforeSha256).not.toBe(result.inputEvidence?.[0].afterSha256);
+  expect(result.inputEvidence?.[0].beforeSha256).toBe(result.inputEvidence?.[0].originalAfterSha256);
+  expect(readFileSync(path.join(runRoot(runId),'input/sample.csv'),'utf8')).toBe('value\n7\n');
  });
  it('enforces one run per chat and rejects cross-chat uploads',async()=>{
   const gateway=createGateway();vi.spyOn(gateway,'chatWithTools').mockImplementation(async(_m,_t,_d,o)=>new Promise(resolve=>o?.signal?.addEventListener('abort',()=>resolve(response('late')),{once:true})));
@@ -158,6 +172,51 @@ describe('Lifecycle and scheduling',()=>{
 });
 
 describe('Work engine integration',()=>{
+ it.each(['valid','missing','changed','wrong-input'])('uses host records for Python runtime requirements: %s',async fault=>{
+  const runId=createRun(createChat(),'Repair source');createRunDirectories(runId);
+  const source='def summarize(path):\n    return []\n',sourceDigest=createHash('sha256').update(source).digest('hex');
+  const contract=makeContract(runId,'repaired.py',{id:'deliver',kind:'semantic',expected:'Return repaired.py',mandatory:true,basis:'Return `repaired.py`.'});
+  contract.routing.intentType='code_modification';contract.deliverables[0].type='file';contract.acceptance.validatedPythonDeliverables=['repaired.py'];
+  contract.acceptance.artifactChecks!.push({id:'run',kind:'semantic',expected:'Run on sample.csv',mandatory:true,basis:'Run the repaired script on `sample.csv`.'},{id:'preserve',kind:'semantic',expected:'Protect input',mandatory:true,basis:'Do not change the input CSV.'});
+  persistRunContract(contract);initializeExecutionLedger(contract);
+  const artifact=artifactRef(runId,'txt','repaired.py',writeRunFile(runId,'output','repaired.py',source));
+  getDb().prepare('INSERT INTO artifacts(artifact_id,run_id,kind,filename,relative_path,size_bytes,sha256,created_at) VALUES (?,?,?,?,?,?,?,?)').run(artifact.artifactId,runId,artifact.kind,artifact.filename,artifact.relativePath,artifact.sizeBytes,artifact.sha256,artifact.createdAt);
+  const digest=createHash('sha256').update('input').digest('hex');
+  const inputEvidence=[{filename:fault==='wrong-input'?'other.csv':'sample.csv',originalFilename:'sample.csv',beforeSha256:digest,afterSha256:fault==='changed'?'0'.repeat(64):digest,originalAfterSha256:digest}];
+  const resultStore=new RunResultStore(runId);
+  const result=resultStore.registerResult({type:'execution',status:'complete',origin:'execution',producer:{tool:'execute_python',callId:'saved-execution'},summary:'Executed saved revision',payload:{exitCode:0,timedOut:false,stdout:'[]',sourceDigest,...(fault==='missing'?{}:{inputEvidence})},sources:[]});
+  recordExecutionToolOutcome({runId,callId:'saved-execution',tool:'execute_python',args:{filename:'repaired.py'},summary:'Executed saved revision',ok:true,resultId:result.resultId,artifacts:[artifact]});
+  const gateway=createGateway();
+  const reviewer=vi.spyOn(gateway,'chatWithTools').mockImplementation(async(_model,messages,_tools,options)=>{
+    expect(options?.responseSchema?.name).toBe('source_derived_code_behavior_review');
+    return response(JSON.stringify([{index:0,status:'satisfied',issue:'The callable remains.',sourceEvidence:'def summarize(path):',implementationEvidence:'def summarize(path):'}]));
+  });
+  const checks=await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:2},()=>validateWorkArtifacts({runId,runContract:contract,gateway,resultStore,workspaceRoot:runRoot(runId),sourceReviewEvidence:source,sourceReviewChecklist:JSON.stringify({checks:['Keep the callable.']})},true));
+  expect(checks.find(check=>check.criterionId==='content:deliver')?.status).toBe('passed');
+  expect(checks.find(check=>check.criterionId==='content:run')?.status).toBe(['missing','wrong-input'].includes(fault)?'unverified':'passed');
+  expect(checks.find(check=>check.criterionId==='content:preserve')?.status).toBe(['missing','changed'].includes(fault)?'unverified':'passed');
+  if(fault==='changed')expect(checks.find(check=>check.criterionId==='work:input_integrity')?.status).toBe('failed');
+  expect(reviewer).toHaveBeenCalledOnce();
+ });
+ it.each([false,true])('checks request, saved-content and runtime line references independently (invalid runtime: %s)',async invalid=>{
+  const runId=createRun(createChat(),'Create threshold note');createRunDirectories(runId);
+  const contract=makeContract(runId,'threshold.md',{id:'boundary',kind:'semantic',expected:'Include equality',mandatory:true,basis:'Include equality at 350.0.'});
+  contract.acceptance.artifactChecks!.push({id:'return',kind:'semantic',expected:'Return threshold.md',mandatory:true,basis:'Return threshold.md.'});persistRunContract(contract);
+  const artifact=artifactRef(runId,'md','threshold.md',writeRunFile(runId,'output','threshold.md','if temperature >= 350.0:\n    high += 1'));
+  getDb().prepare('INSERT INTO artifacts(artifact_id,run_id,kind,filename,relative_path,size_bytes,sha256,created_at) VALUES (?,?,?,?,?,?,?,?)').run(artifact.artifactId,runId,artifact.kind,artifact.filename,artifact.relativePath,artifact.sizeBytes,artifact.sha256,artifact.createdAt);
+  const gateway=createGateway();
+  const reviewer=vi.spyOn(gateway,'chatWithTools').mockImplementation(async(_model,messages)=>{
+    const body=String(messages[1].content);
+    const requested=JSON.parse(body.split('REQUIREMENTS: ')[1].split('\nORIGINAL SOURCES:')[0]);
+    const runtime=JSON.parse(body.split('RUNTIME EVIDENCE:\n')[1].split('\nREVIEW FEEDBACK:')[0]);
+    const filenameLine=runtime.find((item:any)=>item.text.includes('"filename": "threshold.md"')).line;
+    return response(JSON.stringify({checks:requested.map((item:any)=>item.criterionId==='content:boundary'?{id:item.criterionId,status:'passed',reason:'The code includes equality as requested.',sourceLineNumbers:[1],outputLineNumbers:[2],runtimeLineNumbers:[]}:{id:item.criterionId,status:'passed',reason:'The registered saved filename matches the request.',sourceLineNumbers:[1],outputLineNumbers:[],runtimeLineNumbers:[invalid?999:filenameLine]}),coverageGaps:[]}));
+  });
+  const checks=await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:2},()=>validateWorkArtifacts({runId,runContract:contract,gateway,workspaceRoot:runRoot(runId),originalUserRequest:'Include equality at 350.0. Return threshold.md.',sourceReviewEvidence:'if temperature > 350.0:'},true));
+  expect(checks.find(check=>check.criterionId==='content:boundary')?.status).toBe('passed');
+  expect(checks.find(check=>check.criterionId==='content:return')?.status).toBe(invalid?'unverified':'passed');
+  expect(reviewer).toHaveBeenCalledTimes(invalid?3:1);
+ });
  it.each(['malformed','failed'])('recovers a %s document assessment and verifies the final saved revision',async firstReview=>{
   const gateway=createGateway();let drafts=0;let reviews=0;
   vi.spyOn(gateway,'execute').mockResolvedValue({ok:true,value:{result:{requestedAction:'draft',responseMode:'files',primaryGoal:'Write note',workspaceMutationRequested:false,expectedDeliverables:[{filename:'retry.md',type:'md'}]}}} as any);
@@ -165,6 +224,11 @@ describe('Work engine integration',()=>{
     if(options?.responseSchema?.name==='work_requirements')return response('{"checks":[]}');
     if(options?.responseSchema?.name==='work_content_review'){
       reviews++;if(reviews===1&&firstReview==='malformed')return response('{');
+      if(firstReview==='malformed'&&reviews===2){
+        const retryPrompt=String(_messages[1].content);
+        expect(retryPrompt).toContain('review fault, not proof of an output defect');
+        expect(retryPrompt).not.toContain('This required interpretation has no independent content proof');
+      }
       return response(JSON.stringify({checks:[{id:'content:complete_request',status:reviews===1?'failed':'passed',reason:reviews===1?'The saved decision needs correction.':'The saved decision meets the request.',outputQuotes:[reviews===1?'First decision':'Verified decision'],sourceQuotes:[]}],coverageGaps:[]}));
     }
     drafts++;return response(firstReview==='failed'&&drafts===1?'# First decision':'# Verified decision');
@@ -172,6 +236,7 @@ describe('Work engine integration',()=>{
   const manager=new RunManager(gateway);const {runId}=await manager.start({mode:'work',userText:'Create retry.md with a decision.'});await awaitTerminal(runId);
   expect(getState(runId)).toBe('completed');expect(reviews).toBe(2);expect(drafts).toBe(firstReview==='failed'?2:1);
   const artifact=manager.getRunSnapshot({runId})!.artifacts[0];expect(readFileSync(path.join(dir,artifact.relativePath),'utf8')).toBe('# Verified decision');
+  expect(manager.getRunSnapshot({runId})!.progress.filter(checkpoint=>checkpoint.stage==='result_verification')).toHaveLength(1);
  });
  it.each(['omitted','truncated'])('recovers a %s Python review against one saved execution result',async failure=>{
   const runId=createRun(createChat(),'Repair source');createRunDirectories(runId);
@@ -188,19 +253,19 @@ describe('Work engine integration',()=>{
   const reviewer=vi.spyOn(gateway,'chatWithTools').mockImplementation(async(_model,messages)=>{
     const input=JSON.parse(String(messages[1].content));batches.push(input.behaviorChecks.map((check:any)=>check.check));
     if(failure==='truncated'&&batches.length===1)return response('[]',[],'length');
-    return response(JSON.stringify(input.behaviorChecks.filter((_:any,index:number)=>batches.length!==1||index===0).map((check:any)=>({index:check.index,status:'satisfied',issue:'The saved callable and return remain.',sourceEvidence:check.check.includes('interface')?'def summarize(path):':'return []',implementationEvidence:check.check.includes('interface')?'def summarize(path):':'return []'}))));
+    return response(JSON.stringify(input.behaviorChecks.filter((_:any,index:number)=>batches.length!==1).map((check:any)=>({index:check.index,status:'satisfied',issue:'The saved callable and return remain.',sourceEvidence:check.check.includes('interface')?'def summarize(path):':'return []',implementationEvidence:check.check.includes('interface')?'def summarize(path):':'return []'}))));
   });
   const context={runId,workspaceRoot:path.join(runRoot(runId),'input'),gateway,runContract:contract,resultStore,originalUserRequest:'Repair source and preserve behavior.',sourceReviewEvidence:source,sourceReviewChecklist:JSON.stringify({checks:['Preserve the callable interface.','Preserve the return behavior.']})};
   const checks=await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:2},()=>validateWorkArtifacts(context,true));
   expect(checks.filter(check=>check.mandatory).every(check=>check.status==='passed')).toBe(true);
-  const initialCalls=failure==='truncated'?3:2;
+  const initialCalls=3;
   expect(reviewer).toHaveBeenCalledTimes(initialCalls);expect(batches[1]).toHaveLength(1);expect(getExecutionLedger(runId)?.operationAttempts).toHaveLength(1);
   expect(resultStore.listResults()).toHaveLength(2);expect(resultStore.getResult(execution.resultId).storage.sha256).toBe(execution.storage.sha256);
   expect(readFileSync(path.join(dir,artifact.relativePath),'utf8')).toBe(source);
   await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>validateWorkArtifacts({...context},true));expect(reviewer).toHaveBeenCalledTimes(initialCalls);
   const newer=resultStore.registerResult({type:'execution',status:'complete',origin:'execution',producer:{tool:'execute_python',callId:'python-new-evidence'},summary:'Executed saved source with new evidence',payload:{exitCode:0,timedOut:false,stdout:'[1]',sourceDigest},sources:[]});
   recordExecutionToolOutcome({runId,callId:'python-new-evidence',tool:'execute_python',args:{filename:'repaired.py'},summary:'New input execution',ok:true,resultId:newer.resultId,artifacts:[artifact]});
-  await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>validateWorkArtifacts({...context},true));expect(reviewer).toHaveBeenCalledTimes(initialCalls+1);
+  await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>validateWorkArtifacts({...context},true));expect(reviewer).toHaveBeenCalledTimes(initialCalls+2);
  });
  it.each(['malformed','truncated','omitted','ungrounded','duplicate','gateway','uncertain'])('retries a %s review without changing saved bytes, then reuses durable accepted evidence',async failure=>{
   const runId=createRun(createChat(),'Create output');createRunDirectories(runId);
@@ -257,7 +322,9 @@ describe('Work engine integration',()=>{
    return response(JSON.stringify({checks:items.filter((_:any,index:number)=>batches.length!==1||index!==1).map((item:any)=>({id:item.criterionId,status:'passed',reason:'Exact content.',outputQuotes:['Required'],sourceQuotes:[]})),coverageGaps:[]}));
   });
   const checks=await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:2},()=>validateWorkArtifacts({runId,workspaceRoot:path.join(runRoot(runId),'input'),gateway,runContract:contract},true));
-  expect(checks.every(check=>check.status==='passed')).toBe(true);expect(reviewer).toHaveBeenCalledTimes(2);expect(batches[1]).not.toContain('content:rule-0');
+  expect(checks.every(check=>check.status==='passed')).toBe(true);expect(reviewer).toHaveBeenCalledTimes(3);expect(batches[1]).not.toContain('content:rule-0');
+  expect(batches.flat().filter(id=>id==='content:rule-1')).toHaveLength(2);
+  expect(new Set(batches.flat()).size).toBe(9);
  });
  it.each(['passed','failed'])('keeps an ungrounded %s content review unverified without rewriting saved content',async status=>{
   const gateway=createGateway();let drafts=0;

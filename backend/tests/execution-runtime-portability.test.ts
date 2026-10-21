@@ -1,17 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const fixtures = vi.hoisted(() => ({ files: new Set<string>(), aliases: new Map<string, string>(), exec: vi.fn() }));
+const fixtures = vi.hoisted(() => ({ files: new Set<string>(), aliases: new Map<string, string>(), directories: new Map<string, string[]>(), exec: vi.fn() }));
 vi.mock("node:fs", async () => {
   const fs = await vi.importActual<typeof import("node:fs")>("node:fs");
-  return { ...fs, existsSync: (file: string) => fixtures.files.has(file), statSync: (file: string) => { if (!fixtures.files.has(file)) throw new Error("missing"); return { isFile: () => true }; }, accessSync: (file: string) => { if (!fixtures.files.has(file)) throw new Error("missing"); }, realpathSync: (file: string) => fixtures.aliases.get(file) ?? file };
+  return { ...fs, existsSync: (file: string) => fixtures.files.has(file), statSync: (file: string) => { if (!fixtures.files.has(file)) throw new Error("missing"); return { isFile: () => true }; }, accessSync: (file: string) => { if (!fixtures.files.has(file)) throw new Error("missing"); }, realpathSync: (file: string) => fixtures.aliases.get(file) ?? file, readdirSync: (file: string) => fixtures.directories.get(file) ?? fs.readdirSync(file) };
 });
 vi.mock("../src/main/tools/child-process.js", () => ({ executeProcess: fixtures.exec }));
 import { directPythonEnvironment, findBubblewrap, getPythonExecutable, probePythonIsolation, pythonLaunch } from "../src/main/tools/python-runtime.js";
+import { macosLibraryRoots } from "../src/main/tools/macos-sandbox.js";
 
 const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform")!;
 const platform = (value: string) => Object.defineProperty(process, "platform", { configurable: true, value });
 const dirs = { inputDir: "/runs/input", intermediateDir: "/runs/intermediate", outputDir: "/runs/output", stagedInputs: ["local-module.py"] };
-beforeEach(() => { fixtures.files.clear(); fixtures.aliases.clear(); fixtures.exec.mockReset(); vi.stubEnv("PYTHON", ""); vi.stubEnv("PATH", ""); });
+beforeEach(() => { fixtures.files.clear(); fixtures.aliases.clear(); fixtures.directories.clear(); fixtures.exec.mockReset(); vi.stubEnv("PYTHON", ""); vi.stubEnv("PATH", ""); });
 afterEach(() => { Object.defineProperty(process, "platform", platformDescriptor); vi.unstubAllEnvs(); });
 
 describe("Execution runtime portability", () => {
@@ -42,6 +43,47 @@ describe("Execution runtime portability", () => {
     expect(getPythonExecutable()).toBe("/opt/python/bin/python3");
   });
   it("reports missing Python", () => { platform("linux"); expect(getPythonExecutable).toThrow(/Install Python 3/); });
+  it("permits the macOS framework launcher without granting arbitrary execution or ancestor reads", () => {
+    platform("darwin"); vi.stubEnv("WORKBENCH_USE_MAC_SANDBOX", "1");
+    const root = "/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14";
+    const python = `${root}/bin/python3.14`, helper = `${root}/Resources/Python.app/Contents/MacOS/Python`;
+    fixtures.files.add("/usr/bin/sandbox-exec"); fixtures.files.add(helper);
+    const launch = pythonLaunch(python, dirs, "/runs/intermediate/task.py");
+    const profile = launch.args[1];
+    expect(profile).toContain('(allow file-read* (literal "/"))');
+    expect(profile).toContain('(allow file-read-metadata (literal "/opt/homebrew/Cellar/python@3.14"))');
+    expect(profile).toContain(`(allow process-exec (literal "${helper}"))`);
+    expect(profile).toContain(`(allow file-read* (subpath "${root}"))`);
+    expect(profile).not.toContain('(allow file-read* (subpath "/"))');
+    expect(profile).not.toContain('(allow file-read* (subpath "/runs"))');
+    expect(profile).not.toContain('(allow process-exec)');
+    expect(profile).not.toContain('(allow process-fork)');
+    expect(profile).toContain('(deny network*)');
+    expect(profile).toContain('(allow file-write* (subpath "/runs/output"))');
+    expect(profile).toContain('(deny file-write* (literal "/runs/output/local-module.py"))');
+    expect(profile).toContain('(deny file-write* (literal "/runs/output/local_module.py"))');
+  });
+  it("does not authorize a framework helper redirected outside its runtime", () => {
+    platform("darwin"); vi.stubEnv("WORKBENCH_USE_MAC_SANDBOX", "1");
+    const root = "/Library/Frameworks/Python.framework/Versions/3.14";
+    const helper = `${root}/Resources/Python.app/Contents/MacOS/Python`;
+    fixtures.files.add("/usr/bin/sandbox-exec"); fixtures.files.add(helper);
+    fixtures.aliases.set(helper, "/bin/sh");
+    const launch = pythonLaunch(`${root}/bin/python3`, dirs, "/runs/intermediate/task.py");
+    expect(launch.args[1]).not.toContain('(allow process-exec (literal "/bin/sh"))');
+  });
+  it("resolves installed library links but excludes links into private user data", () => {
+    for (const file of ["/opt/homebrew/opt", "/opt/homebrew/Cellar", "/opt/homebrew/opt/sqlite/lib", "/opt/homebrew/opt/escape/lib"]) fixtures.files.add(file);
+    fixtures.directories.set("/opt/homebrew/opt", ["sqlite", "escape"]);
+    fixtures.aliases.set("/opt/homebrew/opt/sqlite/lib", "/opt/homebrew/Cellar/sqlite/3.53/lib");
+    fixtures.aliases.set("/opt/homebrew/opt/escape/lib", "/Users/private");
+    expect(macosLibraryRoots()).toEqual(["/opt/homebrew/opt/sqlite/lib", "/opt/homebrew/Cellar/sqlite/3.53/lib"]);
+  });
+  it("bounds the installed library scan instead of granting broader reads", () => {
+    fixtures.files.add("/opt/homebrew/opt"); fixtures.files.add("/opt/homebrew/Cellar");
+    fixtures.directories.set("/opt/homebrew/opt", Array.from({length: 513}, (_, index) => String(index)));
+    expect(macosLibraryRoots).toThrow(/exceeds 512/);
+  });
   it("finds Linux bubblewrap on PATH", () => {
     platform("linux"); vi.stubEnv("PATH", "/opt/tools"); fixtures.files.add("/opt/tools/bwrap"); expect(findBubblewrap()).toBe("/opt/tools/bwrap");
   });

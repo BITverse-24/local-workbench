@@ -1,6 +1,7 @@
 /// <reference path="../../frontend/src/bridge.d.ts" />
 import { expect, it } from "vitest";
 import { getRunProgress, updateRunEvents } from "../../frontend/src/lib/run-progress.js";
+import { RunSessions } from '../../frontend/src/lib/run-sessions.js';
 
 const progress = (requestId: string, channel: ModelProgressEvent["channel"] = "text", status: ModelProgressEvent["status"] = "receiving"): ModelProgressEvent =>
   ({ type: "model_progress", runId: "run", requestId, modelId: "local", purpose: "working_turn", status, channel, outputChars: 20 });
@@ -46,6 +47,41 @@ it("stops generation presentation during approval and avoids claiming reasoning 
 
 const task = (activityId: string, stage: TaskProgressEvent["stage"], status: TaskProgressEvent["status"] = "active", target?: string): TaskProgressEvent =>
   ({ type: "task_progress", runId: "run", activityId, stage, status, target });
+
+it('updates one review row across retries and replaces old counts and blocker text',()=>{
+  let events:RunEvent[]=[];
+  for(let attempt=0;attempt<4;attempt++)events=updateRunEvents(events,{
+    ...task(`retry-${attempt}`,'post_execution_review','blocked','parser.py'),assessedChecks:attempt,totalChecks:4,reason:'Review response was incomplete.',
+  });
+  expect(events).toHaveLength(1);
+  expect(getRunProgress(events,'acting').tasks).toHaveLength(1);
+  events=updateRunEvents(events,{...task('last','post_execution_review','active','parser.py'),assessedChecks:0,totalChecks:5});
+  let state=getRunProgress(events,'acting');
+  expect(state.tasks).toHaveLength(1);expect(state.task?.reason).toBeUndefined();
+  expect(state.summary.now[0].detail).toBe('0 of 5 checks assessed');
+  events=updateRunEvents(events,{...task('last','post_execution_review','completed','parser.py'),assessedChecks:5,totalChecks:5});
+  state=getRunProgress(events,'acting');
+  expect(state.tasks).toHaveLength(1);expect(state.summary.remaining).toEqual([]);
+  expect(state.summary.confirmed[0].detail).toBe('5 of 5 checks assessed');
+});
+
+it('folds historical retry rows while preserving different files and runs',()=>{
+  const old=task('old','post_execution_review','blocked','first.py');
+  const latest=task('new','post_execution_review','completed','first.py');
+  const other=task('other','post_execution_review','active','second.py');
+  const state=getRunProgress([old,latest,other],'acting');
+  expect(state.tasks).toEqual([latest,other]);expect(state.summary.remaining).toHaveLength(1);
+  const separateRun={...latest,runId:'another-run'};
+  expect(updateRunEvents([old,other],separateRun)).toHaveLength(3);
+});
+
+it('keeps a compact current stage for background chats',()=>{
+  const sessions=new RunSessions();sessions.register('run','chat');
+  sessions.record(task('first','post_execution_review','blocked'));
+  sessions.record(task('second','post_execution_review','active'));
+  sessions.record({...task('second','post_execution_review','active'),assessedChecks:3,totalChecks:4});
+  expect(sessions.events.get('run')).toEqual([{...task('second','post_execution_review','active'),assessedChecks:3,totalChecks:4}]);
+});
 
 it("keeps explicit stages above model channels and shows reasoning only as secondary activity", () => {
   const state = getRunProgress([task("review", "post_execution_review"), progress("model", "reasoning")], "acting");

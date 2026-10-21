@@ -29,12 +29,12 @@ export function executeProcess(command: string, args: string[], options: {
     child.stdout.on("data", (bytes: Buffer) => { size += bytes.length; stdout += stdoutDecoder.write(bytes); if (size > options.maxBuffer) { overflow = true; kill(); } });
     child.stderr.on("data", (bytes: Buffer) => { size += bytes.length; stderr += stderrDecoder.write(bytes); if (size > options.maxBuffer) { overflow = true; kill(); } });
     child.on("error", error => { cleanup(); reject(error); });
-    child.on("close", code => {
+    child.on("close", (code, exitSignal) => {
       stdout+=stdoutDecoder.end();stderr+=stderrDecoder.end();cleanup();
       if (aborted) return reject(abortError());
       if (code === 0 && !timedOut && !overflow) return resolve({ stdout, stderr });
-      reject(Object.assign(new Error(stderr || (timedOut ? "Process timed out" : overflow ? "Process output limit exceeded" : `Process exited with code ${code}`)), {
-        code: overflow ? "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" : code ?? 1, stdout, stderr, killed: timedOut,
+      reject(Object.assign(new Error(stderr || (timedOut ? "Process timed out" : overflow ? "Process output limit exceeded" : exitSignal ? `Process terminated by ${exitSignal}` : `Process exited with code ${code}`)), {
+        code: overflow ? "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" : code ?? 1, stdout, stderr, killed: timedOut, signal: exitSignal,
       }));
     });
     if (signal?.aborted) onAbort();

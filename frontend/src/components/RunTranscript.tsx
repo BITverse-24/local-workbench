@@ -1,5 +1,6 @@
 import { memo, useMemo } from "react";
 import { assessedCheckLabel, TASK_STAGE_LABELS } from "../../../backend/src/shared/task-progress.js";
+import { CONFIRMATION_TITLES } from "../../../backend/src/shared/confirmation-presentation.js";
 
 type Props = { events: RunEvent[] };
 
@@ -31,7 +32,7 @@ function labelFor(e: RunEvent): string {
     case "tool_call": return `${e.tool}: ${e.summary}`;
     case "tool_result": return `${e.tool}: ${e.summary}`;
     case "context_compaction": return `Compacted ${(e as any).metadata?.toolName || "observation"} (${(e as any).metadata?.retainedChars}/${(e as any).metadata?.originalChars} chars)`;
-    case "confirmation_required": return `${e.action.prompt} [${e.action.kind}]`;
+    case "confirmation_required": return CONFIRMATION_TITLES[e.action.kind];
     case "artifact_ready": return `${e.artifact.filename} (${e.artifact.kind})`;
     case "assistant_message": return e.text.slice(0, 120);
     case "error": return `${e.code}: ${e.message}`;

@@ -665,6 +665,7 @@ export const executePythonTool: AgentTool = {
       failureStage = "behavior_checks";
       validationAssertionsPassed = validation.exitCode === 0 && !validation.timedOut;
       execResult = { ...validation, stdout: `${execResult.stdout}\n${validation.stdout}`.trim(), durationMs: execResult.durationMs + validation.durationMs,
+        inputEvidence: [...(execResult.inputEvidence??[]),...(validation.inputEvidence??[])],
         outputFiles: [...new Set([...execResult.outputFiles, ...validation.outputFiles])],
         capturedOutput: { stdout: `${execResult.capturedOutput?.stdout ?? execResult.stdout}\n${validation.capturedOutput?.stdout ?? validation.stdout}`.trim(), stderr: `${execResult.capturedOutput?.stderr ?? execResult.stderr}\n${validation.capturedOutput?.stderr ?? validation.stderr}`.trim(), truncated: Boolean(execResult.capturedOutput?.truncated || validation.capturedOutput?.truncated) },
       };

@@ -1,5 +1,10 @@
 import type { TaskProgressEvent } from "./contracts.js";
 
+/** A retry updates the same visible stage; separate file operations stay separate. */
+export function taskProgressKey(event: Pick<TaskProgressEvent, 'runId' | 'stage' | 'target' | 'parentCallId'>): string {
+  return JSON.stringify([event.runId, event.stage, event.target ?? null, event.target ? null : event.parentCallId ?? null]);
+}
+
 /** Fixed presentation text. A finished review is not a passed acceptance check. */
 export const TASK_STAGE_LABELS: Record<TaskProgressEvent["stage"], { active: string; completed: string; remaining: string; kind: "code" | "document" | "text" }> = {
   requirements: { active: "Checking requirements", completed: "Requirements recorded", remaining: "Requirements", kind: "text" },
@@ -16,8 +21,13 @@ export const TASK_STAGE_LABELS: Record<TaskProgressEvent["stage"], { active: str
   result_verification: { active: "Checking the saved results", completed: "Result checks finished", remaining: "Result verification", kind: "text" },
 };
 
-export function assessedCheckLabel(event: Pick<TaskProgressEvent, "assessedChecks" | "totalChecks">): string | undefined {
+export function assessedCheckLabel(event: Pick<TaskProgressEvent, "assessedChecks" | "totalChecks" | "passedChecks" | "failedChecks">): string | undefined {
   const { assessedChecks: assessed, totalChecks: total } = event;
   if (assessed === undefined || total === undefined || !Number.isInteger(assessed) || !Number.isInteger(total) || assessed < 0 || total < 1 || assessed > total) return undefined;
+  if (Number.isInteger(event.passedChecks) && Number.isInteger(event.failedChecks) &&
+      event.passedChecks! >= 0 && event.failedChecks! >= 0 && event.passedChecks! + event.failedChecks! === assessed) {
+    if (event.failedChecks) return `${assessed} of ${total} reviewed · ${event.failedChecks} need correction`;
+    if (assessed === total) return `${event.passedChecks} of ${total} passed in this review`;
+  }
   return `${assessed} of ${total} checks assessed`;
 }

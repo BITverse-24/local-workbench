@@ -35,8 +35,7 @@ describe("Generic Markdown Deliverable Generation", () => {
       let content='';
       if(schema==='work_requirements')content='{"checks":[]}';
       else if(schema==='work_content_review'){
-        const sourceQuote=/Source ID:[^\n]+/.exec(messages[1].content)?.[0];
-        content=JSON.stringify({checks:[{id:'content:complete_request',status:'passed',reason:'The requested note is saved.',outputQuotes:['Engineering Compliance Review Note'],sourceQuotes:sourceQuote?[sourceQuote]:[]}],coverageGaps:[]});
+        content=JSON.stringify({checks:[{id:'content:complete_request',status:'passed',reason:'The requested note is saved.',outputLineNumbers:[2],sourceLineNumbers:[1],runtimeLineNumbers:[]}],coverageGaps:[]});
       }
       else content='# Engineering Compliance Review Note\n\n| Item | Observed | Required | Status |\n|---|---|---|---|\n| Wall Thickness | 3.8-4.2 mm | 4.6 mm | REJECTED |\n\nWall thickness does not meet governing criteria.\n\n'+String(messages[0].content).split('SOURCES:\n')[1];
       return {ok:true,value:{content,tool_calls:[],finishReason:'stop'}} as any;

@@ -137,9 +137,9 @@ describe("V0 attached-source transport and execution integrity", () => {
       expect(finalMessage.content).toContain("File saved: `corrected.py`");
       expect(finalMessage.content).toContain("Execution succeeded (exit code 0)");
       expect(finalMessage.content).toContain("Complete behavior coverage");
-      expect(finalMessage.content).toContain("0 of 2 checks assessed");
+      expect(finalMessage.content).toContain("0 of 3 checks assessed");
       expect(events.filter(event => event.type === "task_progress" && event.stage === "post_execution_review").at(-1))
-        .toMatchObject({ status: "blocked", assessedChecks: 0, totalChecks: 2 });
+        .toMatchObject({ status: "blocked", assessedChecks: 0, totalChecks: 3 });
       expect(events.filter(event => event.type === "assistant_message").at(-1)).toMatchObject({ messageId: finalMessage.id, text: finalMessage.content });
       expect(finalMessage.content).toContain("Behavior validation is incomplete");
       expect(finalMessage.content).toContain("actual supplied text");

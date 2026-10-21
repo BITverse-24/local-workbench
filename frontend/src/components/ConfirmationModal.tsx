@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { BasicMarkdown } from "./ChatArea";
+import { CONFIRMATION_DESCRIPTIONS, CONFIRMATION_TITLES } from '../../../backend/src/shared/confirmation-presentation.js';
 
 type Props = {
   open: boolean;
@@ -69,7 +70,6 @@ function highlightPython(code: string): React.ReactNode[] {
 export default function ConfirmationModal({
   open,
   action,
-  runState,
   onApprove,
   onReject,
   busy = false,
@@ -86,9 +86,9 @@ export default function ConfirmationModal({
         onReject();
       } else if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
         if (Date.parse(action.expiresAt) <= Date.now()) return;
-        // Prevent accidental trigger if focus is on an input or button
+        // Focused controls handle Enter themselves, including the details toggle.
         const target = e.target as HTMLElement;
-        if (target && target.tagName === "BUTTON") return;
+        if (target?.closest?.('button, input, textarea, select, summary, a, [contenteditable="true"]')) return;
         e.preventDefault();
         onApprove();
       }
@@ -146,6 +146,7 @@ export default function ConfirmationModal({
   const isPython = action.kind === "execute_python" || isUncontainedPython;
   const expired = Date.parse(action.expiresAt) <= now;
   const isDocx = action.kind === "generate_docx";
+  const title = CONFIRMATION_TITLES[action.kind];
 
   const kindBadge = (
     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[var(--radius-sm)] text-xs font-medium bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
@@ -155,7 +156,7 @@ export default function ConfirmationModal({
             <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
             <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
           </svg>
-          Agent execution plan
+          Action plan
         </>
       ) : isPython ? (
         <>
@@ -191,37 +192,43 @@ export default function ConfirmationModal({
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4 sm:p-6">
       <div
+        role="dialog" aria-modal="true" aria-labelledby="confirmation-title"
         className={`${
           isPython ? "w-[880px] max-w-[94vw]" : isPlan ? "w-[760px] max-w-[94vw]" : "w-[540px] max-w-[94vw]"
         } max-h-[92vh] flex flex-col rounded-[var(--radius-md)] neu-panel p-6 border border-[var(--border-subtle)] bg-[var(--bg-surface)]`}
       >
         {/* Top Header */}
         <div className="flex items-start justify-between gap-4 pb-3 border-b border-[var(--border-subtle)] shrink-0">
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-1.5">
               {kindBadge}
-              <span className="text-[11px] font-mono text-[var(--text-tertiary)]">
-                Run {action.runId.slice(0, 8)}
-              </span>
             </div>
-            <h3 className="text-base sm:text-lg font-medium text-[var(--text-primary)] leading-snug">
-              {action.prompt}
+            <h3 id="confirmation-title" className="text-base sm:text-lg font-medium text-[var(--text-primary)] leading-snug">
+              {title}
             </h3>
           </div>
           <div className="flex flex-col items-end shrink-0">
             <span className="text-[11px] font-mono px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-secondary)]">
               ⏱ {expiresIn}
             </span>
-            {runState && (
-              <span className="text-[11px] text-[var(--text-tertiary)] mt-1 font-mono">
-                {runState}
-              </span>
-            )}
           </div>
         </div>
 
+        <p className="mt-4 shrink-0 text-sm leading-relaxed text-[var(--text-secondary)]">
+          {CONFIRMATION_DESCRIPTIONS[action.kind]}
+        </p>
+
+        {isPlan && action.prompt && action.prompt !== title && <details open className="mt-3 shrink-0 text-xs text-[var(--text-secondary)]">
+          <summary className="cursor-pointer font-medium">Action details</summary>
+          <p className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap break-words select-text rounded-[var(--radius-sm)] border border-[var(--border-subtle)] p-3 leading-relaxed">{action.prompt}</p>
+        </details>}
+
         {/* Script / Plan Preview Viewport */}
         {action.preview && (
+          <details key={action.actionId} open={!isPython} className="min-h-0 overflow-auto mt-4">
+            <summary className="cursor-pointer text-xs font-medium text-[var(--text-secondary)]">
+              {isPython ? 'View script' : isPlan ? 'Action plan' : 'Document preview'}
+            </summary>
           <div className="flex-1 flex flex-col min-h-0 mt-4 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] overflow-hidden">
             {/* Code / Plan Window Titlebar */}
             <div className="flex items-center justify-between px-3.5 py-2 bg-[var(--bg-surface-raised)] border-b border-[var(--border-subtle)] shrink-0">
@@ -293,36 +300,8 @@ export default function ConfirmationModal({
               </div>
             )}
 
-            {/* Footer Notice */}
-            {isPlan ? (
-              <div className="px-3.5 py-2 bg-[var(--bg-surface-raised)] border-t border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)] flex items-center gap-2 shrink-0">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--accent)] shrink-0">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                </svg>
-                <span>
-                  Agentic safety gate: review proposed plan and tool operations before execution proceeds
-                </span>
-              </div>
-            ) : isPython ? (
-              <div className="px-3.5 py-2 bg-[var(--bg-surface-raised)] border-t border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)] flex items-center gap-2 shrink-0">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--status-success)] shrink-0">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                </svg>
-                <span>
-                  {isUncontainedPython
-                    ? "OS isolation is unavailable. This script can access files and the network with your user permissions. Approval covers the exact source, dependencies, and input snapshot."
-                    : "Review the Python source before execution. If OS isolation is unavailable, a separate approval is required."}
-                </span>
-              </div>
-            ) : null}
           </div>
-        )}
-
-        {/* Informative text for non-preview actions */}
-        {!action.preview && (
-          <div className="py-4 text-xs text-[var(--text-secondary)] leading-relaxed">
-            {isPython ? (isUncontainedPython ? "This script will run without OS filesystem or network isolation. Review the source, dependencies, and input digests before approval." : "Review this Python script before execution.") : "This action requires your confirmation before the workbench creates deliverables in the run directory."}
-          </div>
+          </details>
         )}
 
         {/* Action Controls */}
@@ -353,7 +332,7 @@ export default function ConfirmationModal({
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
-                  <span>Approve Plan & Proceed</span>
+                  <span>Approve plan</span>
                 </>
               ) : isPython ? (
                 <>

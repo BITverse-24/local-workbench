@@ -3,6 +3,7 @@ import path from "node:path";
 import { executeProcess } from "./child-process.js";
 import { assertRuntimeActive } from "../run/runtime-scope.js";
 import type { ExecutionCapability } from "../../shared/contracts.js";
+import { macosLibraryRoots, macosReadRules, sandboxLiteral as literal } from "./macos-sandbox.js";
 
 function executableFile(filename: string): boolean {
   try {
@@ -35,8 +36,23 @@ export function findBubblewrap(): string | undefined {
   return candidates.find(candidate => path.isAbsolute(candidate) && executableFile(candidate));
 }
 
-function literal(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+function macosPythonRuntime(python: string): { root: string; executables: string[] } {
+  let root = path.resolve(path.dirname(python), "..");
+  // Framework launchers also execute Resources/Python.app/.../Python. Keep the
+  // permission tied to this installation, including a directly selected helper.
+  for (let parent = path.dirname(python); parent !== "/"; parent = path.dirname(parent)) {
+    if (path.basename(path.dirname(parent)) === "Versions" && path.dirname(path.dirname(parent)).endsWith(".framework")) {
+      root = parent;
+      break;
+    }
+  }
+  const helper = path.join(root, "Resources/Python.app/Contents/MacOS/Python");
+  const executables = [python];
+  if (executableFile(helper)) {
+    const resolved = realpathSync(helper);
+    if (resolved.startsWith(root + path.sep)) executables.push(resolved);
+  }
+  return { root, executables: [...new Set(executables)] };
 }
 
 export interface PythonDirectories {
@@ -78,10 +94,11 @@ export function pythonLaunch(python: string, dirs: PythonDirectories, script: st
     }
   }
   if (process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec") && process.env.WORKBENCH_USE_MAC_SANDBOX !== "0") {
+    const runtime = macosPythonRuntime(python);
     const profile = [
       "(version 1)", "(deny default)", "(deny network*)",
-      `(allow process-exec (literal ${literal(python)}))`,
-      ...["/usr/lib", "/usr/share", path.resolve(path.dirname(python), ".."), "/opt/homebrew/lib", "/opt/homebrew/opt", "/System", "/Library", dirs.inputDir, dirs.intermediateDir, dirs.outputDir].map(root => `(allow file-read* (subpath ${literal(root)}))`),
+      ...runtime.executables.map(executable => `(allow process-exec (literal ${literal(executable)}))`),
+      ...macosReadRules(["/usr/lib", "/usr/share", runtime.root, "/opt/homebrew/lib", "/opt/homebrew/opt", "/System", "/Library", ...macosLibraryRoots(), dirs.inputDir, dirs.intermediateDir, dirs.outputDir]),
       `(allow file-write* (subpath ${literal(dirs.outputDir)}))`,
       ...inputNames.map(name => `(deny file-write* (literal ${literal(path.join(dirs.outputDir, name))}))`),
     ].join(" ");

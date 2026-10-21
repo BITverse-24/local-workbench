@@ -33,6 +33,46 @@ const twoSatisfiedChecks = JSON.stringify([
 ]);
 
 describe("code review evidence contract", () => {
+  it('does not accept import line references as proof of repaired behavior',async()=>{
+    const runId=randomUUID();
+    const gateway=reviewGateway(JSON.stringify([{index:0,status:'satisfied',issue:'The boundary is inclusive.',sourceLineNumbers:[1],codeLineNumbers:[1]}]));
+    try{
+      await expect(withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>reviewAttachedPython({runId,gateway,modelId:'primary-model',request:'Include equality at the boundary.',sourceEvidence:'import csv\nif value > limit:',currentSource:'import csv\nif value >= limit:',sourceChecklist:JSON.stringify({checks:['Include equality at the boundary.']}),executionOutput:''}))).rejects.toThrow('1 checks remain');
+    }finally{rmSync(runRoot(runId),{recursive:true,force:true});}
+  });
+  it.each([0,999,1.5])('rejects an invalid line reference without accepting its criterion: %s',async invalid=>{
+    const runId=randomUUID();
+    const accepted:any[]=[];
+    const gateway=reviewGateway(JSON.stringify([
+      {index:0,status:'satisfied',issue:'The interface is preserved.',sourceLineNumbers:[2],codeLineNumbers:[1]},
+      {index:1,status:'satisfied',issue:'The return is preserved.',sourceLineNumbers:[3],codeLineNumbers:[invalid]},
+    ]));
+    try{
+      await expect(withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>reviewAttachedPython({runId,gateway,modelId:'primary-model',request:'Keep interface and return.',sourceEvidence:'def summarize(path):\n    return []',currentSource:'def summarize(path):\n    return []',sourceChecklist:JSON.stringify({checks:['Keep the interface.','Keep the return.']}),executionOutput:'[]',onAccepted:items=>accepted.push(...items)}))).rejects.toThrow('1 checks remain');
+      expect(accepted).toHaveLength(1);expect(accepted[0].check).toBe('Keep the interface.');
+    }finally{rmSync(runRoot(runId),{recursive:true,force:true});}
+  });
+  it('resolves line references to separate exact evidence spans',async()=>{
+    const runId=randomUUID();
+    const gateway=reviewGateway(JSON.stringify([{index:0,status:'satisfied',issue:'The function returns the expected type.',sourceLineNumbers:[2,3],codeLineNumbers:[1,2]}]));
+    const accepted:any[]=[];
+    try{
+      await expect(withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>reviewAttachedPython({runId,gateway,modelId:'primary-model',request:'Keep interface and return.',sourceEvidence:'def summarize(path):\n    return []',currentSource:'def summarize(path):\n    return []',sourceChecklist:JSON.stringify({checks:['Keep the interface and return.']}),executionOutput:'[]',onAccepted:items=>accepted.push(...items)}))).resolves.toEqual([]);
+      expect(accepted[0].sourceEvidence).toEqual(['def summarize(path):','    return []']);
+      expect(accepted[0].implementationEvidence).toEqual(['def summarize(path):','    return []']);
+    }finally{rmSync(runRoot(runId),{recursive:true,force:true});}
+  });
+  it.each([false,true])('checks every separate quote in a compound behavior assessment (invented quote: %s)',async invented=>{
+    const runId=randomUUID();
+    const source='def summarize(path):\n    if temperature > 350.0:\n        high += 1\n    return high';
+    const current=source.replace('> 350.0','>= 350.0');
+    const gateway=reviewGateway(JSON.stringify([{index:0,status:'satisfied',issue:'The callable and return remain; equality now counts.',sourceEvidence:['def summarize(path):','Include equality at 350.0.'],implementationEvidence:['def summarize(path):','if temperature >= 350.0:',invented?'return invented':'return high'],executionEvidence:['"exitCode":0']}]));
+    try{
+      const result=withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>reviewAttachedPython({runId,gateway,modelId:'primary-model',request:'Include equality at 350.0.',sourceEvidence:source,currentSource:current,sourceChecklist:JSON.stringify({checks:['Keep the callable and return contract; include equality at the boundary.']}),executionOutput:'2',executionEvidence:'{"exitCode":0}'}));
+      if(invented)await expect(result).rejects.toThrow('did not provide source and code evidence');
+      else await expect(result).resolves.toEqual([]);
+    }finally{rmSync(runRoot(runId),{recursive:true,force:true});}
+  });
   it("reviews every behavior check in bounded batches above the former eight-check cap", async () => {
     const runId=randomUUID();
     const checks=Array.from({length:19},(_,index)=>`Preserve behavior ${index}.`);
@@ -80,7 +120,7 @@ describe("code review evidence contract", () => {
       if (repaired !== null) {
         const retry = JSON.parse(gateway.chatWithTools.mock.calls[1][1][1].content);
         expect(retry.behaviorChecks).toEqual([{ index: 0, check: "Return the rows read from the input." }]);
-        expect(retry.executedSource).toBe(source);
+        expect(retry.codeLines.map((item:any)=>item.text).join('\n')).toBe(source);
         expect(retry.reviewFeedback).toContain("exact contiguous quote");
       }
     } finally { rmSync(runRoot(runId), { recursive: true, force: true }); }

@@ -18,14 +18,19 @@ import { testModelRegistry } from "./helpers/test-model-registry.js";
 
 describe("P0-02: Truthful Completion Semantics", () => {
   let tempDir: string;
+  let previousDataRoot: string | undefined;
 
   beforeEach(() => {
     tempDir = mkdtempSync(path.join(os.tmpdir(), "workbench-p0-02-"));
+    previousDataRoot=process.env.WORKBENCH_DATA_ROOT;
+    process.env.WORKBENCH_DATA_ROOT=path.join(tempDir,'data');
+    initDb(path.join(tempDir,'workbench.sqlite'));
   });
 
   afterEach(() => {
     closeDb();
-    delete process.env.WORKBENCH_DATA_ROOT;
+    if(previousDataRoot===undefined)delete process.env.WORKBENCH_DATA_ROOT;
+    else process.env.WORKBENCH_DATA_ROOT=previousDataRoot;
     delete process.env.WORKBENCH_AGENT_V2;
     if (existsSync(tempDir)) {
       rmSync(tempDir, { recursive: true, force: true });
