@@ -145,7 +145,7 @@ describe("code review evidence contract", () => {
     } finally { rmSync(runRoot(runId), { recursive: true, force: true }); }
   });
 
-  it("dispatches behavior checks in parallel up to the model concurrencyLimit and streams incremental progress", async () => {
+  it("warms the prefix cache with the first check then dispatches remaining checks in parallel up to concurrencyLimit", async () => {
     const runId = randomUUID();
     const checks = [
       "Preserve the callable interface.",
@@ -155,11 +155,13 @@ describe("code review evidence contract", () => {
     ];
     let inFlight = 0;
     let maxInFlight = 0;
+    const inFlightAtStart: number[] = [];
     const assessedCounts: number[] = [];
     const gateway = {
       registry: new Map([["primary-model", { id: "primary-model", enabled: true, model: "test-model", maxOutputTokens: 4096, concurrencyLimit: 2 }]]),
       chatWithTools: vi.fn(async (_model, messages, _tools, options) => {
         inFlight++;
+        inFlightAtStart.push(inFlight);
         maxInFlight = Math.max(maxInFlight, inFlight);
         const rawContent = messages[1].content as string;
         const parsed = JSON.parse(rawContent);
@@ -198,6 +200,7 @@ describe("code review evidence contract", () => {
         },
       })).resolves.toEqual([]);
       expect(gateway.chatWithTools).toHaveBeenCalledTimes(4);
+      expect(inFlightAtStart[0]).toBe(1);
       expect(maxInFlight).toBe(2);
       expect(assessedCounts).toEqual([0, 1, 2, 3, 4, 4]);
     } finally { rmSync(runRoot(runId), { recursive: true, force: true }); }

@@ -714,9 +714,18 @@ async function reviewAttachedPythonImpl(input: AttachedPythonInput, assess: (ass
   const modelLimit = Math.min(4096, modelEntry?.maxOutputTokens ?? 4096);
   const configuredConcurrency = Math.max(1, Math.floor(input.concurrencyLimit ?? modelEntry?.concurrencyLimit ?? 1));
   if (configuredConcurrency > 1 && input.maxBatchSize === undefined) {
-    const runParallelChecks = async (checksToRun: string[], feedback?: string) => {
+    const runParallelChecks = async (checksToRun: string[], feedback?: string, warmPrefixFirst = false) => {
       let cursor = 0;
-      const workerCount = Math.min(configuredConcurrency, checksToRun.length);
+      if (warmPrefixFirst && checksToRun.length > 1) {
+        const firstCheck = checksToRun[cursor++];
+        if (firstCheck && !accepted.has(firstCheck)) {
+          const firstRes = await reviewSubset([firstCheck], feedback);
+          if (firstRes) addIndexed(firstRes, [firstCheck]);
+        }
+      }
+      const remainingCount = checksToRun.length - cursor;
+      if (remainingCount <= 0) return;
+      const workerCount = Math.min(configuredConcurrency, remainingCount);
       await Promise.all(Array.from({ length: workerCount }, async () => {
         while (cursor < checksToRun.length) {
           const check = checksToRun[cursor++];
@@ -727,10 +736,10 @@ async function reviewAttachedPythonImpl(input: AttachedPythonInput, assess: (ass
       }));
     };
     const unresolved = selectedChecks.filter(check => !accepted.has(check));
-    if (unresolved.length) await runParallelChecks(unresolved);
+    if (unresolved.length) await runParallelChecks(unresolved, undefined, true);
     let missing = selectedChecks.filter(check => !accepted.has(check));
     if (missing.length && input.retryIncomplete !== false && takeWorkRecovery()) {
-      await runParallelChecks(missing, "The previous entries were missing, uncertain or lacked exact evidence. Return one entry for every supplied check. Copy exact contiguous quotes from original source and current code.");
+      await runParallelChecks(missing, "The previous entries were missing, uncertain or lacked exact evidence. Return one entry for every supplied check. Copy exact contiguous quotes from original source and current code.", false);
       missing = selectedChecks.filter(check => !accepted.has(check));
     }
     if (missing.length) {
