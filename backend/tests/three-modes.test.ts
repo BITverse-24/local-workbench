@@ -253,19 +253,19 @@ describe('Work engine integration',()=>{
   const reviewer=vi.spyOn(gateway,'chatWithTools').mockImplementation(async(_model,messages)=>{
     const input=JSON.parse(String(messages[1].content));batches.push(input.behaviorChecks.map((check:any)=>check.check));
     if(failure==='truncated'&&batches.length===1)return response('[]',[],'length');
-    return response(JSON.stringify(input.behaviorChecks.filter((_:any,index:number)=>batches.length!==1).map((check:any)=>({index:check.index,status:'satisfied',issue:'The saved callable and return remain.',sourceEvidence:check.check.includes('interface')?'def summarize(path):':'return []',implementationEvidence:check.check.includes('interface')?'def summarize(path):':'return []'}))));
+    return response(JSON.stringify(input.behaviorChecks.filter((_:any,index:number)=>batches.length!==1||index===0).map((check:any)=>({index:check.index,status:'satisfied',issue:'The saved callable and return remain.',sourceEvidence:check.check.includes('interface')?'def summarize(path):':'return []',implementationEvidence:check.check.includes('interface')?'def summarize(path):':'return []'}))));
   });
   const context={runId,workspaceRoot:path.join(runRoot(runId),'input'),gateway,runContract:contract,resultStore,originalUserRequest:'Repair source and preserve behavior.',sourceReviewEvidence:source,sourceReviewChecklist:JSON.stringify({checks:['Preserve the callable interface.','Preserve the return behavior.']})};
   const checks=await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:2},()=>validateWorkArtifacts(context,true));
   expect(checks.filter(check=>check.mandatory).every(check=>check.status==='passed')).toBe(true);
-  const initialCalls=3;
+  const initialCalls=failure==='truncated'?3:2;
   expect(reviewer).toHaveBeenCalledTimes(initialCalls);expect(batches[1]).toHaveLength(1);expect(getExecutionLedger(runId)?.operationAttempts).toHaveLength(1);
   expect(resultStore.listResults()).toHaveLength(2);expect(resultStore.getResult(execution.resultId).storage.sha256).toBe(execution.storage.sha256);
   expect(readFileSync(path.join(dir,artifact.relativePath),'utf8')).toBe(source);
   await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>validateWorkArtifacts({...context},true));expect(reviewer).toHaveBeenCalledTimes(initialCalls);
   const newer=resultStore.registerResult({type:'execution',status:'complete',origin:'execution',producer:{tool:'execute_python',callId:'python-new-evidence'},summary:'Executed saved source with new evidence',payload:{exitCode:0,timedOut:false,stdout:'[1]',sourceDigest},sources:[]});
   recordExecutionToolOutcome({runId,callId:'python-new-evidence',tool:'execute_python',args:{filename:'repaired.py'},summary:'New input execution',ok:true,resultId:newer.resultId,artifacts:[artifact]});
-  await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>validateWorkArtifacts({...context},true));expect(reviewer).toHaveBeenCalledTimes(initialCalls+2);
+  await withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>validateWorkArtifacts({...context},true));expect(reviewer).toHaveBeenCalledTimes(initialCalls+1);
  });
  it.each(['malformed','truncated','omitted','ungrounded','duplicate','gateway','uncertain'])('retries a %s review without changing saved bytes, then reuses durable accepted evidence',async failure=>{
   const runId=createRun(createChat(),'Create output');createRunDirectories(runId);

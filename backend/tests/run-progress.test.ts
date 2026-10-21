@@ -1,6 +1,8 @@
 /// <reference path="../../frontend/src/bridge.d.ts" />
 import { expect, it } from "vitest";
 import { getRunProgress, updateRunEvents } from "../../frontend/src/lib/run-progress.js";
+import { summarizeVerificationReport } from "../../frontend/src/lib/verification-summary.js";
+import { buildPythonReviewPlan } from "../src/main/run/python-review-plan.js";
 import { RunSessions } from '../../frontend/src/lib/run-sessions.js';
 
 const progress = (requestId: string, channel: ModelProgressEvent["channel"] = "text", status: ModelProgressEvent["status"] = "receiving"): ModelProgressEvent =>
@@ -166,4 +168,69 @@ it("shows a nested correction as the current work, without counting its awaiting
   expect(state.kind).toBe("document");
   expect(state.summary.now).toHaveLength(1);
   expect(state.summary.remaining.some(row => row.label === "Draft coverage")).toBe(true);
+});
+
+it("deterministically classifies and scopes verification checks to the assessed review checks", () => {
+  const summary = summarizeVerificationReport({
+    schemaVersion: 1,
+    runId: "00000000-0000-4000-8000-000000000001",
+    status: "passed",
+    updatedAt: new Date().toISOString(),
+    checks: [
+      { criterionId: "acceptance:response", requirement: "Provide a response to the user", status: "passed", method: "message_record", evidence: [], reason: "Saved.", verifiedAt: "now", mandatory: true },
+      { criterionId: "result-integrity:r1", requirement: "Integrity of stored result", status: "passed", method: "result_store_checksum", evidence: [], reason: "Matches.", verifiedAt: "now", mandatory: false },
+      { criterionId: "input:integrity:in1", requirement: "Preserve supplied input log.csv", status: "passed", method: "sha256", evidence: [], reason: "Input digest matches.", verifiedAt: "now", mandatory: true },
+      { criterionId: "independent:out1", requirement: "Read saved parser.py", status: "passed", method: "independent_reader", evidence: [], reason: "Parsed UTF-8.", verifiedAt: "now", mandatory: true },
+      { criterionId: "work:python_behavior", requirement: "Successful execution of repaired source", status: "passed", method: "execution_record", evidence: [], reason: "Exit code 0.", verifiedAt: "now", mandatory: true },
+      { criterionId: "work:executed_source", requirement: "Saved repair matches the executed revision", status: "passed", method: "sha256", evidence: [], reason: "Source digest matches.", verifiedAt: "now", mandatory: true },
+      { criterionId: "acceptance:validated-python:parser.py", requirement: "Validate source parser.py", status: "passed", method: "execution_record", evidence: [], reason: "Validated.", verifiedAt: "now", mandatory: true },
+      { criterionId: "behavior:1", requirement: "Correct this original-source defect in behavior: Bug 1: handle missing TypeError and ValueError", status: "passed", method: "content_check", evidence: [], reason: "Catches TypeError and ValueError.", verifiedAt: "now", mandatory: false },
+      { criterionId: "behavior:2", requirement: "Correct this original-source defect in behavior: Bug 2: the high alarm boundary is inclusive at 350.0 C", status: "passed", method: "content_check", evidence: [], reason: "Uses >= 350.0.", verifiedAt: "now", mandatory: false },
+      { criterionId: "behavior:3", requirement: "Preserve the original public interface and declared return contract.", status: "passed", method: "content_check", evidence: [], reason: "Keeps summarize(path).", verifiedAt: "now", mandatory: false },
+      { criterionId: "behavior:4", requirement: "Preserve successful operations on their original control-flow paths except where a documented defect requires a change.", status: "passed", method: "content_check", evidence: [], reason: "Keeps ok counter outside high branch.", verifiedAt: "now", mandatory: false },
+      { criterionId: "behavior:5", requirement: "Keep the command-line interface", status: "passed", method: "content_check", evidence: [], reason: "Retains sys.argv[1].", verifiedAt: "now", mandatory: false },
+      { criterionId: "content:requirement-1", requirement: "Include equality at 350.0 C", status: "passed", method: "content_check", evidence: [], reason: "Uses >= 350.0.", verifiedAt: "now", mandatory: true },
+      { criterionId: "content:complete_request", requirement: "Complete request aggregate", status: "passed", method: "content_check", evidence: [], reason: "All passed.", verifiedAt: "now", mandatory: true },
+      { criterionId: "work:source_behavior", requirement: "Source-derived repair behavior", status: "passed", method: "content_check", evidence: [], reason: "All passed.", verifiedAt: "now", mandatory: true },
+    ],
+  });
+  expect(summary).not.toBeNull();
+  expect(summary!.headline).toBe("5 of 5 checks passed");
+  expect(summary!.allChecks[0].requirement).toBe("Bug 1: handle missing TypeError and ValueError");
+  expect(summary!.allChecks.map(c => c.typeLabel)).toEqual([
+    "Defect & Edge Case",
+    "Boundary Check",
+    "Interface & Contract",
+    "Control Flow",
+    "CLI & Execution",
+  ]);
+  expect(summary!.categories.map(c => `${c.label}:${c.passed}/${c.total}`)).toEqual([
+    "Edge Case & Defect:1/1",
+    "Boundary:1/1",
+    "Interface:1/1",
+    "CLI & Input:1/1",
+    "Control Flow:1/1",
+  ]);
+});
+
+it("deduplicates overlapping prompt clauses and caps planned Python review checks", () => {
+  const checklist = JSON.stringify({
+    checks: [
+      "Correct this original-source defect in behavior: Bug 1: missing values (TypeError) and blank or invalid text (ValueError) must count as malformed, then be skipped.",
+      "Correct this original-source defect in behavior: Bug 2: the high alarm boundary is inclusive; 350.0 C must count as high.",
+      "Preserve the original public interface and declared return contract.",
+      "Preserve successful operations on their original control-flow paths except where a documented defect requires a change.",
+    ],
+  });
+  const plan = buildPythonReviewPlan(checklist, [
+    { id: "requirement-1", kind: "semantic", expected: "Fix parser", mandatory: true, basis: "Fix the attached vendor log parser" },
+    { id: "requirement-2", kind: "semantic", expected: "Keep summarize", mandatory: true, basis: "Keep the 'summarize' function" },
+    { id: "requirement-3", kind: "semantic", expected: "Keep CLI", mandatory: true, basis: "Keep the command-line interface" },
+    { id: "requirement-7", kind: "semantic", expected: "Inclusive 350.0", mandatory: true, basis: "The high alarm starts at 350.0 C and includes equality" },
+  ]);
+  expect(plan.checks).toHaveLength(6);
+  expect(plan.criterionTargets.get("requirement-1")).toHaveLength(2);
+  expect(plan.criterionTargets.get("requirement-7")).toEqual([
+    "Correct this original-source defect in behavior: Bug 2: the high alarm boundary is inclusive; 350.0 C must count as high.",
+  ]);
 });

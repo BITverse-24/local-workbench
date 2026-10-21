@@ -20,6 +20,7 @@ interface PersistedMessage {
   seq: number;
   artifacts?: ArtifactRef[];
   attachments?: AttachmentReference[];
+  verification?: RunVerificationReport;
 }
 
 interface OutputExpectation {

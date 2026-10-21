@@ -34,7 +34,9 @@ function toChatMessages(rows: PersistedMessage[]): ChatMessage[] {
         id: r.id,
         role: r.role,
         text: r.content,
+        runId: r.run_id ?? undefined,
         artifacts: r.artifacts,
+        verification: r.verification,
         files: r.attachments?.map((a) => ({ name: a.filename, size: a.sizeBytes })),
       });
     }
@@ -294,6 +296,15 @@ export default function App() {
         switch (event.type) {
           case "verification_report":
             setVerificationReport(event.report);
+            setMessages((prev) => {
+              const lastIdx = prev.length - 1;
+              if (lastIdx >= 0 && prev[lastIdx]?.role === "assistant" && (prev[lastIdx]?.runId === event.runId || !prev[lastIdx]?.runId)) {
+                const updated = [...prev];
+                updated[lastIdx] = { ...updated[lastIdx]!, runId: event.runId, verification: event.report };
+                return updated;
+              }
+              return prev;
+            });
             break;
           case "run_state":
             setRunState(event.state);

@@ -523,6 +523,10 @@ export function unchangedMarkedConditionGaps(source: string, candidate: string, 
   const gaps:Array<{issue:string;evidence:string}>=[];
   for(let i=0;i<lines.length;i++) {
     const marker=lines[i].match(/#\s*(?:bug\s*\d*|fixme)\s*:\s*(.+)/i);
+    if(marker&&/\b(?:TypeError|ValueError|KeyError)\b/.test(marker[1])&&!hasPythonSatisfactionEvidence([candidate],marker[1])){
+      const named=[...new Set(marker[1].match(/\b(?:TypeError|ValueError|KeyError)\b/g)??[])].join(', ');
+      gaps.push({issue:`The source comment requires handling or guarding against every named exception (${named}), which is missing in the proposed repair.`,evidence:marker[1]});
+    }
     // A faulty branch body can be repaired without changing its predicate.
     // Use this conservative check only for an explicit comparison defect.
     if(!marker||! /\b(?:inclusive|exclusive|boundary|comparison|off.by.one)\b/i.test(marker[1]))continue;
@@ -631,13 +635,15 @@ async function reviewAttachedPythonImpl(input: AttachedPythonInput, assess: (ass
   const quotes = (value: string | string[]) => typeof value === 'string' ? [value] : value;
   const numberedSource = reviewEvidenceCatalog(input.request + "\n" + input.sourceEvidence);
   const numberedCode = reviewEvidenceCatalog(input.currentSource);
-  const isGrounded = (item: CodeReviewItem, requirement=item.check??'') => Boolean(
+  const isEvidenceGrounded = (item: CodeReviewItem, requirement=item.check??'') => Boolean(
     quotes(item.sourceEvidence).length && quotes(item.implementationEvidence).length &&
     quotes(item.sourceEvidence).every(quote => quote.trim() && source.includes(normalize(quote))) &&
     quotes(item.implementationEvidence).every(quote => quote.trim() && normalize(input.currentSource).includes(normalize(quote))) &&
     hasPythonBehaviorEvidence(quotes(item.implementationEvidence),requirement) &&
-    (item.status !== "satisfied" || hasPythonSatisfactionEvidence(quotes(item.implementationEvidence),requirement)) &&
     (item.executionEvidence ?? []).every(quote => (input.executionEvidence ?? '').includes(quote)));
+  const isGrounded = (item: CodeReviewItem, requirement=item.check??'') =>
+    isEvidenceGrounded(item, requirement) &&
+    (item.status !== "satisfied" || hasPythonSatisfactionEvidence([...quotes(item.implementationEvidence), input.currentSource], requirement));
   let incompleteReason="";
   const reviewSubset = async (selectedChecks: string[], reviewFeedback?: string): Promise<CodeReviewItem[] | null> => {
     const messages: AgentMessage[] = [
@@ -687,8 +693,17 @@ async function reviewAttachedPythonImpl(input: AttachedPythonInput, assess: (ass
     if (new Set(ids).size !== ids.length || ids.some(index => !allowed[index])) return;
     for (const item of items) {
       const target = allowed[item.index];
-      if (strict && (!isGrounded(item,target) || item.status === "uncertain")) continue;
-      accepted.set(target, { ...item, check: target });
+      if (strict && (!isEvidenceGrounded(item,target) || item.status === "uncertain")) continue;
+      const resolved: CodeReviewItem =
+        item.status === "satisfied" && !hasPythonSatisfactionEvidence([...quotes(item.implementationEvidence), input.currentSource], target)
+          ? {
+              ...item,
+              check: target,
+              status: "gap",
+              issue: "The repaired code does not handle or guard against every exception or CLI operation required by this check.",
+            }
+          : { ...item, check: target };
+      accepted.set(target, resolved);
     }
     input.onAccepted?.([...accepted.values()].filter(item => isGrounded(item) && item.status !== "uncertain"));
     publishAssessment();
