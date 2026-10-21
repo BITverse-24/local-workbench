@@ -213,6 +213,11 @@ export async function getRunLogFile(input: { runId: string; filename: string }):
   return bridge().getRunLogFile(input);
 }
 
+export async function notifyResponse(input?: { title?: string; body?: string }): Promise<{ notified: boolean }> {
+  if (!isWorkbenchAvailable()) return { notified: false };
+  return bridge().notifyResponse(input);
+}
+
 export function onRunEvent(listener: (event: RunEvent) => void): () => void {
   return bridge().onRunEvent(listener);
 }

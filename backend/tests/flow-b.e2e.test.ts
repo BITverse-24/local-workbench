@@ -6,6 +6,7 @@ import { createChat } from '../src/main/persistence/chats.js';
 import { closeDb, initDb } from '../src/main/persistence/db.js';
 import { resolveRunPath } from '../src/main/run/filesystem.js';
 import { parseFileIndependently } from '../src/main/tools/file-worker.js';
+import * as pythonRuntime from '../src/main/tools/python-runtime.js';
 import { modeGateway, fixtureIntent } from './helpers/mode-gateway.js';
 import type { RunEvent } from '../src/shared/contracts.js';
 
@@ -21,6 +22,7 @@ describe('Work computation and exports with real Python', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     closeDb();
     delete process.env.WORKBENCH_DATA_ROOT;
     rmSync(root, { recursive: true, force: true });
@@ -55,6 +57,7 @@ describe('Work computation and exports with real Python', () => {
   }
 
   it('computes actual row count after fallback approval without an unrequested artifact', async () => {
+    vi.spyOn(pythonRuntime, 'probePythonIsolation').mockResolvedValue({ status: 'approval_required', message: 'Isolation unavailable in this fallback fixture.' });
     let turn = 0;
     setup([], () => ++turn === 1 ? python(readRows + "print('ROWS', len(rows))\n") : 'ROWS 2', true);
     const chatId = createChat();

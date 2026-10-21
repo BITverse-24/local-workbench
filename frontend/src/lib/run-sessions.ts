@@ -1,3 +1,5 @@
+import { updateRunEvents } from './run-progress.js';
+
 /** Each event keeps its run and chat identity, including events from hidden chats. */
 export class RunSessions {
   readonly states=new Map<string,RunState>();
@@ -14,7 +16,7 @@ export class RunSessions {
     // Draft text is restored from the backend snapshot. Do not retain every token twice.
     if(event.type==='assistant_message_chunk')return;
     const previous=this.events.get(runId)??[];
-    this.events.set(runId,[...previous,event].slice(-500));
+    this.events.set(runId,updateRunEvents(previous,event).slice(-500));
   }
   belongsTo(runId:string,chatId:string|null):boolean{return !!chatId&&this.owners.get(runId)===chatId;}
 }

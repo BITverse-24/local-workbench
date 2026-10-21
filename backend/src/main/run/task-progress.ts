@@ -21,10 +21,14 @@ function startActivity(context: TaskProgressContext, stage: TaskProgressEvent["s
   publish();
   return {
     id: event.activityId,
-    assess: (assessed: number, total: number) => {
+    assess: (assessed: number, total: number, passed?: number, failed?: number) => {
       if (!Number.isInteger(assessed) || !Number.isInteger(total) || assessed < 0 || total < 1 || assessed > total) return;
-      if (event.assessedChecks === assessed && event.totalChecks === total) return;
-      event.assessedChecks = assessed; event.totalChecks = total; publish();
+      if (passed !== undefined && (!Number.isInteger(passed) || passed < 0 || passed > assessed)) return;
+      if (failed !== undefined && (!Number.isInteger(failed) || failed < 0 || failed > assessed)) return;
+      if (passed !== undefined && failed !== undefined && passed + failed !== assessed) return;
+      if (event.assessedChecks === assessed && event.totalChecks === total && event.passedChecks === passed && event.failedChecks === failed) return;
+      event.assessedChecks = assessed; event.totalChecks = total;
+      event.passedChecks = passed; event.failedChecks = failed; publish();
     },
     block: (reason: string) => { event.status = "blocked"; event.reason = reason.slice(0, 500); },
     finish: () => { if (event.status === "active") event.status = "completed"; publish(); },

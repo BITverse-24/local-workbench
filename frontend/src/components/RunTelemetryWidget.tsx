@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, useMemo, memo } from "react";
 import * as wb from "../lib/workbench";
+import { CONFIRMATION_TITLES } from "../../../backend/src/shared/confirmation-presentation.js";
 
 type Props = {
   runEvents?: RunEvent[];
@@ -44,7 +45,7 @@ function labelFor(e: RunEvent): string {
     case "tool_call": return `${e.tool}: ${e.summary}`;
     case "tool_result": return `${e.tool}: ${e.summary}`;
     case "context_compaction": return `Compacted ${(e as any).metadata?.toolName || "observation"} (${(e as any).metadata?.retainedChars}/${(e as any).metadata?.originalChars} chars)`;
-    case "confirmation_required": return `${e.action.prompt} [${e.action.kind}]`;
+    case "confirmation_required": return CONFIRMATION_TITLES[e.action.kind];
     case "artifact_ready": return `${e.artifact.filename} (${e.artifact.kind})`;
     case "assistant_message": return e.text.slice(0, 120);
     case "grounding_context": return e.status === "injected" ? `SOP Grounding: ${e.chunkCount ?? 0} chunk(s) injected` : e.status === "retrieving" ? "SOP Grounding: retrieving..." : "SOP Grounding: skipped";

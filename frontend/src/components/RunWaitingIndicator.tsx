@@ -1,7 +1,7 @@
 import { memo, useMemo, useState } from "react";
 import AgentExecutionTimeline from "./AgentExecutionTimeline";
 import { getRunProgress, type ProgressRow } from "../lib/run-progress";
-import { assessedCheckLabel, TASK_STAGE_LABELS } from "../../../backend/src/shared/task-progress.js";
+import { assessedCheckLabel, TASK_STAGE_LABELS, taskProgressKey } from "../../../backend/src/shared/task-progress.js";
 
 type Props = {
   isRunning: boolean;
@@ -78,7 +78,7 @@ const RunWaitingIndicator = memo(function RunWaitingIndicator({
       </div>
       {expanded && <div className="mt-3 border-t border-[var(--border-subtle)] pt-2">
         {state.tasks.length > 0 && <ul className="mb-2 max-h-48 space-y-1.5 overflow-y-auto text-xs text-[var(--text-secondary)]" aria-label="Task stages">
-          {state.tasks.map(task => <li key={task.activityId} className="break-words">
+          {state.tasks.map(task => <li key={taskProgressKey(task)} className="break-words">
             <span aria-hidden="true">{task.status === "completed" ? "✓" : task.status === "blocked" ? "!" : "•"} </span>
             {task.status === "completed" ? TASK_STAGE_LABELS[task.stage].completed : TASK_STAGE_LABELS[task.stage].active}
             {task.target && <>: <code className="break-all">{task.target}</code></>}

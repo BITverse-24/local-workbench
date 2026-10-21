@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getDb, prepareCached } from "./db.js";
 import { chatIdSchema } from "./chats.js";
-import type { ArtifactRef, AttachmentReference } from "../../shared/contracts.js";
+import type { ArtifactRef, AttachmentReference, RunVerificationReport } from "../../shared/contracts.js";
 
 export const MAX_CONTENT_CHARS = 32 * 1024;
 
@@ -33,6 +33,7 @@ export interface Message {
   seq: number;
   artifacts?: ArtifactRef[];
   attachments?: AttachmentReference[];
+  verification?: RunVerificationReport;
 }
 
 export type AddMessageInput = z.infer<typeof addMessageSchema>;
@@ -94,6 +95,7 @@ export function listMessages(chat_id: string): Message[] {
     // retrieve all artifacts and attachments for the entire chat in 2 batch JOIN queries
     // and map them in memory using HashMaps (O(N) time complexity).
     const artifactsByRun = new Map<string, ArtifactRef[]>();
+    const verificationByRun = new Map<string, RunVerificationReport>();
     const attachmentsByMsg = new Map<string, AttachmentReference[]>();
 
     const runIds = Array.from(
@@ -116,6 +118,19 @@ export function listMessages(chat_id: string): Message[] {
         }
         list.push(art);
       }
+
+      try {
+        const allReports = db
+          .prepare(
+            `SELECT run_id as runId, report_json as reportJson FROM run_verification_reports WHERE run_id IN (${runPlaceholders})`
+          )
+          .all(...runIds) as Array<{ runId: string; reportJson: string }>;
+        for (const row of allReports) {
+          try {
+            verificationByRun.set(row.runId, JSON.parse(row.reportJson) as RunVerificationReport);
+          } catch { /* ignore malformed report */ }
+        }
+      } catch { /* table optional in older test fixtures */ }
     }
 
     const allAttachments = prepareCached(
@@ -135,10 +150,12 @@ export function listMessages(chat_id: string): Message[] {
 
     return rows.map((msg) => {
       const artifacts = msg.run_id ? artifactsByRun.get(msg.run_id) : undefined;
+      const verification = msg.role === "assistant" && msg.run_id ? verificationByRun.get(msg.run_id) : undefined;
       const attachments = attachmentsByMsg.get(msg.id);
       return {
         ...msg,
         ...(artifacts && artifacts.length > 0 ? { artifacts } : {}),
+        ...(verification ? { verification } : {}),
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
       };
     });

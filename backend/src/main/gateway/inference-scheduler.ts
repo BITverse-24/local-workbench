@@ -15,13 +15,21 @@ interface Ticket {
 export class InferenceScheduler {
   private readonly groups = new Map<string, { active: number; chatStreak: number; lastBackground: "work" | "agent"; queue: Ticket[] }>();
   private readonly groupCapacities = new Map<string, number>();
+  private readonly restrictedGroups = new Set<string>();
   constructor(private readonly capacity = 1, private readonly now = () => Date.now()) {}
 
-  enableOptimisticConcurrency(group: string): void {
-    if (!this.groupCapacities.has(group)) this.groupCapacities.set(group, 2);
+  enableOptimisticConcurrency(group: string, limit = 2): void {
+    if (this.restrictedGroups.has(group)) return;
+    this.groupCapacities.set(group, Math.max(1, Math.floor(limit)));
+  }
+
+  setGroupCapacity(group: string, limit = 2): void {
+    this.restrictedGroups.delete(group);
+    this.groupCapacities.set(group, Math.max(1, Math.floor(limit)));
   }
 
   restrictToSingleRequest(group: string): void {
+    this.restrictedGroups.add(group);
     this.groupCapacities.set(group, 1);
   }
 

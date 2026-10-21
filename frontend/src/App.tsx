@@ -23,6 +23,7 @@ import { useVoice } from "./lib/hooks/useVoice";
 import { useUpload } from "./lib/hooks/useUpload";
 import { RunSessions } from "./lib/run-sessions";
 import { updateRunEvents } from "./lib/run-progress";
+import { playPingSound } from "./lib/audio";
 
 const MAX_SIZE = 10 * 1024 * 1024;
 
@@ -34,7 +35,9 @@ function toChatMessages(rows: PersistedMessage[]): ChatMessage[] {
         id: r.id,
         role: r.role,
         text: r.content,
+        runId: r.run_id ?? undefined,
         artifacts: r.artifacts,
+        verification: r.verification,
         files: r.attachments?.map((a) => ({ name: a.filename, size: a.sizeBytes })),
       });
     }
@@ -294,6 +297,15 @@ export default function App() {
         switch (event.type) {
           case "verification_report":
             setVerificationReport(event.report);
+            setMessages((prev) => {
+              const lastIdx = prev.length - 1;
+              if (lastIdx >= 0 && prev[lastIdx]?.role === "assistant" && (prev[lastIdx]?.runId === event.runId || !prev[lastIdx]?.runId)) {
+                const updated = [...prev];
+                updated[lastIdx] = { ...updated[lastIdx]!, runId: event.runId, verification: event.report };
+                return updated;
+              }
+              return prev;
+            });
             break;
           case "run_state":
             setRunState(event.state);
@@ -464,6 +476,26 @@ export default function App() {
                 },
               ];
             });
+            {
+              const isInactive = typeof document !== "undefined" && (document.hidden || !document.hasFocus());
+              const textSnippet = (event.text || "").replace(/\s+/g, " ").trim();
+              const preview = textSnippet.length > 120 ? textSnippet.slice(0, 117) + "..." : textSnippet;
+              void wb
+                .notifyResponse({
+                  title: activeTitle || "Local Workbench",
+                  body: preview || "Response is ready",
+                })
+                .then((res) => {
+                  if (res?.notified || isInactive) {
+                    playPingSound();
+                  }
+                })
+                .catch(() => {
+                  if (isInactive) {
+                    playPingSound();
+                  }
+                });
+            }
             break;
           case "grounding_context":
             setGroundingStatus({ status: event.status, chunkCount: event.chunkCount });
@@ -988,7 +1020,14 @@ export default function App() {
         />
         </ResponsivePanel>
 
-        <ChatPanel title={activeTitle} leftCollapsed={!leftOpen} rightCollapsed={!rightOpen} onToggleLeft={() => leftDocked ? setLeftCollapsed(!leftCollapsed) : setDrawer(drawer === "left" ? null : "left")} onToggleRight={() => rightDocked ? setRightCollapsed(!rightCollapsed) : setDrawer(drawer === "right" ? null : "right")} onModelSettings={async () => {
+        <ChatPanel
+          title={activeTitle}
+          runId={activeRunId ?? [...messages].reverse().find((m) => m.runId)?.runId ?? null}
+          leftCollapsed={!leftOpen}
+          rightCollapsed={!rightOpen}
+          onToggleLeft={() => leftDocked ? setLeftCollapsed(!leftCollapsed) : setDrawer(drawer === "left" ? null : "left")}
+          onToggleRight={() => rightDocked ? setRightCollapsed(!rightCollapsed) : setDrawer(drawer === "right" ? null : "right")}
+          onModelSettings={async () => {
           try {
             const result = await wb.resetOnboarding();
             if (!result.ok) throw new Error("Could not open model settings.");
@@ -999,7 +1038,6 @@ export default function App() {
           }
         }}>
           {modelSettingsError && <div className="mx-4 mt-2 px-3 py-2 rounded-[var(--radius-sm)] border border-[var(--status-error)]/40 text-xs text-[var(--status-error)] flex items-center justify-between gap-3"><span>{modelSettingsError}</span><button onClick={() => setModelSettingsError(null)} aria-label="Dismiss model settings error">×</button></div>}
-          {runState==="partial"&&activeRunId&&["work","agent"].includes(sessions.current.modes.get(activeRunId)??"")&&<button className="mx-4 mt-2 text-sm text-[var(--accent)]" onClick={()=>{const id=activeRunId;void wb.resumeRun({runId:id}).then(()=>{if(activeRunRef.current===id)setRunState("created");}).catch(error=>setRunError({code:"resume_failed",message:String(error)}));}}>Resume from saved evidence</button>}
           {activeRoute && <RouteBadge route={activeRoute} state={runState} />}
           {runError && (
             <div className="mx-4 mt-2 px-3.5 py-2.5 rounded-[var(--radius-sm)] bg-[var(--status-error)]/15 border border-[var(--status-error)]/30 text-sm text-[var(--status-error)] flex flex-col gap-1 select-text">

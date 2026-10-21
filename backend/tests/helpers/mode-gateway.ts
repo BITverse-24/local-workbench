@@ -23,15 +23,9 @@ export function modeGateway(intent: Record<string, unknown>, generate: (messages
 
       const evidence = String(messages[1].content);
 
-      const source = evidence.split('ORIGINAL SOURCES:\n')[1]?.split('\nSAVED OUTPUT:\n')[0] ?? '';
-
-      const output = evidence.split('SAVED OUTPUT:\n')[1] ?? '';
-
-      const quote = output.split('\n').slice(1).find(line => line.trim())?.slice(0, 50) ?? '';
-
-      const sourceQuote = source.split('\n').find(line => line.trim())?.slice(0, 50);
-
-      value = { content: JSON.stringify({ checks: [{ id: 'content:complete_request', status: 'passed', reason: 'The fixture response meets the requested content.', outputQuotes: [quote], sourceQuotes: sourceQuote ? [sourceQuote] : [] }], coverageGaps: [] }) };
+      const source = JSON.parse(evidence.split('ORIGINAL SOURCES:\n')[1].split('\nSAVED OUTPUT:\n')[0]);
+      const output = JSON.parse(evidence.split('SAVED OUTPUT:\n')[1].split('\nRUNTIME EVIDENCE:\n')[0]);
+      value = { content: JSON.stringify({ checks: [{ id: 'content:complete_request', status: 'passed', reason: 'The fixture response meets the requested content.', outputLineNumbers: [output.find((item:any)=>!item.text.startsWith('FILE '))!.line], sourceLineNumbers: source.length?[source[0].line]:[],runtimeLineNumbers:[] }], coverageGaps: [] }) };
 
     } else value = await generate(messages, tools, options);
 

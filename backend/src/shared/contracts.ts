@@ -3,7 +3,7 @@ export type ModelRuntime = "mlx-lm" | "llama-server" | "ollama";
 /** One configured inference model drives all semantic task types. */
 export type ModelId = string;
 export type ModelCapability = "text" | "image-input" | "structured-output" | "code-generation";
-export interface ModelRegistryEntry { id: ModelId; /** Legacy config compatibility only; task semantics no longer select model endpoints. */ taskTypes?: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; /** Auxiliary endpoint used only when a tool needs its capabilities. */ fallbackOnly?: boolean; maxOutputTokens?: number; contextLength?: number; toolCallingFormat?: "native" | "json"; temperature?: number; }
+export interface ModelRegistryEntry { id: ModelId; /** Legacy config compatibility only; task semantics no longer select model endpoints. */ taskTypes?: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; /** Auxiliary endpoint used only when a tool needs its capabilities. */ fallbackOnly?: boolean; maxOutputTokens?: number; contextLength?: number; concurrencyLimit?: number; toolCallingFormat?: "native" | "json"; temperature?: number; }
 export interface AttachmentReference { attachmentId: string; filename: string; mediaType: string; sizeBytes: number; relativePath: string; selectedPages?: number[]; sourcePath?: string; }
 export interface ChatTitleEvent { type: "chat_title_changed"; chatId: string; title: string; revision: number }
 export interface InputFileReference { attachmentId: string; filename: string; mediaType: string; columns?: string[]; rowCount?: number; }
@@ -63,7 +63,8 @@ export interface ApprovalNoteSection { id: ApprovalNoteSectionId; heading: strin
 export interface MissingInformation { field: string; note: string; }
 export interface DraftResult { title: string; body: string; sections: ApprovalNoteSection[]; missingInformation: MissingInformation[]; }
 export interface CodeDraftResult { filename: "task.py"; source: string; expectedResult: string; inputFiles: string[]; outputFiles: string[]; allowedImports: string[]; outputMode?: OutputMode; artifactKind?: ArtifactKind; artifactFilename?: string; artifactRationale?: string; }
-export interface PythonExecutionResult { exitCode: number; stdout: string; stderr: string; timedOut: boolean; outputFiles: string[]; durationMs: number; capturedOutput?: { stdout: string; stderr: string; truncated: boolean }; }
+export interface PythonInputEvidence { filename: string; originalFilename: string; beforeSha256: string | null; afterSha256: string | null; originalAfterSha256: string | null; }
+export interface PythonExecutionResult { exitCode: number; stdout: string; stderr: string; timedOut: boolean; outputFiles: string[]; durationMs: number; capturedOutput?: { stdout: string; stderr: string; truncated: boolean }; inputEvidence?: PythonInputEvidence[]; }
 export interface CodeSummaryResult { summary: string; verified: boolean; }
 export type AIErrorCode = "model_unavailable" | "model_timeout" | "model_rejected_request" | "empty_model_response" | "invalid_model_response" | "unsupported_task" | "missing_required_content" | "unsafe_generated_code";
 export interface AIError { kind: "ai-error"; code: AIErrorCode; message: string; retryable: boolean; requestId?: string; runId?: string; taskType?: TaskType; modelId?: ModelId; }
@@ -359,6 +360,9 @@ export interface TaskProgressEvent {
   /** Complete, parsed, index-matched assessments; never a pass count. */
   assessedChecks?: number;
   totalChecks?: number;
+  /** Accepted outcomes within this review stage, not the whole run. */
+  passedChecks?: number;
+  failedChecks?: number;
   /** Runtime stop reason, never a partial model response. */
   reason?: string;
 }
@@ -466,12 +470,14 @@ export interface ModelConfigRow {
   host: string;
   port: number;
   contextLength: number;
+  concurrencyLimit?: number;
 }
 
 export interface ModelEndpointTestResult {
   ok: boolean;
   latencyMs?: number;
   modelFound?: boolean;
+  modelReady?: boolean;
   availableModels?: string[];
   error?: string;
 }

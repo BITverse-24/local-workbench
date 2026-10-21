@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import ArtifactCard from './ArtifactCard';
 import RunWaitingIndicator from './RunWaitingIndicator';
 import AgentExecutionTimeline from './AgentExecutionTimeline';
+import VerificationSummaryCard from './VerificationSummaryCard';
 
 export type ChatFile = {
   name: string;
@@ -14,6 +15,7 @@ export type ChatMessage = {
   text: string;
   files?: Array<File | ChatFile>;
   artifacts?: ArtifactRef[];
+  verification?: RunVerificationReport;
   runId?: string;
   execution?: {
     mode?:ExecutionMode;
@@ -634,6 +636,20 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
                     </div>
                   )}
                   {msg.text && <BasicMarkdown text={msg.text} />}
+                  {(() => {
+                    const report =
+                      msg.verification ??
+                      (msg.execution?.events
+                        ? [...msg.execution.events]
+                            .reverse()
+                            .find((e): e is Extract<RunEvent, { type: 'verification_report' }> => e.type === 'verification_report')?.report
+                        : undefined);
+                    return report ? (
+                      <div className="w-full mt-2.5">
+                        <VerificationSummaryCard report={report} />
+                      </div>
+                    ) : null;
+                  })()}
                   {msg.artifacts && msg.artifacts.length > 0 && (
                     <div className="w-full space-y-2.5 mt-2">
                       {msg.artifacts.map((art) => (

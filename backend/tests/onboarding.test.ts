@@ -8,7 +8,7 @@ import {
 } from "../src/main/ipc/channels.js";
 import { initBackend } from "../src/main/index.js";
 import { closeDb, initDb } from "../src/main/persistence/db.js";
-import { sanitizeHost, buildRegistryFromRows, configureModels } from "../src/main/gateway/registry.js";
+import { sanitizeHost, buildRegistryFromRows, configureModels, loadRegistry } from "../src/main/gateway/registry.js";
 import {
   handleGetOnboardingStatus,
   handleResetOnboarding,
@@ -155,10 +155,31 @@ describe("Onboarding Architecture & IPC Handlers", () => {
       expect(entries.find(entry => entry.model === "qwen2.5-vl:7b")?.capabilities).toContain("image-input");
       expect(primary.baseUrl).toBe("http://127.0.0.1:8000/v1");
       expect(primary.model).toBe("qwen3:8b");
+      expect(primary.concurrencyLimit).toBe(2);
 
       // Verify no legacy plan model is synthesized
       const plan = entries.find((e: any) => e.id === "plan-qwen3-8b");
       expect(plan).toBeUndefined();
+    });
+
+    it("preserves custom concurrencyLimit from onboarding rows and defaults CLI profiles to 2", () => {
+      const customRows: ModelConfigRow[] = [
+        {
+          role: "draft",
+          modelName: "qwen3:8b",
+          host: "127.0.0.1",
+          port: 8000,
+          contextLength: 16384,
+          concurrencyLimit: 4,
+        },
+      ];
+      const [entry] = buildRegistryFromRows(customRows);
+      expect(entry.concurrencyLimit).toBe(4);
+
+      const loaded = loadRegistry();
+      for (const profile of loaded.values()) {
+        expect(profile.concurrencyLimit).toBe(2);
+      }
     });
 
     it("deduplicates the same endpoint configured for Vision, Coding, and Draft", () => {
@@ -299,6 +320,75 @@ describe("Onboarding Architecture & IPC Handlers", () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toBeDefined();
+    });
+
+    it("verifies model availability and readiness with a local test server", async () => {
+      const http = await import("node:http");
+      let completionsCalled = false;
+      let shouldFailProbe = false;
+
+      const server = http.createServer((req, res) => {
+        if (req.url === "/v1/models") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ data: [{ id: "test-ready-model" }] }));
+          return;
+        }
+        if (req.url === "/v1/chat/completions") {
+          completionsCalled = true;
+          if (shouldFailProbe) {
+            res.writeHead(503, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: { message: "Model is not loaded into memory" } }));
+            return;
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ choices: [{ message: { content: "pong" } }] }));
+          return;
+        }
+        res.writeHead(404);
+        res.end();
+      });
+
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+      const addr = server.address() as { port: number };
+      const port = addr.port;
+
+      try {
+        // 1. Model not found on server
+        const notFoundRes = await handleTestModelEndpoint({
+          host: "127.0.0.1",
+          port,
+          modelName: "non-existent-model",
+        });
+        expect(notFoundRes.ok).toBe(false);
+        expect(notFoundRes.modelFound).toBe(false);
+        expect(notFoundRes.error).toContain("is not available on this server");
+
+        // 2. Model found and ready to serve
+        completionsCalled = false;
+        shouldFailProbe = false;
+        const readyRes = await handleTestModelEndpoint({
+          host: "127.0.0.1",
+          port,
+          modelName: "test-ready-model",
+        });
+        expect(completionsCalled).toBe(true);
+        expect(readyRes.ok).toBe(true);
+        expect(readyRes.modelFound).toBe(true);
+        expect(readyRes.modelReady).toBe(true);
+
+        // 3. Model found on server, but probe indicates not ready / not loaded
+        shouldFailProbe = true;
+        const notReadyRes = await handleTestModelEndpoint({
+          host: "127.0.0.1",
+          port,
+          modelName: "test-ready-model",
+        });
+        expect(notReadyRes.ok).toBe(false);
+        expect(notReadyRes.modelReady).toBe(false);
+        expect(notReadyRes.error).toContain("Model is not loaded into memory");
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
     });
 
     it("rejects public hosts before endpoint testing or saving", async () => {

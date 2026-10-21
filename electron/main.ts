@@ -5,7 +5,7 @@ if (typeof (Promise as any).try !== "function") {
   };
 }
 
-import { app, BrowserWindow, ClipboardItem, clipboard, dialog, ipcMain, shell, screen } from "electron";
+import { app, BrowserWindow, ClipboardItem, clipboard, dialog, ipcMain, Notification, shell, screen } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -352,6 +352,40 @@ app.whenReady().then(async () => {
         return null;
       }
       return result.filePaths[0];
+    });
+
+    // Inactive window response notification (similar to Codex / Antigravity ping)
+    ipcMain.handle("workbench:notifyResponse", async (_event, input) => {
+      const raw = input as { title?: string; body?: string } | undefined;
+      const isInactive = !win || win.isDestroyed() || !win.isFocused();
+      if (isInactive) {
+        if (Notification.isSupported()) {
+          try {
+            const notif = new Notification({
+              title: raw?.title || "Local Workbench",
+              body: raw?.body || "Response is ready",
+              silent: false,
+            });
+            notif.on("click", () => {
+              if (win && !win.isDestroyed()) {
+                if (win.isMinimized()) win.restore();
+                win.show();
+                win.focus();
+              }
+            });
+            notif.show();
+          } catch (e) {
+            console.warn("[electron] notification failed:", e);
+          }
+        }
+        if (process.platform === "darwin" && app.dock) {
+          try {
+            app.dock.bounce("informational");
+          } catch {}
+        }
+        return { notified: true };
+      }
+      return { notified: false };
     });
   } catch (err) {
     // Do not create a renderer with a half-registered IPC surface. It causes

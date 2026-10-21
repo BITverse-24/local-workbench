@@ -1,3 +1,5 @@
+import { taskProgressKey } from '../../shared/task-progress.js';
+import { CONFIRMATION_TITLES } from '../../shared/confirmation-presentation.js';
 import { createHash, randomUUID } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, chmodSync } from "node:fs";
 import path from "node:path";
@@ -234,8 +236,9 @@ export class RunManager {
       if (event.type === "task_progress") {
         if (["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(getState(event.runId))) return;
         const checkpoints = this.taskCheckpoints.get(event.runId) ?? new Map<string, TaskProgressEvent>();
-        checkpoints.delete(event.activityId);
-        checkpoints.set(event.activityId, event);
+        const key=taskProgressKey(event);
+        checkpoints.delete(key);
+        checkpoints.set(key, event);
         this.taskCheckpoints.set(event.runId, checkpoints);
         const metrics=this.runMetrics.get(event.runId)??{};metrics.progress=[...checkpoints.values()];this.runMetrics.set(event.runId,metrics);
         getDb().prepare("UPDATE run_mode_details SET metrics_json=? WHERE run_id=?").run(JSON.stringify(metrics),event.runId);
@@ -434,7 +437,7 @@ export class RunManager {
     if(stagedId && this.chatIdForRunIfPresent(stagedId) && (getState(stagedId)!=="created"||db.prepare("SELECT run_id FROM run_mode_details WHERE run_id=?").get(stagedId)))throw new Error("An executing or finished run cannot be started again or change mode.");
     const runId=createRun(chatId,text,requested[0]?.attachmentId,stagedId);
     createRunDirectories(runId);
-    const engineVersion = mode === "chat" ? "chat-v1" : `${mode}-v2`;
+    const engineVersion = mode === "chat" ? "chat-v1" : mode === "work" ? "work-v4" : "agent-v2";
     db.prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,?,?,?)").run(runId,mode,engineVersion,root??null);
     this.activeChats.set(chatId,runId);this.controllers.set(runId,new AbortController());this.runModes.set(runId,mode);
     this.runMetrics.set(runId,{requestReceivedAt:Date.now(),mode,engineVersion,modelCallCount:0,originalRequest:text,queueWaitMs:0,toolTimeMs:0,recoveryCount:0,isolationStatus:"not_used"});
@@ -860,7 +863,8 @@ export class RunManager {
         attachments.push({...file,filename,relativePath:`runs/${runId}/input/${filename}`});
         if(getDb().prepare("SELECT attachment_id FROM attachments WHERE attachment_id=?").get(file.attachmentId))getDb().prepare("INSERT OR IGNORE INTO run_attachments(run_id,attachment_id) VALUES (?,?)").run(runId,file.attachmentId);
       }
-      scope.observe({sourceAliases:attachments.map(a=>({id:a.attachmentId,filename:a.filename,relativePath:a.relativePath,mediaType:a.mediaType,sizeBytes:a.sizeBytes,sha256:createHash("sha256").update(readFileSync(absoluteDataPath(a.relativePath))).digest("hex")}))});
+      const sourceAliases=attachments.map(a=>({id:a.attachmentId,filename:a.filename,relativePath:a.relativePath,mediaType:a.mediaType,sizeBytes:a.sizeBytes,sha256:createHash("sha256").update(readFileSync(absoluteDataPath(a.relativePath))).digest("hex")}));
+      scope.observe({sourceAliases});
       scope.observe({preprocessingMs:Date.now()-stagingStarted});
       if(mode==="agent"){
         const root=this.harness!.requireActiveWorkspace().root;
@@ -882,7 +886,7 @@ export class RunManager {
         this.persistAssistant(runId,result.text,modelId,result.messageId);
         if(result.truncated)this.partial(runId,["The response reached the generation limit."]);else this.complete(runId);
       }else{
-        const result=await new WorkOrchestrator().run({text,modelId,history,attachments,context,resume:resume?.contract,temperature:this.runTemperatures.get(runId),state:state=>this.state(runId,state)});
+        const result=await new WorkOrchestrator().run({text,modelId,history,attachments,context:{...context,inputSources:sourceAliases},resume:resume?.contract,temperature:this.runTemperatures.get(runId),state:state=>this.state(runId,state)});
         assertRuntimeActive();this.persistAssistant(runId,result.text,modelId);this.publishVerificationReport(runId);
         if(result.outcome==="completed")this.complete(runId);else if(result.outcome==="partial")this.partial(runId);else this.fail(runId,new Error(result.text));
       }
@@ -1339,29 +1343,9 @@ ${referencedFilesSection}`;
               id: op.id, name: "write_file", arguments: { path: op.targetPath, source_id: op.sourceId },
             })) : undefined,
           isCancelled: () => getState(runId) === "cancelled",
-          onPlanConfirmationRequired: async (planText, mutatingCalls) => {
+          onPlanConfirmationRequired: async (planText) => {
             return new Promise<boolean>((resolve) => {
-              const summaryItems: string[] = [];
-              for (const c of mutatingCalls) {
-                if (c.name === "execute_python") {
-                  const inputs = Array.isArray(c.arguments?.input_files) && c.arguments.input_files.length > 0
-                    ? c.arguments.input_files.join(", ")
-                    : "";
-                  summaryItems.push(inputs ? `Python verification (${inputs})` : "Python verification");
-                } else if (c.name === "write_file") {
-                  summaryItems.push(`Write ${c.arguments?.path || "file"}`);
-                } else if (c.name === "delete_file") {
-                  summaryItems.push(`Delete ${c.arguments?.path || "file"}`);
-                } else if (c.name === "run_command") {
-                  summaryItems.push(c.arguments?.command ? `Run \`${c.arguments.command}\`` : "Run command");
-                } else if (c.arguments?.path) {
-                  summaryItems.push(`${c.name}: ${c.arguments.path}`);
-                } else {
-                  summaryItems.push(c.name);
-                }
-              }
-              const firstActionsSummary = summaryItems.join(", ");
-              const prompt = `Review Agent Plan (${firstActionsSummary})`;
+              const prompt = CONFIRMATION_TITLES.plan_approval;
 
               void this.awaitConfirmation(
                 runId,

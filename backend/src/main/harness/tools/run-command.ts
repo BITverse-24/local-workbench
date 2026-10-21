@@ -1,5 +1,6 @@
 import type { ExecutionCapability } from "../../../shared/contracts.js";
 import { findBubblewrap } from "../../tools/python-runtime.js";
+import { MACOS_TOOL_SELECTORS, macosReadRules } from "../../tools/macos-sandbox.js";
 import { executeProcess } from "../../tools/child-process.js";
 import { assertRuntimeActive, currentRuntimeScope } from "../../run/runtime-scope.js";
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, lstatSync, readFileSync, writeFileSync, rmSync, realpathSync, chmodSync } from "node:fs";
@@ -105,7 +106,7 @@ function sandboxLaunch(workspace: string, scratch: string, command: string, extr
     const profile = [
       "(version 1)", "(deny default)", "(deny network*)", "(allow process-exec)", "(allow process-fork)",
       "(allow sysctl-read)",
-      ...roots.map(root => `(allow file-read* (subpath ${literal(root)}))`),
+      ...macosReadRules([...roots, ...MACOS_TOOL_SELECTORS, workspace, scratch]),
       `(allow file-read* file-write* (subpath ${literal(workspace)}))`,
       `(allow file-read* file-write* (subpath ${literal(scratch)}))`,
       '(allow file-read* file-write* (literal "/dev/null"))',

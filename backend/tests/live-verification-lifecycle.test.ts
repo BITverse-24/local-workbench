@@ -47,12 +47,12 @@ describe.skipIf(process.env.WORKBENCH_LIVE_TESTS !== "1")("Live verification lif
 
   function createContract(filename: string, code = false): RunContract {
     const runId = createRun(createChat(), "Verify saved content"); createRunDirectories(runId);
-    const documentRequest = 'Create a summary containing the exact phrase "Required evidence". No source document is required.';
+    const documentRequest = 'Create a brief summary explaining that approval remains pending until a dated sign-off is recorded. No source document is required.';
     const contract = persistRunContract({ schemaVersion: 1, runId, createdAt: new Date().toISOString(), objective: code ? "Read the supplied input and return its lines" : documentRequest,
       resolution: { status: "resolved" }, routing: { intentType: code ? "code_modification" : "document_drafting", taskType: code ? "code" : "draft", driverModel: modelId, actionable: true },
       response: { required: true, chatOnly: false }, workspace: { requested: false, operations: [] },
       deliverables: [{ id: "saved-output", filename, filenameRequired: true, type: code ? "file" : "md" }], constraints: { protectedPaths: [], restrictMutationsToTargets: false, userConstraints: [] },
-      acceptance: { validateWrittenCode: false, validatedPythonDeliverables: code ? [filename] : [], artifactChecks: code ? [] : [{ id: "summary", kind: "semantic", expected: 'Summary contains the exact phrase "Required evidence"', mandatory: true, basis: documentRequest }] } });
+      acceptance: { validateWrittenCode: false, validatedPythonDeliverables: code ? [filename] : [], artifactChecks: code ? [] : [{ id: "summary", kind: "semantic", expected: 'The summary explains the condition for approval.', mandatory: true, basis: documentRequest }] } });
     initializeExecutionLedger(contract); return contract;
   }
   function saveArtifact(contract: RunContract, filename: string, content: string) {
@@ -73,7 +73,9 @@ describe.skipIf(process.env.WORKBENCH_LIVE_TESTS !== "1")("Live verification lif
   }
 
   it("recovers a document review against unchanged saved bytes", async () => {
-    const contract = createContract("summary.md"), content = "# Summary\nRequired evidence\n";
+    // This smoke exercises semantic review recovery. Exact-word requirements
+    // use contains_text checks in production and belong in reader tests.
+    const contract = createContract("summary.md"), content = "# Summary\nApproval remains pending until a dated sign-off is recorded.\n";
     const artifact = saveArtifact(contract, "summary.md", content);
     const gateway = new ModelGateway(undefined, registry), calls = interruptFirstReview(gateway, "work_content_review");
     const checks = await withRuntimeScope({ runId: contract.runId, mode: "work", signal: new AbortController().signal, remainingModelCalls: 24, remainingRecoveryAttempts: 2 }, () => validateWorkArtifacts({ runId: contract.runId, runContract: contract, workspaceRoot: temporary, gateway, resultStore: new RunResultStore(contract.runId), originalUserRequest: contract.objective }, true));

@@ -1,6 +1,9 @@
 /// <reference path="../../frontend/src/bridge.d.ts" />
 import { expect, it } from "vitest";
 import { getRunProgress, updateRunEvents } from "../../frontend/src/lib/run-progress.js";
+import { summarizeVerificationReport } from "../../frontend/src/lib/verification-summary.js";
+import { buildPythonReviewPlan } from "../src/main/run/python-review-plan.js";
+import { RunSessions } from '../../frontend/src/lib/run-sessions.js';
 
 const progress = (requestId: string, channel: ModelProgressEvent["channel"] = "text", status: ModelProgressEvent["status"] = "receiving"): ModelProgressEvent =>
   ({ type: "model_progress", runId: "run", requestId, modelId: "local", purpose: "working_turn", status, channel, outputChars: 20 });
@@ -46,6 +49,41 @@ it("stops generation presentation during approval and avoids claiming reasoning 
 
 const task = (activityId: string, stage: TaskProgressEvent["stage"], status: TaskProgressEvent["status"] = "active", target?: string): TaskProgressEvent =>
   ({ type: "task_progress", runId: "run", activityId, stage, status, target });
+
+it('updates one review row across retries and replaces old counts and blocker text',()=>{
+  let events:RunEvent[]=[];
+  for(let attempt=0;attempt<4;attempt++)events=updateRunEvents(events,{
+    ...task(`retry-${attempt}`,'post_execution_review','blocked','parser.py'),assessedChecks:attempt,totalChecks:4,reason:'Review response was incomplete.',
+  });
+  expect(events).toHaveLength(1);
+  expect(getRunProgress(events,'acting').tasks).toHaveLength(1);
+  events=updateRunEvents(events,{...task('last','post_execution_review','active','parser.py'),assessedChecks:0,totalChecks:5});
+  let state=getRunProgress(events,'acting');
+  expect(state.tasks).toHaveLength(1);expect(state.task?.reason).toBeUndefined();
+  expect(state.summary.now[0].detail).toBe('0 of 5 checks assessed');
+  events=updateRunEvents(events,{...task('last','post_execution_review','completed','parser.py'),assessedChecks:5,totalChecks:5});
+  state=getRunProgress(events,'acting');
+  expect(state.tasks).toHaveLength(1);expect(state.summary.remaining).toEqual([]);
+  expect(state.summary.confirmed[0].detail).toBe('5 of 5 checks assessed');
+});
+
+it('folds historical retry rows while preserving different files and runs',()=>{
+  const old=task('old','post_execution_review','blocked','first.py');
+  const latest=task('new','post_execution_review','completed','first.py');
+  const other=task('other','post_execution_review','active','second.py');
+  const state=getRunProgress([old,latest,other],'acting');
+  expect(state.tasks).toEqual([latest,other]);expect(state.summary.remaining).toHaveLength(1);
+  const separateRun={...latest,runId:'another-run'};
+  expect(updateRunEvents([old,other],separateRun)).toHaveLength(3);
+});
+
+it('keeps a compact current stage for background chats',()=>{
+  const sessions=new RunSessions();sessions.register('run','chat');
+  sessions.record(task('first','post_execution_review','blocked'));
+  sessions.record(task('second','post_execution_review','active'));
+  sessions.record({...task('second','post_execution_review','active'),assessedChecks:3,totalChecks:4});
+  expect(sessions.events.get('run')).toEqual([{...task('second','post_execution_review','active'),assessedChecks:3,totalChecks:4}]);
+});
 
 it("keeps explicit stages above model channels and shows reasoning only as secondary activity", () => {
   const state = getRunProgress([task("review", "post_execution_review"), progress("model", "reasoning")], "acting");
@@ -130,4 +168,69 @@ it("shows a nested correction as the current work, without counting its awaiting
   expect(state.kind).toBe("document");
   expect(state.summary.now).toHaveLength(1);
   expect(state.summary.remaining.some(row => row.label === "Draft coverage")).toBe(true);
+});
+
+it("deterministically classifies and scopes verification checks to the assessed review checks", () => {
+  const summary = summarizeVerificationReport({
+    schemaVersion: 1,
+    runId: "00000000-0000-4000-8000-000000000001",
+    status: "passed",
+    updatedAt: new Date().toISOString(),
+    checks: [
+      { criterionId: "acceptance:response", requirement: "Provide a response to the user", status: "passed", method: "message_record", evidence: [], reason: "Saved.", verifiedAt: "now", mandatory: true },
+      { criterionId: "result-integrity:r1", requirement: "Integrity of stored result", status: "passed", method: "result_store_checksum", evidence: [], reason: "Matches.", verifiedAt: "now", mandatory: false },
+      { criterionId: "input:integrity:in1", requirement: "Preserve supplied input log.csv", status: "passed", method: "sha256", evidence: [], reason: "Input digest matches.", verifiedAt: "now", mandatory: true },
+      { criterionId: "independent:out1", requirement: "Read saved parser.py", status: "passed", method: "independent_reader", evidence: [], reason: "Parsed UTF-8.", verifiedAt: "now", mandatory: true },
+      { criterionId: "work:python_behavior", requirement: "Successful execution of repaired source", status: "passed", method: "execution_record", evidence: [], reason: "Exit code 0.", verifiedAt: "now", mandatory: true },
+      { criterionId: "work:executed_source", requirement: "Saved repair matches the executed revision", status: "passed", method: "sha256", evidence: [], reason: "Source digest matches.", verifiedAt: "now", mandatory: true },
+      { criterionId: "acceptance:validated-python:parser.py", requirement: "Validate source parser.py", status: "passed", method: "execution_record", evidence: [], reason: "Validated.", verifiedAt: "now", mandatory: true },
+      { criterionId: "behavior:1", requirement: "Correct this original-source defect in behavior: Bug 1: handle missing TypeError and ValueError", status: "passed", method: "content_check", evidence: [], reason: "Catches TypeError and ValueError.", verifiedAt: "now", mandatory: false },
+      { criterionId: "behavior:2", requirement: "Correct this original-source defect in behavior: Bug 2: the high alarm boundary is inclusive at 350.0 C", status: "passed", method: "content_check", evidence: [], reason: "Uses >= 350.0.", verifiedAt: "now", mandatory: false },
+      { criterionId: "behavior:3", requirement: "Preserve the original public interface and declared return contract.", status: "passed", method: "content_check", evidence: [], reason: "Keeps summarize(path).", verifiedAt: "now", mandatory: false },
+      { criterionId: "behavior:4", requirement: "Preserve successful operations on their original control-flow paths except where a documented defect requires a change.", status: "passed", method: "content_check", evidence: [], reason: "Keeps ok counter outside high branch.", verifiedAt: "now", mandatory: false },
+      { criterionId: "behavior:5", requirement: "Keep the command-line interface", status: "passed", method: "content_check", evidence: [], reason: "Retains sys.argv[1].", verifiedAt: "now", mandatory: false },
+      { criterionId: "content:requirement-1", requirement: "Include equality at 350.0 C", status: "passed", method: "content_check", evidence: [], reason: "Uses >= 350.0.", verifiedAt: "now", mandatory: true },
+      { criterionId: "content:complete_request", requirement: "Complete request aggregate", status: "passed", method: "content_check", evidence: [], reason: "All passed.", verifiedAt: "now", mandatory: true },
+      { criterionId: "work:source_behavior", requirement: "Source-derived repair behavior", status: "passed", method: "content_check", evidence: [], reason: "All passed.", verifiedAt: "now", mandatory: true },
+    ],
+  });
+  expect(summary).not.toBeNull();
+  expect(summary!.headline).toBe("5 of 5 checks passed");
+  expect(summary!.allChecks[0].requirement).toBe("Bug 1: handle missing TypeError and ValueError");
+  expect(summary!.allChecks.map(c => c.typeLabel)).toEqual([
+    "Defect & Edge Case",
+    "Boundary Check",
+    "Interface & Contract",
+    "Control Flow",
+    "CLI & Execution",
+  ]);
+  expect(summary!.categories.map(c => `${c.label}:${c.passed}/${c.total}`)).toEqual([
+    "Edge Case & Defect:1/1",
+    "Boundary:1/1",
+    "Interface:1/1",
+    "CLI & Input:1/1",
+    "Control Flow:1/1",
+  ]);
+});
+
+it("deduplicates overlapping prompt clauses and caps planned Python review checks", () => {
+  const checklist = JSON.stringify({
+    checks: [
+      "Correct this original-source defect in behavior: Bug 1: missing values (TypeError) and blank or invalid text (ValueError) must count as malformed, then be skipped.",
+      "Correct this original-source defect in behavior: Bug 2: the high alarm boundary is inclusive; 350.0 C must count as high.",
+      "Preserve the original public interface and declared return contract.",
+      "Preserve successful operations on their original control-flow paths except where a documented defect requires a change.",
+    ],
+  });
+  const plan = buildPythonReviewPlan(checklist, [
+    { id: "requirement-1", kind: "semantic", expected: "Fix parser", mandatory: true, basis: "Fix the attached vendor log parser" },
+    { id: "requirement-2", kind: "semantic", expected: "Keep summarize", mandatory: true, basis: "Keep the 'summarize' function" },
+    { id: "requirement-3", kind: "semantic", expected: "Keep CLI", mandatory: true, basis: "Keep the command-line interface" },
+    { id: "requirement-7", kind: "semantic", expected: "Inclusive 350.0", mandatory: true, basis: "The high alarm starts at 350.0 C and includes equality" },
+  ]);
+  expect(plan.checks).toHaveLength(6);
+  expect(plan.criterionTargets.get("requirement-1")).toHaveLength(2);
+  expect(plan.criterionTargets.get("requirement-7")).toEqual([
+    "Correct this original-source defect in behavior: Bug 2: the high alarm boundary is inclusive; 350.0 C must count as high.",
+  ]);
 });

@@ -69,7 +69,8 @@ describe("Saved artifact workspace transfer", () => {
     const contract = getRunContract(runId)!;
     expect(contract.deliverables).toEqual([]); expect(contract.workspace.operations).toHaveLength(1);
     expect(contract.workspace.operations[0]).toMatchObject({ operation: "write", targetPath: filename, sourceId: source.artifactId, sourceSha256: source.sha256 });
-    expect(action.prompt).toContain(filename); expect(action.prompt).not.toContain("generate_deliverable");
+    expect(action.prompt).toBe('Review action plan');
+    expect(action.preview).toContain(filename); expect(action.preview).not.toContain("generate_deliverable");
     expect(existsSync(path.join(workspace, filename))).toBe(false);
     await manager.confirm({ runId, actionId: action.actionId, approved: true }); await terminal(runId);
     expect(getState(runId)).toBe("completed"); expect(readFileSync(path.join(workspace, filename))).toEqual(content);

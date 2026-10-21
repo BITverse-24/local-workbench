@@ -1,4 +1,4 @@
-import { assessedCheckLabel, TASK_STAGE_LABELS } from "../../../backend/src/shared/task-progress.js";
+import { assessedCheckLabel, TASK_STAGE_LABELS, taskProgressKey } from "../../../backend/src/shared/task-progress.js";
 
 const TERMINAL_STATES = ["completed", "partial", "failed", "cancelled", "limit_exceeded"];
 
@@ -8,7 +8,8 @@ export function updateRunEvents(events: RunEvent[], event: RunEvent): RunEvent[]
   const state = [...events].reverse().find(item => item.type === "run_state" && item.runId === event.runId);
   if (state?.type === "run_state" && TERMINAL_STATES.includes(state.state)) return events;
   if (event.type === "task_progress") {
-    return [...events.filter(item => item.type !== "task_progress" || item.activityId !== event.activityId), event];
+    const key=taskProgressKey(event);
+    return [...events.filter(item => item.type !== "task_progress" || item.runId !== event.runId || (item.activityId !== event.activityId && taskProgressKey(item) !== key)), event];
   }
   const retained = events.filter(item => item.type !== "model_progress" || item.requestId !== event.requestId);
   const snapshots = retained.filter(item => item.type === "model_progress");
@@ -69,7 +70,13 @@ export function getRunProgress(events: RunEvent[], state: RunState | null) {
     }
     if (event.type === "artifact_ready") saved.set(event.artifact.artifactId, { label: "File saved", target: event.artifact.filename });
   }
-  const tasks = [...taskMap.values()];
+  // Also fold old snapshots, which can contain one activity ID for every retry.
+  const latestStages = new Map<string, TaskProgressEvent>();
+  for(const item of taskMap.values()){
+    const key=taskProgressKey(item);
+    latestStages.delete(key);latestStages.set(key,item);
+  }
+  const tasks = [...latestStages.values()];
   const active = terminal ? [] : tasks.filter(event => event.status === "active");
   const activeTasks = active.filter(event => !active.some(child => child.parentActivityId === event.activityId));
   const task = activeTasks[activeTasks.length - 1];
@@ -93,12 +100,7 @@ export function getRunProgress(events: RunEvent[], state: RunState | null) {
   }
   const paused = state === "awaiting_confirmation";
   if (paused) title = "Ready for your review";
-  const latestStages = new Map<string, TaskProgressEvent>();
-  for (const item of tasks) {
-    const key = `${item.stage}:${item.target ?? item.parentCallId ?? ""}`;
-    latestStages.delete(key); latestStages.set(key, item);
-  }
-  const checkpoints = [...latestStages.values()];
+  const checkpoints = tasks;
   const nowTasks = paused || terminal ? [] : activeTasks.slice(-3).reverse();
   const reviewStages: TaskProgressEvent["stage"][] = ["source_inspection", "pre_execution_review", "post_execution_review", "source_coverage_review", "result_verification"];
   const summary = {

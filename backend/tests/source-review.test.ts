@@ -33,6 +33,46 @@ const twoSatisfiedChecks = JSON.stringify([
 ]);
 
 describe("code review evidence contract", () => {
+  it('does not accept import line references as proof of repaired behavior',async()=>{
+    const runId=randomUUID();
+    const gateway=reviewGateway(JSON.stringify([{index:0,status:'satisfied',issue:'The boundary is inclusive.',sourceLineNumbers:[1],codeLineNumbers:[1]}]));
+    try{
+      await expect(withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>reviewAttachedPython({runId,gateway,modelId:'primary-model',request:'Include equality at the boundary.',sourceEvidence:'import csv\nif value > limit:',currentSource:'import csv\nif value >= limit:',sourceChecklist:JSON.stringify({checks:['Include equality at the boundary.']}),executionOutput:''}))).rejects.toThrow('1 checks remain');
+    }finally{rmSync(runRoot(runId),{recursive:true,force:true});}
+  });
+  it.each([0,999,1.5])('rejects an invalid line reference without accepting its criterion: %s',async invalid=>{
+    const runId=randomUUID();
+    const accepted:any[]=[];
+    const gateway=reviewGateway(JSON.stringify([
+      {index:0,status:'satisfied',issue:'The interface is preserved.',sourceLineNumbers:[2],codeLineNumbers:[1]},
+      {index:1,status:'satisfied',issue:'The return is preserved.',sourceLineNumbers:[3],codeLineNumbers:[invalid]},
+    ]));
+    try{
+      await expect(withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>reviewAttachedPython({runId,gateway,modelId:'primary-model',request:'Keep interface and return.',sourceEvidence:'def summarize(path):\n    return []',currentSource:'def summarize(path):\n    return []',sourceChecklist:JSON.stringify({checks:['Keep the interface.','Keep the return.']}),executionOutput:'[]',onAccepted:items=>accepted.push(...items)}))).rejects.toThrow('1 checks remain');
+      expect(accepted).toHaveLength(1);expect(accepted[0].check).toBe('Keep the interface.');
+    }finally{rmSync(runRoot(runId),{recursive:true,force:true});}
+  });
+  it('resolves line references to separate exact evidence spans',async()=>{
+    const runId=randomUUID();
+    const gateway=reviewGateway(JSON.stringify([{index:0,status:'satisfied',issue:'The function returns the expected type.',sourceLineNumbers:[2,3],codeLineNumbers:[1,2]}]));
+    const accepted:any[]=[];
+    try{
+      await expect(withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>reviewAttachedPython({runId,gateway,modelId:'primary-model',request:'Keep interface and return.',sourceEvidence:'def summarize(path):\n    return []',currentSource:'def summarize(path):\n    return []',sourceChecklist:JSON.stringify({checks:['Keep the interface and return.']}),executionOutput:'[]',onAccepted:items=>accepted.push(...items)}))).resolves.toEqual([]);
+      expect(accepted[0].sourceEvidence).toEqual(['def summarize(path):','    return []']);
+      expect(accepted[0].implementationEvidence).toEqual(['def summarize(path):','    return []']);
+    }finally{rmSync(runRoot(runId),{recursive:true,force:true});}
+  });
+  it.each([false,true])('checks every separate quote in a compound behavior assessment (invented quote: %s)',async invented=>{
+    const runId=randomUUID();
+    const source='def summarize(path):\n    if temperature > 350.0:\n        high += 1\n    return high';
+    const current=source.replace('> 350.0','>= 350.0');
+    const gateway=reviewGateway(JSON.stringify([{index:0,status:'satisfied',issue:'The callable and return remain; equality now counts.',sourceEvidence:['def summarize(path):','Include equality at 350.0.'],implementationEvidence:['def summarize(path):','if temperature >= 350.0:',invented?'return invented':'return high'],executionEvidence:['"exitCode":0']}]));
+    try{
+      const result=withRuntimeScope({runId,mode:'work',signal:new AbortController().signal,remainingRecoveryAttempts:0},()=>reviewAttachedPython({runId,gateway,modelId:'primary-model',request:'Include equality at 350.0.',sourceEvidence:source,currentSource:current,sourceChecklist:JSON.stringify({checks:['Keep the callable and return contract; include equality at the boundary.']}),executionOutput:'2',executionEvidence:'{"exitCode":0}'}));
+      if(invented)await expect(result).rejects.toThrow('did not provide source and code evidence');
+      else await expect(result).resolves.toEqual([]);
+    }finally{rmSync(runRoot(runId),{recursive:true,force:true});}
+  });
   it("reviews every behavior check in bounded batches above the former eight-check cap", async () => {
     const runId=randomUUID();
     const checks=Array.from({length:19},(_,index)=>`Preserve behavior ${index}.`);
@@ -80,7 +120,7 @@ describe("code review evidence contract", () => {
       if (repaired !== null) {
         const retry = JSON.parse(gateway.chatWithTools.mock.calls[1][1][1].content);
         expect(retry.behaviorChecks).toEqual([{ index: 0, check: "Return the rows read from the input." }]);
-        expect(retry.executedSource).toBe(source);
+        expect(retry.codeLines.map((item:any)=>item.text).join('\n')).toBe(source);
         expect(retry.reviewFeedback).toContain("exact contiguous quote");
       }
     } finally { rmSync(runRoot(runId), { recursive: true, force: true }); }
@@ -102,6 +142,67 @@ describe("code review evidence contract", () => {
         executionOutput: "[]",
       })).resolves.toEqual([]);
       expect(gateway.chatWithTools).toHaveBeenCalledTimes(1);
+    } finally { rmSync(runRoot(runId), { recursive: true, force: true }); }
+  });
+
+  it("warms the prefix cache with the first check then dispatches remaining checks in parallel up to concurrencyLimit", async () => {
+    const runId = randomUUID();
+    const checks = [
+      "Preserve the callable interface.",
+      "Return the rows read from the input.",
+      "Preserve the summarize(path) helper.",
+      "Return the parsed result list.",
+    ];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const inFlightAtStart: number[] = [];
+    const assessedCounts: number[] = [];
+    const gateway = {
+      registry: new Map([["primary-model", { id: "primary-model", enabled: true, model: "test-model", maxOutputTokens: 4096, concurrencyLimit: 2 }]]),
+      chatWithTools: vi.fn(async (_model, messages, _tools, options) => {
+        inFlight++;
+        inFlightAtStart.push(inFlight);
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        const rawContent = messages[1].content as string;
+        const parsed = JSON.parse(rawContent);
+        expect(parsed.behaviorChecks).toHaveLength(1);
+        expect(options.responseSchema.schema).toMatchObject({ minItems: 1, maxItems: 1 });
+        expect(rawContent.indexOf('"sourceLines"')).toBeLessThan(rawContent.indexOf('"behaviorChecks"'));
+        await new Promise(resolve => setTimeout(resolve, 10));
+        inFlight--;
+        return {
+          ok: true,
+          value: {
+            content: JSON.stringify([{
+              index: 0,
+              status: "satisfied",
+              issue: "Implemented.",
+              sourceLineNumbers: [1, 2],
+              codeLineNumbers: [1, 2],
+            }]),
+            finishReason: "stop",
+          },
+        };
+      }),
+    };
+    try {
+      await expect(reviewAttachedPython({
+        gateway: gateway as any,
+        modelId: "primary-model" as ModelId,
+        runId,
+        request: "Repair the source.",
+        sourceEvidence: "def summarize(path):\n    return read_rows(path)",
+        sourceChecklist: JSON.stringify({ checks }),
+        currentSource: "def summarize(path):\n    return read_rows(path)",
+        executionOutput: "[]",
+        emitProgress: event => {
+          if (event.assessedChecks !== undefined) assessedCounts.push(event.assessedChecks);
+        },
+      })).resolves.toEqual([]);
+      expect(gateway.chatWithTools).toHaveBeenCalledTimes(4);
+      expect(inFlightAtStart[0]).toBe(1);
+      expect(maxInFlight).toBe(2);
+      expect(assessedCounts).toEqual([0, 1, 2, 3, 4, 4]);
     } finally { rmSync(runRoot(runId), { recursive: true, force: true }); }
   });
 

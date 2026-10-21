@@ -22,6 +22,7 @@ function stageInputs(runId: string, inputFiles: string[], aliases: InputAlias[] 
   mkdirSync(executionDir, { recursive: true });
   const outputDir = realpathSync(executionDir);
   const stagedInputs: string[] = [];
+  const originalInputs = new Map<string, string>();
   for (const inputFile of inputFiles) {
     const rawTrimmed = (inputFile ?? "").trim();
     if (!rawTrimmed) continue;
@@ -89,8 +90,9 @@ function stageInputs(runId: string, inputFiles: string[], aliases: InputAlias[] 
       }
     }
     stagedInputs.push(filename);
+    originalInputs.set(filename, source);
   }
-  return { inputDir, intermediateDir, outputDir, publishedDir, stagedInputs };
+  return { inputDir, intermediateDir, outputDir, publishedDir, stagedInputs, originalInputs };
 }
 
 function outputSnapshot(outputDir: string): Map<string, string> {
@@ -158,6 +160,16 @@ export async function executePython(
   }
   scope?.observe?.({isolationStatus:isolated?"os_isolated":"approved_uncontained"});
   const release=await pythonProcessingSlots.acquire(scope?.mode??"work",scope?.signal,'python-processing');
+  const digestInput = (root: string, filename: string): string | null => {
+    try { return createHash('sha256').update(readFileSync(resolveSafe(root, filename))).digest('hex'); }
+    catch { return null; }
+  };
+  // Capture the bytes actually passed to the child, after approval and queueing.
+  const inputBefore = staged.stagedInputs.map(filename => ({filename, beforeSha256: digestInput(staged.outputDir, filename)}));
+  const inputEvidence = () => inputBefore.map(entry => ({
+    ...entry, originalFilename: path.basename(staged.originalInputs.get(entry.filename)!), afterSha256: digestInput(staged.outputDir, entry.filename),
+    originalAfterSha256: digestInput(path.dirname(staged.originalInputs.get(entry.filename)!), path.basename(staged.originalInputs.get(entry.filename)!)),
+  }));
 
   const publishOutputs = () => {
     assertRuntimeActive();
@@ -176,11 +188,11 @@ export async function executePython(
   try {
     if(approvedDigest && digestSnapshot()!==approvedDigest)throw {code:"permission_denied",retryable:false,message:"Python source or inputs changed while waiting for execution."};
     const result = await exec(command, args, { cwd: staged.outputDir, env: execEnv, timeout: timeoutMs, maxBuffer: 16384 });
-    return { exitCode: 0, stdout: result.stdout.slice(0, 8000), stderr: result.stderr.slice(0, 8000), capturedOutput: { stdout: result.stdout, stderr: result.stderr, truncated: false }, timedOut: false, outputFiles: publishOutputs(), durationMs: Date.now() - started };
+    return { exitCode: 0, stdout: result.stdout.slice(0, 8000), stderr: result.stderr.slice(0, 8000), capturedOutput: { stdout: result.stdout, stderr: result.stderr, truncated: false }, timedOut: false, inputEvidence: inputEvidence(), outputFiles: publishOutputs(), durationMs: Date.now() - started };
   } catch (error) {
     assertRuntimeActive();
     if((error as any)?.code==="permission_denied")throw error;
     const e = error as { code?: number | string; stdout?: string; stderr?: string; killed?: boolean };
-    return { exitCode: typeof e.code === "number" ? e.code : 1, stdout: (e.stdout ?? "").slice(0, 8000), stderr: (e.stderr ?? String(error)).slice(0, 8000), capturedOutput: { stdout: e.stdout ?? "", stderr: e.stderr ?? String(error), truncated: e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" }, timedOut: Boolean(e.killed), outputFiles: publishOutputs(), durationMs: Date.now() - started };
+    return { exitCode: typeof e.code === "number" ? e.code : 1, stdout: (e.stdout ?? "").slice(0, 8000), stderr: (e.stderr ?? String(error)).slice(0, 8000), capturedOutput: { stdout: e.stdout ?? "", stderr: e.stderr ?? String(error), truncated: e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" }, timedOut: Boolean(e.killed), inputEvidence: inputEvidence(), outputFiles: publishOutputs(), durationMs: Date.now() - started };
   } finally { release(); }
 }

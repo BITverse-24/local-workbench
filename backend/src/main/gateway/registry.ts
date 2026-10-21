@@ -5,7 +5,7 @@ import type { ModelConfigRow, ModelId, ModelRegistryEntry } from "../../shared/c
 import { isAllowedLocalModelEndpoint, isAllowedLocalModelHost } from "../../shared/local-network.js";
 import { getSetting } from "../persistence/settings-store.js";
 
-const entry = z.object({ id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1).optional(), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url().refine(isAllowedLocalModelEndpoint, "Model endpoint must use localhost or a private IP address"), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), fallbackOnly: z.boolean().optional(), toolCallingFormat: z.enum(["native", "json"]).optional(), temperature: z.number().min(0).max(2).optional(), contextLength: z.number().int().positive().max(128000).optional(), maxOutputTokens: z.number().int().positive().max(128000).optional() }).strict();
+const entry = z.object({ id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1).optional(), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url().refine(isAllowedLocalModelEndpoint, "Model endpoint must use localhost or a private IP address"), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), fallbackOnly: z.boolean().optional(), toolCallingFormat: z.enum(["native", "json"]).optional(), temperature: z.number().min(0).max(2).optional(), contextLength: z.number().int().positive().max(128000).optional(), maxOutputTokens: z.number().int().positive().max(128000).optional(), concurrencyLimit: z.number().int().min(1).max(32).optional() }).strict();
 const config = z.object({ $comment: z.string().optional(), models: z.array(entry) }).strict();
 
 
@@ -78,6 +78,7 @@ export function buildRegistryFromRows(rows: ModelConfigRow[]): ModelRegistryEntr
       capabilities: profile?.capabilities ?? (candidates.some(candidate => candidate.role === "vision" && candidate.modelName.toLowerCase() === row.modelName.toLowerCase() && sanitizeHost(candidate.host) === host && (candidate.port || 11434) === port) ? ["text", "image-input", "structured-output"] : ["text", "structured-output", "code-generation"]),
       requestTimeoutMs: 300000, healthPath: "/models", enabled: true,
       contextLength: row.contextLength || 8192,
+      concurrencyLimit: row.concurrencyLimit ?? profile?.concurrencyLimit ?? 2,
       maxOutputTokens: profile?.maxOutputTokens ?? Math.max(1, Math.floor((row.contextLength || 8192) / 4)),
       ...(profile?.toolCallingFormat ? { toolCallingFormat: profile.toolCallingFormat } : {}),
       ...(profile?.temperature !== undefined ? { temperature: profile.temperature } : {}),
@@ -139,7 +140,7 @@ export function loadRegistry(filePath?: string): Map<ModelId, ModelRegistryEntry
     throw new Error(`models.json not found (tried: ${resolved})`);
   }
   const parsed = config.parse(JSON.parse(text));
-  return new Map(parsed.models.map((model) => [model.id, model as ModelRegistryEntry]));
+  return new Map(parsed.models.map((model) => [model.id, { ...model, concurrencyLimit: model.concurrencyLimit ?? 2 } as ModelRegistryEntry]));
 }
 
 export function resolveModel(registry: Map<ModelId, ModelRegistryEntry>, modelId: ModelId, taskType?: string): ModelRegistryEntry {
