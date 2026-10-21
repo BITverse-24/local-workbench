@@ -300,6 +300,21 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
     const portNum = parseInt(node.port, 10);
     const hostToTest = allowExternal ? node.host.trim() : "127.0.0.1";
 
+    if (!node.modelName.trim()) {
+      setCards((prev) => {
+        const next = [...prev];
+        const nextNodes = [...next[cardIdx].nodes];
+        nextNodes[nodeIdx] = {
+          ...nextNodes[nodeIdx],
+          testStatus: "error",
+          testMessage: "Model name required to verify readiness",
+        };
+        next[cardIdx] = { ...next[cardIdx], nodes: nextNodes };
+        return next;
+      });
+      return;
+    }
+
     if (!isAllowedPrivateHost(hostToTest)) {
       setCards((prev) => {
         const next = [...prev];
@@ -349,20 +364,20 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
       setCards((prev) => {
         const next = [...prev];
         const nextNodes = [...next[cardIdx].nodes];
-        if (res.ok) {
+        if (res.ok && res.modelReady !== false) {
           const lat = res.latencyMs !== undefined ? `${res.latencyMs}ms` : "";
-          const foundMsg = res.modelFound ? "Verified" : "Reachable (model not in list)";
           nextNodes[nodeIdx] = {
             ...nextNodes[nodeIdx],
-            testStatus: res.modelFound ? "success" : "warning",
+            testStatus: "success",
             testLatency: res.latencyMs,
-            testMessage: `${foundMsg} (${lat})`,
+            testMessage: `Ready (${lat})`,
           };
         } else {
           nextNodes[nodeIdx] = {
             ...nextNodes[nodeIdx],
             testStatus: "error",
-            testMessage: res.error || "Cannot reach endpoint",
+            testLatency: res.latencyMs,
+            testMessage: res.error || (res.modelReady === false ? "Model not ready to serve" : "Cannot reach endpoint"),
           };
         }
         next[cardIdx] = { ...next[cardIdx], nodes: nextNodes };
@@ -896,7 +911,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                             title={primaryNode.testMessage}
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-success)]" />
-                            Connected{" "}
+                            Ready{" "}
                             {primaryNode.testLatency !== undefined
                               ? `(${primaryNode.testLatency}ms)`
                               : ""}
@@ -908,16 +923,16 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                             title={primaryNode.testMessage}
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-warning)]" />
-                            Reachable
+                            Not Ready
                           </span>
                         )}
                         {primaryNode.testStatus === "error" && (
                           <span
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs text-[var(--status-error)] max-w-[140px] truncate font-mono"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs text-[var(--status-error)] max-w-[160px] truncate font-mono"
                             title={primaryNode.testMessage}
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-error)]" />
-                            Failed
+                            {primaryNode.testMessage?.toLowerCase().includes("not ready") || primaryNode.testMessage?.toLowerCase().includes("not found") ? "Not Ready" : "Failed"}
                           </span>
                         )}
 

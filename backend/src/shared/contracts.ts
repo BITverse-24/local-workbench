@@ -477,6 +477,7 @@ export interface ModelEndpointTestResult {
   ok: boolean;
   latencyMs?: number;
   modelFound?: boolean;
+  modelReady?: boolean;
   availableModels?: string[];
   error?: string;
 }

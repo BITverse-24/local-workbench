@@ -78,6 +78,8 @@ contextBridge.exposeInMainWorld("workbench", {
     ipcRenderer.invoke("workbench:getRunLogs", input),
   getRunLogFile: (input: { runId: string; filename: string }) =>
     ipcRenderer.invoke("workbench:getRunLogFile", input),
+  notifyResponse: (input?: { title?: string; body?: string }) =>
+    ipcRenderer.invoke("workbench:notifyResponse", input ?? {}),
 
   // knowledge base protocol
   kbListDocs: () =>

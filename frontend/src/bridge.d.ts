@@ -248,6 +248,7 @@ interface WorkbenchBridge {
   getHealth: () => Promise<ModelHealth[]>;
   getRunLogs: (input: { runId: string; limit?: number }) => Promise<{ runId: string; entries: unknown[]; files: string[]; recentFull: unknown }>;
   getRunLogFile: (input: { runId: string; filename: string }) => Promise<{ runId: string; filename: string; content: unknown }>;
+  notifyResponse: (input?: { title?: string; body?: string }) => Promise<{ notified: boolean }>;
   onRunEvent: (listener: (event: RunEvent) => void) => () => void;
   onChatEvent: (listener: (event: ChatTitleEvent) => void) => () => void;
 
@@ -306,6 +307,7 @@ interface ModelEndpointTestResult {
   ok: boolean;
   latencyMs?: number;
   modelFound?: boolean;
+  modelReady?: boolean;
   availableModels?: string[];
   error?: string;
 }

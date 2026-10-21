@@ -23,6 +23,7 @@ import { useVoice } from "./lib/hooks/useVoice";
 import { useUpload } from "./lib/hooks/useUpload";
 import { RunSessions } from "./lib/run-sessions";
 import { updateRunEvents } from "./lib/run-progress";
+import { playPingSound } from "./lib/audio";
 
 const MAX_SIZE = 10 * 1024 * 1024;
 
@@ -475,6 +476,26 @@ export default function App() {
                 },
               ];
             });
+            {
+              const isInactive = typeof document !== "undefined" && (document.hidden || !document.hasFocus());
+              const textSnippet = (event.text || "").replace(/\s+/g, " ").trim();
+              const preview = textSnippet.length > 120 ? textSnippet.slice(0, 117) + "..." : textSnippet;
+              void wb
+                .notifyResponse({
+                  title: activeTitle || "Local Workbench",
+                  body: preview || "Response is ready",
+                })
+                .then((res) => {
+                  if (res?.notified || isInactive) {
+                    playPingSound();
+                  }
+                })
+                .catch(() => {
+                  if (isInactive) {
+                    playPingSound();
+                  }
+                });
+            }
             break;
           case "grounding_context":
             setGroundingStatus({ status: event.status, chunkCount: event.chunkCount });
@@ -999,7 +1020,14 @@ export default function App() {
         />
         </ResponsivePanel>
 
-        <ChatPanel title={activeTitle} leftCollapsed={!leftOpen} rightCollapsed={!rightOpen} onToggleLeft={() => leftDocked ? setLeftCollapsed(!leftCollapsed) : setDrawer(drawer === "left" ? null : "left")} onToggleRight={() => rightDocked ? setRightCollapsed(!rightCollapsed) : setDrawer(drawer === "right" ? null : "right")} onModelSettings={async () => {
+        <ChatPanel
+          title={activeTitle}
+          runId={activeRunId ?? [...messages].reverse().find((m) => m.runId)?.runId ?? null}
+          leftCollapsed={!leftOpen}
+          rightCollapsed={!rightOpen}
+          onToggleLeft={() => leftDocked ? setLeftCollapsed(!leftCollapsed) : setDrawer(drawer === "left" ? null : "left")}
+          onToggleRight={() => rightDocked ? setRightCollapsed(!rightCollapsed) : setDrawer(drawer === "right" ? null : "right")}
+          onModelSettings={async () => {
           try {
             const result = await wb.resetOnboarding();
             if (!result.ok) throw new Error("Could not open model settings.");
