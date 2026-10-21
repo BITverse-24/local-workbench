@@ -641,7 +641,8 @@ export class ModelGateway implements ModelClient {
       }
       const payload = JSON.parse(init.body ?? "{}");
       const group = modelInferenceGroup(url, String(payload.model ?? ""));
-      localInferenceScheduler.enableOptimisticConcurrency(group);
+      const configured = this.dbRegistry.get(metadata.modelId) ?? Array.from(this.dbRegistry.values()).find((e) => modelInferenceGroup(e.baseUrl, e.model) === group);
+      localInferenceScheduler.enableOptimisticConcurrency(group, configured?.concurrencyLimit ?? 2);
       const queuedAt = Date.now();
       scope?.observe?.({ queued: true });
       let release: (() => void) | undefined = await localInferenceScheduler.acquire(scope?.mode ?? "work", requestSignal, group);
@@ -788,11 +789,17 @@ export class ModelGateway implements ModelClient {
         const list = this.endpointPool.get(entry.id) ?? [];
         list.push(entry);
         this.endpointPool.set(entry.id, list);
+        if (entry.concurrencyLimit !== undefined) {
+          localInferenceScheduler.setGroupCapacity(modelInferenceGroup(entry.baseUrl, entry.model), entry.concurrencyLimit);
+        }
       }
     } else {
       for (const [k, v] of entries) {
         this.dbRegistry.set(k, v);
         this.endpointPool.set(k, [v]);
+        if (v.concurrencyLimit !== undefined) {
+          localInferenceScheduler.setGroupCapacity(modelInferenceGroup(v.baseUrl, v.model), v.concurrencyLimit);
+        }
       }
     }
   }
@@ -1398,7 +1405,7 @@ export class ModelGateway implements ModelClient {
     if (!model) throw new Error("Title model is unavailable.");
     const url = `${model.baseUrl}/chat/completions`;
     const group = modelInferenceGroup(url, model.model);
-    localInferenceScheduler.enableOptimisticConcurrency(group);
+    localInferenceScheduler.enableOptimisticConcurrency(group, model.concurrencyLimit ?? 2);
     const response = await localInferenceScheduler.runWithConcurrencyFallback("maintenance", async () => {
       const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
       const result = await this.transport.request(url, {

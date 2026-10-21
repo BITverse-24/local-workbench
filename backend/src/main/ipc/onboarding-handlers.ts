@@ -16,6 +16,7 @@ const modelConfigRowSchema = z.object({
   host: z.string().trim().min(1, "Host / IP cannot be empty").refine((host) => isAllowedLocalModelHost(sanitizeHost(host)), "Use localhost or a private IP address"),
   port: z.number().int().min(1, "Port must be at least 1").max(65535, "Port must be <= 65535"),
   contextLength: z.number().int().min(512, "Context length must be at least 512"),
+  concurrencyLimit: z.number().int().min(1, "Concurrency must be at least 1").max(32, "Concurrency must be <= 32").optional(),
 });
 
 const saveModelConfigSchema = z.object({

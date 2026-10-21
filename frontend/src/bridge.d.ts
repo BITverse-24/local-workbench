@@ -299,6 +299,7 @@ interface ModelConfigRow {
   host: string;
   port: number;
   contextLength: number;
+  concurrencyLimit?: number;
 }
 
 interface ModelEndpointTestResult {

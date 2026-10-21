@@ -12,6 +12,7 @@ export interface EndpointNode {
   host: string;
   port: string;
   contextLength: string;
+  concurrencyLimit: string;
   testStatus: "idle" | "testing" | "success" | "warning" | "error";
   testMessage?: string;
   testLatency?: number;
@@ -40,6 +41,7 @@ const DEFAULT_CARDS: RoleCardState[] = [
         host: "127.0.0.1",
         port: "11434",
         contextLength: "32768",
+        concurrencyLimit: "2",
         testStatus: "idle",
       },
     ],
@@ -57,6 +59,7 @@ const DEFAULT_CARDS: RoleCardState[] = [
         host: "127.0.0.1",
         port: "11434",
         contextLength: "32768",
+        concurrencyLimit: "2",
         testStatus: "idle",
       },
     ],
@@ -74,6 +77,7 @@ const DEFAULT_CARDS: RoleCardState[] = [
         host: "127.0.0.1",
         port: "11434",
         contextLength: "32768",
+        concurrencyLimit: "2",
         testStatus: "idle",
       },
     ],
@@ -91,6 +95,7 @@ const DEFAULT_CARDS: RoleCardState[] = [
         host: "127.0.0.1",
         port: "11434",
         contextLength: "2048",
+        concurrencyLimit: "2",
         testStatus: "idle",
       },
     ],
@@ -140,16 +145,20 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
             ? [legacyPrimary]
             : [];
         if (restored.length > 0) {
+          const m = restored[0];
           return {
             ...def,
-            nodes: restored.map((m, i) => ({
-              id: `${def.role}-node-${i + 1}-${Date.now()}`,
-              modelName: m.modelName,
-              host: m.host,
-              port: String(m.port),
-              contextLength: String(m.contextLength),
-              testStatus: "idle" as const,
-            })),
+            nodes: [
+              {
+                id: `${def.role}-node-1-${Date.now()}`,
+                modelName: m.modelName,
+                host: m.host,
+                port: String(m.port),
+                contextLength: String(m.contextLength),
+                concurrencyLimit: String(m.concurrencyLimit ?? 2),
+                testStatus: "idle" as const,
+              },
+            ],
           };
         }
         return def;
@@ -198,46 +207,6 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
         testMessage: undefined,
       };
       next[cardIdx] = { ...next[cardIdx], nodes: targetNodes };
-      return next;
-    });
-  };
-
-  const addWorkerNode = (cardIdx: number) => {
-    setCards((prev) => {
-      const next = [...prev];
-      const targetCard = next[cardIdx];
-      const primaryNode = targetCard.nodes[0];
-      const nextPort =
-        targetCard.nodes.length > 0 && !isNaN(Number(primaryNode?.port))
-          ? String(Number(primaryNode.port) + targetCard.nodes.length)
-          : "11434";
-
-      const newNode: EndpointNode = {
-        id: `${targetCard.role}-node-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        modelName: primaryNode?.modelName || "",
-        host: allowExternal ? primaryNode?.host || "" : "127.0.0.1",
-        port: allowExternal ? primaryNode?.port || "11434" : nextPort,
-        contextLength: primaryNode?.contextLength || "32768",
-        testStatus: "idle",
-      };
-
-      next[cardIdx] = {
-        ...targetCard,
-        nodes: [...targetCard.nodes, newNode],
-      };
-      return next;
-    });
-  };
-
-  const removeWorkerNode = (cardIdx: number, nodeIdx: number) => {
-    setCards((prev) => {
-      const next = [...prev];
-      const targetCard = next[cardIdx];
-      if (targetCard.nodes.length <= 1) return prev;
-      next[cardIdx] = {
-        ...targetCard,
-        nodes: targetCard.nodes.filter((_, idx) => idx !== nodeIdx),
-      };
       return next;
     });
   };
@@ -317,6 +286,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
           host: allowExternal ? "" : "127.0.0.1",
           port: "",
           contextLength: "",
+          concurrencyLimit: "2",
           testStatus: "idle",
           testMessage: undefined,
         })),
@@ -428,7 +398,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
   // Validation
   const getFieldError = (
     n: EndpointNode,
-    field: "modelName" | "host" | "port" | "contextLength",
+    field: "modelName" | "host" | "port" | "contextLength" | "concurrencyLimit",
   ): string | null => {
     if (field === "modelName" && !n.modelName.trim()) return "Model name required";
     if (field === "host" && allowExternal) {
@@ -443,12 +413,16 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
       const c = parseInt(n.contextLength, 10);
       if (isNaN(c) || c < 512) return "Min 512";
     }
+    if (field === "concurrencyLimit") {
+      const limit = parseInt(n.concurrencyLimit, 10);
+      if (isNaN(limit) || limit < 1 || limit > 32) return "1-32";
+    }
     return null;
   };
 
   const allNodes = cards.flatMap((c) => c.nodes);
   const hasErrors = allNodes.some((node) =>
-    ["modelName", "host", "port", "contextLength"].some((f) => getFieldError(node, f as any)),
+    ["modelName", "host", "port", "contextLength", "concurrencyLimit"].some((f) => getFieldError(node, f as any)),
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -469,6 +443,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
           host: allowExternal ? node.host.trim() : "127.0.0.1",
           port: parseInt(node.port, 10),
           contextLength: parseInt(node.contextLength, 10) || 32768,
+          concurrencyLimit: Math.min(32, Math.max(1, parseInt(node.concurrencyLimit, 10) || 2)),
         })),
       );
 
@@ -614,7 +589,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
             </div>
           </div>
 
-          {/* Card 2: Deterministic Routing & Worker Pools */}
+          {/* Card 2: Model Roles & Concurrency */}
           <div className="neu-card p-5 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] flex flex-col justify-between space-y-3">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
@@ -632,12 +607,12 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
               </h3>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                 Draft is the default model. Vision handles image input. Coding supports
-                code tasks. Embeddings support knowledge search. Optional worker nodes
-                can use private network addresses.
+                code tasks. Embeddings support knowledge search. Concurrency controls
+                parallel requests per model server.
               </p>
             </div>
             <div className="text-[11px] font-mono text-[var(--text-tertiary)] pt-2.5 border-t border-[var(--border-subtle)]">
-              Each role uses its configured endpoint
+              Each role uses its configured endpoint &amp; concurrency limit
             </div>
           </div>
 
@@ -712,13 +687,14 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
             {/* Table Column Headers */}
             <div className="flex items-center px-2">
               <div className="flex-1 grid grid-cols-12 gap-4 px-4 py-1.5 text-xs text-[var(--text-tertiary)] font-medium">
-                <div className="col-span-3">Operational role & worker pool</div>
-                <div className="col-span-3">Model tag / identifier</div>
+                <div className="col-span-3">Operational role</div>
+                <div className="col-span-2">Model tag / identifier</div>
                 <div className="col-span-2">Host / IP address</div>
                 <div className="col-span-1">Port</div>
                 <div className="col-span-1">Context</div>
+                <div className="col-span-1">Concurrency</div>
                 <div className="col-span-2 text-right">
-                  Endpoint status & test
+                  Endpoint status &amp; test
                 </div>
               </div>
             </div>
@@ -730,6 +706,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
               const primaryHostErr = getFieldError(primaryNode, "host");
               const primaryPortErr = getFieldError(primaryNode, "port");
               const primaryContextErr = getFieldError(primaryNode, "contextLength");
+              const primaryConcurrencyErr = getFieldError(primaryNode, "concurrencyLimit");
 
               return (
                 <div key={card.role} className="w-full">
@@ -737,7 +714,7 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                   <div className="w-full rounded-[var(--radius-md)] p-5 sm:p-6 bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] transition-colors">
                     {/* Primary Node Row */}
                     <div className="grid grid-cols-12 gap-4 items-center">
-                      {/* Col 1: Role & Description + Add Worker Node */}
+                      {/* Col 1: Role & Description */}
                       <div className="col-span-3 flex flex-col justify-between pr-2">
                         <div className="flex items-start gap-3">
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] text-[var(--text-secondary)] text-xs font-mono shrink-0 mt-0.5">
@@ -751,48 +728,24 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                               <span className="font-semibold text-[var(--text-primary)] text-sm">
                                 {card.title}
                               </span>
-                              {card.nodes.length > 1 && (
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30 font-medium">
-                                  {card.nodes.length} Nodes (Balanced)
-                                </span>
-                              )}
                             </div>
                             <div className="text-xs text-[var(--text-secondary)] leading-relaxed mt-0.5">
                               {card.description}
                             </div>
                           </div>
                         </div>
-
-                        {/* Add Worker Node action */}
-                        <div className="mt-2.5 flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => addWorkerNode(cardIdx)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-sm)] text-[11px] font-mono border border-dashed border-[var(--border-default)] hover:border-[var(--accent)] text-[var(--text-secondary)] hover:text-[var(--accent)] bg-[var(--bg-surface-raised)]/40 hover:bg-[var(--bg-surface-raised)] transition-all"
-                            title={`Add a secondary worker instance for ${card.title} (e.g. distributed LAN GPU server)`}
-                          >
-                            <svg
-                              width="11"
-                              height="11"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2.5"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <line x1="12" y1="5" x2="12" y2="19" />
-                              <line x1="5" y1="12" x2="19" y2="12" />
-                            </svg>
-                            <span>+ Add Worker Node</span>
-                          </button>
-                        </div>
                       </div>
 
                       {/* Col 2: Model Name Input */}
-                      <div className="col-span-3">
+                      <div className="col-span-2">
                         <input
                           type="text"
+                          name={`${card.role}-modelName`}
+                          aria-label={`${card.title} model tag`}
+                          autoComplete="off"
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                          spellCheck={false}
                           value={primaryNode.modelName}
                           onChange={(e) =>
                             updateNode(cardIdx, 0, "modelName", e.target.value)
@@ -816,6 +769,12 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                         <div className="relative">
                           <input
                             type="text"
+                            name={`${card.role}-host`}
+                            aria-label={`${card.title} host or IP address`}
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                            spellCheck={false}
                             disabled={!allowExternal}
                             value={allowExternal ? primaryNode.host : "127.0.0.1"}
                             onChange={(e) =>
@@ -847,6 +806,8 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                       <div className="col-span-1">
                         <input
                           type="number"
+                          name={`${card.role}-port`}
+                          aria-label={`${card.title} port`}
                           min={1}
                           max={65535}
                           value={primaryNode.port}
@@ -871,6 +832,8 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                       <div className="col-span-1">
                         <input
                           type="number"
+                          name={`${card.role}-contextLength`}
+                          aria-label={`${card.title} context length`}
                           min={512}
                           step={512}
                           value={primaryNode.contextLength}
@@ -891,7 +854,35 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                         )}
                       </div>
 
-                      {/* Col 6: Status & Test Action */}
+                      {/* Col 6: Concurrency Limit Input */}
+                      <div className="col-span-1">
+                        <input
+                          type="number"
+                          name={`${card.role}-concurrencyLimit`}
+                          aria-label={`${card.title} concurrency limit`}
+                          min={1}
+                          max={32}
+                          step={1}
+                          value={primaryNode.concurrencyLimit}
+                          onChange={(e) =>
+                            updateNode(cardIdx, 0, "concurrencyLimit", e.target.value)
+                          }
+                          placeholder="2"
+                          title="Maximum parallel requests sent to this model endpoint (default: 2)"
+                          className={`w-full h-11 px-3 rounded-[var(--radius-sm)] text-sm neu-input font-mono outline-none transition-all ${
+                            primaryConcurrencyErr
+                              ? "border-[var(--status-error)] focus:border-[var(--status-error)]"
+                              : "border-[var(--border-default)] focus:border-[var(--accent)]"
+                          }`}
+                        />
+                        {primaryConcurrencyErr && (
+                          <span className="text-[11px] text-[var(--status-error)] mt-1 block font-mono">
+                            {primaryConcurrencyErr}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Col 7: Status & Test Action */}
                       <div className="col-span-2 flex items-center justify-end gap-2.5">
                         {primaryNode.testStatus === "testing" && (
                           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-xs text-[var(--status-warning)] font-mono">
@@ -940,207 +931,6 @@ export default function OnboardingPage({ onComplete, initialConfig }: Onboarding
                         </button>
                       </div>
                     </div>
-
-                    {/* Secondary Worker Nodes Sub-rows */}
-                    {card.nodes.length > 1 && (
-                      <div className="space-y-3 mt-3.5 pt-3.5 border-t border-[var(--border-subtle)]/70">
-                        {card.nodes.slice(1).map((workerNode, subIdx) => {
-                          const nodeIdx = subIdx + 1;
-                          const workerModelErr = getFieldError(workerNode, "modelName");
-                          const workerHostErr = getFieldError(workerNode, "host");
-                          const workerPortErr = getFieldError(workerNode, "port");
-                          const workerContextErr = getFieldError(workerNode, "contextLength");
-
-                          return (
-                            <div
-                              key={workerNode.id}
-                              className="grid grid-cols-12 gap-4 items-center bg-[var(--bg-surface-raised)]/30 rounded-[var(--radius-sm)] p-2.5 sm:p-3 border border-[var(--border-subtle)]/50"
-                            >
-                              {/* Col 1: Worker Node Tag & Label */}
-                              <div className="col-span-3 flex items-center justify-between pr-2">
-                                <div className="flex items-center gap-2 pl-1">
-                                  <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] text-[11px] font-mono text-[var(--text-secondary)]">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
-                                    <span>Worker #{nodeIdx + 1}</span>
-                                  </span>
-                                  <span className="text-[11px] font-mono text-[var(--text-tertiary)]">
-                                    Parallel Node
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Col 2: Model Name */}
-                              <div className="col-span-3">
-                                <input
-                                  type="text"
-                                  value={workerNode.modelName}
-                                  onChange={(e) =>
-                                    updateNode(cardIdx, nodeIdx, "modelName", e.target.value)
-                                  }
-                                  placeholder="Enter a model name"
-                                  className={`w-full h-10 px-3 rounded-[var(--radius-sm)] text-xs neu-input font-mono outline-none transition-all ${
-                                    workerModelErr
-                                      ? "border-[var(--status-error)] focus:border-[var(--status-error)]"
-                                      : "border-[var(--border-default)] focus:border-[var(--accent)]"
-                                  }`}
-                                />
-                                {workerModelErr && (
-                                  <span className="text-[10px] text-[var(--status-error)] mt-1 block font-mono">
-                                    {workerModelErr}
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Col 3: Host / IP */}
-                              <div className="col-span-2">
-                                <div className="relative">
-                                  <input
-                                    type="text"
-                                    disabled={!allowExternal}
-                                    value={allowExternal ? workerNode.host : "127.0.0.1"}
-                                    onChange={(e) =>
-                                      updateNode(cardIdx, nodeIdx, "host", e.target.value)
-                                    }
-                                    placeholder="192.168.1.50"
-                                    className={`w-full h-10 px-3 rounded-[var(--radius-sm)] text-xs font-mono outline-none transition-all ${
-                                      !allowExternal
-                                        ? "bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--text-tertiary)] cursor-not-allowed select-none"
-                                        : workerHostErr
-                                          ? "neu-input border-[var(--status-error)] focus:border-[var(--status-error)] text-[var(--text-primary)]"
-                                          : "neu-input border-[var(--border-default)] focus:border-[var(--accent)] text-[var(--text-primary)]"
-                                    }`}
-                                  />
-                                  {!allowExternal && (
-                                    <span className="absolute right-2.5 top-2.5 text-[10px] font-mono text-[var(--text-tertiary)] select-none">
-                                      locked
-                                    </span>
-                                  )}
-                                </div>
-                                {workerHostErr && (
-                                  <span className="text-[10px] text-[var(--status-error)] mt-1 block font-mono">
-                                    {workerHostErr}
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Col 4: Port */}
-                              <div className="col-span-1">
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={65535}
-                                  value={workerNode.port}
-                                  onChange={(e) =>
-                                    updateNode(cardIdx, nodeIdx, "port", e.target.value)
-                                  }
-                                  placeholder="11434"
-                                  className={`w-full h-10 px-2.5 rounded-[var(--radius-sm)] text-xs neu-input font-mono outline-none transition-all ${
-                                    workerPortErr
-                                      ? "border-[var(--status-error)] focus:border-[var(--status-error)]"
-                                      : "border-[var(--border-default)] focus:border-[var(--accent)]"
-                                  }`}
-                                />
-                                {workerPortErr && (
-                                  <span className="text-[10px] text-[var(--status-error)] mt-1 block font-mono">
-                                    {workerPortErr}
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Col 5: Context */}
-                              <div className="col-span-1">
-                                <input
-                                  type="number"
-                                  min={512}
-                                  step={512}
-                                  value={workerNode.contextLength}
-                                  onChange={(e) =>
-                                    updateNode(cardIdx, nodeIdx, "contextLength", e.target.value)
-                                  }
-                                  placeholder="32768"
-                                  className={`w-full h-10 px-2.5 rounded-[var(--radius-sm)] text-xs neu-input font-mono outline-none transition-all ${
-                                    workerContextErr
-                                      ? "border-[var(--status-error)] focus:border-[var(--status-error)]"
-                                      : "border-[var(--border-default)] focus:border-[var(--accent)]"
-                                  }`}
-                                />
-                                {workerContextErr && (
-                                  <span className="text-[10px] text-[var(--status-error)] mt-1 block font-mono">
-                                    {workerContextErr}
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Col 6: Status & Test & Remove */}
-                              <div className="col-span-2 flex items-center justify-end gap-2">
-                                {workerNode.testStatus === "testing" && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[11px] text-[var(--status-warning)] font-mono">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-warning)] animate-pulse" />
-                                    Testing…
-                                  </span>
-                                )}
-                                {workerNode.testStatus === "success" && (
-                                  <span
-                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[11px] text-[var(--status-success)] font-mono"
-                                    title={workerNode.testMessage}
-                                  >
-                                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-success)]" />
-                                    OK {workerNode.testLatency !== undefined ? `(${workerNode.testLatency}ms)` : ""}
-                                  </span>
-                                )}
-                                {workerNode.testStatus === "warning" && (
-                                  <span
-                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[11px] text-[var(--status-warning)] font-mono"
-                                    title={workerNode.testMessage}
-                                  >
-                                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-warning)]" />
-                                    Reachable
-                                  </span>
-                                )}
-                                {workerNode.testStatus === "error" && (
-                                  <span
-                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[11px] text-[var(--status-error)] max-w-[100px] truncate font-mono"
-                                    title={workerNode.testMessage}
-                                  >
-                                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--status-error)]" />
-                                    Failed
-                                  </span>
-                                )}
-
-                                <button
-                                  type="button"
-                                  onClick={() => testNodeEndpoint(cardIdx, nodeIdx)}
-                                  disabled={workerNode.testStatus === "testing"}
-                                  className="h-9 px-3 rounded-[var(--radius-sm)] text-xs font-semibold neu-button disabled:opacity-40"
-                                >
-                                  Test
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => removeWorkerNode(cardIdx, nodeIdx)}
-                                  className="h-9 w-9 flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border-subtle)] hover:border-[var(--status-error)]/50 bg-[var(--bg-surface-raised)] hover:bg-[var(--status-error)]/10 text-[var(--text-tertiary)] hover:text-[var(--status-error)] transition-colors shrink-0"
-                                  title="Remove this worker node"
-                                >
-                                  <svg
-                                    width="13"
-                                    height="13"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  >
-                                    <line x1="18" y1="6" x2="6" y2="18" />
-                                    <line x1="6" y1="6" x2="18" y2="18" />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
 
                     <div className="mt-4 pt-3 border-t border-[var(--border-subtle)] flex items-center justify-between gap-3">
                       <button

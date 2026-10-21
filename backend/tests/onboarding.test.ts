@@ -8,7 +8,7 @@ import {
 } from "../src/main/ipc/channels.js";
 import { initBackend } from "../src/main/index.js";
 import { closeDb, initDb } from "../src/main/persistence/db.js";
-import { sanitizeHost, buildRegistryFromRows, configureModels } from "../src/main/gateway/registry.js";
+import { sanitizeHost, buildRegistryFromRows, configureModels, loadRegistry } from "../src/main/gateway/registry.js";
 import {
   handleGetOnboardingStatus,
   handleResetOnboarding,
@@ -155,10 +155,31 @@ describe("Onboarding Architecture & IPC Handlers", () => {
       expect(entries.find(entry => entry.model === "qwen2.5-vl:7b")?.capabilities).toContain("image-input");
       expect(primary.baseUrl).toBe("http://127.0.0.1:8000/v1");
       expect(primary.model).toBe("qwen3:8b");
+      expect(primary.concurrencyLimit).toBe(2);
 
       // Verify no legacy plan model is synthesized
       const plan = entries.find((e: any) => e.id === "plan-qwen3-8b");
       expect(plan).toBeUndefined();
+    });
+
+    it("preserves custom concurrencyLimit from onboarding rows and defaults CLI profiles to 2", () => {
+      const customRows: ModelConfigRow[] = [
+        {
+          role: "draft",
+          modelName: "qwen3:8b",
+          host: "127.0.0.1",
+          port: 8000,
+          contextLength: 16384,
+          concurrencyLimit: 4,
+        },
+      ];
+      const [entry] = buildRegistryFromRows(customRows);
+      expect(entry.concurrencyLimit).toBe(4);
+
+      const loaded = loadRegistry();
+      for (const profile of loaded.values()) {
+        expect(profile.concurrencyLimit).toBe(2);
+      }
     });
 
     it("deduplicates the same endpoint configured for Vision, Coding, and Draft", () => {

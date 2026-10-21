@@ -145,6 +145,64 @@ describe("code review evidence contract", () => {
     } finally { rmSync(runRoot(runId), { recursive: true, force: true }); }
   });
 
+  it("dispatches behavior checks in parallel up to the model concurrencyLimit and streams incremental progress", async () => {
+    const runId = randomUUID();
+    const checks = [
+      "Preserve the callable interface.",
+      "Return the rows read from the input.",
+      "Preserve the summarize(path) helper.",
+      "Return the parsed result list.",
+    ];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const assessedCounts: number[] = [];
+    const gateway = {
+      registry: new Map([["primary-model", { id: "primary-model", enabled: true, model: "test-model", maxOutputTokens: 4096, concurrencyLimit: 2 }]]),
+      chatWithTools: vi.fn(async (_model, messages, _tools, options) => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        const rawContent = messages[1].content as string;
+        const parsed = JSON.parse(rawContent);
+        expect(parsed.behaviorChecks).toHaveLength(1);
+        expect(options.responseSchema.schema).toMatchObject({ minItems: 1, maxItems: 1 });
+        expect(rawContent.indexOf('"sourceLines"')).toBeLessThan(rawContent.indexOf('"behaviorChecks"'));
+        await new Promise(resolve => setTimeout(resolve, 10));
+        inFlight--;
+        return {
+          ok: true,
+          value: {
+            content: JSON.stringify([{
+              index: 0,
+              status: "satisfied",
+              issue: "Implemented.",
+              sourceLineNumbers: [1, 2],
+              codeLineNumbers: [1, 2],
+            }]),
+            finishReason: "stop",
+          },
+        };
+      }),
+    };
+    try {
+      await expect(reviewAttachedPython({
+        gateway: gateway as any,
+        modelId: "primary-model" as ModelId,
+        runId,
+        request: "Repair the source.",
+        sourceEvidence: "def summarize(path):\n    return read_rows(path)",
+        sourceChecklist: JSON.stringify({ checks }),
+        currentSource: "def summarize(path):\n    return read_rows(path)",
+        executionOutput: "[]",
+        emitProgress: event => {
+          if (event.assessedChecks !== undefined) assessedCounts.push(event.assessedChecks);
+        },
+      })).resolves.toEqual([]);
+      expect(gateway.chatWithTools).toHaveBeenCalledTimes(4);
+      expect(maxInFlight).toBe(2);
+      expect(assessedCounts).toEqual([0, 1, 2, 3, 4, 4]);
+    } finally { rmSync(runRoot(runId), { recursive: true, force: true }); }
+  });
+
   it('detects an unconditional update moved into a new else branch',()=>{
     const source='for item in items:\n    if item.failed:\n        errors += 1\n    processed += 1\n';
     expect(unmarkedConditionalUpdateGaps(source,'for item in items:\n    if item.failed:\n        errors += 1\n    else:\n        processed += 1\n')).toEqual([expect.objectContaining({evidence:'processed += 1'})]);
