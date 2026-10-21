@@ -14,7 +14,9 @@
 // Token budget: VISION_SYSTEM_PROMPT ~436 + USER ~88 = ~524 tokens.
 // At 1024px: ~724x1024 portrait = 2x3 tiles = 6 tiles = ~1536 tokens/page,
 // 2 pages = 3072 + 524 = ~3596 < 4096. At 1568px this was ~6668 > 4096.
-const MAX_EDGE_PX = 1024;
+import { createHash } from 'node:crypto';
+import { assertRuntimeActive } from './runtime-scope.js';
+const MAX_EDGE_PX = 1280;
 const JPEG_QUALITY = 80;
 const PASSTHROUGH_BYTES = 900 * 1024;
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -190,6 +192,85 @@ export async function renderSvgToImage(raw: Buffer): Promise<PreparedImage> {
   return { buffer, mediaType: "image/jpeg", resized: true, originalBytes: raw.length, finalBytes: buffer.length };
 }
 
+export interface SourceView { page: number; location: string; buffer: Buffer; }
+export interface VisualDocument {
+  pageViewCounts: number[];
+  render(page: number): Promise<SourceView[]>;
+  close(): Promise<void>;
+}
+const sourceViewCache = new Map<string,SourceView[]>();
+let sourceViewCacheBytes=0;
+
+/** Plan every source page before rendering. Never substitute extracted text for pixels. */
+export async function openVisualDocument(raw: Buffer, extension: string): Promise<VisualDocument> {
+  assertRuntimeActive();
+  if(extension==='svg') {
+    const xml=raw.toString('utf8');
+    if(/<!DOCTYPE|<!ENTITY/i.test(xml)||[...xml.matchAll(/(?:\b(?:xlink:)?href\s*=\s*["']([^"']+)["']|\burl\(\s*["']?([^\s)"']+))/gi)].some(match=>!/^#|^data:image\/(?:png|jpeg|webp|bmp|gif);base64,/i.test(match[1]??match[2])))throw new Error('SVG inspection requires self-contained source images. External resources and XML entities are not supported.');
+  }
+  const sourceKey=createHash('sha256').update(raw).update(extension+':150dpi:1024:128:v1').digest('hex');
+  const canvasMod = await loadCanvas();
+  if (!canvasMod?.createCanvas || !canvasMod.loadImage) throw new Error('Source inspection requires the local image renderer.');
+  const { createCanvas, loadImage } = canvasMod;
+  let pdf: any;
+  let raster: any;
+  const sizes: Array<{width:number;height:number}> = [];
+  if (extension === 'pdf') {
+    const pdfjs = await loadPdfJs();
+    if (!pdfjs?.getDocument) throw new Error('Source inspection requires the PDF renderer.');
+    class CanvasFactory {
+      create(width:number,height:number) { const canvas=createCanvas!(width,height);return {canvas,context:canvas.getContext('2d')}; }
+      reset(target:any,width:number,height:number) { target.canvas.width=width;target.canvas.height=height; }
+      destroy(target:any) { target.canvas.width=0;target.canvas.height=0;target.canvas=null;target.context=null; }
+    }
+    pdf=await pdfjs.getDocument({data:new Uint8Array(raw),CanvasFactory}).promise;
+    for(let page=1;page<=pdf.numPages;page++) {
+      assertRuntimeActive();
+      const vp=(await pdf.getPage(page)).getViewport({scale:PDF_DPI/72});
+      sizes.push({width:Math.ceil(vp.width),height:Math.ceil(vp.height)});
+    }
+  } else {
+    raster=await loadImage(raw);sizes.push({width:raster.width,height:raster.height});
+  }
+  const offsets=(size:number):number[]=> {
+    if(size<=MAX_EDGE_PX)return [0];
+    const values:number[]=[];
+    for(let start=0;start<size;start+=MAX_EDGE_PX-128){values.push(Math.min(start,size-MAX_EDGE_PX));if(start+MAX_EDGE_PX>=size)break;}
+    return [...new Set(values)];
+  };
+  const count=({width,height}:{width:number;height:number})=>Math.max(width,height)<=MAX_EDGE_PX?1:1+offsets(width).length*offsets(height).length;
+  return {
+    pageViewCounts:sizes.map(count),
+    async close(){await pdf?.destroy?.();},
+    async render(page){
+      const cacheKey=`${sourceKey}:${page}`;
+      const cached=sourceViewCache.get(cacheKey);
+      if(cached)return cached;
+      const size=sizes[page-1];if(!size)throw new Error('Page is outside the source.');
+      if(size.width*size.height>40_000_000)throw new Error('Source page exceeds the rendering limit. Supply a smaller source or region.');
+      const canvas=createCanvas(size.width,size.height);const ctx=canvas.getContext('2d');
+      ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+      if(pdf){const p=await pdf.getPage(page);await p.render({canvasContext:ctx,viewport:p.getViewport({scale:PDF_DPI/72})}).promise;}
+      else ctx.drawImage(raster,0,0);
+      const views:SourceView[]=[];
+      const add=(x:number,y:number,width:number,height:number,overview=false)=>{
+        const scale=overview?Math.min(1,MAX_EDGE_PX/Math.max(width,height)):1;
+        const view=createCanvas(Math.max(1,Math.round(width*scale)),Math.max(1,Math.round(height*scale)));
+        view.getContext('2d').drawImage(canvas,x,y,width,height,0,0,view.width,view.height);
+        views.push({page,location:overview?'overview':`pixels ${x},${y},${width},${height} at source resolution`,buffer:view.toBuffer('image/jpeg',{quality:0.9})});
+      };
+      add(0,0,size.width,size.height,true);
+      if(Math.max(size.width,size.height)>MAX_EDGE_PX)for(const y of offsets(size.height))for(const x of offsets(size.width))add(x,y,Math.min(MAX_EDGE_PX,size.width),Math.min(MAX_EDGE_PX,size.height));
+      const sizeBytes=views.reduce((sum,view)=>sum+view.buffer.length,0);
+      if(sizeBytes<=16*1024*1024){
+        while(sourceViewCacheBytes+sizeBytes>16*1024*1024&&sourceViewCache.size){const first=sourceViewCache.keys().next().value!;sourceViewCacheBytes-=sourceViewCache.get(first)!.reduce((sum,view)=>sum+view.buffer.length,0);sourceViewCache.delete(first);}
+        sourceViewCache.set(cacheKey,views);sourceViewCacheBytes+=sizeBytes;
+      }
+      return views;
+    },
+  };
+}
+
 export function extractPdfText(pdfBuffer: Buffer): string {
   const raw = pdfBuffer.toString("latin1");
   const tjMatches = [...raw.matchAll(/\(([^)]+)\)\s*Tj/g)].map((m) => m[1].replace(/\\\(/g, "(").replace(/\\\)/g, ")").replace(/\\n/g, " "));
@@ -201,18 +282,9 @@ export function extractPdfText(pdfBuffer: Buffer): string {
 
 // PERF OPTIMIZATION: Memoize extracted SVG text across vision & compliance pipeline turns.
 // SVG drawing parsing involves regex matchAll across large XML strings and entity decoding.
-// Fast 32-bit FNV-1a hash keying with bounded LRU eviction avoids repeating XML parsing (~95% speedup).
+// Source digests and bounded LRU eviction avoid reusing text from a different drawing.
 const SVG_TEXT_CACHE_MAX_SIZE = 50;
-const svgTextCache = new Map<number, string>();
-
-function computeFnv1a32(buffer: Buffer): number {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < buffer.length; i++) {
-    hash ^= buffer[i];
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return hash >>> 0;
-}
+const svgTextCache = new Map<string, string>();
 
 /**
  * Generic SVG Vector Text and Label Extractor.
@@ -220,7 +292,7 @@ function computeFnv1a32(buffer: Buffer): number {
  * stripping internal tags, decoding XML entities, and preserving drawing identifiers.
  */
 export function extractSvgText(svgBuffer: Buffer, maxChars: number | null = 8000): string {
-  const key = computeFnv1a32(svgBuffer);
+  const key = createHash('sha256').update(svgBuffer).digest('hex');
   const cached = svgTextCache.get(key);
   if (cached !== undefined) {
     // Refresh position for true LRU eviction
@@ -277,43 +349,6 @@ function computeExtractSvgText(svgBuffer: Buffer): string {
   }
 
   return lines.join("\n");
-}
-
-export async function createPlaceholderImagesFromText(text: string): Promise<PreparedImage[]> {
-  // Agreed flow is PDF -> image(s) -> compress -> vision. When pdfjs/canvas not available,
-  // create synthetic compressed JPEG(s) from extracted text. Keeps vision image_url path,
-  // avoids file $0.50 charge, and stays <4096 tokens (1-2 images at 1024px).
-  const pages = text.match(/.{1,2000}/g) ?? [text];
-  const limited = pages.slice(0, 2);
-  const images: PreparedImage[] = [];
-  for (const pageText of limited) {
-    // Try to render text to image via canvas if available
-    try {
-      const canvasMod = await loadCanvas();
-      if (canvasMod?.createCanvas) {
-        const width = 1024;
-        const height = 768;
-        const canvas = canvasMod.createCanvas(width, height);
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, width, height);
-        ctx.fillStyle = "#000000";
-        ctx.font = "16px sans-serif";
-        const lines = pageText.match(/.{1,80}/g) ?? [pageText];
-        lines.slice(0, 30).forEach((line, i) => ctx.fillText(line, 20, 30 + i * 20));
-        const raw = canvas.toBuffer("image/jpeg", { quality: JPEG_QUALITY / 100 });
-        const prepared = await prepareImage(raw, "image/jpeg");
-        images.push(prepared);
-        continue;
-      }
-    } catch {}
-    // Fallback: 256x256 white JPEG (valid >10px, Alibaba requires >10) when canvas not available.
-    // This still follows PDF -> image(s) -> compress -> vision and avoids file $0.50.
-    const whiteJpegBase64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAEAAQADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD6pooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//2Q==";
-    const buf = Buffer.from(whiteJpegBase64, "base64");
-    images.push({ buffer: buf, mediaType: "image/jpeg", resized: true, originalBytes: buf.length, finalBytes: buf.length });
-  }
-  return images;
 }
 
 export interface PdfInspectionResult {

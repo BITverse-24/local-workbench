@@ -1,6 +1,6 @@
 import { isInferenceConcurrencyError, localInferenceScheduler, modelInferenceGroup } from "./inference-scheduler.js";
 import { currentRuntimeScope, assertRuntimeActive } from "../run/runtime-scope.js";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -462,6 +462,7 @@ export function getJsonSchema(responseFormat: string): Record<string, any> | und
         schema: {
           type: "object",
           properties: {
+            warnings: { type: "array", items: { type: "string" } },
             sourceText: { type: "string" },
             findings: {
               type: "array",
@@ -492,7 +493,7 @@ export function getJsonSchema(responseFormat: string): Record<string, any> | und
               }
             }
           },
-          required: ["findings", "pageReferences"]
+          required: ["sourceText", "findings", "pageReferences", "warnings"]
         }
       }
     };
@@ -829,7 +830,7 @@ export class ModelGateway implements ModelClient {
     gatewayConsole("log", request, `DB ENDPOINT: Dispatching to ${model.baseUrl} (${model.model}, role: ${request.taskType})`);
     const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
 
-    const maybeVision = request as unknown as { taskType: string; attachment?: { mediaType: string; relativePath: string; filename?: string; selectedPages?: number[] } };
+    const maybeVision = request as unknown as { taskType: string; attachment?: { mediaType: string; relativePath: string; filename?: string; selectedPages?: number[]; sourceView?: {page:number;location:string;sha256:string} } };
     const isVision = maybeVision.taskType === "vision" && !!maybeVision.attachment;
     if (isVision && !model.capabilities.includes("image-input")) {
       return { ok: false, error: { kind: "ai-error", code: "model_unavailable", message: "Visual extraction requires an image-input capable model.", retryable: false, requestId: request.requestId, runId: request.runId, taskType: request.taskType, modelId: request.modelId } };
@@ -844,6 +845,12 @@ export class ModelGateway implements ModelClient {
       ? await (async () => {
           const att = maybeVision.attachment!;
           const raw = await readFile(absoluteDataPath(att.relativePath));
+          if (att.sourceView) {
+            if(createHash('sha256').update(raw).digest('hex')!==att.sourceView.sha256)throw new Error('Saved source view changed before upload.');
+            assertUploadableSize(raw.length);
+            this.lastVisionUpload={originalBytes:raw.length,finalBytes:raw.length,resized:false,mediaType:'image/jpeg'};
+            return [{type:'image_url',image_url:{url:`data:image/jpeg;base64,${raw.toString('base64')}`}}];
+          }
           if (att.mediaType === "image/svg+xml" || att.filename?.toLowerCase().endsWith(".svg")) {
             const prepared = await renderSvgToImage(raw);
             assertUploadableSize(prepared.finalBytes);

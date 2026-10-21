@@ -1,3 +1,4 @@
+import { selectSourcePages } from "../run/source-page-selection.js";
 // Chat-persistence IPC handlers (backend/src/main/ipc/handlers.ts).
 // Pure handler functions (no `electron` import) plus structural IPC registration keep
 // the backend testable with a fake ipcMain. Run events are emitted through the callback
@@ -26,6 +27,7 @@ import {
   setSettingSchema,
   startRunSchema,
   confirmActionSchema,
+  selectSourcePagesSchema,
   cancelRunSchema,
   resumeRunSchema,
   getRunSnapshotSchema,
@@ -146,6 +148,7 @@ export function registerRunHandlers(ipcMain: MinimalIpcMain, manager: RunManager
   ipcMain.handle(IPC_RUN.GET_SNAPSHOT, (_event, input) => manager.getRunSnapshot(getRunSnapshotSchema.parse(input)));
   ipcMain.handle(IPC_RUN.START_RUN, (_event, input) => manager.start(startRunSchema.parse(input)));
   ipcMain.handle(IPC_RUN.RESUME_RUN, (_event, input) => { const parsed = resumeRunSchema.parse(input); return manager.resume(parsed.runId, parsed.largerGenerationAllowance); });
+  ipcMain.handle(IPC_RUN.SELECT_SOURCE_PAGES, (_event, input) => selectSourcePages(selectSourcePagesSchema.parse(input)));
   ipcMain.handle(IPC_RUN.CONFIRM, (_event, input) => manager.confirm(confirmActionSchema.parse(input)));
   ipcMain.handle(IPC_RUN.CANCEL, (_event, input) => manager.cancel(cancelRunSchema.parse(input).runId));
   ipcMain.handle(IPC_RUN.GET_ARTIFACT, (_event, input) => { const parsed = getArtifactSchema.parse(input); return manager.artifact(parsed.runId, parsed.artifactId); });

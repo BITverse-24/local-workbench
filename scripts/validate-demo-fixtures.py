@@ -6,6 +6,7 @@ import csv
 import hashlib
 import json
 import re
+import sys
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parent.parent
@@ -25,13 +26,18 @@ SCENARIOS = {
 }
 
 
+FLOW_C_ONLY = "--flow-c" in sys.argv
+if FLOW_C_ONLY:
+    SCENARIOS = {name: spec for name, spec in SCENARIOS.items() if name.startswith("flow_c/")}
+
+
 def check(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
 
 
 def validate_layout() -> None:
-    actual_dirs = {p.relative_to(ROOT).as_posix() for p in ROOT.rglob("*") if p.is_dir() and (p / "prompt.md").exists()}
+    actual_dirs = {p.relative_to(ROOT).as_posix() for p in ROOT.rglob("*") if p.is_dir() and (p / "prompt.md").exists() and (not FLOW_C_ONLY or p.relative_to(ROOT).as_posix().startswith("flow_c/"))}
     check(actual_dirs == set(SCENARIOS), f"Scenario folders differ: {sorted(actual_dirs ^ set(SCENARIOS))}")
     expected_paths: set[str] = set()
     for relative, spec in SCENARIOS.items():
@@ -60,25 +66,25 @@ def validate_layout() -> None:
         actual_files = {p.relative_to(ROOT).as_posix() for p in folder.rglob("*") if p.is_file()}
         local_expected = {p for p in expected_paths if p.startswith(relative + "/")}
         check(actual_files == local_expected, f"Unexpected or missing files in {relative}: {sorted(actual_files ^ local_expected)}")
-    for flow in ("flow_a", "flow_b", "flow_c"):
+    for flow in (("flow_c",) if FLOW_C_ONLY else ("flow_a", "flow_b", "flow_c")):
         modes = [spec["mode"] for name, spec in SCENARIOS.items() if name.startswith(flow + "/")]
         check(sorted(modes) == ["agent", "chat", "work"], f"{flow} must have one chat, one work, and one agent scenario")
 
 
 def validate_inputs() -> None:
-    for relative in ("flow_a/scenario-1/inspection-report-E201-annotated.pdf", "flow_a/scenario-1/inspection-report-E202-followup.pdf"):
+    for relative in (() if FLOW_C_ONLY else ("flow_a/scenario-1/inspection-report-E201-annotated.pdf", "flow_a/scenario-1/inspection-report-E202-followup.pdf")):
         check((ROOT / relative).read_bytes().startswith(b"%PDF-"), f"Invalid PDF: {relative}")
     with (ROOT / "flow_b/scenario-2/cold-room-readings.csv").open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     check(len(rows) == 8, "Cold-room demo input must contain eight rows")
     check({row["temp_c"] for row in rows if row["temp_c"]} == {"3.2", "5.0", "5.1", "1.9", "2.0", "4.8", "6.4"}, "Cold-room values changed")
     drawing = (ROOT / "flow_c/scenario-1/pump-skid-P204.svg").read_text(encoding="utf-8")
-    check("CLASS 150" in drawing and "DN80 discharge" in drawing, "P-204 drawing values changed")
+    check("data:image/png;base64," in drawing and "DN80 discharge" in drawing and "CLASS 150" not in drawing, "Drawing must preserve visible image-only evidence")
 
 
 def validate_manifest() -> None:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    check(manifest["fixtureVersion"] == "2.0.0", "Unexpected fixture version")
+    check(manifest["fixtureVersion"] == "2.1.0", "Unexpected fixture version")
     actual = {p.relative_to(ROOT).as_posix() for p in ROOT.rglob("*") if p.is_file()}
     check(actual == set(manifest["files"]), "Manifest file list does not match the minimal demo folders")
     for relative, details in manifest["files"].items():
@@ -91,7 +97,7 @@ def main() -> None:
     validate_layout()
     validate_inputs()
     validate_manifest()
-    print("Demo fixtures passed: all nine scenario folders contain only prompts, attachments, knowledge files, and Agent workspace inputs.")
+    print("Demo fixtures passed: selected scenario folders contain only prompts, attachments, knowledge files, and Agent workspace inputs.")
 
 
 if __name__ == "__main__":

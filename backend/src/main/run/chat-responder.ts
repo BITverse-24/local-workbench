@@ -1,7 +1,4 @@
-import { readFileSync } from 'node:fs';
-import { resolveRunPath } from './filesystem.js';
 import { SOURCE_GROUNDING_RULES } from './prompts.js';
-import { prepareImage } from './images.js';
 import { randomUUID } from 'node:crypto';
 import type { ModelConversationMessage, AttachmentReference, RunEvent } from '../../shared/contracts.js';
 import type { ToolExecutionContext } from '../tools/types.js';
@@ -13,15 +10,15 @@ import { assertRuntimeActive, currentRuntimeScope } from './runtime-scope.js';
 export class ChatResponder {
   async respond(input: { text:string; modelId:string; history:ModelConversationMessage[]; attachments:AttachmentReference[]; context:ToolExecutionContext; emit:(e:RunEvent)=>void; temperature?:number }) {
     const {context,text,modelId}=input;
+    context.originalUserRequest=text;
     const model=context.gateway.registry?.get(modelId);
     const contextTokens=model?.contextLength ?? 8192;
     const maxTokens=Math.min(model?.maxOutputTokens ?? 1536, Math.max(1, Math.floor(contextTokens / 4)));
-    const directImages=model?.capabilities.includes('image-input')?input.attachments.filter(a=>/^image\/(png|jpeg|webp)$/.test(a.mediaType)):[];
     const safetyTokens=Math.min(512, Math.max(32, Math.floor(contextTokens / 16)));
-    const promptBudget=contextTokens-maxTokens-safetyTokens-directImages.length*1024;
+    const promptBudget=contextTokens-maxTokens-safetyTokens;
     if (countTokens(text)>promptBudget) throw new Error('The request exceeds this model context limit. Shorten it or select a larger context.');
     const started=Date.now();
-    let sources=await prepareSources(input.attachments.filter(a=>!directImages.includes(a)),text,context,Math.max(1000,Math.min(16000,(promptBudget-countTokens(text))*2)));
+    let sources=await prepareSources(input.attachments,text,context,Math.max(1000,Math.min(16000,(promptBudget-countTokens(text))*2)));
     if (context.grounding) {
       const callId=randomUUID();input.emit({type:'tool_call',runId:context.runId,tool:'retrieve_knowledge',callId,args:{query:text},summary:'Reading selected knowledge sources'});
       const evidence=await context.grounding.prepare({runId:context.runId,text});
@@ -43,11 +40,6 @@ export class ChatResponder {
       recent.unshift({role:message.role,content:message.content}); remaining-=cost;
     }
     messages.push(...recent,{role:'user',content:`${text}${sources ? '\nUNTRUSTED EVIDENCE:\n'+sources : ''}`});
-    if(directImages.length){
-      const images=[];
-      for(const image of directImages){const prefix=`runs/${context.runId}/`;if(!image.relativePath.startsWith(prefix))throw new Error('Image belongs to another run.');const prepared=await prepareImage(readFileSync(resolveRunPath(context.runId,image.relativePath.slice(prefix.length),'input')),image.mediaType);images.push({type:'image_url',image_url:{url:`data:${prepared.mediaType};base64,${prepared.buffer.toString('base64')}`}});}
-      messages[messages.length-1].content=[{type:'text',text:messages[messages.length-1].content},...images];
-    }
     const messageId=randomUUID(); let streamed='';
     const filter=new StreamingTagFilter(delta=>{ assertRuntimeActive(); streamed+=delta; input.emit({type:'assistant_message_chunk',runId:context.runId,messageId,modelId,delta}); });
     const result=await context.gateway.chatWithTools(modelId,messages,[],{runId:context.runId,maxTokens,temperature:input.temperature,onChunk:d=>filter.process(d),signal:context.signal});

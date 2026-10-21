@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const JSZip = require("jszip");
+const { taskText } = require("./demo-prompt.cjs");
 const { FlowRunner, ROOT } = require("./run-demo-flows.cjs");
 
 const scenarios = [
@@ -21,7 +22,7 @@ const collect = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e
 
 async function run(scenario, campaignDir) {
   const sourceDir = path.join(ROOT, "demo", scenario.dir);
-  const prompt = fs.readFileSync(path.join(sourceDir, "prompt.md"), "utf8").trim();
+  const prompt = taskText(fs.readFileSync(path.join(sourceDir, "prompt.md"), "utf8"));
   const expectedPath = path.join(ROOT, "tests", "fixtures", "demo", "oracles", scenario.dir, "expected-results.json");
   const expected = JSON.parse(fs.readFileSync(expectedPath, "utf8"));
   const files = scenario.files;
@@ -72,7 +73,7 @@ async function run(scenario, campaignDir) {
     const verificationText = independentTestRun ? `\n${independentTestRun.stdout}\n${independentTestRun.stderr}` : "";
     const reviewedText = (text + "\n" + artifactText + verificationText).toLowerCase();
     const checks = {
-      terminalState: ["completed", "partial"].includes(outcome),
+      terminalState: outcome === "completed",
       responseOrSavedOutput: text.trim().length > 40 || Boolean(source),
       usefulResponse: text.trim().length > 40,
       expectedTerms: expected.requiredTerms.every((term) => reviewedText.includes(term.toLowerCase())),
@@ -85,6 +86,7 @@ async function run(scenario, campaignDir) {
       repairCloseoutDecision: scenario.id !== "A-3" || /E-?310/i.test(text) && /18 tubes/i.test(text) && /15\.2/.test(text) && /30 minutes/i.test(text) && /no leakage/i.test(text) && /pending/i.test(text) && /isolated/i.test(text),
       calibrationDecisions: scenario.id !== "A-2" || /PG-G17[\s\S]{0,180}(eligible|approved|pass|current)/i.test(text + artifactText) && /PG-G18[\s\S]{0,180}(expired|not approved|out of date|pending)/i.test(text + artifactText) && /PG-G19[\s\S]{0,180}(unknown|missing|not approved|not found)/i.test(text + artifactText),
       reliefValveDecisions: scenario.id !== "C-2" || /RV-301[\s\S]{0,180}(non.?compliant|above|replace|reset)/i.test(text + artifactText) && /RV-302[\s\S]{0,180}(unknown|missing|out of service|pending)/i.test(text + artifactText) && /RV-303[\s\S]{0,180}(compliant|meets|within|pass)/i.test(text + artifactText),
+      visualInspection: scenario.id !== "C-3" || runner.events.some(event=>event.type==='source_inspection'&&event.stage==='visual'&&event.inspection.status==='complete'&&event.inspection.views.length>0),
       manifoldDecisions: scenario.id !== "C-3" || /U18-A[\s\S]{0,180}(non.?compliant|below|correct|increase|upsize)/i.test(text) && /U18-B[\s\S]{0,180}(compliant|meets|pass)/i.test(text),
       coldRoomRowCount: scenario.id !== "B-2" || (text.match(/2026-10-11T\d{2}:\d{2}:\d{2}Z,CR-A,/g) ?? []).length === 3,
       coldRoomRows: scenario.id !== "B-2" || [["5.1", "08:30:00Z"], ["1.9", "09:00:00Z"], ["6.4", "09:45:00Z"]].every(([value, stamp]) => {

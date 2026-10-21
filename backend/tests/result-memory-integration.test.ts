@@ -42,11 +42,11 @@ describe("P1 production result registration and retrieval integration", () => {
       expect(execution.result.ok).toBe(true);
       const record = execution.result.resultRef!;
       expect(record.storage.sizeBytes).toBeGreaterThan(8000);
-      expect(record.sources).toEqual([{ filename, relation: "source" }]);
+      expect(record.sources).toEqual([{ filename, page: 1, relation: "source" }]);
       expect(record.origin).toBe("source_extracted");
-      expect(record.status).toBe("complete");
+      expect(record.status).toBe("partial");
       expect(execution.result.output.length).toBeLessThanOrEqual(4000);
-      if (execution.result.ok) expect(execution.result.data).toEqual({ resultId: record.resultId, type: "document", status: "complete" });
+      if (execution.result.ok) expect(execution.result.data).toEqual({ resultId: record.resultId, type: "document", status: "partial" });
       messages.push({ role: "assistant", content: null, tool_calls: [call], turn: doc + 1 });
       messages.push({ role: "tool", tool_call_id: call.id, toolName: "extract_document", content: execution.result.output, resultId: record.resultId, turn: doc + 1 });
       records.push({ id: record.resultId, filename, facts, text });
@@ -73,7 +73,7 @@ describe("P1 production result registration and retrieval integration", () => {
           expect(execution.result.ok).toBe(true);
           const slice = execution.result.ok ? execution.result.data as { content: string } : undefined;
           expect(slice?.content).toBe(fact);
-          expect(context.resultStore!.inspectResult(record.id).sources).toEqual([{ filename: record.filename, relation: "source" }]);
+          expect(context.resultStore!.inspectResult(record.id).sources).toEqual([{ filename: record.filename, page: 1, relation: "source" }]);
         }
       }
       expect(context.resultStore!.listResults({ limit: 50 })).toHaveLength(12);
@@ -103,8 +103,7 @@ describe("P1 production result registration and retrieval integration", () => {
     expect(execution.result.ok).toBe(true);
     const record = execution.result.resultRef!;
     expect(record.storage.sizeBytes).toBeGreaterThan(8000);
-    const headerLength = `[Document: large.svg (SVG Vector Drawing, ${facts.join("\n").length} characters)]\n\n`.length;
-    expect(context.resultStore!.retrieveResultSlice(record.resultId, { mode: "text", offset: headerLength + facts.join("\n").indexOf("source-29:"), maxChars: facts[29].length }).content).toBe(facts[29]);
+    expect(context.resultStore!.retrieveResultSlice(record.resultId, { mode: "json", pointer: "/sourceText", offset: facts.join("\n").indexOf("source-29:"), maxChars: facts[29].length }).content).toBe(facts[29]);
   });
   it("preserves result references within small budgets and rejects budgets that would destroy the ID", () => {
     const record = context.resultStore!.registerResult({ type: "text", origin: "source_extracted", status: "complete", producer: { tool: "read_file", callId: "small-budget" }, payload: "x".repeat(2000), summary: "source" });

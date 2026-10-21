@@ -108,7 +108,7 @@ describe("Agent Tools Suite", () => {
     rmSync(path.join(process.cwd(), "data", "runs", runId), { recursive: true, force: true });
   });
 
-  it("extracts digital text from an attached SVG file via extract_document tool", async () => {
+  it("preserves SVG text but reports incomplete inspection without Vision", async () => {
     const runId = "33333333-4444-5555-6666-777777777777";
     const runInputDir = path.join(process.cwd(), "data", "runs", runId, "input");
     mkdirSync(runInputDir, { recursive: true });
@@ -126,12 +126,12 @@ describe("Agent Tools Suite", () => {
     };
 
     const res = await extractDocumentTool.execute({ filename: "drawing.svg" }, mockContext);
-    expect(res.summary).toContain('Extracted vector diagram text and annotations from SVG "drawing.svg"');
-    const parsed = JSON.parse(res.output);
-    expect(parsed.extractionMethod).toBe("digital_svg");
-    expect(parsed.sourceText).toContain("PUMP SKID P-101");
-    expect(parsed.sourceText).toContain("Rating: Class 300");
-    expect(parsed.sourceText).toContain("Inspector observed slight cavitation");
+    expect(res.summary).toContain('partial');
+    expect(res.output).toContain('PUMP SKID P-101');
+    expect(res.output).toContain('Rating: Class 300');
+    expect(res.output).toContain('Inspector observed slight cavitation');
+    expect(res.output).toContain('requires an enabled image-input model');
+    expect(res.intermediate?.status).toBe('partial');
 
     rmSync(path.join(process.cwd(), "data", "runs", runId), { recursive: true, force: true });
   });

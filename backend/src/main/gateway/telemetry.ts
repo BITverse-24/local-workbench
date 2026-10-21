@@ -44,7 +44,7 @@ export interface InferenceTelemetryRecord {
 }
 
 /** Reasoning-control experiment configuration. Production default is "default" (no parameters sent). */
-export type ReasoningMode = "default" | "template_off";
+export type ReasoningMode = "default" | "template_off" | "effort_none";
 
 export interface ReasoningControlRequested {
   mode: ReasoningMode;
@@ -52,7 +52,7 @@ export interface ReasoningControlRequested {
   params: Record<string, unknown>;
 }
 
-const MODES: ReasoningMode[] = ["default", "template_off"];
+const MODES: ReasoningMode[] = ["default", "template_off", "effort_none"];
 
 /**
  * Resolve the reasoning control for working-model turns. Controlled only by the
@@ -64,6 +64,7 @@ export function resolveReasoningControl(env: NodeJS.ProcessEnv = process.env): R
   const mode: ReasoningMode = MODES.includes(raw) ? raw : "default";
   switch (mode) {
     case "template_off": return { mode, params: { chat_template_kwargs: { enable_thinking: false } } };
+    case "effort_none": return { mode, params: { reasoning_effort: "none" } };
     default: return { mode: "default", params: {} };
   }
 }

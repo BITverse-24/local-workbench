@@ -14,6 +14,7 @@ export const IPC_RUN = {
   GET_SNAPSHOT: "workbench:getRunSnapshot",
   START_RUN: "workbench:startRun",
   RESUME_RUN: "workbench:resumeRun",
+  SELECT_SOURCE_PAGES: "workbench:selectSourcePages",
   CONFIRM: "workbench:confirmAction",
   CANCEL: "workbench:cancelRun",
   GET_ARTIFACT: "workbench:getArtifact",

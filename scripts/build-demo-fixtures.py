@@ -5,6 +5,8 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import subprocess
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -133,7 +135,7 @@ def make_manifest() -> None:
                 "bytes": path.stat().st_size,
             }
     manifest = {
-        "fixtureVersion": "2.0.0",
+        "fixtureVersion": "2.1.0",
         "generatedAt": "2026-08-20T00:00:00Z",
         "flows": {
             "flowA": {
@@ -154,10 +156,8 @@ def make_manifest() -> None:
                 "expectedExitCode": 0,
             },
             "flowC": {
-                "drawingId": "PID-P204-REV-C",
-                "requiredCitations": ["[SOP-220 §4.2]", "[SOP-220 §4.3]"],
-                "nonCompliantChecks": 2,
-                "recommendation": "Replace XV-204 with Class 300 and revise discharge line to DN100 or larger.",
+                "scenarioRoot": "flow_c",
+                "sourceTypes": ["svg-with-embedded-image", "csv", "workspace-svg-with-embedded-image"],
             },
             "additionalScenarios": [
                 "flow_a/scenario-2: gauge calibration release review",
@@ -174,6 +174,7 @@ def make_manifest() -> None:
 
 
 if __name__ == "__main__":
+    subprocess.run([str(PROJECT / "node_modules/electron/dist/Electron.app/Contents/MacOS/Electron") if os.name != "nt" and (PROJECT / "node_modules/electron/dist/Electron.app").exists() else "node", str(PROJECT / "scripts/build-flow-c-fixtures.cjs")], check=True, env={**os.environ, "ELECTRON_RUN_AS_NODE": "1"})
     make_flow_a_scans()
     LEGACY_B.mkdir(parents=True, exist_ok=True)
     make_csv(LEGACY_B / "reactor-temperature-log.csv")

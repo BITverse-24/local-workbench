@@ -1,0 +1,220 @@
+[
+  {
+    "id": "C-1",
+    "scenario": 1,
+    "expect": {
+      "XV-204": "fail",
+      "discharge": "fail"
+    },
+    "observed": {
+      "XV-204": [
+        "150"
+      ],
+      "discharge": [
+        "DN80"
+      ]
+    },
+    "aliases": {
+      "XV-204": [
+        "isolation valve",
+        "valve rating"
+      ]
+    }
+  },
+  {
+    "id": "C-2",
+    "scenario": 2,
+    "expect": {
+      "RV-301": "fail",
+      "RV-302": "unknown",
+      "RV-303": "pass"
+    },
+    "observed": {
+      "RV-301": [
+        "10.2"
+      ],
+      "RV-302": [
+        "9.8"
+      ],
+      "RV-303": [
+        "9.5"
+      ]
+    }
+  },
+  {
+    "id": "C-3",
+    "scenario": 3,
+    "expect": {
+      "U18-A": "fail",
+      "U18-B": "pass"
+    },
+    "observed": {
+      "U18-A": [
+        "DN40",
+        "150"
+      ],
+      "U18-B": [
+        "DN50",
+        "300"
+      ]
+    }
+  },
+  {
+    "id": "C-1-corrected",
+    "scenario": 1,
+    "drawing": {
+      "rating": 300,
+      "lineSize": 100
+    },
+    "expect": {
+      "XV-204": "pass",
+      "discharge": "pass"
+    },
+    "observed": {
+      "XV-204": [
+        "300"
+      ],
+      "discharge": [
+        "DN100"
+      ]
+    },
+    "aliases": {
+      "XV-204": [
+        "isolation valve",
+        "valve rating"
+      ]
+    }
+  },
+  {
+    "id": "C-1-changed-rating",
+    "scenario": 1,
+    "drawing": {
+      "rating": 600,
+      "lineSize": 80
+    },
+    "expect": {
+      "XV-204": "pass",
+      "discharge": "fail"
+    },
+    "observed": {
+      "XV-204": [
+        "600"
+      ],
+      "discharge": [
+        "DN80"
+      ]
+    },
+    "aliases": {
+      "XV-204": [
+        "isolation valve",
+        "valve rating"
+      ]
+    }
+  },
+  {
+    "id": "C-1-changed-spec",
+    "scenario": 1,
+    "spec": "relaxed",
+    "expect": {
+      "XV-204": "pass",
+      "discharge": "pass"
+    },
+    "observed": {
+      "XV-204": [
+        "150"
+      ],
+      "discharge": [
+        "DN80"
+      ]
+    },
+    "aliases": {
+      "XV-204": [
+        "isolation valve",
+        "valve rating"
+      ]
+    }
+  },
+  {
+    "id": "C-3-corrected",
+    "scenario": 3,
+    "drawing": {
+      "rating": 300,
+      "branchSize": 50
+    },
+    "expect": {
+      "U18-A": "pass",
+      "U18-B": "pass"
+    },
+    "observed": {
+      "U18-A": [
+        "DN50",
+        "300"
+      ],
+      "U18-B": [
+        "DN50",
+        "300"
+      ]
+    }
+  },
+  {
+    "id": "C-3-changed-spec",
+    "scenario": 3,
+    "spec": "stricter",
+    "expect": {
+      "U18-A": "fail",
+      "U18-B": "fail"
+    },
+    "observed": {
+      "U18-A": [
+        "DN40",
+        "150"
+      ],
+      "U18-B": [
+        "DN50",
+        "300"
+      ]
+    }
+  },
+  {
+    "id": "C-2-date-and-boundaries",
+    "scenario": 2,
+    "register": "current-boundaries",
+    "expect": {
+      "RV-301": "pass",
+      "RV-302": "pass",
+      "RV-303": "pass"
+    },
+    "observed": {
+      "RV-301": [
+        "9.5"
+      ],
+      "RV-302": [
+        "10.0"
+      ],
+      "RV-303": [
+        "9.5"
+      ]
+    }
+  },
+  {
+    "id": "C-1-unreadable",
+    "scenario": 1,
+    "drawing": {
+      "obscured": true
+    },
+    "negative": "unreadable"
+  },
+  {
+    "id": "C-3-unreadable",
+    "scenario": 3,
+    "drawing": {
+      "obscured": true
+    },
+    "negative": "unreadable"
+  },
+  {
+    "id": "C-1-no-vision",
+    "scenario": 1,
+    "negative": "no-vision"
+  }
+]

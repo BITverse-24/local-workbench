@@ -1,3 +1,4 @@
+import { loadSourceInspections } from "../run/source-inspection.js";
 import { COMMAND_FALLBACK_DISCLOSURE, getCommandCapability } from "../harness/tools/run-command.js";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -1515,6 +1516,10 @@ export class AgentLoop {
           }
         }
 
+        if(loadSourceInspections(runId).some(source=>source.visualRequired)&&(!content?.trim()||/^(?:task completed|done|completed)[.!]?$/i.test(content.trim()))) {
+          if(completionRetries<2){completionRetries++;messages.push({role:'user',turn,content:'The source reads are complete, but the requested findings have not been delivered. Use the saved digital and visual evidence and retrieved criteria. Return the requested findings, observations, requirements, decisions, corrections, source citations and inspection limits now. Do not repeat completed reads or claim completion without the findings.'});continue;}
+          return buildResult('The source inspection finished, but the model did not return the requested findings. Review the saved source evidence and resume.', 'partial');
+        }
         finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedDiskMutations);
 
         if (
@@ -1650,6 +1655,10 @@ export class AgentLoop {
           return buildResult(failureSummary, "failed");
         }
 
+        if(loadSourceInspections(runId).some(source=>source.visualRequired)&&(!content?.trim()||/^(?:task completed|done|completed)[.!]?$/i.test(content.trim()))) {
+          if(completionRetries<2){completionRetries++;messages.push({role:'user',turn,content:'The source reads are complete, but the requested findings have not been delivered. Use the saved digital and visual evidence and retrieved criteria. Return the requested findings, observations, requirements, decisions, corrections, source citations and inspection limits now. Do not repeat completed reads or claim completion without the findings.'});continue;}
+          return buildResult('The source inspection finished, but the model did not return the requested findings. Review the saved source evidence and resume.', 'partial');
+        }
         finalText = cleanFinalSummary(content ?? "Task completed.", hasExecutedDiskMutations);
         if (
           hasExecutedDiskMutations &&

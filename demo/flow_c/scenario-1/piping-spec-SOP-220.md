@@ -6,14 +6,12 @@ Status: Approved
 
 ## [section:4.2] Isolation valve rating
 
-For hydrocarbon service at the P-204 pump skid, isolation valves on the
-discharge line must be rated at least Class 300. A Class 150 valve is
-non-compliant regardless of the nominal pipe diameter.
+For hydrocarbon service on pump skids covered by this standard, isolation valves on the
+discharge line must be rated at least Class 300.
 
 ## [section:4.3] Discharge line diameter
 
-The P-204 discharge line must be DN100 or larger. A DN80 discharge line is
-non-compliant for the specified pump duty.
+Pump-skid discharge lines must be DN100 or larger.
 
 ## [section:5.1] Review record
 

@@ -7,6 +7,8 @@ export function taskProgressKey(event: Pick<TaskProgressEvent, 'runId' | 'stage'
 
 /** Fixed presentation text. A finished review is not a passed acceptance check. */
 export const TASK_STAGE_LABELS: Record<TaskProgressEvent["stage"], { active: string; completed: string; remaining: string; kind: "code" | "document" | "text" }> = {
+  source_text: { active: "Reading source text", completed: "Source text read", remaining: "Source text", kind: "document" },
+  visual_inspection: { active: "Inspecting drawing/pages", completed: "Visual inspection finished", remaining: "Visual inspection", kind: "document" },
   requirements: { active: "Checking requirements", completed: "Requirements recorded", remaining: "Requirements", kind: "text" },
   input_preparation: { active: "Reading inputs", completed: "Inputs prepared", remaining: "Input preparation", kind: "document" },
   artifact_generation: { active: "Creating outputs", completed: "Outputs created", remaining: "Outputs", kind: "document" },

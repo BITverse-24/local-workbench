@@ -8,6 +8,7 @@
   "main": "electron/dist-electron/main.cjs",
   "scripts": {
     "demo": "npm run build:behavioral && node scripts/test-all-flows.cjs",
+    "demo:flow-c:release": "npm run build:behavioral && node scripts/release-flow-c.cjs",
     "demo:scenarios": "npm run build:behavioral && node scripts/run-demo-scenarios.cjs",
     "benchmark:modes": "node scripts/benchmark-modes.cjs",
     "certify:v0": "npm run build:behavioral && node scripts/certify-v0.cjs",

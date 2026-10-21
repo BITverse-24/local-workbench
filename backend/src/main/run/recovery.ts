@@ -2,8 +2,10 @@ import { getDb } from '../persistence/db.js';
 import { addMessage } from '../persistence/messages.js';
 import { getState, transition } from './store.js';
 import { recordVerificationTermination } from './verification-controller.js';
+import { expireSourcePageSelections } from './source-page-selection.js';
 /** Keep interrupted text and evidence. Never grant authority or replay work on boot. */
 export function recoverInterruptedModeRuns():number {
+  expireSourcePageSelections();
   const db=getDb();
   const rows=db.prepare("SELECT r.id,r.chat_id FROM runs r JOIN run_mode_details m ON m.run_id=r.id WHERE r.state IN ('created','classifying','planning','acting','awaiting_confirmation') OR (r.state='partial' AND EXISTS (SELECT 1 FROM run_drafts d WHERE d.run_id=r.id AND NOT EXISTS (SELECT 1 FROM messages msg WHERE msg.id=d.message_id)))").all() as Array<{id:string;chat_id:string}>;
   for(const row of rows){

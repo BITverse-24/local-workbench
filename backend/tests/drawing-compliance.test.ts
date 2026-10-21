@@ -43,7 +43,7 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
     rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  it("extracts component tags, ratings, and diameters from SVG engineering drawing", () => {
+  it("extracts digital tags and diameters without inferring an image-only rating", () => {
     const svgPath = path.resolve(__dirname, "../../demo/flow_c/scenario-1/pump-skid-P204.svg");
     const svgBuffer = readFileSync(svgPath);
 
@@ -57,10 +57,7 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
     expect(extraction.service).toBe("Hydrocarbon service");
 
     const valveComp = extraction.observedComponents.find((c) => c.attributeName === "rating");
-    expect(valveComp).toBeDefined();
-    expect(valveComp?.tag).toBe("XV-204");
-    expect(valveComp?.observedValue).toMatch(/Class 150/i);
-    expect(valveComp?.numericValue).toBe(150);
+    expect(valveComp).toBeUndefined();
 
     const lineComp = extraction.observedComponents.find(
       (c) => c.attributeName === "nominal size" && c.location === "discharge",
@@ -241,6 +238,7 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
   const note='# P-204 Design Review\n\nDRAWING NOT APPROVED.\nReplace XV-204 from Class 150 to Class 300 [SOP-220 §4.2].\nRevise discharge line DN80 to DN100 [SOP-220 §4.3].';
   async function inspectDrawing(work:boolean){
     const fixture=modeGateway(fixtureIntent('Review drawing',work?[{type:'md',filename:'corrective-action-note.md'}]:[]),()=>note);
+    fixture.execute.mockImplementation(async req=>({ok:true,value:{result:req.taskType==='vision'?{sourceText:'XV-204 CLASS 150. DN80 discharge.',findings:[{findingId:'v1',title:'Valve label',value:'CLASS 150',pageReferenceIds:['p1'],confidence:'high',evidence:'CLASS 150'}],pageReferences:[{id:'p1',page:1,text:'CLASS 150'}],warnings:[]}:fixtureIntent('Review drawing',work?[{type:'md',filename:'corrective-action-note.md'}]:[])}} as any));
     const events:RunEvent[]=[];const manager=new RunManager(fixture.gateway,event=>events.push(event));manager.setRAGService(ragService);manager.setGrounding(new RAGGroundingProvider(ragService));
     const chatId=createChat('Drawing review');const bytes=readFileSync(path.resolve('demo/flow_c/scenario-1/pump-skid-P204.svg'));
     const {attachment}=manager.registerAttachment({chatId,filename:'drawing.svg',mediaType:'image/svg+xml',sizeBytes:bytes.length,base64OrBuffer:bytes});
@@ -257,6 +255,6 @@ describe("Dynamic Spec Compliance via RAG & Reasoning", () => {
     const output=readFileSync(path.join(process.env.WORKBENCH_DATA_ROOT!,'runs',runId,'output/corrective-action-note.md'),'utf8');expect(output).toContain('DRAWING NOT APPROVED');expect(output).toContain('[SOP-220 §4.2]');expect(output).toContain('[SOP-220 §4.3]');
   });
   it('returns grounded Chat findings without an unrequested deliverable',async()=>{
-    const {fixture,events}=await inspectDrawing(false);expect(fixture.execute).not.toHaveBeenCalled();expect(fixture.chat).toHaveBeenCalledTimes(1);expect(events.some(e=>e.type==='tool_result'&&e.tool==='retrieve_knowledge'&&e.ok)).toBe(true);expect(events.some(e=>e.type==='assistant_message'&&e.text.includes('NOT APPROVED'))).toBe(true);expect(events.some(e=>e.type==='artifact_ready')).toBe(false);
+    const {fixture,events}=await inspectDrawing(false);expect(fixture.execute).toHaveBeenCalled();expect(fixture.chat).toHaveBeenCalledTimes(2);expect(events.some(e=>e.type==='tool_result'&&e.tool==='retrieve_knowledge'&&e.ok)).toBe(true);expect(events.some(e=>e.type==='assistant_message'&&e.text.includes('NOT APPROVED'))).toBe(true);expect(events.some(e=>e.type==='artifact_ready')).toBe(false);
   });
 });

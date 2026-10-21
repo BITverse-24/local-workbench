@@ -403,13 +403,13 @@ print('CHECK_OK')`;
       expect(values.join("\n")).toContain("instrument.pdf, page 7");
     });
 
-    it("readFileTool returns friendly advice when reading binary image files instead of crashing", async () => {
-      const context = { workspaceRoot: tmpDir, runId: "test-run", gateway: {} as any };
+    it("readFileTool reports incomplete visual inspection when Vision is missing", async () => {
+      const context = { workspaceRoot: tmpDir, runId: randomUUID(), gateway: {} as any };
       writeFileSync(path.join(tmpDir, "diagram.png"), "fake binary content");
 
       const res = await readFileTool.execute({ path: "diagram.png" }, context);
-      expect(res.output).toContain("binary image");
-      expect(res.output).toContain("extract_document");
+      expect(res.output).toContain("requires an enabled image-input model");
+      expect(res.intermediate?.status).toBe("partial");
     });
 
     it("generateDeliverableTool automatically substitutes [insert table] placeholder with real assistant table", async () => {

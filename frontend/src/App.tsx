@@ -1,3 +1,4 @@
+import SourcePageDialog from "./components/SourcePageDialog";
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import "./App.css";
 import TitleBar from "./components/TitleBar";
@@ -93,6 +94,7 @@ export default function App() {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runState, setRunState] = useState<RunState | null>(null);
   const [activeRoute, setActiveRoute] = useState<{ taskType?: string; tier?: "text" | "vision"; modelId: string; reason: string } | null>(null);
+  const [pendingPageSelection,setPendingPageSelection]=useState<SourcePageSelection|null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingAction | null>(null);
   const [confirmationBusy, setConfirmationBusy] = useState(false);
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
@@ -307,10 +309,16 @@ export default function App() {
               return prev;
             });
             break;
+          case "source_page_selection":
+            setPendingPageSelection(event.selection);
+            break;
+          case "source_inspection":
+            if(event.stage==="visual")setPendingPageSelection(current=>current?.filename===event.inspection.filename?null:current);
+            break;
           case "run_state":
             setRunState(event.state);
             if (event.state === "completed" || event.state === "partial" || event.state === "failed" || event.state === "cancelled" || event.state === "limit_exceeded") {
-              setPendingConfirmation(null);
+              setPendingConfirmation(null);setPendingPageSelection(null);
               const currentEvents = runEventsRef.current.filter((item) => item.type !== "model_progress");
               if (currentEvents.length > 0) {
                 setMessages((prev) => {
@@ -503,7 +511,7 @@ export default function App() {
           case "error":
             setRunError({ code: event.code, message: event.message });
             setRunState("failed");
-            setPendingConfirmation(null);
+            setPendingConfirmation(null);setPendingPageSelection(null);
             break;
           default:
             break;
@@ -609,7 +617,7 @@ export default function App() {
       if(snapshot){
         sessions.current.register(snapshot.runId,id,snapshot.mode??undefined);sessions.current.states.set(snapshot.runId,snapshot.state);
         activeRunRef.current=snapshot.runId;setActiveRunId(snapshot.runId);setRunState(snapshot.state);
-        setPendingConfirmation(snapshot.pendingAction??null);setVerificationReport(snapshot.verification??null);
+        setPendingConfirmation(snapshot.pendingAction??null);setPendingPageSelection(snapshot.pendingPageSelection??null);setVerificationReport(snapshot.verification??null);
         runArtifactsRef.current=snapshot.artifacts;setRunArtifacts(snapshot.artifacts);
         const events=[...(sessions.current.events.get(snapshot.runId)??snapshot.progress),{type:"run_queue" as const,runId:snapshot.runId,queued:snapshot.queued}];
         runEventsRef.current=events;setRunEvents(events);
@@ -629,7 +637,7 @@ export default function App() {
       setActiveRunId(null);
       setRunState(null);
       setActiveRoute(null);
-      setPendingConfirmation(null);
+      setPendingConfirmation(null);setPendingPageSelection(null);
       setRunEvents([]);
       setRunArtifacts([]);
       runArtifactsRef.current = [];
@@ -650,7 +658,7 @@ export default function App() {
     setActiveRunId(null);
     setRunState(null);
     setActiveRoute(null);
-    setPendingConfirmation(null);
+    setPendingConfirmation(null);setPendingPageSelection(null);
     setRunEvents([]);
     setRunArtifacts([]);
     runArtifactsRef.current = [];
@@ -763,7 +771,7 @@ export default function App() {
     if (confirmationBusy) return;
     const { actionId, runId } = pendingConfirmation;
     setConfirmationBusy(true);
-    setPendingConfirmation(null);
+    setPendingConfirmation(null);setPendingPageSelection(null);
     try {
       await wb.confirmAction({ runId, actionId, approved });
     } catch (e) {
@@ -778,7 +786,7 @@ export default function App() {
     try {
       await wb.cancelRun(activeRunId);
       setRunState("cancelled");
-      setPendingConfirmation(null);
+      setPendingConfirmation(null);setPendingPageSelection(null);
     } catch (e) {
       setRunError({ code: "cancel_failed", message: e instanceof Error ? e.message : String(e) });
     }
@@ -862,7 +870,7 @@ export default function App() {
           runArtifactsRef.current = [];
           setRunError(null);
           setActiveRoute(null);
-          setPendingConfirmation(null);
+          setPendingConfirmation(null);setPendingPageSelection(null);
           setGroundingStatus(null);
           setRunState("created");
           }
@@ -1123,6 +1131,7 @@ export default function App() {
         onUseTranscript={handleVoiceUseTranscript}
       />
 
+      <SourcePageDialog selection={pendingPageSelection} onSelect={async pages=>{if(!pendingPageSelection)return;await wb.selectSourcePages({runId:pendingPageSelection.runId,selectionId:pendingPageSelection.selectionId,sourceDigest:pendingPageSelection.sourceDigest,pages});setPendingPageSelection(null);}} onCancel={()=>{if(pendingPageSelection)void wb.cancelRun(pendingPageSelection.runId);}} />
       <ConfirmationModal
         open={!!pendingConfirmation}
         action={pendingConfirmation}

@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const JSZip = require("jszip");
+const { taskText } = require("./demo-prompt.cjs");
 const { FlowRunner, ROOT, REGISTRY } = require("./run-demo-flows.cjs");
 
 const variants = {
@@ -32,7 +33,7 @@ const variants = {
   ],
 };
 for (const flow of ["A", "B", "C"]) {
-  variants[flow][0] = fs.readFileSync(path.join(ROOT, "demo", `flow_${flow.toLowerCase()}`, "scenario-1", "prompt.md"), "utf8").trim();
+  variants[flow][0] = taskText(fs.readFileSync(path.join(ROOT, "demo", `flow_${flow.toLowerCase()}`, "scenario-1", "prompt.md"), "utf8"));
 }
 for (const flow of ["A", "B", "C"]) {
   if (process.env[`FLOW_${flow}_PROMPT`]) variants[flow][0] = process.env[`FLOW_${flow}_PROMPT`];
@@ -43,8 +44,12 @@ const fixtures = {
   C: { dir: "flow_c/scenario-1", files: ["pump-skid-P204.svg"], kb: "piping-spec-SOP-220.md" },
 };
 
+function inspectionRecords(runner) {
+  return runner.events.filter(event=>event.type==='source_inspection').map(event=>event.inspection);
+}
+
 async function evaluate(flow, text, artifacts, runner, outcome) {
-  const checks = { terminalState: ["completed", "partial"].includes(outcome), singleApproval: runner.confirmationsCount <= 1,
+  const checks = { terminalState: outcome === "completed", singleApproval: runner.confirmationsCount <= 1,
     noToolErrors: runner.events.filter(e => e.type === "tool_result").every(e => e.ok !== false),
     response: text.length > 100 };
   if (flow === "A") {
@@ -104,6 +109,8 @@ async function evaluate(flow, text, artifacts, runner, outcome) {
       }
     }
   } else {
+    const inspections = inspectionRecords(runner);
+    checks.visionUsed = inspections.some(record => record.visualRequired && record.status === 'complete' && record.views.length && record.inspectedPages.length === record.requestedPages.length);
     checks.valve = /XV-204/i.test(text) && /150/.test(text) && /300/.test(text);
     checks.line = /DN\s*80/i.test(text) && /DN\s*100/i.test(text);
     checks.citations = /SOP-?220/i.test(text) && /4\.2/.test(text) && /4\.3/.test(text);
