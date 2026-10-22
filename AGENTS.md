@@ -134,6 +134,8 @@ agent/
 │   │       │   ├── work-orchestrator.ts  # Run-scoped generation, repair, and saved-content checks
 │   │       │   ├── runtime-scope.ts      # Backend authority, cancellation, and shared Work budgets
 │   │       │   ├── source-preparation.ts # Cached extraction and bounded source excerpts
+│   │       │   ├── source-inspection.ts  # Shared text/visual evidence, page coverage and source digests
+│   │       │   ├── source-page-selection.ts # Run-bound page ranges, cancellation and stale reply rejection
 │   │       │   ├── recovery.ts           # Startup interruption recovery; no automatic replay
 │   │       │   ├── contract.ts           # RunContract normalization, persistence, completion evaluation
 │   │       │   ├── envelope.ts           # ExecutionEnvelope builder (Chat / Work / Agent capabilities)
@@ -476,6 +478,7 @@ All communication between the React renderer and the Electron/Node backend occur
 | `workbench:startRun` | Renderer → Main | `startRunInputSchema` | Begins run execution; creates Run ID and directories |
 | `workbench:getRunSnapshot` | Renderer → Main | `getRunSnapshotInputSchema` | Restores mode, state, queue, progress, draft, approval, artifacts, and verification by chat or run |
 | `workbench:resumeRun` | Renderer → Main | `resumeRunInputSchema` | Resumes an interrupted or truncated run |
+| `workbench:selectSourcePages` | Renderer → Main | `selectSourcePagesSchema` | Select a digest-bound PDF page range; separate from mutation approval |
 | `workbench:cancelRun` | Renderer → Main | `cancelRunInputSchema` | Cancels active run execution and revokes scopes |
 | `workbench:confirmAction`| Renderer → Main | `confirmActionInputSchema` | Approves or rejects a pending operator confirmation |
 | `workbench:registerAttachment`| Renderer → Main | `registerAttachmentInputSchema`| Registers file upload (base64) into run input directory |

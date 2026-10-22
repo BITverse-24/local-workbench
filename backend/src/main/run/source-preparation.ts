@@ -1,3 +1,4 @@
+import { requiresVisualInspection } from "./source-inspection.js";
 import { extractAttributedDocumentNotes, readDocumentContent } from "../tools/document-reader.js";
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -33,18 +34,18 @@ export async function prepareSources(attachments: AttachmentReference[], text: s
     const bytes=readFileSync(file);
     const key=createHash('sha256').update(bytes).update('independent-reader-v5:'+ext).digest('hex');
     const cached=cache.get(key);
-    let content=cached?.text;let pages=cached?.pages??[1];
+    let content=requiresVisualInspection(attachment.filename,text)?undefined:cached?.text;let pages=cached?.pages??[1];
     if (content===undefined) {
       let needsVisual=false;let annotationEvidence='';let usedVision=false;
       if (ext==='svg') {
         const source=await readDocumentContent(file);
-        if(source.hasText)content=source.text;
+        if(source.hasText)content=source.text;needsVisual=true;
       }
-      if (!['png','jpg','jpeg','bmp','tif','tiff','svg'].includes(ext)) {
-        try { const parsed=await parseFileIndependently(file,ext); content=parsed.text;needsVisual=ext==='pdf'&&!parsed.pages?.some(page=>page.text.trim());const annotations=[...(parsed.annotations??[]),...extractAttributedDocumentNotes(parsed.text)];if(annotations.length){annotationEvidence='\nSource annotations preceding reviewer/inspector attribution (verbatim evidence): '+JSON.stringify(annotations);content+=annotationEvidence;}
+      if (!['png','jpg','jpeg','webp','bmp','tif','tiff','svg'].includes(ext)) {
+        try { const parsed=await parseFileIndependently(file,ext); content=parsed.text;needsVisual=ext==='pdf'&&(requiresVisualInspection(attachment.filename,text)||!parsed.pages?.length||parsed.pages.some(page=>!page.text.trim()));const annotations=[...(parsed.annotations??[]),...extractAttributedDocumentNotes(parsed.text)];if(annotations.length){annotationEvidence='\nSource annotations preceding reviewer/inspector attribution (verbatim evidence): '+JSON.stringify(annotations);content+=annotationEvidence;}
           pages=(parsed.pages??[{pageNumber:1}]).map(page=>page.pageNumber); } catch (e) { assertRuntimeActive(); if (['csv','json'].includes(ext)) { content=new TextDecoder('utf-8',{fatal:true}).decode(bytes); } else if (!['pdf','docx','xlsx'].includes(ext)) throw e; }
       }
-      if ((!content?.trim()||needsVisual) && ['pdf','svg','png','jpg','jpeg','bmp','tif','tiff'].includes(ext)) {
+      if ((!content?.trim()||needsVisual) && ['pdf','svg','png','jpg','jpeg','webp','bmp','tif','tiff'].includes(ext)) {
         usedVision=true;
         const [result]=await new ToolDispatcher([extractDocumentTool]).dispatchConcurrent([{ id: key, name:'extract_document', arguments:{filename:attachment.filename,query:text} }],context);
         if (!result.result.ok) throw new Error(result.result.error.message);

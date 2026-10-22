@@ -291,3 +291,5 @@ export async function getRunSnapshot(input:{chatId?:string;runId?:string}):Promi
 export async function getExecutionCapabilities(): Promise<ExecutionCapabilities> {
   return bridge().getExecutionCapabilities();
 }
+
+export async function selectSourcePages(input:{runId:string;selectionId:string;sourceDigest:string;pages:number[]}):Promise<void>{return bridge().selectSourcePages(input);}

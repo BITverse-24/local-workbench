@@ -1,3 +1,5 @@
+import { inspectionGaps, loadSourceInspections, visualSourceExtension } from "./source-inspection.js";
+import { pendingSourcePages } from "./source-page-selection.js";
 import { taskProgressKey } from '../../shared/task-progress.js';
 import { CONFIRMATION_TITLES } from '../../shared/confirmation-presentation.js';
 import { createHash, randomUUID } from "node:crypto";
@@ -485,7 +487,7 @@ export class RunManager {
     const metrics=this.runMetrics.get(row.runId)??JSON.parse(row.metrics??"{}");
     const artifacts=getDb().prepare("SELECT artifact_id as artifactId,run_id as runId,kind,filename,relative_path as relativePath,size_bytes as sizeBytes,sha256,created_at as createdAt FROM artifacts WHERE run_id=?").all(row.runId) as RunSnapshot["artifacts"];
     const draft=getDb().prepare("SELECT message_id as messageId,model_id as modelId,text FROM run_drafts WHERE run_id=?").get(row.runId) as RunSnapshot["draft"];
-    return {runId:row.runId,chatId:row.chatId,mode:row.mode??null,engineVersion:row.engineVersion??null,state:getState(row.runId),queued:metrics.queued===true,progress:[...(this.taskCheckpoints.get(row.runId)?.values()??(Array.isArray(metrics.progress)?metrics.progress:[]))],pendingAction:this.pendingActions.get(row.runId),artifacts,verification:getVerificationReport(row.runId),metrics,draft};
+    return {runId:row.runId,chatId:row.chatId,mode:row.mode??null,engineVersion:row.engineVersion??null,state:getState(row.runId),queued:metrics.queued===true,progress:[...(this.taskCheckpoints.get(row.runId)?.values()??(Array.isArray(metrics.progress)?metrics.progress:[]))],pendingAction:this.pendingActions.get(row.runId),pendingPageSelection:pendingSourcePages(row.runId),sourceInspections:loadSourceInspections(row.runId),artifacts,verification:getVerificationReport(row.runId),metrics,draft};
   }
 
   private async askPythonApproval(runId:string,code:string,inputs:string[],digest:string):Promise<boolean> {
@@ -877,7 +879,7 @@ export class RunManager {
       this.emit({type:"routing",runId,taskType:"draft",modelId,reason:mode==="chat"?"Direct Chat response":"Work stages"});
       const grounding=this.groundingForRun(runId);
       const envelope=buildExecutionEnvelope({runId,mode,modelId,hasWorkspace:false,attachments,hasKnowledgeBaseDocs:!!grounding,computationRequested:mode==="work",deliverableRequested:mode==="work"});
-      const context={runId,signal:controller.signal,assertAuthority:scope.assertAuthority,workspaceRoot:path.join(runRoot(runId),"input"),workspaceReferenceEvidence:workspaceManifest ? workspaceManifest.folderEvidence + "\nSelected file copies: " + workspaceManifest.files.map(file=>`${file.sourcePath} => ${file.filename}`).join(", ") : undefined,gateway:this.gateway,envelope,indexedKnowledgeSources:grounding?this.ragService?.listDocuments().map(doc=>({docId:doc.doc_id,filename:path.basename(doc.source_path)})):undefined,grounding:grounding as any,resultStore:new RunResultStore(runId),isCancelled:()=>controller.signal.aborted,emitRunEvent:(event:RunEvent)=>{assertRuntimeActive();if(event.type==="artifact_ready")this.persistArtifact(event.artifact);this.emit(event);}};
+      const context={runId,originalUserRequest:text,signal:controller.signal,assertAuthority:scope.assertAuthority,workspaceRoot:path.join(runRoot(runId),"input"),workspaceReferenceEvidence:workspaceManifest ? workspaceManifest.folderEvidence + "\nSelected file copies: " + workspaceManifest.files.map(file=>`${file.sourcePath} => ${file.filename}`).join(", ") : undefined,gateway:this.gateway,envelope,indexedKnowledgeSources:grounding?this.ragService?.listDocuments().map(doc=>({docId:doc.doc_id,filename:path.basename(doc.source_path)})):undefined,grounding:grounding as any,resultStore:new RunResultStore(runId),isCancelled:()=>controller.signal.aborted,emitRunEvent:(event:RunEvent)=>{assertRuntimeActive();if(event.type==="artifact_ready")this.persistArtifact(event.artifact);this.emit(event);}};
       const history=this.getRecentChatHistory(chatId,text);
       if(mode==="chat"){
         if(!getRunContract(runId))persistRunContract({schemaVersion:1,runId,createdAt:new Date().toISOString(),objective:text.slice(0,500)||"Inspect attachments",resolution:{status:"resolved"},routing:{intentType:"pure_chat",taskType:"draft",driverModel:modelId,actionable:false},response:{required:true,chatOnly:true},workspace:{requested:false,operations:[]},deliverables:[],constraints:{protectedPaths:[],restrictMutationsToTargets:false,userConstraints:[]},acceptance:{validateWrittenCode:false,validatedPythonDeliverables:[],artifactChecks:[]}});
@@ -1198,6 +1200,8 @@ export class RunManager {
                 fullyReadAttachments.add(att.filename);
                 inlineAttachmentChars += content.length;
                 parts.push(`--- ATTACHED FILE: ${att.filename} (${att.mediaType}, ${stat.size} bytes) ---\n${content}\n--- END ATTACHED FILE: ${att.filename} ---`);
+              } else if (visualSourceExtension(att.filename)) {
+                await prepareVisualAttachment(att, parts);
               } else if (isTextExtractableDocument(att.filename)) {
                 let nativeReadComplete = false;
                 try {
@@ -1410,6 +1414,8 @@ ${referencedFilesSection}`;
   }
   private complete(runId: string) {
     if (this.controllers.get(runId)?.signal.aborted || ["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(getState(runId))) return;
+    const gaps=inspectionGaps(runId);
+    if(gaps.length){this.partial(runId,gaps);return;}
     const report = withTaskProgressSync({ runId, emitProgress: event => this.emit(event) }, "result_verification", activity => {
       const report = verifyRunEvidence(runId);
       if (report && !mandatoryVerificationSatisfied(report.checks, { includeResponse: true })) activity.block("Required checks remain unresolved.");

@@ -181,3 +181,5 @@ export type KbReindexInput = z.infer<typeof kbReindexSchema>;
 export type KbQueryInput = z.infer<typeof kbQuerySchema>;
 
 export const getRunSnapshotSchema = z.object({ chatId: z.string().uuid().optional(), runId: z.string().uuid().optional() }).strict().refine(value=>!!value.chatId !== !!value.runId,"Supply a chat or a run ID.");
+
+export const selectSourcePagesSchema=z.object({runId:z.string().uuid(),selectionId:z.string().uuid(),sourceDigest:z.string().regex(/^[a-f0-9]{64}$/),pages:z.array(z.number().int().positive()).min(1).max(10)}).strict();

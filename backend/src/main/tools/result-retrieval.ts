@@ -6,7 +6,7 @@ import { compactToolObservation } from "../agent/context-manager.js";
 const argsSchema = z.object({
   action: z.enum(["list", "inspect", "read"]).default("read"), result_id: z.string().uuid().optional(),
   mode: z.enum(["text", "lines", "json"]).default("text"), max_chars: z.number().int().min(1).max(3000).default(2000),
-  offset: z.number().int().nonnegative().default(0), count: z.number().int().min(1).max(100).default(10),
+  offset: z.number().int().nonnegative().default(0), count: z.number().int().min(1).default(10),
   start_line: z.number().int().min(1).default(1), pointer: z.string().max(2048).default(""), start: z.number().int().nonnegative().default(0),
 });
 
@@ -39,14 +39,16 @@ export const retrieveResultTool: AgentTool = {
       if (!input.result_id) throw new Error("result_id parameter is required for inspect/read");
       if (input.action === "inspect") value = store.inspectResult(input.result_id, input.offset, Math.min(input.count, 10));
       else {
+        const boundedMaxChars = Math.max(input.max_chars, 1000);
+        const boundedCount = Math.min(input.count, 100);
         const request: ResultSliceRequest = input.mode === "json"
-          ? { mode: "json", pointer: input.pointer, start: input.start, count: input.count, offset: input.offset, maxChars: input.max_chars }
-          : input.mode === "lines" ? { mode: "lines", startLine: input.start_line, count: input.count, maxChars: input.max_chars }
-          : { mode: "text", offset: input.offset, maxChars: input.max_chars };
+          ? { mode: "json", pointer: input.pointer, start: input.start, count: boundedCount, offset: input.offset, maxChars: boundedMaxChars }
+          : input.mode === "lines" ? { mode: "lines", startLine: input.start_line, count: boundedCount, maxChars: boundedMaxChars }
+          : { mode: "text", offset: input.offset, maxChars: boundedMaxChars };
         value = store.retrieveResultSlice(input.result_id, request);
         // JSON escaping can expand a 3000-character excerpt beyond the P0 observation budget.
         // Reduce the requested slice and recompute its continuation rather than compacting away bytes.
-        let maxChars = input.max_chars;
+        let maxChars = boundedMaxChars;
         while (JSON.stringify(value, null, 2).length > 3800 && maxChars > 1) {
           maxChars = Math.max(1, Math.floor(maxChars / 2));
           value = store.retrieveResultSlice(input.result_id, { ...request, maxChars });

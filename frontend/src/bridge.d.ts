@@ -157,7 +157,11 @@ type TaskProgressEvent = import("../../backend/src/shared/contracts.js").TaskPro
 
 type RunSnapshot = import("../../backend/src/shared/contracts.js").RunSnapshot;
 type ExecutionMode = import("../../backend/src/shared/contracts.js").ExecutionMode;
+type SourcePageSelection = import("../../backend/src/shared/contracts.js").SourcePageSelection;
+type SourceInspection = import("../../backend/src/shared/contracts.js").SourceInspection;
 type RunEvent =
+  | {type:"source_page_selection";runId:string;selection:SourcePageSelection}
+  | {type:"source_inspection";runId:string;inspection:SourceInspection;stage:"text"|"visual"}
   | {type:"run_registered";runId:string;chatId:string;mode:ExecutionMode}
   | {type:"run_queue";runId:string;queued:boolean;queueWaitMs?:number}
   | ModelProgressEvent
@@ -226,6 +230,7 @@ interface WorkbenchBridge {
   renameChat: (chatId: string, title: string) => Promise<void>;
   getSetting: (key: string) => Promise<{ value: unknown }>;
   setSetting: (key: string, value: unknown) => Promise<void>;
+  selectSourcePages: (input:{runId:string;selectionId:string;sourceDigest:string;pages:number[]})=>Promise<void>;
   getRunSnapshot: (input:{chatId?:string;runId?:string}) => Promise<RunSnapshot | undefined>;
   startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string; selectedModel?: string; mode?: "chat" | "work" | "agent"; workspaceIdentity?: WorkspaceInfo; workspaceReferences?: WorkspaceReference[] }) => Promise<{ runId: string }>;
   resumeRun: (input: { runId: string; largerGenerationAllowance?: boolean }) => Promise<{ runId: string }>;

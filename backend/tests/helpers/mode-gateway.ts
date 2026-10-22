@@ -18,7 +18,8 @@ export function modeGateway(intent: Record<string, unknown>, generate: (messages
 
     let value: any;
 
-    if (schema === 'work_requirements') value = { content: '{"checks":[]}' };
+    if (schema === 'source_agreement') value = {content: JSON.stringify({conflicts:[],unresolved:[]})};
+    else if (schema === 'work_requirements') value = { content: '{"checks":[]}' };
     else if (schema === 'work_content_review') {
 
       const evidence = String(messages[1].content);

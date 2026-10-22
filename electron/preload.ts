@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld("workbench", {
   // run protocol
   startRun: (input: StartRunInput) =>
     ipcRenderer.invoke("workbench:startRun", input),
+  selectSourcePages: (input: {runId:string;selectionId:string;sourceDigest:string;pages:number[]}) => ipcRenderer.invoke("workbench:selectSourcePages",input),
   getRunSnapshot: (input: {chatId?:string;runId?:string}) => ipcRenderer.invoke("workbench:getRunSnapshot",input),
   resumeRun: (input: { runId: string; largerGenerationAllowance?: boolean }) => ipcRenderer.invoke("workbench:resumeRun", input),
   registerAttachment: (input: {

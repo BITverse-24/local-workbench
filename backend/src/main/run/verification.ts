@@ -1,3 +1,4 @@
+import { loadSourceInspections, inspectionGaps } from "./source-inspection.js";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -100,6 +101,10 @@ export function verifyRunEvidence(runId: string, _legacyOptions: { contractEvalu
   if (!contract || contract.response.chatOnly || !contract.routing.actionable) return undefined;
   const timestamp = now();
   const checks: VerificationCheck[] = [];
+  const sourceGaps=inspectionGaps(runId);
+  for(const inspection of loadSourceInspections(runId).filter(source=>source.visualRequired)) {
+    checks.push(check({criterionId:`source-visual:${inspection.sourceId}`,requirement:`Visual inspection of ${inspection.filename} in the selected page scope`,status:inspection.status==='complete'&&!sourceGaps.some(gap=>gap.startsWith(inspection.filename+':'))&&inspection.requestedPages.every(page=>inspection.inspectedPages.includes(page))?'passed':'unverified',method:'content_check',evidence:inspection.resultIds.map(id=>({kind:'result' as const,id})),reason:[...inspection.failures,...inspection.warnings,...sourceGaps.filter(gap=>gap.startsWith(inspection.filename+':'))].join('; ')||'Every requested page and detail view was processed. This is processing coverage, not proof that every detail was found.',mandatory:true}));
+  }
   const db = getDb();
   const artifacts = db.prepare("SELECT artifact_id,kind,filename,relative_path,size_bytes,sha256 FROM artifacts WHERE run_id=? ORDER BY created_at,artifact_id").all(runId) as ArtifactRow[];
   const ledger = getExecutionLedger(runId);

@@ -98,11 +98,13 @@ export function getRunProgress(events: RunEvent[], state: RunState | null) {
     else if (progress.channel === "text") title = "Writing the response";
     else if (progress.channel === "structured") title = "Preparing the result";
   }
-  const paused = state === "awaiting_confirmation";
-  if (paused) title = "Ready for your review";
+  let waitingForPages=false;
+  for(const event of events){if(event.type==='source_page_selection')waitingForPages=true;else if(event.type==='source_inspection'&&event.stage==='visual')waitingForPages=false;}
+  const paused = state === "awaiting_confirmation" || waitingForPages && !terminal;
+  if (paused) title = waitingForPages ? "Select pages to inspect" : "Ready for your review";
   const checkpoints = tasks;
   const nowTasks = paused || terminal ? [] : activeTasks.slice(-3).reverse();
-  const reviewStages: TaskProgressEvent["stage"][] = ["source_inspection", "pre_execution_review", "post_execution_review", "source_coverage_review", "result_verification"];
+  const reviewStages: TaskProgressEvent["stage"][] = ["source_text", "visual_inspection", "source_inspection", "pre_execution_review", "post_execution_review", "source_coverage_review", "result_verification"];
   const summary = {
     confirmed: boundedRows([...saved.values()].reverse().concat(completedTools, checkpoints.filter(item => item.status === "completed" && reviewStages.includes(item.stage)).reverse()
       .map(item => ({ label: TASK_STAGE_LABELS[item.stage].completed, target: item.target, detail: assessedCheckLabel(item) })))),

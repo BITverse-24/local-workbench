@@ -1,3 +1,4 @@
+import { inspectSource, visualSourceExtension } from "../run/source-inspection.js";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -208,6 +209,13 @@ export const readFileTool: AgentTool = {
       throw new Error(`path parameter is required. Received arguments: ${JSON.stringify(args).slice(0, 150)}. Expected format: {"path": "relative/path/to/file"}`);
     }
     const safePath = resolveSafe(context.workspaceRoot, relPath);
+
+    if (visualSourceExtension(relPath)) {
+      const source=existsSync(safePath)?safePath:context.runId?findFileInRunDirectories(context.runId,relPath):null;
+      if(!source)throw new Error(`Source not found: ${relPath}`);
+      const inspected = await inspectSource(source, relPath, context.originalUserRequest ?? 'Inspect this source', context);
+      return { output: inspected.text, summary: `Read ${relPath}: ${inspected.record.status}`, intermediate: {type:'document',status:inspected.record.status==='complete'?'complete':'partial',origin:'model_derived',payload:{sourceText:inspected.record.digitalText,visualText:inspected.record.visualText,inspection:inspected.record},sources:inspected.record.requestedPages.map(page=>({filename:relPath,page,relation:'source' as const}))} };
+    }
 
     // Native text parsing for PDF and Word (.docx) documents
     if (isTextExtractableDocument(relPath)) {

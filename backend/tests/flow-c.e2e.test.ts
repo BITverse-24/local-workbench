@@ -94,6 +94,7 @@ describe("Flow C End-to-End: Engineering Drawing Compliance Review", () => {
     // 2. Set up ModelGateway with reasoning model mock
     const note='# Engineering Compliance Review: P-204 Pump Skid\n\nPID-P204-REV-C. DRAWING NOT APPROVED.\nXV-204: Class 150 observed; minimum Class 300 required. NON-COMPLIANT [SOP-220 §4.2].\nDN80 discharge line: minimum DN100 required. NON-COMPLIANT [SOP-220 §4.3].\nReplace XV-204 with Class 300 and upsize discharge line to DN100 before sign-off.';
     const fixture=modeGateway(fixtureIntent('Review drawing',[{type:'md',filename:'corrective-action-note.md'}]),()=>note);
+    fixture.execute.mockImplementation(async req=>({ok:true,value:{result:req.taskType==='vision'?{sourceText:'XV-204 CLASS 150. DN80 discharge.',findings:[{findingId:'f1',title:'Valve label',value:'CLASS 150',pageReferenceIds:['p1'],confidence:'high',evidence:'CLASS 150'}],pageReferences:[{id:'p1',page:1,text:'CLASS 150',location:'valve label'}],warnings:[]}:fixtureIntent('Review drawing',[{type:'md',filename:'corrective-action-note.md'}])}} as any));
     const gateway=fixture.gateway;
     const runEvents: RunEvent[] = [];
     const manager = new RunManager(gateway, (evt) => runEvents.push(evt));

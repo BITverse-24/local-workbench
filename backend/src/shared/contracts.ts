@@ -4,7 +4,18 @@ export type ModelRuntime = "mlx-lm" | "llama-server" | "ollama";
 export type ModelId = string;
 export type ModelCapability = "text" | "image-input" | "structured-output" | "code-generation";
 export interface ModelRegistryEntry { id: ModelId; /** Legacy config compatibility only; task semantics no longer select model endpoints. */ taskTypes?: TaskType[]; runtime: ModelRuntime; baseUrl: string; model: string; capabilities: ModelCapability[]; requestTimeoutMs: number; healthPath: "/models"; apiKeyEnv?: string; enabled: boolean; /** Auxiliary endpoint used only when a tool needs its capabilities. */ fallbackOnly?: boolean; maxOutputTokens?: number; contextLength?: number; concurrencyLimit?: number; toolCallingFormat?: "native" | "json"; temperature?: number; }
-export interface AttachmentReference { attachmentId: string; filename: string; mediaType: string; sizeBytes: number; relativePath: string; selectedPages?: number[]; sourcePath?: string; }
+export interface AttachmentReference { attachmentId: string; filename: string; mediaType: string; sizeBytes: number; relativePath: string; selectedPages?: number[]; sourcePath?: string; sourceView?: {page:number;location:string;sha256:string}; }
+export interface SourcePageSelection {
+  selectionId: string; runId: string; filename: string; sourceDigest: string; pageCount: number;
+  pageViewCounts: number[]; maxPages: number; maxViews: number; reason: string;
+}
+export interface SourceInspection {
+  sourceId: string; filename: string; sourceDigest: string; sourcePath?: string; visualRequired?: boolean; requestDigest: string; modelId?: string;
+  modelIdentity?: string; pageCount: number; requestedPages: number[]; inspectedPages: number[];
+  views: Array<{ page: number; location: string; relativePath: string; sha256: string; resultId?: string }>;
+  resultIds: string[]; warnings: string[]; failures: string[]; status: 'running' | 'complete' | 'partial';
+  digitalText: string; visualText: string;
+}
 export interface ChatTitleEvent { type: "chat_title_changed"; chatId: string; title: string; revision: number }
 export interface InputFileReference { attachmentId: string; filename: string; mediaType: string; columns?: string[]; rowCount?: number; }
 export type OutputMode = "chat" | "artifact" | "chat_and_artifact";
@@ -163,6 +174,8 @@ export interface RunSnapshot {
   queued: boolean;
   progress: TaskProgressEvent[];
   pendingAction?: PendingAction;
+  pendingPageSelection?: SourcePageSelection;
+  sourceInspections?: SourceInspection[];
   artifacts: ArtifactRef[];
   verification?: RunVerificationReport;
   metrics: Record<string, unknown>;
@@ -325,6 +338,8 @@ export interface CompactionMetadata {
 }
 
 export type RunEvent =
+  | { type: 'source_page_selection'; runId: string; selection: SourcePageSelection }
+  | { type: 'source_inspection'; runId: string; inspection: SourceInspection; stage: 'text' | 'visual' }
   | ModelProgressEvent
   | TaskProgressEvent
   | { type: "run_registered"; runId: string; chatId: string; mode: ExecutionMode }
@@ -351,7 +366,7 @@ export interface TaskProgressEvent {
   type: "task_progress";
   runId: string;
   activityId: string;
-  stage: "source_inspection" | "repair_generation" | "draft_generation" | "pre_execution_review" | "post_execution_review" | "source_coverage_review" | "correction" | "result_verification" | "requirements" | "input_preparation" | "artifact_generation" | "delivery";
+  stage: "source_text" | "visual_inspection" | "source_inspection" | "repair_generation" | "draft_generation" | "pre_execution_review" | "post_execution_review" | "source_coverage_review" | "correction" | "result_verification" | "requirements" | "input_preparation" | "artifact_generation" | "delivery";
   status: "active" | "completed" | "blocked";
   target?: string;
   parentCallId?: string;

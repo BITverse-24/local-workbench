@@ -4,7 +4,7 @@ import path from "node:path";
 import { extractSvgText } from "../src/main/run/images.js";
 
 describe("extractSvgText", () => {
-  it("extracts all component tags and annotations from demo pump-skid-P204.svg", () => {
+  it("extracts SVG labels without inventing the embedded image rating", () => {
     const svgPath = path.resolve(__dirname, "../../demo/flow_c/scenario-1/pump-skid-P204.svg");
     const svgBuffer = readFileSync(svgPath);
     const extracted = extractSvgText(svgBuffer);
@@ -15,11 +15,11 @@ describe("extractSvgText", () => {
     expect(extracted).toContain("DN80 discharge");
     expect(extracted).toContain("P-204");
     expect(extracted).toContain("XV-204");
-    expect(extracted).toContain("CLASS 150");
+    expect(extracted).not.toContain("CLASS 150");
     expect(extracted).toContain("valve rating");
     expect(extracted).toContain("DN80");
-    expect(extracted).toContain("discharge line");
-    expect(extracted).toContain("SOP-220");
+    expect(extracted).toContain("discharge");
+    expect(extracted).not.toContain("SOP-220");
   });
 
   it("handles nested tspans, xml entities, and titles in arbitrary SVGs", () => {

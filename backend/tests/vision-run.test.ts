@@ -37,7 +37,7 @@ describe('Chat and Work visual source paths', () => {
 
       requests.push(req);
 
-      if (req.taskType === 'vision') return { ok: true, value: { result: { sourceText: 'Inspection Report 101. Tube wall thickness is 3.5mm.', findings: [{ findingId: 'f1', title: 'Tube wall thickness below threshold', value: '3.5mm', confidence: 'high', evidence: 'Visible reading: 3.5mm', pageReferenceIds: ['p1'] }], pageReferences: [{ id: 'p1', page: 1, text: 'wall thickness 3.5mm' }], warnings: ['Minor glare on bottom margin'] } } } as any;
+      if (req.taskType === 'vision') return { ok: true, value: { result: { sourceText: 'Inspection Report 101. Tube wall thickness is 3.5mm.', findings: [{ findingId: 'f1', title: 'Tube wall thickness below threshold', value: '3.5mm', confidence: 'high', evidence: 'Visible reading: 3.5mm', pageReferenceIds: ['p1'] }], pageReferences: [{ id: 'p1', page: 1, text: 'wall thickness 3.5mm' }], warnings: [] } } } as any;
 
       return { ok: true, value: { result: fixtureIntent('Prepare approval note', [{ type: 'docx', filename: 'approval-note.docx' }]) } } as any;
 
@@ -94,12 +94,12 @@ describe('Chat and Work visual source paths', () => {
     expect(fixture.chat).toHaveBeenCalledTimes(1);
   });
 
-  it('reads vector drawing labels deterministically even when the request mentions a drawing', async () => {
+  it('inspects vector drawing pixels even when digital labels are available', async () => {
     const { manager, requests, fixture } = setup();
     await run(manager, 'drawing.svg', readFileSync(path.resolve('demo/flow_c/scenario-1/pump-skid-P204.svg')), 'image/svg+xml', 'chat', 'Inspect this engineering drawing P&ID');
-    expect(requests).toHaveLength(0);
-    expect(fixture.turns[0].at(-1).content).toContain('XV-204');
-    expect(fixture.turns[0].at(-1).content).toContain('DN80');
+    expect(requests.filter(r=>r.taskType==='vision').length).toBeGreaterThan(0);
+    expect(fixture.turns.at(-1)!.at(-1).content).toContain('XV-204');
+    expect(fixture.turns.at(-1)!.at(-1).content).toContain('DN80');
   });
 
   it('renders an image-only multi-page PDF and retains bounded visual evidence', async () => {
@@ -114,8 +114,8 @@ describe('Chat and Work visual source paths', () => {
     ctx.arc(200, 150, 50, 0, 2 * Math.PI);
     ctx.fill();
     await run(manager, 'scanned.pdf', canvas.toBuffer(), 'application/pdf', 'chat', 'Describe these scanned pages');
-    expect(requests.filter(r => r.taskType === 'vision')).toHaveLength(1);
+    expect(requests.filter(r => r.taskType === 'vision').length).toBeGreaterThan(1);
     expect(events.some(e => e.type === 'tool_result' && e.tool === 'extract_document' && e.ok)).toBe(true);
-    expect((requests.find(r => r.taskType === 'vision') as any)?.attachment?.filename).toBe('scanned.pdf');
+    expect((requests.find(r => r.taskType === 'vision') as any)?.attachment?.filename).toBe('source-page-1.jpg');
   });
 });
