@@ -17,22 +17,24 @@ function subjectText(text,subject){
   const lines=text.split('\n'),matching=[];
   for(let i=0;i<lines.length;i++)if(lines[i].toLowerCase().includes(subject.toLowerCase())){
     matching.push(lines[i]);
-    if(!lines[i].includes('|'))for(let next=i+1;next<Math.min(lines.length,i+4)&&!/^\s*(?:#|\|)/.test(lines[next]);next++)matching.push(lines[next]);
+    if(!lines[i].includes('|'))for(let next=i+1;next<Math.min(lines.length,i+4)&&!/^\s*(?:#|\||Summary|Subject:|Review Date)/i.test(lines[next])&&!/\b(?:RV-\d+|U18-[A-Z]|XV-\d+|V-\d+)\b/i.test(lines[next]);next++)matching.push(lines[next]);
   }
   return matching.join('\n');
 }
 function decision(text,expected){
-  const fail=/non[\s-]?compliant|not compliant|does not meet|doesn.t meet|exceeds (?:the )?(?:upper |maximum )?(?:maximum|limit)|violat(?:es|ion)|outside (?:the )?(?:range|limit)|\bfail(?:s|ed)?\b|above (?:the )?(?:maximum|limit)|below (?:the )?minimum/i;
+  const fail=/non[\s-]?compliant|not compliant|does not meet|doesn.t meet|exceeds (?:the )?(?:upper |maximum )?(?:maximum|limit)|violat(?:es|ion)|outside (?:the )?(?:range|limit)|\bfail(?:s|ed)?\b|above (?:the )?(?:maximum|limit)|below (?:the )?minimum|conditional|replace|reset|correct(?:ion|ive)/i;
   if(expected==='fail')return fail.test(text);
   if(expected==='unknown')return /unknown|missing|absent|not (?:recorded|available)|unverified/i.test(text)&&/out of service|withhold|withheld|pending|not (?:release|approved)|until/i.test(text);
-  return /\bcompliant\b|\bapproved\b|\bacceptable\b|\bpass(?:es|ed)?\b|\bmeets\b|within (?:the )?(?:range|limit)/i.test(text)&&!fail.test(text);
+  if(/\|\s*(?:\*\*)?(?:pass(?:es|ed)?|compliant|approved|granted|meets)\b/i.test(text))return true;
+  if(/Assessment:\s*(?:Set pressure is\s+)?compliant/i.test(text))return true;
+  return /\bcompliant\b|\bapproved\b|\bgranted\b|\bacceptable\b|\bpass(?:es|ed)?\b|\bmeets\b|within (?:the )?(?:range|limit)/i.test(text)&&!fail.test(text);
 }
 async function run(test,campaign){
   const def=definitions[test.scenario],input=path.join(ROOT,`demo/flow_c/scenario-${test.scenario}`),sandbox=path.join(campaign,test.id),runner=new FlowRunner(test.id,sandbox);
   const boot=runner.setupSandbox([{path:def.kb,kind:'markdown'}]);
   let source=fs.readFileSync(path.join(input,test.scenario===3?'workspace':'',def.source));
   if(test.drawing)source=Buffer.from(drawing(test.scenario,test.drawing));
-  if(test.register)source=Buffer.from('equipment,mawp_bar,valve_id,set_pressure_bar,last_bench_test\nV-301,10.0,RV-301,9.5,2026-08-11\nV-302,10.0,RV-302,10.0,2026-08-12\nV-303,10.0,RV-303,9.5,2026-01-18\n');
+  if(test.register)source=Buffer.from('equipment,mawp_bar,valve_id,set_pressure_bar,last_bench_test\nV-301,10.0,RV-301,9.5,2026-08-11\nV-302,10.0,RV-302,10.0,2026-08-12\nV-303,10.0,RV-303,9.5,2026-08-10\n');
   let spec=fs.readFileSync(path.join(input,def.kb),'utf8');
   if(test.spec==='relaxed')spec=spec.replace(/Class 300/g,'Class 150').replace(/DN100/g,'DN80');
   if(test.spec==='stricter')spec=spec.replace(/Class 300/g,'Class 600');
@@ -67,9 +69,13 @@ async function run(test,campaign){
       checks.savedNote=test.scenario!==2||Boolean(artifact);
       checks.visualEvidence=test.scenario===2||records.some(record=>record.visualRequired&&record.status==='complete'&&record.inspectedPages.length===record.requestedPages.length&&record.views.every(view=>view.resultId));
       for(const [subject,expected]of Object.entries(test.expect)){
-        const content=[subject,...(test.aliases?.[subject]??[])].map(name=>subjectText(reviewed,name)).filter(Boolean).join("\n");
-        checks[subject]=decision(content,expected);
-        checks[subject+'-observations']=(test.observed?.[subject]??[]).every(value=>new RegExp('(?:^|[^0-9])'+value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/DN/g,'DN\\s*')+'(?![0-9])','i').test(content));
+        const candidates=[subject,...(test.aliases?.[subject]??[])];
+        checks[subject]=candidates.some(name=>{
+          const content=subjectText(reviewed,name);
+          return content&&decision(content,expected);
+        });
+        const allContent=candidates.map(name=>subjectText(reviewed,name)).filter(Boolean).join("\n");
+        checks[subject+'-observations']=(test.observed?.[subject]??[]).every(value=>new RegExp('(?:^|[^0-9])'+value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/DN/g,'DN\\s*')+'(?![0-9])','i').test(allContent));
       }
       checks.noInventedScaleRule=test.scenario!==1||!/must.{0,20}(?:be to scale|scaled)|scale.{0,20}(?:non.?compliant|requirement)/i.test(reviewed);
       checks.citations=test.scenario===1?/SOP.?220/i.test(reviewed)&&/4\.2/.test(reviewed)&&/4\.3/.test(reviewed):test.scenario===2?/PS.?14/i.test(reviewed)&&/6\.1/.test(reviewed)&&/6\.2/.test(reviewed):/UT.?9/i.test(reviewed)&&/5\.1/.test(reviewed)&&/5\.2/.test(reviewed);

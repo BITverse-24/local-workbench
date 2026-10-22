@@ -5,7 +5,7 @@
     "flowA": {
       "reportId": "IR-E201-2026-08-20",
       "equipmentId": "E-201",
-      "criteriaCitation": "[SOP-114 §3.2]",
+      "criteriaCitation": "[SOP-114 \u00a73.2]",
       "statuses": [
         "fail",
         "pass",
@@ -149,7 +149,7 @@
       "bytes": 523
     },
     "flow_c/scenario-2/relief-valve-register.csv": {
-      "sha256": "3cdb15c24e68b46e61eef96bcb75cebb9ce171343731e2582965ab09de59de82",
+      "sha256": "40f7ef789c5b95aad6aae19e8b88d0d8f314ac22a78cb9c2e7b184adb472f9f8",
       "bytes": 151
     },
     "flow_c/scenario-3/prompt.md": {
