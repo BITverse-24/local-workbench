@@ -26,6 +26,7 @@
     "package:dir": "npm run build && electron-builder --config electron/electron-builder.json5 --dir",
     "typecheck": "tsc --noEmit -p backend/tsconfig.json && tsc --noEmit -p electron/tsconfig.json && tsc --noEmit -p frontend/tsconfig.json",
     "test": "node scripts/test.cjs",
+    "test:chat-continuity": "npm run build:frontend && node scripts/test-chat-continuity.cjs",
     "typecheck:behavioral": "tsc --noEmit -p tests/tsconfig.json",
     "build:behavioral": "node scripts/build-behavioral.cjs",
     "behavioral": "node scripts/behavioral.cjs",

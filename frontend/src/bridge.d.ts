@@ -6,6 +6,7 @@ interface ChatSummary {
   id: string;
   title: string;
   updated_at: string;
+  forkedFrom?: { chatId: string; messageId: string };
 }
 
 interface PersistedMessage {
@@ -227,12 +228,17 @@ interface WorkbenchBridge {
   getMessages: (chatId: string) => Promise<{ messages: PersistedMessage[] }>;
   sendMessage: (chatId: string, role: "user" | "assistant", content: string, attachmentIds?: string[]) => Promise<{ messageId: string; seq: number; chatTitle?: ChatTitleEvent }>;
   editMessage: (messageId: string, content: string) => Promise<void>;
+  createMessageAttempt: (input: { messageId: string; content: string }) => Promise<{
+    chatId: string; title: string; sourceChatId: string; sourceMessageId: string;
+    text: string; originalText?: string; mode: ExecutionMode | null; workspaceRoot: string | null;
+    files: Array<{ filename: string; mediaType: string; base64: string }>;
+  }>;
   renameChat: (chatId: string, title: string) => Promise<void>;
   getSetting: (key: string) => Promise<{ value: unknown }>;
   setSetting: (key: string, value: unknown) => Promise<void>;
   selectSourcePages: (input:{runId:string;selectionId:string;sourceDigest:string;pages:number[]})=>Promise<void>;
   getRunSnapshot: (input:{chatId?:string;runId?:string}) => Promise<RunSnapshot | undefined>;
-  startRun: (input: { userText: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string; selectedModel?: string; mode?: "chat" | "work" | "agent"; workspaceIdentity?: WorkspaceInfo; workspaceReferences?: WorkspaceReference[] }) => Promise<{ runId: string }>;
+  startRun: (input: { userText: string; userMessageId?: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string; selectedModel?: string; mode?: "chat" | "work" | "agent"; workspaceIdentity?: WorkspaceInfo; workspaceReferences?: WorkspaceReference[] }) => Promise<{ runId: string }>;
   resumeRun: (input: { runId: string; largerGenerationAllowance?: boolean }) => Promise<{ runId: string }>;
   registerAttachment: (input: {
     chatId?: string;

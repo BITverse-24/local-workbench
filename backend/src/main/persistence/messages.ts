@@ -149,7 +149,7 @@ export function listMessages(chat_id: string): Message[] {
     }
 
     return rows.map((msg) => {
-      const artifacts = msg.run_id ? artifactsByRun.get(msg.run_id) : undefined;
+      const artifacts = msg.role === "assistant" && msg.run_id ? artifactsByRun.get(msg.run_id) : undefined;
       const verification = msg.role === "assistant" && msg.run_id ? verificationByRun.get(msg.run_id) : undefined;
       const attachments = attachmentsByMsg.get(msg.id);
       return {
@@ -169,6 +169,9 @@ export function editMessage(id: string, content: string): void {
   z.string().uuid().parse(id);
   z.string().min(1).max(MAX_CONTENT_CHARS).parse(content);
   const db = getDb();
+  const executed = db.prepare(`SELECT m.id FROM messages m WHERE m.id=? AND m.role='user' AND
+    (m.run_id IS NOT NULL OR EXISTS (SELECT 1 FROM messages a WHERE a.chat_id=m.chat_id AND a.seq>m.seq AND a.role='assistant' AND a.run_id IS NOT NULL))`).get(id);
+  if (executed) throw new Error("Executed requests stay saved. Use Edit and rerun to create a new attempt.");
   prepareCached(db, "UPDATE messages SET content = ?, edited_at = ? WHERE id = ?").run(
     content,
     new Date().toISOString(),

@@ -202,7 +202,7 @@ export function reconcileInterruptedExecutions(): number {
   return reconciled;
 }
 
-export function prepareExecutionResume(runId: string, largerGenerationAllowance = false): { ledger: RunExecutionLedger; useLargerAllowance: boolean } {
+export function assertExecutionCanResume(runId: string, largerGenerationAllowance = false): RunExecutionLedger {
   const ledger = getExecutionLedger(runId);
   if (!ledger) throw new Error("Run has no durable execution ledger and cannot resume.");
   const tokenLimited = ledger.status === "limit_exceeded" && largerGenerationAllowance && ledger.tokenLimitRecoveryAvailable;
@@ -210,6 +210,11 @@ export function prepareExecutionResume(runId: string, largerGenerationAllowance 
   if (ledger.operationAttempts.some((item) => item.status === "uncertain" && item.mutating)) throw new Error("Run has an uncertain mutation outcome. Verify it before resuming; no mutation was replayed.");
   if (ledger.resumeCount >= 3) throw new Error("This run reached the limit of three explicit resume attempts.");
   if (largerGenerationAllowance && (!ledger.tokenLimitRecoveryAvailable || ledger.tokenLimitRecoveryCount >= 1)) throw new Error("One-time larger generation recovery is unavailable for this run.");
+  return ledger;
+}
+
+export function prepareExecutionResume(runId: string, largerGenerationAllowance = false): { ledger: RunExecutionLedger; useLargerAllowance: boolean } {
+  const ledger = assertExecutionCanResume(runId, largerGenerationAllowance);
   ledger.resumeCount++;
   const useLargerAllowance = largerGenerationAllowance;
   if (useLargerAllowance) { ledger.tokenLimitRecoveryCount++; ledger.tokenLimitRecoveryAvailable = false; }

@@ -340,6 +340,7 @@ export default function InputBar({
                     </div>
                     <button
                       type="button"
+                      disabled={disabled}
                       onClick={() => onRemoveFile?.(idx)}
                       className="w-5 h-5 rounded-md flex items-center justify-center text-[#9AA2AD] hover:text-white hover:bg-white/10 transition-colors"
                       title="Remove file"
@@ -393,6 +394,7 @@ export default function InputBar({
               {/* Attach Button */}
               <button
                 type="button"
+                disabled={disabled}
                 onClick={() => fileInputRef.current?.click()}
                 className="h-9 px-3 rounded-lg flex items-center gap-2 text-xs font-medium text-[#D8DEE4] hover:text-white bg-[#252A32] hover:bg-[#2F3640] active:bg-[#20252C] border border-[#3E4756] hover:border-[#525E72] shadow-sm transition-all active:scale-95"
                 title="Attach files (PDF, images, spreadsheets, documents — max 10MB)"

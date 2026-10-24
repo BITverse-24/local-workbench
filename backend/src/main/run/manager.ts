@@ -5,7 +5,7 @@ import { CONFIRMATION_TITLES } from '../../shared/confirmation-presentation.js';
 import { createHash, randomUUID } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, chmodSync } from "node:fs";
 import path from "node:path";
-import { createChat, claimChatTitle, applyGeneratedChatTitle } from "../persistence/chats.js";
+import { createChat, claimChatTitle, applyGeneratedChatTitle, getChat, chatMetadata } from "../persistence/chats.js";
 import { localInferenceScheduler } from "../gateway/inference-scheduler.js";
 import type { ChatTitleEvent, WorkspaceInfo } from "../../shared/contracts.js";
 import { parseWorkspaceMentions, type WorkspaceReference } from "../../shared/workspace-mentions.js";
@@ -54,7 +54,7 @@ import { extractDocumentTool } from "../tools/specialist-tools.js";
 import { AgentLoop } from "../agent/agent-loop.js";
 import { isCodeVerificationPath } from "../agent/test-verification.js";
 import { normalizeRunContract, persistRunContract, intentFromContract, getRunContract } from "./contract.js";
-import { configureExecutionLedger, getExecutionLedger, initializeExecutionLedger, prepareExecutionResume, reopenPartialRun, updateExecutionLedgerState } from "./execution-ledger.js";
+import { assertExecutionCanResume, configureExecutionLedger, getExecutionLedger, initializeExecutionLedger, prepareExecutionResume, reopenPartialRun, updateExecutionLedgerState } from "./execution-ledger.js";
 import { RunResultStore, RESULT_SLICE_MAX_CHARS } from "./result-store.js";
 import { getVerificationReport, verificationFeedback, verifyRunEvidence } from "./verification.js";
 import { mandatoryVerificationSatisfied, recordVerificationTermination } from "./verification-controller.js";
@@ -191,6 +191,7 @@ export interface RegisterAttachmentInput {
 }
 export interface StartRunInput {
   userText: string;
+  userMessageId?: string;
   attachmentToken?: string;
   attachmentTokens?: string[];
   runId?: string;
@@ -301,6 +302,7 @@ export class RunManager {
     const contract = getRunContract(runId);
     if (!getDb().prepare("SELECT run_id FROM run_mode_details WHERE run_id=?").get(runId))throw new Error("Historical execution mode is unknown. Submit a new run.");
     if (!contract) throw new Error("Run has no persisted RunContract and cannot resume.");
+    if (!["partial", "limit_exceeded"].includes(getState(runId))) throw new Error("Only a partial task can resume. Create a new attempt for this task.");
     const currentLedger = getExecutionLedger(runId);
     const saved = currentLedger?.executionContext;
     if (!saved) throw new Error("Run has no persisted execution context and cannot resume safely.");
@@ -310,15 +312,31 @@ export class RunManager {
     }
     const activeRoot = saved.mode==="agent" && this.harness?.isWorkspaceActive() ? this.harness.requireActiveWorkspace().root : undefined;
     if ((saved.workspaceRoot ?? undefined) !== activeRoot) throw new Error("The original workspace is not active. Restore it before resuming.");
-    const { ledger, useLargerAllowance } = prepareExecutionResume(runId, largerGenerationAllowance);
-    this.publishVerificationReport(runId);
+    assertExecutionCanResume(runId, largerGenerationAllowance);
     const row = getDb().prepare("SELECT chat_id as chatId FROM runs WHERE id=?").get(runId) as { chatId: string } | undefined;
     if (!row) throw new Error("Run not found.");
     const attachments = getDb().prepare(`SELECT a.attachment_id as attachmentId,a.run_id as runId,a.chat_id as chatId,a.filename,a.media_type as mediaType,a.size_bytes as sizeBytes,a.relative_path as relativePath
       FROM attachments a JOIN run_attachments ra ON ra.attachment_id=a.attachment_id WHERE ra.run_id=?`).all(runId) as AttachmentRow[];
-    for (const attachment of attachments) if (!existsSync(absoluteDataPath(attachment.relativePath))) throw new Error(`Original attachment is missing: ${attachment.filename}`);
+    for (const attachment of attachments) {
+      const prefix = `runs/${attachment.runId}/`;
+      if (!attachment.relativePath.startsWith(prefix)) throw new Error("Original attachment is outside its run.");
+      const file = resolveRunPath(attachment.runId, attachment.relativePath.slice(prefix.length), "input");
+      if (!existsSync(file)) throw new Error(`Original attachment is missing: ${attachment.filename}`);
+    }
     if(saved.mode==="chat")throw new Error("Submit a new Chat request to continue.");
     if(this.activeChats.has(row.chatId))throw new Error("This chat already has an active run.");
+    const metrics = this.getRunSnapshot({ runId })?.metrics ?? {};
+    if (saved.mode === "work" && (Number(metrics.modelCallCount ?? 0) >= 24 || Number(metrics.recoveryCount ?? 0) >= 2))
+      throw new Error("This task has used its work budget. Create a new attempt to continue.");
+    const aliases = Array.isArray(metrics.sourceAliases) ? metrics.sourceAliases as Array<{ relativePath: string; sha256?: string }> : [];
+    for (const alias of aliases) {
+      const prefix = `runs/${runId}/`;
+      if (!alias.relativePath.startsWith(prefix)) throw new Error("Saved input is outside this run.");
+      const file = resolveRunPath(runId, alias.relativePath.slice(prefix.length), "input");
+      if (!existsSync(file) || (alias.sha256 && sha256File(file) !== alias.sha256)) throw new Error("Saved input changed or is missing. Select the input again in a new attempt.");
+    }
+    const { ledger, useLargerAllowance } = prepareExecutionResume(runId, largerGenerationAllowance);
+    this.publishVerificationReport(runId);
     reopenPartialRun(runId);
     this.controllers.set(runId,new AbortController());this.activeChats.set(row.chatId,runId);
     this.runMetrics.set(runId,this.getRunSnapshot({runId})?.metrics??{});
@@ -434,6 +452,12 @@ export class RunManager {
     if(requested.some(a=>a.chatId!==chatId))throw new Error("Attachment belongs to another chat.");
     if(input.runId && this.chatIdForRunIfPresent(input.runId) && this.chatIdForRunIfPresent(input.runId)!==chatId)throw new Error("Run belongs to another chat.");
     const db=getDb();
+    if (input.userMessageId) {
+      const message = db.prepare("SELECT chat_id,role,content,run_id FROM messages WHERE id=?").get(input.userMessageId) as
+        { chat_id: string; role: string; content: string; run_id: string | null } | undefined;
+      if (!message || message.chat_id !== chatId || message.role !== "user" || message.content.trim() !== text.trim() || message.run_id)
+        throw new Error("The saved request does not match this new run.");
+    }
     if(this.activeChats.has(chatId)||db.prepare("SELECT r.id FROM runs r JOIN run_mode_details m ON m.run_id=r.id WHERE r.chat_id=? AND r.state NOT IN ('completed','partial','failed','cancelled','limit_exceeded')").get(chatId))throw new Error("This chat already has an active run.");
     const stagedId=input.runId??requested[0]?.runId;
     if(stagedId && this.chatIdForRunIfPresent(stagedId) && (getState(stagedId)!=="created"||db.prepare("SELECT run_id FROM run_mode_details WHERE run_id=?").get(stagedId)))throw new Error("An executing or finished run cannot be started again or change mode.");
@@ -441,8 +465,11 @@ export class RunManager {
     createRunDirectories(runId);
     const engineVersion = mode === "chat" ? "chat-v1" : mode === "work" ? "work-v4" : "agent-v2";
     db.prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,?,?,?)").run(runId,mode,engineVersion,root??null);
+    if (input.userMessageId) db.prepare("UPDATE messages SET run_id=? WHERE id=?").run(runId, input.userMessageId);
     this.activeChats.set(chatId,runId);this.controllers.set(runId,new AbortController());this.runModes.set(runId,mode);
     this.runMetrics.set(runId,{requestReceivedAt:Date.now(),mode,engineVersion,modelCallCount:0,originalRequest:text,queueWaitMs:0,toolTimeMs:0,recoveryCount:0,isolationStatus:"not_used"});
+    const attemptContext = chatMetadata(getChat(chatId)!).attemptSourceContext;
+    if (typeof attemptContext === "string") this.runMetrics.get(runId)!.sourceReferenceEvidence = attemptContext;
     if(input.temperature!==undefined)this.runTemperatures.set(runId,input.temperature);
     this.runGroundingEnabled.set(runId,input.groundingEnabled===true);
     if(input.selectedModel??input.preferredRoute)this.runSelectedModels.set(runId,(input.selectedModel??input.preferredRoute)!);
@@ -487,7 +514,41 @@ export class RunManager {
     const metrics=this.runMetrics.get(row.runId)??JSON.parse(row.metrics??"{}");
     const artifacts=getDb().prepare("SELECT artifact_id as artifactId,run_id as runId,kind,filename,relative_path as relativePath,size_bytes as sizeBytes,sha256,created_at as createdAt FROM artifacts WHERE run_id=?").all(row.runId) as RunSnapshot["artifacts"];
     const draft=getDb().prepare("SELECT message_id as messageId,model_id as modelId,text FROM run_drafts WHERE run_id=?").get(row.runId) as RunSnapshot["draft"];
-    return {runId:row.runId,chatId:row.chatId,mode:row.mode??null,engineVersion:row.engineVersion??null,state:getState(row.runId),queued:metrics.queued===true,progress:[...(this.taskCheckpoints.get(row.runId)?.values()??(Array.isArray(metrics.progress)?metrics.progress:[]))],pendingAction:this.pendingActions.get(row.runId),pendingPageSelection:pendingSourcePages(row.runId),sourceInspections:loadSourceInspections(row.runId),artifacts,verification:getVerificationReport(row.runId),metrics,draft};
+    const state = getState(row.runId);
+    const recovery = ["partial", "limit_exceeded", "failed", "cancelled"].includes(state) ? this.recoveryForRun(row.runId, row.chatId, state, metrics) : undefined;
+    return {runId:row.runId,chatId:row.chatId,mode:row.mode??null,engineVersion:row.engineVersion??null,state,queued:metrics.queued===true,progress:[...(this.taskCheckpoints.get(row.runId)?.values()??(Array.isArray(metrics.progress)?metrics.progress:[]))],pendingAction:this.pendingActions.get(row.runId),pendingPageSelection:pendingSourcePages(row.runId),sourceInspections:loadSourceInspections(row.runId),artifacts,verification:getVerificationReport(row.runId),metrics,draft,recovery};
+  }
+
+  private recoveryForRun(runId: string, chatId: string, state: RunState, metrics: Record<string, unknown>): NonNullable<RunSnapshot["recovery"]> {
+    const ledger = getExecutionLedger(runId);
+    const saved = ledger?.executionContext;
+    const message = getDb().prepare("SELECT id FROM messages WHERE chat_id=? AND role='user' AND run_id=? ORDER BY seq DESC LIMIT 1").get(chatId, runId) as { id: string } | undefined;
+    const legacy = message ? undefined : getDb().prepare("SELECT id FROM messages WHERE chat_id=? AND role='user' AND content=? ORDER BY seq DESC LIMIT 1").get(chatId, metrics.originalRequest ?? "") as { id: string } | undefined;
+    const preceding = message || legacy ? undefined : getDb().prepare(`SELECT id FROM messages WHERE chat_id=? AND role='user'
+      AND seq<(SELECT MIN(seq) FROM messages WHERE chat_id=? AND role='assistant' AND run_id=?) ORDER BY seq DESC LIMIT 1`).get(chatId, chatId, runId) as { id: string } | undefined;
+    const largerGenerationAllowance = state === "limit_exceeded" && ledger?.tokenLimitRecoveryAvailable === true;
+    const result: NonNullable<RunSnapshot["recovery"]> = {
+      canResume: false, largerGenerationAllowance, sourceMessageId: message?.id ?? legacy?.id ?? preceding?.id,
+      reason: "Saved work is available. Create a new attempt to continue.",
+      completed: ledger?.knownWork.filter(item => item.status === "completed").map(item => item.label) ?? [],
+      remaining: ledger?.knownWork.filter(item => item.status === "pending").map(item => item.label) ?? [],
+      workspaceRoot: saved?.workspaceRoot ?? undefined,
+    };
+    try {
+      if (!["partial", "limit_exceeded"].includes(state)) throw new Error("Saved work is available. Create a new attempt to continue.");
+      if (!getDb().prepare("SELECT run_id FROM run_mode_details WHERE run_id=?").get(runId)) throw new Error("The original execution mode is unknown. Create a new attempt.");
+      if (!saved || !getRunContract(runId)) throw new Error("This task stopped before a resumable plan was saved. Create a new attempt.");
+      if (saved.mode === "chat") throw new Error("The saved answer is available. Create a new attempt to continue this Chat request.");
+      assertExecutionCanResume(runId, largerGenerationAllowance);
+      const selection = resolveModelSelection({ explicitSelection: saved.modelId, gateway: this.gateway });
+      if (!selection.ok || selection.modelId !== saved.modelId) throw new Error("Reconnect the original model, then retry Resume.");
+      const root = saved.mode === "agent" && this.harness?.isWorkspaceActive() ? this.harness.requireActiveWorkspace().root : undefined;
+      if ((saved.workspaceRoot ?? undefined) !== root) throw new Error("Open the original project folder, then retry Resume.");
+      if (saved.mode === "work" && (Number(metrics.modelCallCount ?? 0) >= 24 || Number(metrics.recoveryCount ?? 0) >= 2)) throw new Error("This task has used its work budget. Create a new attempt to continue.");
+      result.canResume = true;
+      result.reason = getVerificationReport(runId)?.termination?.detail ?? "Continue from saved work. Required checks and approvals will run again.";
+    } catch (error) { result.reason = error instanceof Error ? error.message : String(error); }
+    return result;
   }
 
   private async askPythonApproval(runId:string,code:string,inputs:string[],digest:string):Promise<boolean> {
@@ -880,6 +941,9 @@ export class RunManager {
       const grounding=this.groundingForRun(runId);
       const envelope=buildExecutionEnvelope({runId,mode,modelId,hasWorkspace:false,attachments,hasKnowledgeBaseDocs:!!grounding,computationRequested:mode==="work",deliverableRequested:mode==="work"});
       const context={runId,originalUserRequest:text,signal:controller.signal,assertAuthority:scope.assertAuthority,workspaceRoot:path.join(runRoot(runId),"input"),workspaceReferenceEvidence:workspaceManifest ? workspaceManifest.folderEvidence + "\nSelected file copies: " + workspaceManifest.files.map(file=>`${file.sourcePath} => ${file.filename}`).join(", ") : undefined,gateway:this.gateway,envelope,indexedKnowledgeSources:grounding?this.ragService?.listDocuments().map(doc=>({docId:doc.doc_id,filename:path.basename(doc.source_path)})):undefined,grounding:grounding as any,resultStore:new RunResultStore(runId),isCancelled:()=>controller.signal.aborted,emitRunEvent:(event:RunEvent)=>{assertRuntimeActive();if(event.type==="artifact_ready")this.persistArtifact(event.artifact);this.emit(event);}};
+      const inheritedSourceEvidence = this.runMetrics.get(runId)?.sourceReferenceEvidence;
+      if (typeof inheritedSourceEvidence === "string") context.workspaceReferenceEvidence =
+        [context.workspaceReferenceEvidence, inheritedSourceEvidence].filter(Boolean).join("\n");
       const history=this.getRecentChatHistory(chatId,text);
       if(mode==="chat"){
         if(!getRunContract(runId))persistRunContract({schemaVersion:1,runId,createdAt:new Date().toISOString(),objective:text.slice(0,500)||"Inspect attachments",resolution:{status:"resolved"},routing:{intentType:"pure_chat",taskType:"draft",driverModel:modelId,actionable:false},response:{required:true,chatOnly:true},workspace:{requested:false,operations:[]},deliverables:[],constraints:{protectedPaths:[],restrictMutationsToTargets:false,userConstraints:[]},acceptance:{validateWrittenCode:false,validatedPythonDeliverables:[],artifactChecks:[]}});

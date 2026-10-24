@@ -64,7 +64,7 @@ describe("chat IPC over mock Electron ipcMain", () => {
         channel !== IPC_WORKSPACE.WORKSPACE_EVENT,
     );
     expect([...fake.handlers.keys()].sort()).toEqual(expected.sort());
-    expect(CHAT_CHANNELS).toHaveLength(9);
+    expect(CHAT_CHANNELS).toHaveLength(10);
     expect(RUN_CHANNELS).toHaveLength(15);
     expect(WORKSPACE_CHANNELS).toHaveLength(10);
     expect(KB_CHANNELS).toHaveLength(6);

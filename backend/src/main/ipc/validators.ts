@@ -40,6 +40,10 @@ export const editMessageSchema = z.object({
   content: z.string().min(1).max(MAX_CONTENT_CHARS),
 });
 
+export const createMessageAttemptSchema = z.object({
+  messageId: z.string().uuid(), content: z.string().trim().max(8000),
+}).strict();
+
 // Settings: single row per key, JSON value. Secrets are never stored — block
 // secret-like keys at the validation layer (defense in depth; store holds no secrets).
 const SECRET_KEY_HINT = /key|secret|token|password|credential/i;
@@ -87,6 +91,7 @@ export const startRunSchema = z
     attachmentTokens: z.array(z.string().uuid()).max(10).optional(),
     runId: z.string().uuid().optional(),
     chatId: z.string().uuid().optional(),
+    userMessageId: z.string().uuid().optional(),
     temperature: z.number().min(0).max(2).optional(),
     groundingEnabled: z.boolean().optional(),
     preferredRoute: z.string().optional(),

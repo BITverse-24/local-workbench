@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('workbench',{
  getOnboardingStatus:async()=>({completed:true}),getChatHistory:async()=>({chats:[{id,title:'Inspect saved source files',updated_at:new Date().toISOString()}]}),
  getSetting:async()=>({value:null}),setSetting:async()=>{},getHealth:async()=>[],getExecutionCapabilities:async()=>null,
  getCurrentWorkspace:async()=>ws,listWorkspaceDir:async()=>({result:entries}),kbListDocs:async()=>[],kbStats:async()=>({documentCount:0,chunkCount:0}),
- getMessages:async()=>({messages:rows}),getRunSnapshot:async()=>undefined,
+ getMessages:async()=>({messages:rows}),getRunSnapshot:async()=>undefined,getRunHistory:async()=>[],
  createChat:async()=>({chatId:id}),sendMessage:async(cid,role,content)=>{activeChat=cid;return {messageId:'user-'+Date.now(),seq:0,chatTitle:{type:'chat_title_changed',chatId:cid,title:'Inspect selected workspace file',revision:1}}},
  startRun:async(input)=>{lastStart=input;setTimeout(()=>{
   runListener?.({type:'run_registered',runId:input.runId,chatId:input.chatId,mode:input.mode});

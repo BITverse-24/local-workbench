@@ -42,7 +42,7 @@ export function getChat(id: string): Chat | undefined {
   return prepareCached(db, "SELECT * FROM chats WHERE id = ?").get(id) as Chat | undefined;
 }
 
-export function listChats(limit = 50): Pick<Chat, "id" | "title" | "updated_at">[] {
+export function listChats(limit = 50): Array<Pick<Chat, "id" | "title" | "updated_at"> & { forkedFrom?: { chatId: string; messageId: string } }> {
   const n = Math.max(1, Math.min(500, Math.floor(limit)));
   const db = getDb();
   const chats = prepareCached(
@@ -56,7 +56,11 @@ export function listChats(limit = 50): Pick<Chat, "id" | "title" | "updated_at">
       if (first) chat.title = initializeChatTitle(chat.id, first.content, names)?.title ?? chat.title;
     }
   }
-  return chats;
+  return chats.map(chat => {
+    const metadata = chatMetadata(getChat(chat.id)!);
+    const forkedFrom = metadata.forkedFrom as { chatId: string; messageId: string } | undefined;
+    return { ...chat, ...(forkedFrom ? { forkedFrom } : {}) };
+  });
 }
 
 /** Bump updated_at to now (called in the same transaction as addMessage). */
