@@ -6,7 +6,7 @@ if (typeof (Promise as any).try !== "function") {
 }
 
 import { app, BrowserWindow, ClipboardItem, clipboard, dialog, ipcMain, Notification, shell, screen } from "electron";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { initBackend } from "../backend/src/main/index.js";
@@ -20,6 +20,26 @@ import { initializeModelRegistry, resolveRuntimeMode, resolveStoragePaths } from
 // Python policy, or any other business rule (those live in /backend).
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
+
+function initializeMacEnvironment(): void {
+  if (process.platform !== "darwin") return;
+  let currentPath = process.env.PATH ?? "";
+  try {
+    if (existsSync("/usr/libexec/path_helper")) {
+      const output = execFileSync("/usr/libexec/path_helper", ["-s"], { encoding: "utf8", timeout: 1000 });
+      const match = /PATH="([^"]+)"/.exec(output);
+      if (match && match[1]) currentPath = match[1];
+    }
+  } catch {
+    // Ignore path_helper errors
+  }
+  const standardPaths = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/local/sbin"].filter(existsSync);
+  const elements = currentPath.split(":").filter(Boolean);
+  const combined = [...new Set([...standardPaths, ...elements])];
+  process.env.PATH = combined.join(":");
+}
+initializeMacEnvironment();
+
 const runtimeMode = resolveRuntimeMode(app.isPackaged, process.env);
 const isDev = runtimeMode === "development";
 const storagePaths = resolveStoragePaths({

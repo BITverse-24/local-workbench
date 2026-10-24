@@ -146,4 +146,24 @@ print('CHECKED')
       timeout: 5000, maxBuffer: 4096,
     })).rejects.toMatchObject({ signal: "SIGTERM", message: "Process terminated by SIGTERM" });
   });
+
+  it("discovers Homebrew Python even with minimal packaged macOS PATH", async () => {
+    vi.stubEnv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
+    const python = getPythonExecutable();
+    expect(python).not.toBe("/usr/bin/python3");
+    expect(python).toMatch(/python/);
+    const capability = await getPythonCapability();
+    expect(capability.status).toBe("os_isolated");
+  });
+
+  it("allows macOS CommandLineTools python under sandbox isolation without xcode-select error", async () => {
+    const clt = "/Library/Developer/CommandLineTools/usr/bin/python3";
+    if (!existsSync(clt)) return;
+    const cltPython = realpathSync(clt);
+    const script = path.join(dirs.intermediateDir, "clt-test.py");
+    writeFileSync(script, "print('CLT_OK')");
+    const launch = pythonLaunch(cltPython, dirs, script);
+    const capability = await probePythonIsolation(launch, cltPython, dirs.outputDir);
+    expect(capability.status).toBe("os_isolated");
+  });
 });
