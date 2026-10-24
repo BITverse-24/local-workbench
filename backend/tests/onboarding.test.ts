@@ -322,24 +322,23 @@ describe("Onboarding Architecture & IPC Handlers", () => {
       expect(result.error).toBeDefined();
     });
 
-    it("verifies model availability and readiness with a local test server", async () => {
+    it("verifies model availability and readiness without generating tokens", async () => {
       const http = await import("node:http");
       let completionsCalled = false;
-      let shouldFailProbe = false;
 
       const server = http.createServer((req, res) => {
+        if (req.url === "/api/ps") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ models: [{ name: "test-loaded-model" }] }));
+          return;
+        }
         if (req.url === "/v1/models") {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ data: [{ id: "test-ready-model" }] }));
           return;
         }
-        if (req.url === "/v1/chat/completions") {
+        if (req.url === "/v1/chat/completions" || req.url === "/v1/completions" || req.url === "/v1/embeddings") {
           completionsCalled = true;
-          if (shouldFailProbe) {
-            res.writeHead(503, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: { message: "Model is not loaded into memory" } }));
-            return;
-          }
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ choices: [{ message: { content: "pong" } }] }));
           return;
@@ -363,29 +362,29 @@ describe("Onboarding Architecture & IPC Handlers", () => {
         expect(notFoundRes.modelFound).toBe(false);
         expect(notFoundRes.error).toContain("is not available on this server");
 
-        // 2. Model found and ready to serve
+        // 2. Model found in downloaded/available models (/v1/models) without generating tokens
         completionsCalled = false;
-        shouldFailProbe = false;
         const readyRes = await handleTestModelEndpoint({
           host: "127.0.0.1",
           port,
           modelName: "test-ready-model",
         });
-        expect(completionsCalled).toBe(true);
+        expect(completionsCalled).toBe(false);
         expect(readyRes.ok).toBe(true);
         expect(readyRes.modelFound).toBe(true);
         expect(readyRes.modelReady).toBe(true);
 
-        // 3. Model found on server, but probe indicates not ready / not loaded
-        shouldFailProbe = true;
-        const notReadyRes = await handleTestModelEndpoint({
+        // 3. Model found in loaded models (/api/ps) without generating tokens
+        completionsCalled = false;
+        const loadedRes = await handleTestModelEndpoint({
           host: "127.0.0.1",
           port,
-          modelName: "test-ready-model",
+          modelName: "test-loaded-model",
         });
-        expect(notReadyRes.ok).toBe(false);
-        expect(notReadyRes.modelReady).toBe(false);
-        expect(notReadyRes.error).toContain("Model is not loaded into memory");
+        expect(completionsCalled).toBe(false);
+        expect(loadedRes.ok).toBe(true);
+        expect(loadedRes.modelFound).toBe(true);
+        expect(loadedRes.modelReady).toBe(true);
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
