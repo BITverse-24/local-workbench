@@ -6,6 +6,7 @@ export const IPC_CHAT = {
   GET_MESSAGES: "workbench:getMessages",
   SEND_MESSAGE: "workbench:sendMessage",
   EDIT_MESSAGE: "workbench:editMessage",
+  CREATE_ATTEMPT: "workbench:createMessageAttempt",
   GET_SETTING: "workbench:getSetting",
   SET_SETTING: "workbench:setSetting",
 } as const;

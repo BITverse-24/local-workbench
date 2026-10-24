@@ -1,4 +1,5 @@
 import { selectSourcePages } from "../run/source-page-selection.js";
+import { createMessageAttempt } from "../run/message-attempt.js";
 // Chat-persistence IPC handlers (backend/src/main/ipc/handlers.ts).
 // Pure handler functions (no `electron` import) plus structural IPC registration keep
 // the backend testable with a fake ipcMain. Run events are emitted through the callback
@@ -19,6 +20,7 @@ import {
   archiveChatSchema,
   createChatSchema,
   editMessageSchema,
+  createMessageAttemptSchema,
   getChatHistorySchema,
   getMessagesSchema,
   getSettingSchema,
@@ -136,6 +138,10 @@ export function registerChatHandlers(ipcMain: MinimalIpcMain, emitChat: (event: 
     [IPC_CHAT.GET_MESSAGES]: handleGetMessages,
     [IPC_CHAT.SEND_MESSAGE]: input => { const result = handleSendMessage(input); if (result.chatTitle) emitChat(result.chatTitle); return result; },
     [IPC_CHAT.EDIT_MESSAGE]: handleEditMessage,
+    [IPC_CHAT.CREATE_ATTEMPT]: input => {
+      const parsed = createMessageAttemptSchema.parse(input);
+      return createMessageAttempt(parsed.messageId, parsed.content);
+    },
     [IPC_CHAT.GET_SETTING]: handleGetSetting,
     [IPC_CHAT.SET_SETTING]: handleSetSetting,
   };

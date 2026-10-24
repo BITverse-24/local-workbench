@@ -1,9 +1,10 @@
 import { accessSync, constants, existsSync, realpathSync, statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { executeProcess } from "./child-process.js";
 import { assertRuntimeActive } from "../run/runtime-scope.js";
 import type { ExecutionCapability } from "../../shared/contracts.js";
-import { macosLibraryRoots, macosReadRules, sandboxLiteral as literal } from "./macos-sandbox.js";
+import { MACOS_TOOL_SELECTORS, macosLibraryRoots, macosReadRules, sandboxLiteral as literal } from "./macos-sandbox.js";
 
 function executableFile(filename: string): boolean {
   try {
@@ -13,20 +14,39 @@ function executableFile(filename: string): boolean {
   } catch { return false; }
 }
 
+function resolveDarwinInterpreter(candidate: string): string {
+  if (process.platform !== "darwin") return realpathSync(candidate);
+  const resolved = realpathSync(candidate);
+  if (resolved === "/usr/bin/python3" || resolved === "/usr/bin/python") {
+    const clt = "/Library/Developer/CommandLineTools/usr/bin/python3";
+    if (executableFile(clt)) return realpathSync(clt);
+    try {
+      const res = spawnSync("xcrun", ["-find", "python3"], { encoding: "utf8", timeout: 2000 });
+      const found = res.stdout?.trim();
+      if (found && executableFile(found)) return realpathSync(found);
+    } catch { /* ignore */ }
+  }
+  return resolved;
+}
+
 /** Resolve once. Every probe and execution uses this same absolute interpreter. */
 export function getPythonExecutable(): string {
   const windows = process.platform === "win32";
-  const paths = (process.env.PATH ?? process.env.Path ?? "").split(windows ? ";" : ":")
+  const rawPaths = (process.env.PATH ?? process.env.Path ?? "").split(windows ? ";" : ":")
     .map(directory => directory.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean);
+  const paths = process.platform === "darwin"
+    ? [...new Set([...["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/local/sbin"].filter(existsSync), ...rawPaths])]
+    : rawPaths;
   const join = windows ? path.win32.join : path.join;
   const configured = process.env.PYTHON?.trim();
   const names = configured ? [configured, ...(windows && !configured.toLowerCase().endsWith(".exe") ? [`${configured}.exe`] : [])] : windows ? ["python.exe", "python3.exe"] : ["python3", "python"];
+  const macPrecedence = process.platform === "darwin" && !configured ? ["/opt/homebrew/bin/python3", "/usr/local/bin/python3"] : [];
   const candidates = configured
     ? [...names, ...paths.flatMap(directory => names.map(name => join(directory, name)))]
-    : [...paths.flatMap(directory => names.map(name => join(directory, name))),
+    : [...macPrecedence, ...paths.flatMap(directory => names.map(name => join(directory, name))),
        ...(windows ? [] : ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"])];
   for (const candidate of candidates) {
-    if ((windows ? path.win32.isAbsolute(candidate) : path.isAbsolute(candidate)) && executableFile(candidate)) return realpathSync(candidate);
+    if ((windows ? path.win32.isAbsolute(candidate) : path.isAbsolute(candidate)) && executableFile(candidate)) return resolveDarwinInterpreter(candidate);
   }
   throw new Error(configured ? "The configured PYTHON executable is unavailable. Set PYTHON to an executable path or a name on PATH." : "Python is unavailable. Install Python 3 or set PYTHON to its executable path.");
 }
@@ -97,8 +117,11 @@ export function pythonLaunch(python: string, dirs: PythonDirectories, script: st
     const runtime = macosPythonRuntime(python);
     const profile = [
       "(version 1)", "(deny default)", "(deny network*)",
+      "(allow sysctl-read)",
+      "(allow file-read* (literal \"/dev/urandom\") (literal \"/dev/random\"))",
+      "(allow file-read* file-write* (literal \"/dev/null\"))",
       ...runtime.executables.map(executable => `(allow process-exec (literal ${literal(executable)}))`),
-      ...macosReadRules(["/usr/lib", "/usr/share", runtime.root, "/opt/homebrew/lib", "/opt/homebrew/opt", "/System", "/Library", ...macosLibraryRoots(), dirs.inputDir, dirs.intermediateDir, dirs.outputDir]),
+      ...macosReadRules(["/usr/lib", "/usr/share", runtime.root, "/opt/homebrew/lib", "/opt/homebrew/opt", "/System", "/Library", ...macosLibraryRoots(), ...MACOS_TOOL_SELECTORS, dirs.inputDir, dirs.intermediateDir, dirs.outputDir]),
       `(allow file-write* (subpath ${literal(dirs.outputDir)}))`,
       ...inputNames.map(name => `(deny file-write* (literal ${literal(path.join(dirs.outputDir, name))}))`),
     ].join(" ");

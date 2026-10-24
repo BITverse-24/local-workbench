@@ -53,35 +53,79 @@ export async function handleTestModelEndpoint(input: unknown): Promise<ModelEndp
   try {
     const urlHost = host.includes(":") ? `[${host}]` : host;
 
-    // 1. Connectivity and Model List Probe
+    // Check model availability using endpoints that list loaded models or downloaded models.
+    // Never make models generate tokens or call completions endpoints.
     let listRes: Response | null = null;
+    let loadedModels: string[] = [];
     let availableModels: string[] = [];
 
+    // 1. Check endpoints that report actively loaded models (e.g. Ollama /api/ps, LM Studio /api/v0/models)
     try {
-      const url = `http://${urlHost}:${port}/v1/models`;
-      listRes = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
-    } catch {
-      try {
-        const url = `http://${urlHost}:${port}/models`;
-        listRes = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
-      } catch {
-        try {
-          const url = `http://${urlHost}:${port}/api/tags`;
-          listRes = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
-        } catch {
-          listRes = null;
+      const psRes = await fetch(`http://${urlHost}:${port}/api/ps`, {
+        signal: controller.signal,
+        headers: { Accept: "application/json" },
+      });
+      if (psRes.ok) {
+        const psData = (await psRes.json()) as any;
+        if (Array.isArray(psData?.models)) {
+          loadedModels = psData.models.map((m: any) => m.name || m.model || m.id).filter(Boolean);
         }
       }
+    } catch {}
+
+    try {
+      const v0Res = await fetch(`http://${urlHost}:${port}/api/v0/models`, {
+        signal: controller.signal,
+        headers: { Accept: "application/json" },
+      });
+      if (v0Res.ok) {
+        const v0Data = (await v0Res.json()) as any;
+        if (Array.isArray(v0Data?.data)) {
+          const loaded = v0Data.data.filter((m: any) => m.state === "loaded").map((m: any) => m.id).filter(Boolean);
+          if (loaded.length > 0) loadedModels = [...new Set([...loadedModels, ...loaded])];
+          const all = v0Data.data.map((m: any) => m.id).filter(Boolean);
+          if (all.length > 0) availableModels = [...new Set([...availableModels, ...all])];
+        }
+      }
+    } catch {}
+
+    // 2. Fetch available / downloaded models (/v1/models, /models, /api/tags)
+    const candidateUrls = [
+      `http://${urlHost}:${port}/v1/models`,
+      `http://${urlHost}:${port}/models`,
+      `http://${urlHost}:${port}/api/tags`,
+    ];
+
+    for (const url of candidateUrls) {
+      try {
+        const res = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
+        if (res.ok) {
+          listRes = res;
+          const data = (await res.json()) as any;
+          let parsedNames: string[] = [];
+          if (Array.isArray(data?.data)) {
+            parsedNames = data.data.map((m: any) => m.id || m.name).filter(Boolean);
+          } else if (Array.isArray(data?.models)) {
+            parsedNames = data.models.map((m: any) => m.name || m.id || m.model).filter(Boolean);
+          }
+          if (parsedNames.length > 0) {
+            availableModels = [...new Set([...availableModels, ...parsedNames])];
+          }
+          break;
+        } else if (res.status !== 404 && res.status !== 405 && !listRes) {
+          listRes = res;
+        }
+      } catch {}
     }
 
-    if (!listRes) {
+    if (!listRes && availableModels.length === 0 && loadedModels.length === 0) {
       return {
         ok: false,
         error: `Cannot connect to inference server at ${host}:${port}`,
       };
     }
 
-    if (!listRes.ok && listRes.status !== 404 && listRes.status !== 405) {
+    if (listRes && !listRes.ok && listRes.status !== 404 && listRes.status !== 405 && availableModels.length === 0 && loadedModels.length === 0) {
       return {
         ok: false,
         latencyMs: Date.now() - started,
@@ -89,18 +133,9 @@ export async function handleTestModelEndpoint(input: unknown): Promise<ModelEndp
       };
     }
 
-    try {
-      const data = (await listRes.json()) as any;
-      if (Array.isArray(data?.data)) {
-        availableModels = data.data.map((m: any) => m.id || m.name).filter(Boolean);
-      } else if (Array.isArray(data?.models)) {
-        availableModels = data.models.map((m: any) => m.name || m.id || m.model).filter(Boolean);
-      }
-    } catch {
-      // Non-JSON or endpoint doesn't support model enumeration
-    }
+    const allModels = [...new Set([...loadedModels, ...availableModels])];
 
-    // 2. If model name is specified, verify model presence and live readiness
+    // If a modelName is specified, verify model presence without token generation
     if (parsed.modelName) {
       const target = parsed.modelName.toLowerCase().trim();
       const matchModel = (m: string) => {
@@ -115,99 +150,27 @@ export async function handleTestModelEndpoint(input: unknown): Promise<ModelEndp
         return false;
       };
 
-      const modelFound = availableModels.length === 0 || availableModels.some(matchModel);
-      if (availableModels.length > 0 && !modelFound) {
+      const isLoaded = loadedModels.some(matchModel);
+      const isAvailable = allModels.length === 0 || allModels.some(matchModel);
+
+      if (allModels.length > 0 && !isAvailable) {
         return {
           ok: false,
           latencyMs: Date.now() - started,
           modelFound: false,
           modelReady: false,
-          availableModels,
-          error: `Model "${parsed.modelName}" is not available on this server. Installed models: ${availableModels.slice(0, 6).join(", ")}${availableModels.length > 6 ? "..." : ""}`,
+          availableModels: allModels,
+          error: `Model "${parsed.modelName}" is not available on this server. Installed models: ${allModels.slice(0, 6).join(", ")}${allModels.length > 6 ? "..." : ""}`,
         };
       }
 
-      // Check whether model is loaded and ready to serve
-      try {
-        let probeRes: Response;
-        if (parsed.role === "embedding") {
-          probeRes = await fetch(`http://${urlHost}:${port}/v1/embeddings`, {
-            method: "POST",
-            signal: controller.signal,
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify({
-              model: parsed.modelName,
-              input: "readiness probe",
-            }),
-          });
-        } else {
-          probeRes = await fetch(`http://${urlHost}:${port}/v1/chat/completions`, {
-            method: "POST",
-            signal: controller.signal,
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify({
-              model: parsed.modelName,
-              messages: [{ role: "user", content: "ping" }],
-              max_tokens: 1,
-            }),
-          });
-          if (probeRes.status === 404 || probeRes.status === 405) {
-            try {
-              const compRes = await fetch(`http://${urlHost}:${port}/v1/completions`, {
-                method: "POST",
-                signal: controller.signal,
-                headers: { "Content-Type": "application/json", Accept: "application/json" },
-                body: JSON.stringify({
-                  model: parsed.modelName,
-                  prompt: "ping",
-                  max_tokens: 1,
-                }),
-              });
-              if (compRes.ok || compRes.status !== 404) {
-                probeRes = compRes;
-              }
-            } catch {}
-          }
-        }
-
-        if (probeRes.ok) {
-          return {
-            ok: true,
-            latencyMs: Date.now() - started,
-            modelFound: true,
-            modelReady: true,
-            availableModels,
-          };
-        }
-
-        let detail = "";
-        try {
-          const errBody = (await probeRes.json()) as any;
-          detail = errBody?.error?.message || errBody?.error || errBody?.message || "";
-        } catch {}
-
-        const statusMsg = detail ? `: ${detail}` : ` (HTTP ${probeRes.status})`;
-        return {
-          ok: false,
-          latencyMs: Date.now() - started,
-          modelFound,
-          modelReady: false,
-          error: `Model "${parsed.modelName}" is not ready to serve${statusMsg}`,
-          availableModels,
-        };
-      } catch (probeErr: any) {
-        const isTimeout = probeErr.name === "AbortError";
-        return {
-          ok: false,
-          latencyMs: Date.now() - started,
-          modelFound,
-          modelReady: false,
-          error: isTimeout
-            ? `Readiness check timed out for model "${parsed.modelName}"`
-            : `Failed readiness check for model "${parsed.modelName}": ${probeErr.message}`,
-          availableModels,
-        };
-      }
+      return {
+        ok: true,
+        latencyMs: Date.now() - started,
+        modelFound: true,
+        modelReady: isLoaded || isAvailable,
+        availableModels: allModels,
+      };
     }
 
     return {
@@ -215,7 +178,7 @@ export async function handleTestModelEndpoint(input: unknown): Promise<ModelEndp
       latencyMs: Date.now() - started,
       modelFound: true,
       modelReady: true,
-      availableModels,
+      availableModels: allModels,
     };
   } catch (err: any) {
     const isTimeout = err.name === "AbortError";

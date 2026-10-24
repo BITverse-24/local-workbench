@@ -104,6 +104,7 @@ function fileToBase64(file: File): Promise<string> {
 
 export async function startRun(input: {
   userText: string;
+  userMessageId?: string;
   attachmentToken?: string;
   attachmentTokens?: string[];
   runId?: string;
@@ -117,6 +118,10 @@ export async function startRun(input: {
   workspaceReferences?: WorkspaceReference[];
 }): Promise<{ runId: string }> {
   return bridge().startRun(input);
+}
+
+export function createMessageAttempt(input: { messageId: string; content: string }) {
+  return bridge().createMessageAttempt(input);
 }
 
 export async function resumeRun(input: { runId: string; largerGenerationAllowance?: boolean }): Promise<{ runId: string }> {

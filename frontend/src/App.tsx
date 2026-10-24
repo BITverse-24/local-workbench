@@ -1,3 +1,5 @@
+import RunRecoveryCard from "./components/RunRecoveryCard";
+import { useChatDraft } from "./lib/hooks/useChatDraft";
 import SourcePageDialog from "./components/SourcePageDialog";
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import "./App.css";
@@ -47,8 +49,15 @@ function toChatMessages(rows: PersistedMessage[]): ChatMessage[] {
 }
 
 export default function App() {
-  const [input, setInput] = useState("");
+  const drafts = useChatDraft();
+  const input = drafts.draft.text;
+  const activeWorkspaceRef = useRef<WorkspaceInfo | null>(null);
+  const setInput = useCallback((value: React.SetStateAction<string>) => drafts.update(draft => {
+    const text = typeof value === "function" ? value(draft.text) : value;
+    return { ...draft, text, workspace: parseWorkspaceMentions(text).length ? draft.workspace ?? activeWorkspaceRef.current : null };
+  }), [drafts.update]);
   const draftWorkspace = useRef<WorkspaceInfo | null>(null);
+  draftWorkspace.current = drafts.draft.workspace;
   const [temperature, setTemperature] = useState(0.7);
   const [selectedModel, setSelectedModel] = useState(MODELS[0]);
   const [modelOpen, setModelOpen] = useState(false);
@@ -78,17 +87,32 @@ export default function App() {
       setHistory(prev => prev.map(chat => chat.id === event.chatId ? { ...chat, title: event.title } : chat));
     });
   }, []);
-  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const attachedFiles = drafts.draft.files;
+  const setAttachedFiles = useCallback((value: React.SetStateAction<File[]>) => drafts.update(draft => ({
+    ...draft, files: typeof value === "function" ? value(draft.files) : value,
+  })), [drafts.update]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   const [history, setHistory] = useState<SidebarChat[]>([]);
   const chatIdRef=useRef<string|null>(null);
   const [,setRunRevision]=useState(0);
   const sessions=useRef(new RunSessions());
+  const eventRevision = useRef(0);
   const pendingSubmissions=useRef(new Set<string>());
   const [chatId, updateChatId] = useState<string | null>(null);
-  const setChatId=useCallback((id:string|null)=>{chatIdRef.current=id;updateChatId(id);},[]);
+  const setChatId=useCallback((id:string|null)=>{chatIdRef.current=id;updateChatId(id);void drafts.select(id);},[drafts.select]);
   const [persistent, setPersistent] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [storageBusy, setStorageBusy] = useState(false);
+  const startupRestored = useRef(false);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [creatingChat, setCreatingChat] = useState(false);
+  const [recovery, setRecovery] = useState<RunSnapshot["recovery"]>();
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [attemptBusy, setAttemptBusy] = useState(false);
+  const reportStorageError = useCallback((error: unknown) => {
+    setStorageError(error instanceof Error ? error.message : "Saved chats could not be accessed. Your draft remains available.");
+  }, []);
 
   // Run state
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -161,10 +185,8 @@ export default function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceInfo | null>(null);
   const [workspaceTree, setWorkspaceTree] = useState<HarnessDirEntry[]>([]);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
-  useEffect(() => {
-    if (!parseWorkspaceMentions(input).length) draftWorkspace.current = null;
-    else if (!draftWorkspace.current && activeWorkspace) draftWorkspace.current = { ...activeWorkspace };
-  }, [input, activeWorkspace]);
+  activeWorkspaceRef.current = activeWorkspace;
+
 
   useEffect(()=>{if(!activeWorkspace&&executionMode==="agent")setExecutionMode("chat");},[activeWorkspace,executionMode]);
 
@@ -199,21 +221,9 @@ export default function App() {
 
         const chats = await wb.getChatHistory(50);
         if (cancelled) return;
-        setPersistent(true);
-        setHistory(chats.map((c) => ({ id: c.id, title: c.title, updated_at: c.updated_at })));
+        setHistory(chats.map((c) => ({ ...c })));
         const temp = await wb.getSetting<number>("temperature");
         if (!cancelled && typeof temp === "number") setTemperature(temp);
-        // Open a fresh new chat on startup (chat history remains accessible in the sidebar)
-        setChatId(null);
-        setMessages([]);
-        setActiveRunId(null);
-        setRunState(null);
-        setActiveRoute(null);
-        setRunEvents([]);
-        setRunArtifacts([]);
-        runArtifactsRef.current = [];
-        setRunError(null);
-        setGroundingStatus(null);
         // Health probe on startup
         try {
           const h = await wb.getHealth();
@@ -232,8 +242,9 @@ export default function App() {
         } catch {
           void 0;
         }
+        if (!cancelled) setPersistent(true);
       } catch {
-        if (!cancelled) setPersistent(false);
+        if (!cancelled) { setPersistent(false); reportStorageError(new Error("Saved chats could not be loaded. Retry to reconnect.")); }
       }
     })();
     return () => {
@@ -283,6 +294,7 @@ export default function App() {
       unsub = wb.onRunEvent((event: RunEvent) => {
         const rid = (event as {runId?:string}).runId;
         sessions.current.record(event);
+        if (event.type === "run_state") eventRevision.current++;
         if(event.type==="run_state"||event.type==="confirmation_required")setRunRevision(value=>value+1);
         if(rid && !sessions.current.belongsTo(rid,chatIdRef.current))return;
         if(event.type==="run_registered") {activeRunRef.current=event.runId;setActiveRunId(event.runId);return;}
@@ -317,6 +329,7 @@ export default function App() {
             break;
           case "run_state":
             setRunState(event.state);
+            if (!["partial", "failed", "cancelled", "limit_exceeded"].includes(event.state)) setRecovery(undefined);
             if (event.state === "completed" || event.state === "partial" || event.state === "failed" || event.state === "cancelled" || event.state === "limit_exceeded") {
               setPendingConfirmation(null);setPendingPageSelection(null);
               const currentEvents = runEventsRef.current.filter((item) => item.type !== "model_progress");
@@ -604,19 +617,24 @@ export default function App() {
   }, [activeWorkspace]);
 
   const handleSelectWorkspaceFile = useCallback((relPath: string) => {
+    if (newChatPending.current) return;
     setInput(prev => `${prev}${prev && !/\s$/.test(prev) ? " " : ""}${formatWorkspaceMention(relPath)} `);
     setDrawer(null);
   }, []);
 
   const loadMessages = useCallback(async (id: string) => {
+    const revision = eventRevision.current;
+    setChatLoading(true);
     try {
       const rows = await wb.getMessages(id);
       const snapshot=await wb.getRunSnapshot({chatId:id});
       if(chatIdRef.current!==id)return;
       const loaded=toChatMessages(rows);
       if(snapshot){
-        sessions.current.register(snapshot.runId,id,snapshot.mode??undefined);sessions.current.states.set(snapshot.runId,snapshot.state);
-        activeRunRef.current=snapshot.runId;setActiveRunId(snapshot.runId);setRunState(snapshot.state);
+        const state = revision === eventRevision.current ? snapshot.state : sessions.current.states.get(snapshot.runId) ?? snapshot.state;
+        setRecovery(["partial", "failed", "cancelled", "limit_exceeded"].includes(state) ? snapshot.recovery : undefined);
+        sessions.current.register(snapshot.runId,id,snapshot.mode??undefined);sessions.current.states.set(snapshot.runId,state);
+        activeRunRef.current=snapshot.runId;setActiveRunId(snapshot.runId);setRunState(state);
         setPendingConfirmation(snapshot.pendingAction??null);setPendingPageSelection(snapshot.pendingPageSelection??null);setVerificationReport(snapshot.verification??null);
         runArtifactsRef.current=snapshot.artifacts;setRunArtifacts(snapshot.artifacts);
         const events=[...(sessions.current.events.get(snapshot.runId)??snapshot.progress),{type:"run_queue" as const,runId:snapshot.runId,queued:snapshot.queued}];
@@ -625,17 +643,18 @@ export default function App() {
       }
       setMessages(loaded);
     } catch {
-      setPersistent(false);
-    }
-  }, []);
+      if (chatIdRef.current === id) reportStorageError(new Error("This chat could not be loaded. Retry to reconnect."));
+    } finally { if (chatIdRef.current === id) setChatLoading(false); }
+  }, [reportStorageError]);
 
   const handleSelectChat = useCallback(
     async (id: string) => {
       setChatId(id);
+      setMessages([]);
       activeRunRef.current=null;
       // Reset run UI when switching chats
       setActiveRunId(null);
-      setRunState(null);
+      setRunState(null);setRecovery(undefined);
       setActiveRoute(null);
       setPendingConfirmation(null);setPendingPageSelection(null);
       setRunEvents([]);
@@ -644,51 +663,58 @@ export default function App() {
       setRunError(null);
       setGroundingStatus(null);
       if (!persistent) return;
+      setChatLoading(true);
       try {
-        await wb.setSetting("lastChatId", id);
         await loadMessages(id);
+        if (chatIdRef.current === id) await wb.setSetting("lastChatId", id);
       } catch {
-        setPersistent(false);
+        reportStorageError(new Error("Saved chats could not be accessed. Retry to reconnect."));
       }
     },
     [persistent, loadMessages],
   );
 
+  const newChatPending = useRef(false);
   const handleNewChat = useCallback(async () => {
-    setActiveRunId(null);
-    setRunState(null);
-    setActiveRoute(null);
-    setPendingConfirmation(null);setPendingPageSelection(null);
-    setRunEvents([]);
-    setRunArtifacts([]);
-    runArtifactsRef.current = [];
-    setRunError(null);
-    setGroundingStatus(null);
-    if (persistent) {
-      try {
-        const id = await wb.createChat();
-        setHistory((prev) => [{ id, title: "New chat", updated_at: new Date().toISOString() }, ...prev]);
-        setChatId(id);
-        setMessages([]);
-        await wb.setSetting("lastChatId", id);
+    if (newChatPending.current) return;
+    if (!persistent || storageError) { setStorageError("Reconnect saved chats before creating another chat. Your draft remains available."); return; }
+    newChatPending.current = true; setCreatingChat(true);
+    const previousChat = chatIdRef.current;
+    try {
+      if (!previousChat && (drafts.draft.text || drafts.draft.files.length)) {
+        // Give an unsent initial draft a visible home before opening another blank view.
+        const id = await wb.createChat("Unsent draft");
+        await drafts.put(id, drafts.draft);
+        setHistory(previous => [{ id, title: "Unsent draft", updated_at: new Date().toISOString() }, ...previous]);
+        await drafts.clear(null);
+        if (!chatIdRef.current) {
+          setChatId(null); setMessages([]);
+          void wb.setSetting("lastChatId", null).catch(reportStorageError);
+        }
         return;
-      } catch {
-        setPersistent(false);
       }
-    }
-    const id = `local-${Date.now()}`;
-    setHistory((prev) => [{ id, title: "New chat", updated_at: new Date().toISOString() }, ...prev]);
-    setChatId(id);
-    setMessages([]);
-  }, [persistent]);
+      const id = await wb.createChat();
+      setHistory(previous => [{ id, title: "New chat", updated_at: new Date().toISOString() }, ...previous]);
+      if (chatIdRef.current === previousChat) {
+        setChatId(id); setMessages([]); setActiveRunId(null); activeRunRef.current = null;
+        setRunState(null); setRecovery(undefined); setActiveRoute(null);
+        setPendingConfirmation(null); setPendingPageSelection(null); setRunEvents([]);
+        setRunArtifacts([]); runArtifactsRef.current = []; setRunError(null); setGroundingStatus(null);
+        void wb.setSetting("lastChatId", id).catch(reportStorageError);
+      }
+    } catch (error) { reportStorageError(error); }
+    finally { newChatPending.current = false; setCreatingChat(false); }
+  }, [persistent, storageError, setChatId, reportStorageError, drafts.draft, drafts.put, drafts.clear]);
 
   const handleDeleteChat = useCallback(
     async (id: string) => {
+      if (!persistent || storageError) { setStorageError("Reconnect saved chats before archiving this chat."); return; }
       if (persistent && !id.startsWith("local-")) {
         try {
           await wb.archiveChat(id);
         } catch {
-          setPersistent(false);
+          reportStorageError(new Error("The chat could not be archived."));
+          return;
         }
       }
       const next = history.filter((c) => c.id !== id);
@@ -696,21 +722,24 @@ export default function App() {
       if (chatId === id) {
         const fallback = next[0]?.id ?? null;
         setChatId(fallback);
-        if (fallback && persistent) void loadMessages(fallback);
-        else setMessages([]);
+        if (fallback && persistent) void handleSelectChat(fallback);
+        else {
+          setMessages([]); setActiveRunId(null); activeRunRef.current = null;
+          setRunState(null); setRecovery(undefined); setPendingConfirmation(null); setPendingPageSelection(null);
+        }
       }
     },
-    [chatId, history, persistent, loadMessages],
+    [chatId, history, persistent, storageError, loadMessages, handleSelectChat],
   );
 
   const handleRenameChat = useCallback(
     async (id: string, title: string) => {
-      setHistory((prev) => prev.map((c) => (c.id === id ? { ...c, title, updated_at: new Date().toISOString() } : c)));
       if (persistent && !id.startsWith("local-")) {
         try {
           await wb.renameChat(id, title);
+          setHistory((prev) => prev.map((c) => (c.id === id ? { ...c, title, updated_at: new Date().toISOString() } : c)));
         } catch {
-          setPersistent(false);
+          reportStorageError(new Error("Saved chats could not be accessed. Retry to reconnect."));
         }
       }
     },
@@ -726,16 +755,19 @@ export default function App() {
       try {
         const title = "New chat";
         const id = await wb.createChat();
-        if(chatIdRef.current===chatId)setChatId(id);
+        if(chatIdRef.current===chatId) {
+          const initialDraft = drafts.draft;
+          setChatId(id); drafts.update(initialDraft);
+        }
         setHistory((prev) => [{ id, title, updated_at: new Date().toISOString() }, ...prev]);
-        await wb.setSetting("lastChatId", id);
+        if (chatIdRef.current === id) void wb.setSetting("lastChatId", id).catch(reportStorageError);
         return id;
       } catch {
-        setPersistent(false);
+        reportStorageError(new Error("Saved chats could not be accessed. Retry to reconnect."));
         return null;
       }
     },
-    [chatId, persistent],
+    [chatId, persistent, drafts.draft, drafts.update, setChatId],
   );
 
 
@@ -746,6 +778,10 @@ export default function App() {
   const voice = useVoice();
 
   const addFiles = useCallback((incoming: File[]) => {
+    if (isRunning || creatingChat || attemptBusy || chatLoading || drafts.loadFailed || drafts.status === "loading") {
+      setRunError({ code: "draft_busy", message: "Wait for the current task or draft restoration before attaching files." });
+      return { added: 0, rejected: [] };
+    }
     const valid: File[] = [];
     const tooBig: File[] = [];
     for (const f of incoming) {
@@ -760,7 +796,7 @@ export default function App() {
       });
     }
     return { added: valid.length, rejected: tooBig };
-  }, []);
+  }, [isRunning, creatingChat, attemptBusy, chatLoading, drafts.loadFailed, drafts.status, setAttachedFiles]);
 
   const removeAttached = useCallback((index: number) => {
     setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
@@ -804,7 +840,8 @@ export default function App() {
     const hasText = input.trim().length > 0;
     const hasFiles = attachedFiles.length > 0;
     if (!hasText && !hasFiles) return;
-    if (isRunning) return;
+    if (isRunning || creatingChat || attemptBusy || chatLoading || drafts.loadFailed || drafts.status === "loading") return;
+    if (!persistent || storageError) { setStorageError(storageError ?? "Saved chats are unavailable. Retry before sending. Your draft remains saved locally."); return; }
     if (attachedFiles.length > 10) {
       setRunError({ code: "too_many_attachments", message: "Maximum 10 attachments per run supported." });
       return;
@@ -822,7 +859,7 @@ export default function App() {
       setRunError({ code: "workspace_changed", message: "The workspace changed. Remove the old mentions and select the sources again." });
       return;
     }
-    if (currentFiles.length === 0) setInput("");
+    await drafts.flush();
 
     // Persistent chat + backend run path
     if (persistent) {
@@ -838,9 +875,7 @@ export default function App() {
               attachmentTokens.push(reg.attachment.attachmentId);
               if (!runIdForAttachment) runIdForAttachment = reg.runId;
             }
-            if(chatIdRef.current===cid){setInput("");setAttachedFiles([]);}
-          } else {
-            if(chatIdRef.current===cid)setAttachedFiles([]);
+
           }
 
           // Persist user message linked with attachment IDs (visible immediately)
@@ -881,6 +916,7 @@ export default function App() {
 
           const { runId } = await wb.startRun({
             userText: text,
+            userMessageId: messageId,
             workspaceReferences,
             workspaceIdentity,
             attachmentToken: attachmentTokens[0],
@@ -894,6 +930,10 @@ export default function App() {
             mode: executionMode,
           });
           if(chatIdRef.current===cid){setActiveRunId(runId);activeRunRef.current = runId;}
+          try {
+            await drafts.clear(cid);
+            if (submissionKey === "new-chat") await drafts.clear(null);
+          } catch (error) { reportStorageError(error); }
 
           // Re-sync messages from SQLite in case fast background run finished
           try {
@@ -912,42 +952,149 @@ export default function App() {
           // Chat stays on cid; run is linked via DB.
           return;
         } catch (e) {
-          if(chatIdRef.current===cid)setRunError({ code: "send_failed", message: e instanceof Error ? e.message : String(e) });
+          if(chatIdRef.current===cid) {
+            setRunError({ code: "send_failed", message: e instanceof Error ? e.message : String(e) });
+            setRunState(null);
+            try { await loadMessages(cid); } catch { /* Saved draft remains available. */ }
+          }
           if (chatIdRef.current === cid) { setInput(text); setAttachedFiles(currentFiles); }
           return;
         }
       }
     }
 
-    // Fallback / non-persistent: in-memory only, no backend run
-    const fallbackFiles = currentFiles.length > 0 ? currentFiles : undefined;
-    setInput("");
-    setAttachedFiles([]);
-    const newMsg: ChatMessage = { id: Date.now().toString(), role: "user", text, files: fallbackFiles };
-    setMessages((prev) => [...prev, newMsg]);
-    if (chatId) {
-      const now = new Date().toISOString();
-      setHistory((prev) => prev.map((c) => (c.id === chatId ? { ...c, updated_at: now } : c)));
-    }
-    window.setTimeout(() => {
-      setMessages((prev) => [...prev, { id: (Date.now() + 1).toString(), role: "assistant", text: "Backend unavailable — response is local only. Launch inside Electron to enable AI runs." }]);
-    }, 200);
-    }finally{pendingSubmissions.current.delete(submissionKey);if(submittedChatId)pendingSubmissions.current.delete(submittedChatId);setRunRevision(value=>value+1);}
+    setStorageError("This request could not be saved. Retry before sending. Your draft remains available.");
+    }catch(error){reportStorageError(error);}
+    finally{pendingSubmissions.current.delete(submissionKey);if(submittedChatId)pendingSubmissions.current.delete(submittedChatId);setRunRevision(value=>value+1);}
   };
 
-  const handleEditMessage = useCallback(
-    async (id: string, newText: string) => {
-      if (persistent && !id.startsWith("local-")) {
-        try {
-          await wb.editPersistedMessage(id, newText);
-        } catch {
-          setPersistent(false);
-        }
+  const attemptLock = useRef(false);
+  const handleEditMessage = useCallback(async (id: string, newText: string) => {
+    if (attemptLock.current || isRunning || !persistent || storageError) throw new Error("Wait for the current task or reconnect saved chats before creating an attempt.");
+    attemptLock.current = true; setAttemptBusy(true);
+    const sourceChatId = chatIdRef.current;
+    let attemptChatId: string | undefined;
+    try {
+      const attempt = await wb.createMessageAttempt({ messageId: id, content: newText });
+      attemptChatId = attempt.chatId;
+      const files = attempt.files.map(file => new File([Uint8Array.from(atob(file.base64), char => char.charCodeAt(0))], file.filename, { type: file.mediaType }));
+      const mode = attempt.mode ?? executionMode;
+      const originalReferences = new Set(parseWorkspaceMentions(attempt.originalText ?? messages.find(message => message.id === id)?.text ?? "").map(ref => `${ref.kind}:${ref.path}`));
+      const additionalReferences = parseWorkspaceMentions(attempt.text).filter(ref => !originalReferences.has(`${ref.kind}:${ref.path}`));
+      // Copies of the original inputs are used. Project operations still use the current bound folder.
+      const value = { text: attempt.text, files, workspace: null };
+      await drafts.put(attempt.chatId, value);
+      setHistory(previous => [{ id: attempt.chatId, title: attempt.title, updated_at: new Date().toISOString(), forkedFrom: { chatId: attempt.sourceChatId, messageId: attempt.sourceMessageId } }, ...previous]);
+      if (chatIdRef.current === sourceChatId) {
+        await handleSelectChat(attempt.chatId);
+        setExecutionMode(mode);
       }
-      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, text: newText } : m)));
-    },
-    [persistent],
-  );
+      if (mode === "agent" && (!activeWorkspace || (attempt.workspaceRoot && activeWorkspace.root !== attempt.workspaceRoot))) {
+        throw new Error("Open the original project folder, then send the saved draft for this new attempt.");
+      }
+      if (additionalReferences.length && !activeWorkspace) throw new Error("Open a project folder for the new workspace references, then send this saved draft.");
+      const tokens: string[] = [];
+      let stagedRun: string | undefined;
+      for (const file of files) {
+        const registered = await wb.registerAttachment({ chatId: attempt.chatId, file });
+        tokens.push(registered.attachment.attachmentId); stagedRun ??= registered.runId;
+      }
+      const { messageId } = await wb.sendMessage(attempt.chatId, "user", attempt.text, tokens.length ? tokens : undefined);
+      const clientRunId = stagedRun ?? crypto.randomUUID();
+      sessions.current.register(clientRunId, attempt.chatId, mode);
+      if (chatIdRef.current === attempt.chatId) {
+        activeRunRef.current = clientRunId; setActiveRunId(clientRunId); setRunState("created"); setRecovery(undefined);
+        runStartTimeRef.current = Date.now(); setRunEvents([]); runEventsRef.current = [];
+      }
+      // Keep original source copies and snapshot added references. No old approval is reused.
+      await wb.startRun({ chatId: attempt.chatId, runId: clientRunId, userMessageId: messageId,
+        userText: attempt.text, attachmentTokens: tokens, workspaceReferences: additionalReferences,
+        workspaceIdentity: additionalReferences.length ? activeWorkspace ?? undefined : undefined, mode,
+        temperature, groundingEnabled, selectedModel: selectedModel?.id });
+      await drafts.clear(attempt.chatId);
+      if (chatIdRef.current === attempt.chatId) await loadMessages(attempt.chatId);
+    } catch (error) {
+      if (!attemptChatId || chatIdRef.current === attemptChatId) {
+        setRunError({ code: "new_attempt_failed", message: error instanceof Error ? error.message : String(error) });
+        if (attemptChatId) await loadMessages(attemptChatId);
+      }
+      throw error;
+    } finally { attemptLock.current = false; setAttemptBusy(false); }
+  }, [isRunning, persistent, storageError, executionMode, drafts.put, drafts.clear, handleSelectChat,
+    activeWorkspace, temperature, groundingEnabled, selectedModel?.id, loadMessages, messages]);
+
+  const handleResume = useCallback(async () => {
+    if (!activeRunId || !recovery?.canResume || recoveryBusy) return;
+    const runId = activeRunId, owningChatId = chatIdRef.current;
+    setRecoveryBusy(true); setRunError(null);
+    try {
+      // The persisted mode, original model, inputs, and approval rules are checked by the backend.
+      await wb.resumeRun({ runId, largerGenerationAllowance: recovery.largerGenerationAllowance });
+      if (chatIdRef.current === owningChatId && activeRunRef.current === runId) {
+        setRunState("acting"); setRecovery(undefined); runStartTimeRef.current = Date.now();
+        await loadMessages(owningChatId!);
+      }
+    } catch (error) {
+      if (chatIdRef.current === owningChatId) {
+        setRunError({ code: "resume_failed", message: error instanceof Error ? error.message : String(error) });
+        if (owningChatId) await loadMessages(owningChatId);
+      }
+    } finally { setRecoveryBusy(false); }
+  }, [activeRunId, recovery, recoveryBusy, loadMessages]);
+
+  const restoreRunList = useCallback(async () => {
+    const runs = await wb.getRunHistory(100);
+    const seen = new Set<string>();
+    for (const run of runs) {
+      if (run.state === "created" || seen.has(run.chatId)) continue;
+      seen.add(run.chatId);
+      if (!sessions.current.latest.has(run.chatId)) sessions.current.register(run.runId, run.chatId);
+      if (!sessions.current.states.has(run.runId)) sessions.current.states.set(run.runId, run.state);
+    }
+    setRunRevision(value => value + 1);
+    return runs;
+  }, []);
+
+  const retryStorage = useCallback(async () => {
+    setStorageBusy(true);
+    try {
+      const chats = await wb.getChatHistory(50);
+      setHistory(chats); setPersistent(true); setStorageError(null);
+      await restoreRunList();
+      if (chatIdRef.current) await loadMessages(chatIdRef.current);
+    } catch (error) { reportStorageError(error); }
+    finally { setStorageBusy(false); }
+  }, [loadMessages, reportStorageError, restoreRunList]);
+
+  useEffect(() => {
+    if (!persistent || startupRestored.current) return;
+    startupRestored.current = true;
+    const generationChat = chatIdRef.current;
+    void (async () => {
+      try {
+        const [last, runs] = await Promise.all([wb.getSetting<string | null>("lastChatId"), restoreRunList()]);
+        if (chatIdRef.current !== generationChat || generationChat) return;
+        if (last && history.some(chat => chat.id === last)) await handleSelectChat(last);
+        else {
+          const latest = new Map<string, RunSummary>();
+          for (const run of runs) if (run.state !== "created" && !latest.has(run.chatId)) latest.set(run.chatId, run);
+          const interrupted = [...latest.values()].find(run => ["partial", "limit_exceeded"].includes(run.state) && history.some(chat => chat.id === run.chatId));
+          if (interrupted && !chatIdRef.current) await handleSelectChat(interrupted.chatId);
+        }
+      } catch (error) { reportStorageError(error); }
+    })();
+  }, [persistent, history, handleSelectChat, reportStorageError, restoreRunList]);
+
+  useEffect(() => {
+    if (!activeRunId || !["partial", "failed", "cancelled", "limit_exceeded"].includes(runState ?? "")) return;
+    let current = true;
+    void wb.getRunSnapshot({ runId: activeRunId }).then(snapshot => {
+      if (current && snapshot && activeRunRef.current === snapshot.runId) {
+        setRecovery(snapshot.recovery); runArtifactsRef.current = snapshot.artifacts;
+      }
+    }).catch(reportStorageError);
+    return () => { current = false; };
+  }, [activeRunId, runState, reportStorageError]);
 
   const handleVoiceUseTranscript = useCallback(() => {
     const text = `${voice.transcript}${voice.interimTranscript ? " " + voice.interimTranscript : ""}`.trim();
@@ -1045,6 +1192,13 @@ export default function App() {
             setModelSettingsError(error instanceof Error ? error.message : String(error));
           }
         }}>
+          {storageError && <div role="alert" className="mx-4 mt-2 rounded border border-[var(--status-warning)]/40 p-3 text-sm text-[var(--text-secondary)]">
+            <p>Saved chats need attention. {storageError}</p>
+            <button disabled={storageBusy} className="mt-2 underline" onClick={() => void retryStorage()}>{storageBusy ? "Reconnecting…" : "Retry saved chats"}</button>
+          </div>}
+          {history.find(chat => chat.id === chatId)?.forkedFrom && <div className="mx-4 mt-2 text-xs text-[var(--text-secondary)]">
+            New attempt. Earlier results stay in the original chat. <button className="underline" onClick={() => void handleSelectChat(history.find(chat => chat.id === chatId)!.forkedFrom!.chatId)}>View original</button>
+          </div>}
           {modelSettingsError && <div className="mx-4 mt-2 px-3 py-2 rounded-[var(--radius-sm)] border border-[var(--status-error)]/40 text-xs text-[var(--status-error)] flex items-center justify-between gap-3"><span>{modelSettingsError}</span><button onClick={() => setModelSettingsError(null)} aria-label="Dismiss model settings error">×</button></div>}
           {activeRoute && <RouteBadge route={activeRoute} state={runState} />}
           {runError && (
@@ -1056,17 +1210,29 @@ export default function App() {
               <span className="opacity-70 text-xs cursor-text">Full model response is in Model Trace (Settings sidebar & terminal logs) — expand provider_content_raw / normalized to see what the model returned.</span>
             </div>
           )}
+          {recovery && !isRunning && ["partial", "failed", "cancelled", "limit_exceeded"].includes(runState ?? "") && <RunRecoveryCard recovery={recovery} artifacts={runArtifactsRef.current} busy={recoveryBusy || attemptBusy || chatLoading || Boolean(storageError)}
+            onResume={() => void handleResume()} onRefresh={() => { if (chatId) void loadMessages(chatId); }}
+            onNewAttempt={recovery.sourceMessageId && messages.some(message => message.id === recovery.sourceMessageId) ? () => {
+              const original = messages.find(message => message.id === recovery.sourceMessageId);
+              if (original) void handleEditMessage(original.id, original.text).catch(() => undefined);
+            } : undefined} />}
           <ChatArea
             messages={messages}
             onEditMessage={handleEditMessage}
             onAttachFiles={addFiles}
             onSaveArtifact={handleSaveArtifact}
             isRunning={isRunning}
+            editingDisabled={isRunning || attemptBusy || chatLoading || !persistent || Boolean(storageError)}
             runState={runState}
             activeRoute={activeRoute}
             runEvents={runEvents}
             onCancel={handleCancelRun}
           />
+          <div className="px-4 pt-1 text-[11px] text-[var(--text-tertiary)]" role="status" aria-live="polite">
+            {drafts.status === "loading" ? "Restoring draft…" : drafts.status === "saving" ? "Saving draft…" : drafts.status === "error" ? <>
+              {drafts.loadFailed ? "Saved draft could not be restored." : "Draft is not saved."} {drafts.error} <button className="underline" onClick={() => void drafts.retry().catch(() => undefined)}>{drafts.loadFailed ? "Retry draft restore" : "Retry draft save"}</button>
+            </> : (input || attachedFiles.length) ? "Draft saved on this computer" : null}
+          </div>
           <InputBar
             input={input}
             setInput={setInput}
@@ -1074,7 +1240,7 @@ export default function App() {
             attachedFiles={attachedFiles}
             onAttachFiles={addFiles}
             onRemoveFile={removeAttached}
-            disabled={isRunning}
+            disabled={isRunning || creatingChat || attemptBusy || chatLoading || drafts.loadFailed || drafts.status === "loading"}
             groundingEnabled={groundingEnabled}
             setGroundingEnabled={setGroundingEnabled}
             mode={isRunning && activeRunId ? sessions.current.modes.get(activeRunId) ?? executionMode : executionMode}

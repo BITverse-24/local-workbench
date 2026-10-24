@@ -31,7 +31,8 @@ export type ChatMessage = {
 
 type Props = {
   messages?: ChatMessage[];
-  onEditMessage?: (id: string, newText: string) => void;
+  onEditMessage?: (id: string, newText: string) => Promise<void>;
+  editingDisabled?: boolean;
   onAttachFiles?: (files: File[]) => { added: number; rejected: File[] };
   onSaveArtifact?: (artifact: ArtifactRef) => void;
   isRunning?: boolean;
@@ -550,6 +551,9 @@ interface ChatMessageItemProps {
   onEditDraftChange: (val: string) => void;
   onEditCancel: () => void;
   onEditSave: () => void;
+  editBusy: boolean;
+  editError: string | null;
+  editingDisabled: boolean;
   onCopy: (msg: ChatMessage) => void;
   onEditStart: (msg: ChatMessage) => void;
   onSaveArtifact?: (artifact: ArtifactRef) => void;
@@ -563,6 +567,9 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
   onEditDraftChange,
   onEditCancel,
   onEditSave,
+  editBusy,
+  editError,
+  editingDisabled,
   onCopy,
   onEditStart,
   onSaveArtifact,
@@ -578,6 +585,8 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
           {isEditing ? (
             <div className="flex flex-col gap-2 min-w-0 w-full">
               <textarea
+                aria-label="Revised request"
+                disabled={editBusy}
                 value={editDraft}
                 onChange={(e) => onEditDraftChange(e.target.value)}
                 onKeyDown={(e) => {
@@ -598,19 +607,21 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
               <div className="flex items-center justify-end gap-2">
                 <button
                   onClick={onEditCancel}
+                  disabled={editBusy}
                   className="px-3.5 py-1.5 rounded-[var(--radius-sm)] neu-button text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={onEditSave}
-                  disabled={editDraft.trim().length === 0}
+                  disabled={editBusy || editDraft.trim().length === 0}
                   className={`px-4 py-1.5 rounded-[var(--radius-sm)] text-xs font-medium transition ${editDraft.trim().length === 0 ? 'neu-button opacity-40 cursor-not-allowed' : 'neu-button-primary'}`}
                 >
-                  Save
+                  {editBusy ? "Starting new attempt…" : "Edit and rerun"}
                 </button>
               </div>
-              <div className="text-[11px] text-[var(--text-tertiary)] text-right">Esc to cancel • Ctrl+Enter to save</div>
+              {editError && <p role="alert" className="text-xs text-[var(--status-error)]">{editError}</p>}
+              <div className="text-[11px] text-[var(--text-tertiary)] text-right">The original request and results stay saved. Ctrl+Enter starts a new attempt.</div>
             </div>
           ) : (
             <>
@@ -703,10 +714,11 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
               )}
             </button>
             <button
+              disabled={editingDisabled}
               onClick={() => onEditStart(msg)}
               className="w-8 h-8 grid place-items-center rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-              title="Edit"
-              aria-label="Edit message"
+              title="Edit and rerun in a new attempt"
+              aria-label="Edit and rerun"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -744,6 +756,7 @@ const ChatMessageItem = React.memo(function ChatMessageItem({
 export default function ChatArea({
   messages = [],
   onEditMessage,
+  editingDisabled = false,
   onAttachFiles,
   onSaveArtifact,
   isRunning = false,
@@ -760,6 +773,9 @@ export default function ChatArea({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const editLock = useRef(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
 
@@ -835,26 +851,27 @@ export default function ChatArea({
   }, []);
 
   const handleEditStart = useCallback((msg: ChatMessage) => {
+    setEditError(null);
     setEditingId(msg.id);
     setEditDraft(msg.text);
   }, []);
 
   const handleEditCancel = useCallback(() => {
+    if (editLock.current) return;
+    setEditError(null);
     setEditingId(null);
     setEditDraft('');
   }, []);
 
-  const handleEditSave = useCallback(() => {
-    if (!editingId) return;
-    const trimmed = editDraft.trim();
-    // allow empty? keep original if empty and no files? We'll allow empty only if we keep original; prevent saving empty whitespace
-    if (trimmed.length === 0) return;
-    if (onEditMessage) {
-      onEditMessage(editingId, editDraft);
-    }
-    setEditingId(null);
-    setEditDraft('');
-  }, [editingId, editDraft, onEditMessage]);
+  const handleEditSave = useCallback(async () => {
+    if (!editingId || !editDraft.trim() || !onEditMessage || editLock.current || editingDisabled) return;
+    editLock.current = true; setEditBusy(true); setEditError(null);
+    try {
+      await onEditMessage(editingId, editDraft);
+      setEditingId(null); setEditDraft('');
+    } catch (error) { setEditError(error instanceof Error ? error.message : "The new attempt could not be started."); }
+    finally { editLock.current = false; setEditBusy(false); }
+  }, [editingId, editDraft, onEditMessage, editingDisabled]);
 
   const showDropError = useCallback((msg: string) => {
     setDropError(msg);
@@ -918,7 +935,10 @@ export default function ChatArea({
             editDraft={editDraft}
             onEditDraftChange={setEditDraft}
             onEditCancel={handleEditCancel}
-            onEditSave={handleEditSave}
+            onEditSave={() => void handleEditSave()}
+            editBusy={editBusy}
+            editError={editError}
+            editingDisabled={editingDisabled}
             onCopy={handleCopy}
             onEditStart={handleEditStart}
             onSaveArtifact={onSaveArtifact}

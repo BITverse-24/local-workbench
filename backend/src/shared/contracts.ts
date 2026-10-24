@@ -180,6 +180,15 @@ export interface RunSnapshot {
   verification?: RunVerificationReport;
   metrics: Record<string, unknown>;
   draft?: { messageId:string; modelId:string; text:string };
+  recovery?: {
+    canResume: boolean;
+    largerGenerationAllowance: boolean;
+    reason: string;
+    sourceMessageId?: string;
+    completed: string[];
+    remaining: string[];
+    workspaceRoot?: string;
+  };
 }
 
 export interface RunContract {

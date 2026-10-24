@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld("workbench", {
     ipcRenderer.invoke("workbench:sendMessage", { chatId, role, content, attachmentIds }),
   editMessage: (messageId: string, content: string) =>
     ipcRenderer.invoke("workbench:editMessage", { messageId, content }),
+  createMessageAttempt: (input: { messageId: string; content: string }) =>
+    ipcRenderer.invoke("workbench:createMessageAttempt", input),
   renameChat: (chatId: string, title: string) =>
     ipcRenderer.invoke("workbench:renameChat", { chatId, title }),
   getSetting: (key: string) =>

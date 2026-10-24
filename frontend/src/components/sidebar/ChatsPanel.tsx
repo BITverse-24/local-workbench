@@ -7,6 +7,7 @@ export type SidebarChat = {
   title: string;
   updated_at: string;
   runState?: RunState;
+  forkedFrom?: { chatId: string; messageId: string };
 };
 
 type Props = {
@@ -44,7 +45,15 @@ export default function ChatsPanel({
   className = '',
   style,
 }: Props) {
-  const [pinned, setPinned] = useState<Record<string, boolean>>({});
+  const [pinned, setPinned] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem("workbench:pinned-chats") ?? "{}");
+      return saved && typeof saved === "object" && !Array.isArray(saved)
+        ? Object.fromEntries(Object.entries(saved).filter(([, value]) => value === true)) : {};
+    }
+    catch { return {}; }
+  });
+  const [pinError, setPinError] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -136,7 +145,12 @@ export default function ChatsPanel({
   };
 
   const handlePinToggle = (id: string) => {
-    setPinned((prev) => ({ ...prev, [id]: !prev[id] }));
+    const next = { ...pinned };
+    if (next[id]) delete next[id]; else next[id] = true;
+    try {
+      localStorage.setItem("workbench:pinned-chats", JSON.stringify(next));
+      setPinned(next); setPinError(null);
+    } catch { setPinError("This pin could not be saved. Try again."); }
     setOpenMenuId(null);
   };
 
@@ -156,6 +170,7 @@ export default function ChatsPanel({
       style={isExpanded ? style : undefined}
     >
       {/* Section Header */}
+      {pinError && <p role="alert" className="p-2 text-xs text-[var(--status-warning)]">{pinError}</p>}
       <div className="flex items-center justify-between py-1.5 px-1 shrink-0 select-none">
         <button
           onClick={onToggleExpand}
@@ -306,7 +321,7 @@ export default function ChatsPanel({
                           </span>
                         </span>
                         <span className="text-xs leading-tight text-[var(--text-tertiary)] ml-3.5 font-mono mt-0.5">
-                          {chat.runState && !["completed","partial","failed","cancelled","limit_exceeded"].includes(chat.runState) ? chat.runState==="awaiting_confirmation"?"Needs approval":"Running" : formatRelativeTime(chat.updated_at)}
+                          {chat.runState && !["completed","partial","failed","cancelled","limit_exceeded"].includes(chat.runState) ? chat.runState==="awaiting_confirmation"?"Needs approval":"Running" : chat.runState === "partial" ? "Needs review" : chat.runState === "limit_exceeded" ? "Stopped at limit" : chat.runState === "failed" ? "Failed" : chat.runState === "cancelled" ? "Cancelled" : formatRelativeTime(chat.updated_at)}
                         </span>
                       </button>
                     )}
