@@ -1,0 +1,41 @@
+# Agent v3 implementation progress
+
+Status: implementation is in progress. Production v3 promotion is closed.
+
+This file tracks the approved scope in `agent-harness-system-design-lld.md`. It is not a smaller replacement for that scope. The current turn made code changes and produced live counting evidence. It is a progress turn.
+
+## Implemented foundations
+
+- Schema 4 adds task, append-only revision, and run-binding tables. Existing records keep their original mode and evidence. Upgrades use a consistent SQLite serialization backup under an immediate writer transaction. A test confirms that the backup includes committed WAL data. Repeat opens do not repeat the backup.
+- The task store saves complete user messages, stable requirement IDs, source spans, acceptance descriptions, dispositions, and run/revision identity. It rejects stale revisions, another chat or mode, duplicate attempts, simultaneous runs, and workspace identity changes. A new task keeps earlier task history. Evidence and status dispositions cannot edit requirements. A scope revision needs an exact user quotation. These checks validate provenance, not correct understanding.
+- Cross-run retrieval checks task membership, requirement identity, saved result digests, and file integrity. ResultStore itself remains run-scoped. Historical source revisions do not establish current applicability.
+- The existing execution ledger now supports a bound v3 task, 40 persisted generation calls, and one persisted protocol correction. Rebinding and restart do not reset these counters. Stopped runs cannot consume generation calls without explicit resume. These functions are not yet connected to generation dispatch.
+- Local counting loads tokenizer data and Jinja from local files. It uses workers with memory and time limits. It records asset, template, and rendered-prompt digests. The admission functions check the prepared payload, output reserve, 512-token reserve, context bound, and setup binding. A changed request invalidates its receipt. These functions are not yet connected to the gateway.
+- An LM Studio counter uses the server's rendered prompt and token-count facility. It uses an already loaded model and pins each operation to its instance reference. It does not load weights. Unsupported input conversions fail visibly.
+- Dependencies are pinned: Hugging Face Tokenizers 0.2.0, Jinja 0.5.11, LM Studio SDK 1.5.0. Electron remains 44.7.0.
+
+## Evidence collected
+
+The loaded driver was `qwen2.5-coder-7b-instruct-mlx`, at an 8,192-token context. HTTP worked through both loopback and `192.168.0.140:1234`. The CLI daemon path failed independently. The SDK connection worked when the shell tool had local-network access.
+
+Four JSON transport probes tested plain messages, tool definitions in the prompt, an earlier tool result, and Unicode. Local rendered digests matched server rendered digests. Local counts, server counts, and generation usage matched at 22, 40, 89, and 40 tokens. Evidence: `docs/evidence/agent-counting-live-probe-2026-10-27.json`.
+
+This evidence covers those fixed probes and that loaded instance. It does not establish repair success or certify all future requests. No live repair trial has run.
+
+The focused offline run passed 204 tests across eight files; one opt-in live test was skipped in that offline run. The separate live run passed all three tests in `lmstudio-token-counter.test.ts`. Full project type checking passed. `git diff --check` passed. New checks are in `agent-task-store.test.ts`, `local-token-counter.test.ts`, `agent-admission.test.ts`, and `lmstudio-token-counter.test.ts`. Existing database, storage isolation, ledger, and three-mode checks also passed.
+
+## Work still required
+
+1. Connect task binding and requirement extraction to RunManager before any v3 action. Complete task intent through IPC and add the New task control. Expose bound revision and current task progress in snapshots. Handle status without workspace actions. Preserve full request coverage on extraction failure and legacy continuation.
+2. Connect final-payload admission and persisted call consumption at the gateway dispatch boundary. Save and invalidate setup verification. Use fixed prepared probes for the exact selected native or JSON transport. Check current server identity and template behavior. Check provider usage before an action can execute. Add the approved labelled vision estimate.
+3. Build the fresh context packet and the host action loop. Keep all capabilities registered by mode and environment. Remove category-based acceptance and Markdown action conversion from v3. Add bounded source/result pagination, action validation, repeat detection, and specific Partial reasons.
+4. Add source read receipts and `edit_file`. Require observed anchors and current digests under locks. Bind approvals to concrete operations. Restrict whole-file replacement to complete observations. Preserve backups on failure.
+5. Complete test-environment discovery, baseline and required test execution, revision-bound requirement evidence, a separate coverage review, and deterministic completion. Keep unavailable checks unverified. Reopen and invalidate evidence on regression.
+6. Connect recovery, approval expiry, uncertain-mutation handling, legacy-to-v3 attempts, and the four separate progress facts in the UI. Preserve Chat and Work behavior.
+7. Run isolated Flow D checks from preserved originals, other Agent workloads, packaged minimal-environment checks, and ten repair trials each on representative 7B and 14B models. The selected 7B is available. A 14B trial model is still needed. Require at least nine completed repairs per model and zero false completion or unauthorized mutation before production enablement.
+
+No v3 runner has replaced the existing Agent engine yet. Production databases and the damaged Flow D workspace were not opened for writes by this work. The source now contains a schema migration that will run when this build opens an older profile.
+
+## Next implementation step
+
+Finish M1 integration and the gateway boundary. Reuse the task store, ledger, current scheduler, policy guard, and ResultStore. Keep fresh authority separate from task continuity. Save new proof after each structural milestone. Do not enable production v3 until every required release gate passes.

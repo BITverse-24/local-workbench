@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ArtifactRef, ExecutionMode, ModelId, RunContract, RunState, RunVerificationState } from "../../shared/contracts.js";
+import type { AgentTaskBinding, ArtifactRef, ExecutionMode, ModelId, RunContract, RunState, RunVerificationState } from "../../shared/contracts.js";
 import { getDb, prepareCached } from "../persistence/db.js";
 import { matchesContractDeliverable } from "./contract.js";
 
@@ -51,6 +51,8 @@ const ledgerSchema = z.object({
   executionContext: executionContextSchema.optional(), resumeCount: z.number().int().nonnegative().default(0),
   tokenLimitRecoveryAvailable: z.boolean().default(false), tokenLimitRecoveryCount: z.number().int().nonnegative().default(0),
   verification: verificationStateSchema.optional(),
+  agentTask: z.object({ taskId: z.string().uuid(), taskRevision: z.number().int().positive(),
+    modelCalls: z.number().int().min(0).max(40), protocolCorrections: z.number().int().min(0).max(1) }).strict().optional(),
   blockers: z.array(z.string().max(500)).max(20), updatedAt: z.string().datetime(),
 });
 export type RunExecutionLedger = z.infer<typeof ledgerSchema>;
@@ -84,6 +86,54 @@ export function getExecutionLedger(runId: string): RunExecutionLedger | undefine
   const ledger = ledgerSchema.parse(JSON.parse(row.ledger_json));
   if (ledger.runId !== runId || ledger.contract.runId !== runId) throw new Error("Execution ledger identity mismatch");
   return ledger;
+}
+
+/** Task identity is saved before v3 can consume a call or execute an action. */
+export function bindAgentExecutionLedger(binding: AgentTaskBinding): void {
+  getDb().transaction(() => {
+    const persisted = getDb().prepare("SELECT task_id,task_revision FROM agent_task_runs WHERE run_id=?").get(binding.runId) as { task_id: string; task_revision: number } | undefined;
+    if (!persisted || persisted.task_id !== binding.taskId || persisted.task_revision !== binding.taskRevision) throw new Error("Agent task binding does not match the saved run.");
+    const ledger = getExecutionLedger(binding.runId);
+    if (!ledger) throw new Error("Initialize the run ledger before binding an Agent task.");
+    if (ledger.agentTask) {
+      if (ledger.agentTask.taskId !== binding.taskId || ledger.agentTask.taskRevision !== binding.taskRevision) throw new Error("The ledger is already bound to another task revision.");
+      return;
+    }
+    ledger.agentTask = { taskId: binding.taskId, taskRevision: binding.taskRevision, modelCalls: 0, protocolCorrections: 0 };
+    save(ledger);
+  }).immediate();
+}
+
+function agentLedger(runId: string): RunExecutionLedger & { agentTask: NonNullable<RunExecutionLedger["agentTask"]> } {
+  const ledger = getExecutionLedger(runId);
+  if (!ledger?.agentTask) throw new Error("Agent call requires a saved task and ledger binding.");
+  const row = getDb().prepare(`SELECT ar.task_id,ar.task_revision,t.current_revision,t.is_current,m.mode,m.engine_version,r.state
+    FROM agent_task_runs ar JOIN agent_tasks t ON t.task_id=ar.task_id JOIN run_mode_details m ON m.run_id=ar.run_id JOIN runs r ON r.id=ar.run_id WHERE ar.run_id=?`).get(runId) as
+    { task_id: string; task_revision: number; current_revision: number; is_current: number; mode: string; engine_version: string; state: string } | undefined;
+  if (!row || row.task_id !== ledger.agentTask.taskId || row.task_revision !== ledger.agentTask.taskRevision || row.current_revision !== row.task_revision || !row.is_current || row.mode !== "agent" || row.engine_version !== "agent-v3") throw new Error("Agent task revision or execution binding changed.");
+  if (!["created", "classifying", "planning", "acting"].includes(row.state)) throw new Error("Agent run is stopped or awaiting approval. Resume explicitly before generation.");
+  return ledger as RunExecutionLedger & { agentTask: NonNullable<RunExecutionLedger["agentTask"]> };
+}
+
+/** Consume immediately before every generation dispatch, including fallback and resume. */
+export function consumeAgentModelCall(runId: string): number {
+  return getDb().transaction(() => {
+    const ledger = agentLedger(runId);
+    if (ledger.agentTask.modelCalls >= 40) throw new Error("Agent reached its 40 model-call limit for this run.");
+    ledger.agentTask.modelCalls++;
+    save(ledger);
+    return ledger.agentTask.modelCalls;
+  }).immediate();
+}
+
+export function takeAgentProtocolCorrection(runId: string): boolean {
+  return getDb().transaction(() => {
+    const ledger = agentLedger(runId);
+    if (ledger.agentTask.protocolCorrections >= 1) return false;
+    ledger.agentTask.protocolCorrections++;
+    save(ledger);
+    return true;
+  }).immediate();
 }
 
 const STATUS_BY_RUN_STATE: Partial<Record<RunState, RunExecutionLedger["status"]>> = {

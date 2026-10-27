@@ -3,11 +3,12 @@
 // DB file: <dataDir>/data/workbench.db (gitignored, WAL mode).
 
 import Database from "better-sqlite3";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const SCHEMA_VERSION = "3";
+export const SCHEMA_VERSION = "4";
 
 export const SETTING_DEFAULTS: Record<string, unknown> = {
   selectedModel: "primary-model",
@@ -202,6 +203,25 @@ function seedDefaults(db: Db): void {
   seedMany();
 }
 
+/** SQLite serialization includes committed WAL pages. Never copy just the main file. */
+function backupBeforeUpgrade(db: Db, filename: string): void {
+  const target = `${filename}.before-schema-4-${randomUUID()}.bak`;
+  const fd = openSync(target, "wx", 0o600);
+  try {
+    writeFileSync(fd, db.serialize());
+    fsyncSync(fd);
+  } catch (error) {
+    unlinkSync(target);
+    throw error;
+  } finally {
+    closeSync(fd);
+  }
+  if (process.platform !== "win32") {
+    const directory = openSync(path.dirname(target), "r");
+    try { fsyncSync(directory); } finally { closeSync(directory); }
+  }
+}
+
 /** Open (or reuse) the SQLite DB, apply schema idempotently, seed defaults. */
 export function initDb(dbPath?: string): Db {
   const resolved = resolveDbPath(dbPath);
@@ -211,9 +231,12 @@ export function initDb(dbPath?: string): Db {
     mkdirSync(path.dirname(resolved), { recursive: true });
   }
   const db = new Database(resolved);
+  const hasExistingTables = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1").get());
+  let previousVersion: string | undefined;
   // Never apply an older application's schema to a database created by a future version.
   if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='kv_meta'").get()) {
     const version = (db.prepare("SELECT value FROM kv_meta WHERE key='schema_version'").get() as { value: string } | undefined)?.value;
+    previousVersion = version;
     if (version && (!/^\d+$/.test(version) || Number(version) > Number(SCHEMA_VERSION))) {
       db.close();
       throw new Error(`Unsupported database schema version: ${version}`);
@@ -227,12 +250,14 @@ export function initDb(dbPath?: string): Db {
   db.pragma("foreign_keys = OFF");
   try {
     db.transaction(() => {
+      // The immediate transaction excludes concurrent writers until the upgrade commits.
+      if (resolved !== ":memory:" && hasExistingTables && previousVersion !== SCHEMA_VERSION) backupBeforeUpgrade(db, resolved);
       applySchema(db);
       migrateArtifactsSchema(db);
       migrateConfirmationsSchema(db);
       migrateRunsSchema(db);
       seedDefaults(db);
-    })();
+    }).immediate();
   } catch (error) {
     db.close();
     throw error;

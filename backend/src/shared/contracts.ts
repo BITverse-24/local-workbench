@@ -1,3 +1,4 @@
+export type * from "./agent-task.js";
 export type TaskType = "vision" | "draft" | "code";
 export type ModelRuntime = "mlx-lm" | "llama-server" | "ollama";
 /** One configured inference model drives all semantic task types. */
@@ -170,6 +171,8 @@ export interface RunSnapshot {
   chatId: string;
   mode: ExecutionMode | null;
   engineVersion: string | null;
+  agentTask?: import("./agent-task.js").AgentTask;
+  agentTaskBinding?: import("./agent-task.js").AgentTaskBinding;
   state: RunState;
   queued: boolean;
   progress: TaskProgressEvent[];
