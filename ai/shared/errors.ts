@@ -4,6 +4,7 @@ export type AIErrorCode =
   | "model_unavailable"
   | "model_timeout"
   | "model_rejected_request"
+  | "agent_admission_failed"
   | "empty_model_response"
   | "invalid_model_response"
   | "unsupported_task"

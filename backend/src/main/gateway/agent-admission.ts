@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { countLocalAgentRequest, type LocalPromptCount } from "./local-token-counter.js";
+import { getDb } from "../persistence/db.js";
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const bindingSchema = z.object({ endpoint: z.string().url(), modelIdentity: z.string().min(1), providerModel: z.string().min(1),
@@ -16,7 +17,37 @@ const verificationSchema = z.object({ schemaVersion: z.literal(1), binding: bind
   probes: z.array(z.object({ name: z.enum(probeNames), requestDigest: digest, inputTokens: z.number().int().positive() }).strict()).length(4),
 }).strict();
 export type AgentCountingVerification = z.infer<typeof verificationSchema>;
+export interface AgentCountingProfile {
+  assetsDir: string;
+  activeTemplate: string;
+  verification: AgentCountingVerification;
+}
+export class AgentAdmissionError extends Error {
+  constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = "AgentAdmissionError"; }
+}
+export class AgentRequestTooLargeError extends AgentAdmissionError {}
+function verificationKey(binding: AgentCountingBinding): string {
+  return `agent-counting:${createHash("sha256").update(JSON.stringify([binding.endpoint, binding.providerModel, binding.transport])).digest("hex")}`;
+}
+/** Setup evidence is host state, not a renderer-editable application setting. */
+export function saveAgentCountingVerification(value: AgentCountingVerification): void {
+  const verified = verificationSchema.parse(value);
+  getDb().prepare("INSERT INTO kv_meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(verificationKey(verified.binding), JSON.stringify(verified));
+}
+export function loadAgentCountingVerification(binding: AgentCountingBinding): AgentCountingVerification | undefined {
+  const row = getDb().prepare("SELECT value FROM kv_meta WHERE key=?").get(verificationKey(binding)) as { value: string } | undefined;
+  if (!row) return;
+  return verificationSchema.parse(JSON.parse(row.value));
+}
+export function invalidateAgentCountingVerification(binding: AgentCountingBinding): void {
+  getDb().prepare("DELETE FROM kv_meta WHERE key=?").run(verificationKey(binding));
+}
+export function assertSavedAgentCountingVerification(profile: AgentCountingProfile): void {
+  const saved = loadAgentCountingVerification(profile.verification.binding);
+  if (!saved || !equal(saved, profile.verification)) throw new AgentAdmissionError("Agent counting setup is missing or expired. Verify the selected model and transport first.");
+}
 export interface AgentAdmissionReceipt {
+  countingMethod: "exact";
   requestDigest: string;
   inputTokens: number;
   outputTokens: number;
@@ -81,8 +112,38 @@ export async function admitLocalAgentRequest(options: {
   const count = countSchema.parse(await countLocalAgentRequest(options));
   if (count.templateDigest !== binding.templateDigest || !equal(count.assetDigests, verified.assetDigests) || count.counterIdentity !== verified.counterIdentity) throw new Error("Tokenizer or template changed. Verify counting again.");
   const contextLimit = Math.min(8192, binding.contextLimit);
-  if (count.inputTokens + outputTokens + 512 > contextLimit) throw new Error("Agent request exceeds its verified context limit. Reduce the evidence or split the step.");
-  return { ...count, binding, outputTokens, safetyTokens: 512, contextLimit, requestDigest: preparedRequestDigest(options.payload) };
+  if (count.inputTokens + outputTokens + 512 > contextLimit) throw new AgentRequestTooLargeError("Agent request exceeds its verified context limit. Reduce the evidence or split the step.");
+  return { ...count, countingMethod: "exact", binding, outputTokens, safetyTokens: 512, contextLimit, requestDigest: preparedRequestDigest(options.payload) };
+}
+
+export interface AgentVisionAdmissionReceipt {
+  countingMethod: "vision_estimate";
+  requestDigest: string;
+  inputTokens: number;
+  outputTokens: number;
+  safetyTokens: 512;
+  contextLimit: number;
+  assetDigests: Record<string, string>;
+  counterIdentity: "file-extension-estimate-v1";
+  binding: { endpoint: string; modelIdentity: string; providerModel: string; transport: "vision" };
+}
+/** User-approved temporary vision exception. This is never labelled as an exact count. */
+export function admitEstimatedAgentVisionRequest(options: { payload: Record<string, unknown>; endpoint: string; contextLimit: number; extension: string }): AgentVisionAdmissionReceipt {
+  const messages = z.array(z.object({ role: z.string(), content: z.union([z.string(), z.array(z.object({ type: z.enum(["text", "image_url"]), text: z.string().optional(), image_url: z.unknown().optional() }).strict())]) }).strict()).parse(options.payload.messages);
+  const imageTokens: Record<string, number> = { ".png": 2560, ".jpg": 2560, ".jpeg": 2560, ".webp": 2560, ".gif": 2560, ".pdf": 3072, ".svg": 2560 };
+  let images = 0;
+  const text = messages.map(message => typeof message.content === "string" ? message.content : message.content.map(part => {
+    if (part.type === "image_url") { images++; return ""; } return part.text ?? "";
+  }).join("\n")).join("\n");
+  if (!images) throw new AgentAdmissionError("A vision estimate requires host-prepared image parts.");
+  const inputTokens = Math.ceil(Buffer.byteLength(text) / 3) + messages.length * 32 + images * (imageTokens[options.extension.toLowerCase()] ?? 3072);
+  const outputTokens = z.number().int().positive().max(2048).parse(options.payload.max_tokens);
+  const contextLimit = Math.min(8192, z.number().int().positive().parse(options.contextLimit));
+  if (inputTokens + outputTokens + 512 > contextLimit) throw new AgentRequestTooLargeError("The vision estimate exceeds the context limit. Select fewer pages or views.");
+  const model = z.string().min(1).parse(options.payload.model);
+  return { countingMethod: "vision_estimate", inputTokens, outputTokens, contextLimit, safetyTokens: 512,
+    requestDigest: preparedRequestDigest(options.payload), assetDigests: {}, counterIdentity: "file-extension-estimate-v1",
+    binding: { endpoint: options.endpoint, modelIdentity: `configured:${model}`, providerModel: model, transport: "vision" } };
 }
 
 /** Recheck at dispatch so neither fallback formatting nor streaming setup can reuse a stale receipt. */

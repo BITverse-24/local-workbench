@@ -1,5 +1,9 @@
 import { isInferenceConcurrencyError, localInferenceScheduler, modelInferenceGroup } from "./inference-scheduler.js";
 import { currentRuntimeScope, assertRuntimeActive } from "../run/runtime-scope.js";
+import { getDb } from "../persistence/db.js";
+import { consumeAgentModelCall, recordAgentAdmissionOutcome } from "../run/execution-ledger.js";
+import { AgentAdmissionError, AgentRequestTooLargeError, admitLocalAgentRequest, admitEstimatedAgentVisionRequest, assertAgentAdmissionReceipt, assertAgentProviderUsage, assertSavedAgentCountingVerification, invalidateAgentCountingVerification, type AgentAdmissionReceipt, type AgentVisionAdmissionReceipt } from "./agent-admission.js";
+import { countLMStudioPreparedRequest } from "./lmstudio-token-counter.js";
 import { randomUUID, createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -56,6 +60,13 @@ export interface DelegatedInvocationTelemetry {
   totalTokens: number;
 }
 
+function agentV3Scope() {
+  const scope = currentRuntimeScope();
+  if (scope?.mode !== "agent") return undefined;
+  const row = getDb().prepare("SELECT engine_version FROM run_mode_details WHERE run_id=?").get(scope.runId) as { engine_version: string } | undefined;
+  return row?.engine_version === "agent-v3" ? scope : undefined;
+}
+
 function gatewayConsole(level: "log" | "warn" | "error", request: { requestId: string; runId: string; taskType: string; modelId: string }, message: string, extra?: unknown) {
   const prefix = `[model-gateway:${request.taskType}:${request.modelId}:${request.requestId.slice(0, 8)}]`;
   const line = extra !== undefined ? `${prefix} ${message} ${typeof extra === "string" ? extra : JSON.stringify(extra).slice(0, 4000)}` : `${prefix} ${message}`;
@@ -106,13 +117,13 @@ export interface GatewayTransport {
   queueWaitMs?: () => number;
   request(
     url: string,
-    init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
+    init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal; redirect?: "error" },
     timeoutMs: number,
   ): Promise<{ status: number; text(): Promise<string> }>;
 
   streamRequest?(
     url: string,
-    init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
+    init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal; redirect?: "error" },
     timeoutMs: number,
     onChunk: (delta: string) => void,
     onActivity?: (activity: StreamActivity) => void,
@@ -232,7 +243,7 @@ export function formatMessagesForFallback(
   messages: Array<{ role: string; content?: any; tool_calls?: any[]; tool_call_id?: string; toolName?: string; [key: string]: any }>,
   systemPromptAddition: string,
 ): Array<Record<string, any>> {
-  return messages.map((m, idx) => {
+  const formatted = messages.map((m, idx) => {
     if (idx === 0 && m.role === "system") {
       return {
         role: "system",
@@ -270,6 +281,8 @@ export function formatMessagesForFallback(
       content: typeof m.content === "string" ? m.content : String(m.content ?? ""),
     };
   });
+  if (systemPromptAddition && messages[0]?.role !== "system") formatted.unshift({ role: "system", content: systemPromptAddition });
+  return formatted;
 }
  
 export function normalizeParsedToolArgs(val: unknown): any {
@@ -603,7 +616,7 @@ export class ModelGateway implements ModelClient {
 
   /** Observe every inference, including specialist calls and JSON tool fallbacks. */
   private inferenceTransport(
-    metadata: Pick<ModelProgressEvent, "runId" | "modelId" | "purpose" | "parentCallId">,
+    metadata: Pick<ModelProgressEvent, "runId" | "modelId" | "purpose" | "parentCallId"> & { visionExtension?: string },
     structured: boolean,
     signal?: AbortSignal,
   ): GatewayTransport {
@@ -634,6 +647,8 @@ export class ModelGateway implements ModelClient {
         publish(firstOutput);
       };
       const scope = currentRuntimeScope();
+      const v3 = agentV3Scope();
+      if (v3 && metadata.runId !== v3.runId) throw new AgentAdmissionError("Agent inference belongs to another run.");
       const requestSignal = signal ?? scope?.signal;
       assertRuntimeActive();
       if (scope?.remainingModelCalls !== undefined) {
@@ -648,23 +663,72 @@ export class ModelGateway implements ModelClient {
       scope?.observe?.({ queued: true });
       let release: (() => void) | undefined = await localInferenceScheduler.acquire(scope?.mode ?? "work", requestSignal, group);
       const queueWaitMs = Date.now() - queuedAt;queueWait=queueWaitMs;startedAt=Date.now();
-      scope?.observe?.({ queued: false, queueWaitMs, modelCallCount: 1 });
+      scope?.observe?.({ queued: false, queueWaitMs, ...(!v3 ? { modelCallCount: 1 } : {}) });
       let inferenceStarted = Date.now();
       try {
         assertRuntimeActive();
         const stream = Boolean(this.transport.streamRequest && (onChunk || this.progressListeners.size));
         if (stream) { payload.stream = true; payload.stream_options = { include_usage: true }; }
         else { delete payload.stream; delete payload.stream_options; }
-        const outbound = { ...init, signal: requestSignal, body: JSON.stringify(payload) };
         let streamedChars = 0;
-        const send = async () => stream
+        const send = async () => {
+          let receipt: AgentAdmissionReceipt | AgentVisionAdmissionReceipt | undefined;
+          const dispatchId = randomUUID();
+          if (v3 && metadata.visionExtension !== undefined) {
+            try { receipt = admitEstimatedAgentVisionRequest({ payload, endpoint: url.replace(/\/chat\/completions\/?$/, ""), contextLimit: configured?.contextLength ?? 8192, extension: metadata.visionExtension }); }
+            catch (error) { throw error instanceof AgentAdmissionError ? error : new AgentAdmissionError(error instanceof Error ? error.message : String(error), { cause: error }); }
+          } else if (v3) {
+            const selectedTransport = Array.isArray(payload.tools) && payload.tools.length ? "native" : "json";
+            const endpoint = url.replace(/\/chat\/completions\/?$/, "").replace(/\/$/, "");
+            const profile = v3.agentCountingProfiles?.find(item => item.verification.binding.transport === selectedTransport && item.verification.binding.providerModel === payload.model && item.verification.binding.endpoint.replace(/\/$/, "") === endpoint);
+            if (!profile) throw new AgentAdmissionError(`Agent counting setup is missing for ${selectedTransport} transport.`);
+            try {
+              assertSavedAgentCountingVerification(profile);
+              const binding = profile.verification.binding;
+              if (url.replace(/\/chat\/completions\/?$/, "").replace(/\/$/, "") !== binding.endpoint.replace(/\/$/, "")) throw new Error("The prepared endpoint differs from the verified endpoint.");
+              receipt = await admitLocalAgentRequest({ payload, binding, verification: profile.verification, assetsDir: profile.assetsDir, activeTemplate: profile.activeTemplate, signal: requestSignal });
+              const server = await countLMStudioPreparedRequest({ endpoint: binding.endpoint, payload, signal: requestSignal });
+              if (server.instanceReference !== binding.modelIdentity || server.inputTokens !== receipt.inputTokens || server.renderedDigest !== receipt.renderedDigest || Math.min(8192, server.contextLimit) !== receipt.contextLimit) throw new Error("The server model, template, context, or rendered count changed. Verify counting again.");
+              assertRuntimeActive();
+              assertAgentAdmissionReceipt(receipt, payload, binding);
+            } catch (error) {
+              if (!(error instanceof AgentRequestTooLargeError)) invalidateAgentCountingVerification(profile.verification.binding);
+              throw new AgentAdmissionError(error instanceof Error ? error.message : String(error), { cause: error });
+            }
+          }
+          if (v3 && receipt) {
+            assertRuntimeActive();
+            consumeAgentModelCall(v3.runId, { requestId: dispatchId, receipt });
+            v3.observe?.({ modelCallCount: 1, [receipt.countingMethod === "exact" ? "admittedInputTokens" : "estimatedVisionInputTokens"]: receipt.inputTokens });
+          }
+          const outbound = { ...init, signal: requestSignal, body: JSON.stringify(payload), ...(v3 ? { redirect: "error" as const } : {}) };
+          const response = stream
           ? await this.transport.streamRequest!(url, outbound, timeoutMs, delta => {
               streamedChars += delta.length;
               previewFilter?.process(delta);
               activity("text", delta.length);
               if (!structured) onChunk?.(delta);
             }, update => { activity(update.channel, update.chars); onActivity?.(update); })
-          : this.transport.request(url, outbound, timeoutMs);
+          : await this.transport.request(url, outbound, timeoutMs);
+          const responseBody = await response.text();
+          if (v3 && receipt) {
+            if (response.status >= 200 && response.status < 300) {
+              const usage = (() => { try { return parseProviderUsage(JSON.parse(responseBody).usage).promptTokens; } catch { return undefined; } })();
+              if (receipt.countingMethod === "vision_estimate") {
+                recordAgentAdmissionOutcome(v3.runId, dispatchId, "estimate_used", usage);
+                return { status: response.status, text: async () => responseBody };
+              }
+              try { assertAgentProviderUsage(receipt, usage); }
+              catch (error) {
+                recordAgentAdmissionOutcome(v3.runId, dispatchId, "mismatch", usage);
+                invalidateAgentCountingVerification(receipt.binding);
+                throw new AgentAdmissionError(error instanceof Error ? error.message : String(error), { cause: error });
+              }
+              recordAgentAdmissionOutcome(v3.runId, dispatchId, "usage_verified", usage);
+            } else recordAgentAdmissionOutcome(v3.runId, dispatchId, "provider_error");
+          }
+          return { status: response.status, text: async () => responseBody };
+        };
         let response = await send();
         let body = await response.text();
         if (!streamedChars && isInferenceConcurrencyError(response.status, body)) {
@@ -816,7 +880,8 @@ export class ModelGateway implements ModelClient {
 
   async execute(request: ModelRequest): Promise<AIResult<ModelResponse>> {
     const transport = this.inferenceTransport({ runId: request.runId, modelId: request.modelId,
-      purpose: request.purpose ?? request.responseFormat, parentCallId: request.parentToolCallId },
+      purpose: request.purpose ?? request.responseFormat, parentCallId: request.parentToolCallId,
+      ...(request.taskType === "vision" ? { visionExtension: path.extname(request.attachment.filename) } : {}) },
       !["chat-result", "code-summary"].includes(request.responseFormat) || Boolean(request.responseSchema));
     let model: ModelRegistryEntry | undefined = this.resolveNextEndpoint(request.modelId);
     if (!model) {
@@ -952,9 +1017,10 @@ export class ModelGateway implements ModelClient {
     // separately at the local renderer's bounded resolution.
     const textMessages = isVision ? messagesPayload.map(message => ({ ...message, content: Array.isArray(message.content)
       ? message.content.filter(part => part.type === "text") : message.content })) : messagesPayload;
-    const estimatedInputTokens = countTokens(JSON.stringify(textMessages)) + (isVision ? (visionParts?.length ?? 0) * estimateVisionTokens(1024, 1024) : 0);
+    const v3 = agentV3Scope();
+    const estimatedInputTokens = v3 ? 0 : countTokens(JSON.stringify(textMessages)) + (isVision ? (visionParts?.length ?? 0) * estimateVisionTokens(1024, 1024) : 0);
     const maxAllowedTokens = Math.max(128, contextLimit - estimatedInputTokens - safetyMargin);
-    const maxTokens = Math.min(requestedMaxTokens, maxAllowedTokens);
+    const maxTokens = v3 ? Math.min(requestedMaxTokens, 2048) : Math.min(requestedMaxTokens, maxAllowedTokens);
     const defaultTemperature = (isLocal && (request.taskType === "code" || request.taskType === "vision")) ? 0.0 : 0.2;
     const effectiveTemperature = request.temperature ?? defaultTemperature;
     const requestPayload: Record<string, any> = {
@@ -1301,7 +1367,7 @@ export class ModelGateway implements ModelClient {
         }
       }
 
-      return { ok: false, error: providerError(error, request) };
+      return { ok: false, error: error instanceof AgentAdmissionError ? { kind: "ai-error", code: "agent_admission_failed", message: error.message, retryable: false, runId: request.runId, requestId: request.requestId, modelId: request.modelId, taskType: request.taskType } : providerError(error, request) };
     }
   }
   async health(): Promise<ModelHealth[]>;
@@ -1484,7 +1550,7 @@ export class ModelGateway implements ModelClient {
     const knownSupportsTools = model.toolCallingFormat !== "json" && (this.toolParamCapabilities.get(endpointKey) ?? true);
     const effectiveTimeout = Math.max(options?.timeoutMs ?? 0, model.requestTimeoutMs ?? 0, 60000);
     const requestedMaxTokens = options?.maxTokens ?? model.maxOutputTokens ?? 4096;
-    const effectiveMaxTokens = isLocal ? Math.min(requestedMaxTokens, 4096) : requestedMaxTokens;
+    const effectiveMaxTokens = agentV3Scope() ? Math.min(requestedMaxTokens, 2048) : isLocal ? Math.min(requestedMaxTokens, 4096) : requestedMaxTokens;
     const effectiveTemperature = options?.temperature ?? 0.2;
 
     const runId = options?.runId ?? "run-agent-loop";
@@ -1656,6 +1722,7 @@ export class ModelGateway implements ModelClient {
           };
         }
       } catch (err: any) {
+        if (err instanceof AgentAdmissionError) return { ok: false, error: { kind: "ai-error", code: "agent_admission_failed", message: err.message, retryable: false, modelId, requestId, runId } };
         if (!/tools/i.test(err?.message ?? "")) {
           return {
             ok: false,
@@ -1856,7 +1923,7 @@ export class ModelGateway implements ModelClient {
         ok: false,
         error: {
           kind: "ai-error",
-          code: "model_unavailable",
+          code: err instanceof AgentAdmissionError ? "agent_admission_failed" : "model_unavailable",
           message: err instanceof Error ? err.message : String(err),
           retryable: false,
           modelId,

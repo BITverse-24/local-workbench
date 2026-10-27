@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { AgentTaskBinding, ArtifactRef, ExecutionMode, ModelId, RunContract, RunState, RunVerificationState } from "../../shared/contracts.js";
 import { getDb, prepareCached } from "../persistence/db.js";
 import { matchesContractDeliverable } from "./contract.js";
+import type { AgentAdmissionReceipt, AgentVisionAdmissionReceipt } from "../gateway/agent-admission.js";
+import { BUILD_IDENTITY } from "../build-identity.js";
 
 
 export const verificationCheckSchema = z.object({
@@ -53,6 +55,14 @@ const ledgerSchema = z.object({
   verification: verificationStateSchema.optional(),
   agentTask: z.object({ taskId: z.string().uuid(), taskRevision: z.number().int().positive(),
     modelCalls: z.number().int().min(0).max(40), protocolCorrections: z.number().int().min(0).max(1) }).strict().optional(),
+  agentAdmissions: z.array(z.object({ requestId: z.string().uuid(), taskId: z.string().uuid(), taskRevision: z.number().int().positive(),
+    buildIdentity: z.string().min(1),
+    requestDigest: z.string().regex(/^[a-f0-9]{64}$/), renderedDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), modelIdentity: z.string().min(1),
+    templateDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), assetDigests: z.record(z.string().regex(/^[a-f0-9]{64}$/)),
+    counterIdentity: z.string().min(1), transport: z.enum(["native", "json", "vision"]), countingMethod: z.enum(["exact", "vision_estimate"]),
+    inputTokens: z.number().int().positive(), outputTokens: z.number().int().positive(), safetyTokens: z.literal(512), contextLimit: z.number().int().positive(),
+    status: z.enum(["admitted", "usage_verified", "estimate_used", "mismatch", "provider_error"]), providerInputTokens: z.number().int().nonnegative().optional(),
+  }).strict()).max(40).default([]),
   blockers: z.array(z.string().max(500)).max(20), updatedAt: z.string().datetime(),
 });
 export type RunExecutionLedger = z.infer<typeof ledgerSchema>;
@@ -116,13 +126,33 @@ function agentLedger(runId: string): RunExecutionLedger & { agentTask: NonNullab
 }
 
 /** Consume immediately before every generation dispatch, including fallback and resume. */
-export function consumeAgentModelCall(runId: string): number {
+export function consumeAgentModelCall(runId: string, admission?: { requestId: string; receipt: AgentAdmissionReceipt | AgentVisionAdmissionReceipt }): number {
   return getDb().transaction(() => {
     const ledger = agentLedger(runId);
     if (ledger.agentTask.modelCalls >= 40) throw new Error("Agent reached its 40 model-call limit for this run.");
     ledger.agentTask.modelCalls++;
+    if (admission) {
+      const receipt = admission.receipt;
+      ledger.agentAdmissions.push({ requestId: admission.requestId, taskId: ledger.agentTask.taskId, taskRevision: ledger.agentTask.taskRevision,
+        buildIdentity: BUILD_IDENTITY,
+        requestDigest: receipt.requestDigest, renderedDigest: receipt.countingMethod === "exact" ? receipt.renderedDigest : undefined, modelIdentity: receipt.binding.modelIdentity,
+        templateDigest: receipt.countingMethod === "exact" ? receipt.templateDigest : undefined, assetDigests: receipt.assetDigests, counterIdentity: receipt.counterIdentity, transport: receipt.binding.transport, countingMethod: receipt.countingMethod,
+        inputTokens: receipt.inputTokens, outputTokens: receipt.outputTokens, safetyTokens: receipt.safetyTokens, contextLimit: receipt.contextLimit, status: "admitted" });
+    }
     save(ledger);
     return ledger.agentTask.modelCalls;
+  }).immediate();
+}
+
+export function recordAgentAdmissionOutcome(runId: string, requestId: string, status: "usage_verified" | "estimate_used" | "mismatch" | "provider_error", providerInputTokens?: number): void {
+  getDb().transaction(() => {
+    const ledger = getExecutionLedger(runId);
+    const admission = ledger?.agentAdmissions.find(item => item.requestId === requestId);
+    if (!ledger || !admission) throw new Error("Agent response has no persisted admission receipt.");
+    if (admission.status !== "admitted") throw new Error("Agent admission already has a response outcome.");
+    admission.status = status;
+    admission.providerInputTokens = providerInputTokens;
+    save(ledger);
   }).immediate();
 }
 

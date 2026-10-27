@@ -6,6 +6,7 @@
 const path = require("node:path");
 const { buildSync } = require("esbuild");
 const { rmSync } = require("node:fs");
+const { randomUUID } = require("node:crypto");
 
 const ROOT = path.resolve(__dirname, "..");
 const OUTDIR = path.join(ROOT, "electron", "dist-electron");
@@ -19,20 +20,21 @@ const shared = {
 };
 
 function build() {
+  const options = { ...shared, define: { __WORKBENCH_BUILD_ID__: JSON.stringify(`local-workbench@${require("../package.json").version}:${randomUUID()}`) } };
   const smokeOutput = path.join(OUTDIR, "portability-smoke.cjs");
   if (process.env.WORKBENCH_BUILD_SMOKE === "1") {
-    buildSync({ ...shared, entryPoints: [path.join(ROOT, "scripts", "portability-smoke.ts")], format: "cjs", outfile: smokeOutput });
+    buildSync({ ...options, entryPoints: [path.join(ROOT, "scripts", "portability-smoke.ts")], format: "cjs", outfile: smokeOutput });
   } else {
     rmSync(smokeOutput, { force: true });
   }
   buildSync({
-    ...shared,
+    ...options,
     entryPoints: [path.join(ROOT, "electron", "main.ts")],
     format: "cjs",
     outfile: path.join(OUTDIR, "main.cjs"),
   });
   buildSync({
-    ...shared,
+    ...options,
     entryPoints: [path.join(ROOT, "electron", "preload.ts")],
     // Preload must be CJS: Electron does not reliably load ESM preload
     // scripts, and a silently-skipped preload leaves the renderer with no
