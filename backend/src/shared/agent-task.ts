@@ -12,7 +12,8 @@ export interface AgentRequirement {
   source: AgentSourceQuote;
   mandatory: boolean;
   dependencies: string[];
-  acceptance: Array<{ id: string; description: string; kind: "inspection" | "execution" | "review" | "delivery" }>;
+  acceptance: Array<{ id: string; description: string; kind: "inspection" | "execution" | "review" | "delivery";
+    operation?: "verbatim_source"; path?: string }>;
   state: "active" | "superseded" | "waived";
   resolution?: AgentSourceQuote;
 }

@@ -1,8 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { Validator } from "jsonschema";
-import { z } from "zod";
-import type { AgentRequirement, AgentTask, AgentToolCall, AgentToolDefinition, RunContract } from "../../shared/contracts.js";
+import type { AgentTask, AgentToolCall, AgentToolDefinition, RunContract } from "../../shared/contracts.js";
 import type { ToolExecutionContext } from "../tools/types.js";
 import { getDb } from "../persistence/db.js";
 import { bindAgentTaskRun, getAgentTask, getAgentTaskBinding, getCurrentAgentTask, setAgentTaskStatus } from "../run/agent-task-store.js";
@@ -12,13 +11,14 @@ import { currentRuntimeScope, assertRuntimeActive } from "../run/runtime-scope.j
 import { ToolDispatcher } from "./tool-dispatcher.js";
 import { getAllAvailableTools, filterToolsForTurn } from "../router/tool-compositor.js";
 import { agentWorkspaceActions, canonicalSourcePath, validateAgentFileProposal } from "./workspace-actions.js";
-import { fileDigest } from "../harness/tools/edit-file.js";
+import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 import { resolveSafe } from "../harness/path-guard.js";
-import { agentEvidenceSlice, buildAgentContextPacket, FINISH_TOOL } from "./context-packet.js";
-import { interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion, parseAgentData } from "./task-interpretation.js";
+import { buildAgentContextPacket, FINISH_TOOL } from "./context-packet.js";
+import { agentInterpretationResponseSchema, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
 import { runAgentVerificationStage } from "./verification-stage.js";
-import { captureAgentVerificationManifest, isCodeVerificationPath } from "./test-verification.js";
+import { isCodeVerificationPath } from "./test-verification.js";
 import { extractVerificationSkipBasis, recordVerificationTermination, recordVerificationUserSkip } from "../run/verification-controller.js";
+import { reviewAgentTaskCoverage } from "./requirement-review.js";
 import { COMMAND_FALLBACK_DISCLOSURE } from "../harness/tools/run-command.js";
 
 type RunnerInput = { context: ToolExecutionContext; modelId: string; chatId: string; messageId: string; workspace: AgentTask["workspace"]; intent?: "continue" | "new"; predecessorRunId?: string;
@@ -58,7 +58,7 @@ export class AgentTaskRunner {
         for (;;) {
           const messages = interpretationMessages(source.content, current);
           if (feedback) messages[1].content = JSON.stringify({ ...JSON.parse(messages[1].content), correction: feedback });
-          const response = await context.gateway.chatWithTools(modelId, messages, [], { runId, maxTokens: 1024, purpose: "classification", signal: scope.signal });
+          const response = await context.gateway.chatWithTools(modelId, messages, [], { runId, maxTokens: 1024, purpose: "classification", temperature: 0, responseSchema: agentInterpretationResponseSchema, signal: scope.signal });
           if (!response.ok) return stop("interpretation_unavailable", response.error.message);
           try {
             if (response.value.finishReason === "length" || response.value.tool_calls?.length) throw new Error("Requirement interpretation must be complete JSON data, with no workspace action.");
@@ -128,17 +128,21 @@ export class AgentTaskRunner {
         // Assess obtained evidence before asking the model to repeat an inspection step.
         // This changes the host phase, not requirement status or registered capabilities.
         const evidenceDigest = progress?.latestResultId ? context.resultStore.getResult(progress.latestResultId).storage.sha256 : undefined;
-        const inspectionDelivery = packet.observedSource && evidenceDigest && progress?.deliveryEvidenceDigest !== evidenceDigest && pending.every(item => ["inspect", "deliver", "preserve"].includes(item.kind)) && !pending.some(item => item.acceptance.some(check => check.kind === "execution"));
+        const verbatimPageComplete = !pending.some(item => item.acceptance.some(check => check.operation === "verbatim_source")) || packet.observedSource?.endByte === packet.observedSource?.sizeBytes;
+        const inspectionDelivery = verbatimPageComplete && packet.observedSource && evidenceDigest && progress?.deliveryEvidenceDigest !== evidenceDigest && pending.every(item => ["inspect", "deliver", "preserve"].includes(item.kind)) && !pending.some(item => item.acceptance.some(check => check.kind === "execution"));
         if (inspectionDelivery) {
           updateAgentProgress(runId, state => { state.deliveryEvidenceDigest = evidenceDigest; });
-          const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: "The host has obtained source evidence. Propose the requested answer from the supplied requirements and observed content. Do not request or perform more tools in this delivery step. Do not claim complete coverage beyond the supplied evidence. The host will review every requirement separately." }, packet.messages[1]], [], { runId, maxTokens: 768, signal: scope.signal });
+          const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: "The host has obtained source evidence. Propose the requested answer from the supplied requirements and observed content. Do not request or perform more tools in this delivery step. For verbatim_source checks, quote the complete observed source in a fenced block and preserve its whitespace and line endings. Do not claim complete coverage beyond the supplied evidence. The host will review every requirement separately." }, packet.messages[1]], [], { runId, maxTokens: 768, signal: scope.signal });
           if (!answer.ok || answer.value.finishReason === "length" || answer.value.tool_calls?.length || !answer.value.content?.trim()) return stop("delivery_unavailable", answer.ok ? "The delivery proposal was incomplete or requested another action." : answer.error.message);
+          const answerDigest = hash(answer.value.content);
+          if (progress?.deliveryAttempts.some(attempt => attempt.evidenceDigest === evidenceDigest && attempt.answerDigest === answerDigest)) return stop("repeated_delivery", "The same answer was proposed for unchanged source evidence. Remaining requirements stay saved.");
+          updateAgentProgress(runId, state => { state.deliveryAttempts.push({ evidenceDigest, answerDigest }); });
           const admitted = getExecutionLedger(runId)?.agentAdmissions.at(-1);
           if (admitted?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push({ ...packet.observedSource!, requestId: admitted.requestId }); });
           context.resultStore.registerResult({ type: "text", status: "complete", origin: "model_derived", producer: { tool: "agent_delivery_proposal", callId: randomUUID() }, summary: "Proposed answer from observed evidence", payload: answer.value.content, sources: [] });
-          const reviewed = await this.review(task, context, modelId, [], answer.value.content);
+          const reviewed = await reviewAgentTaskCoverage(task, context, modelId, [], answer.value.content);
           if (reviewed.ok) { const completed = stop("requirements_satisfied", "", "completed"); return { ...completed, text: `${answer.value.content}\n\n${completed.text}` }; }
-          updateAgentProgress(runId, state => { state.feedback = reviewed.detail; });
+          updateAgentProgress(runId, state => { state.feedback = reviewed.detail; if (reviewed.next === "delivery") state.deliveryEvidenceDigest = undefined; });
           continue;
         }
         const visible = filterToolsForTurn(registered, context.envelope, context.activeCapabilities!, { hasRetrievableResults: true });
@@ -168,7 +172,7 @@ export class AgentTaskRunner {
           updateAgentProgress(runId, state => { state.feedback = `Return one valid action. ${String(error).slice(0, 1000)}`; }); continue;
         }
         context.agentChangeReason = response.value.content?.slice(0, 1000) || selected.description;
-        const repeated = hash([call.name, call.name === "finish" ? "delivery" : call.arguments, this.sourceVersion(context, call.arguments), progress?.latestResultId ? context.resultStore!.getResult(progress.latestResultId).storage.sha256 : null]);
+        const repeated = hash([call.name, call.arguments, this.sourceVersion(context, call.arguments), progress?.latestResultId ? context.resultStore!.getResult(progress.latestResultId).storage.sha256 : null]);
         if (progress?.actions.some(item => item.hash === repeated)) return stop("repeated_action", "The same action was proposed without new source or evidence. Pending requirements remain saved.");
         context.resultStore!.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_proposal", callId: call.id }, summary: context.agentChangeReason, payload: { taskId: task.taskId, taskRevision: bound.taskRevision, requirementId: context.agentRequirementId, reason: context.agentChangeReason, operation: call.name, arguments: call.arguments }, sources: [] });
         updateAgentProgress(runId, state => { state.actions.push({ id: call.id, hash: repeated, requirementId: context.agentRequirementId!, operation: call.name, status: "proposed" }); });
@@ -182,8 +186,8 @@ export class AgentTaskRunner {
             if (checked.action === "repair") { updateAgentProgress(runId, state => { state.feedback = checked.detail.slice(0, 10000); }); continue; }
             if (!["passed", "skipped"].includes(checked.action)) return stop("checks_unavailable", checked.detail, checked.action === "cancelled" ? "cancelled" : "partial");
           }
-          const complete = await this.review(task, context, modelId, changed, String(call.arguments.text));
-          if (!complete.ok) { updateAgentProgress(runId, state => { state.feedback = complete.detail; }); continue; }
+          const complete = await reviewAgentTaskCoverage(task, context, modelId, changed, String(call.arguments.text));
+          if (!complete.ok) { updateAgentProgress(runId, state => { state.feedback = complete.detail; if (complete.next === "delivery") state.deliveryEvidenceDigest = undefined; }); continue; }
           const completed = stop("requirements_satisfied", "", "completed");
           return { ...completed, text: `${String(call.arguments.text)}\n\n${completed.text}` };
         }
@@ -212,26 +216,7 @@ export class AgentTaskRunner {
   private sourceVersion(context: ToolExecutionContext, args: Record<string, unknown>): string {
     if (typeof args.path !== "string") return "no-file-target";
     const file = resolveSafe(context.workspaceRoot, args.path);
-    return existsSync(file) ? statSync(file).isFile() ? fileDigest(readFileSync(file)) : "directory" : "new-file";
+    return existsSync(file) ? statSync(file).isFile() ? fileDigest(readAgentSourceBytes(context.workspaceRoot, args.path)) : "directory" : "new-file";
   }
 
-  private async review(task: AgentTask, context: ToolExecutionContext, modelId: string, changed: string[], proposedAnswer: string): Promise<{ ok: boolean; detail: string }> {
-    const ledger = getExecutionLedger(context.runId)!, required = task.snapshot.requirements.filter(item => item.state === "active");
-    if (required.some(item => item.kind === "change") && !changed.length && !ledger.completedOperations.some(item => item.artifactRefs.length)) return { ok: false, detail: "The task requires a repair or change. Advice alone cannot complete it." };
-    // Model proposals and earlier reviews cannot become source or execution proof.
-    const results = context.resultStore!.listResults({ limit: 50 }).filter(item => ["source_extracted", "execution"].includes(item.origin));
-    const evidenceSlices = results.filter(item => ["read_file", "extract_document", "run_command", "edit_file"].includes(item.producer.tool)).slice(-3).map(item => agentEvidenceSlice(context, item.resultId, item.producer.tool === "read_file" ? 6000 : 1800));
-    const reviewInput = { originalRequests: task.snapshot.messages.filter(message => !["status", "evidence"].includes(message.disposition)), requirements: required, proposedAnswer, changed, evidenceSlices, results: results.map(item => ({ id: item.resultId, tool: item.producer.tool, origin: item.origin, summary: item.summary, digest: item.storage.sha256 })), checks: ledger.verification?.evidence ?? [] };
-    context.resultStore!.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_review_input", callId: randomUUID() }, summary: "Review input snapshot; this is not independent evidence", payload: reviewInput, sources: [] });
-    const response = await context.gateway.chatWithTools(modelId, [{ role: "system", content: "Independently review requirement coverage against the original complete requests, proposed answer, and saved evidence. Schema validity does not prove understanding. Report omitted obligations and unsupported claims. Partial source pages do not prove complete inspection. A saved answer proves text delivery only. Test passes must come from host execution evidence. Return JSON {covered:boolean,missing:[string],requirements:[{id:string,satisfied:boolean,reason:string}]}, with exactly one entry for EVERY active requirement. Do not perform tools." }, { role: "user", content: JSON.stringify(reviewInput) }], [], { runId: context.runId, maxTokens: 1024, signal: context.signal });
-    if (!response.ok || response.value.finishReason === "length") return { ok: false, detail: response.ok ? "Coverage review was truncated." : response.error.message };
-    const parsed = z.object({ covered: z.boolean(), missing: z.array(z.string()), requirements: z.array(z.object({ id: z.string(), satisfied: z.boolean(), reason: z.string() }).strict()) }).strict().parse(parseAgentData(response.value.content ?? ""));
-    context.resultStore!.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_requirement_review", callId: randomUUID() }, summary: "Separate requirement coverage review; executable proof remains host-owned", payload: parsed, sources: [] });
-    if (new Set(parsed.requirements.map(item => item.id)).size !== required.length || parsed.requirements.length !== required.length || required.some(item => !parsed.requirements.some(review => review.id === item.id && review.satisfied))) return { ok: false, detail: "Requirement review did not establish every active obligation." };
-    if (required.some(item => item.kind === "inspect") && !results.some(item => ["read_file", "extract_document", "retrieve_knowledge"].includes(item.producer.tool))) return { ok: false, detail: "Inspection needs saved source evidence." };
-    const tests = ledger.verification?.evidence.find(item => item.criterionId === "acceptance:validate-written-code");
-    if (required.some(item => item.acceptance.some(check => check.kind === "execution")) && tests?.status !== "passed" && !ledger.verification?.userSkip) return { ok: false, detail: "Mandatory executable behavior lacks current host test evidence." };
-    if (tests?.status === "passed" && tests.revision !== captureAgentVerificationManifest(context.workspaceRoot).sha256) return { ok: false, detail: "Test evidence is stale for the current implementation, tests, or configuration." };
-    return { ok: parsed.covered && !parsed.missing.length, detail: parsed.missing.join("; ") || "The original request still has unresolved coverage." };
-  }
 }

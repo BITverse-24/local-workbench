@@ -32,7 +32,7 @@ beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); pre
   vi.spyOn(server, "countLMStudioPreparedRequest").mockImplementation(async options => { const local = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload: options.payload }); return { inputTokens: local.inputTokens, renderedDigest: local.renderedDigest, instanceReference: "loaded", modelPath: "local", contextLimit: 8192, counterIdentity: "lmstudio-sdk-1.5.0" }; });
 });
 afterEach(() => { vi.restoreAllMocks(); closeDb(); setDataDir(previousRoot); rmSync(root, { recursive: true, force: true }); });
-function interpretation(kind: string, text: string) { return { disposition: "continue", requirements: [{ kind, description: text, quote: text, checks: [{ description: text, kind: "inspection" }] }], updates: [], full_suite: false }; }
+function interpretation(kind: string, text: string) { return { disposition: "continue", requirements: [{ kind, description: text, quote: text, checks: [{ description: text, kind: "inspection", operation: "semantic", path: null }] }], updates: [], full_suite: false }; }
 async function run(text: string, managerPath = false) {
   let runId = managerPath ? "" : createRun(chatId, text);
   const messageId = addMessage({ chat_id: chatId, role: "user", content: text }).id;
@@ -66,7 +66,7 @@ describe("Agent v3 task host loop", () => {
   it("explicitly resumes the saved v3 contract, task, and call budget without repeating interpretation", async () => {
     const text = "Inspect note.txt";
     const covered = (payload: any) => {
-      const state = JSON.parse(payload.messages.at(-1).content);
+      const state = JSON.parse(payload.messages[1].content);
       return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Inspected source" })) };
     };
     replies = [() => interpretation("inspect", text), () => "Advice without an inspection.", covered, () => "More advice."];
@@ -113,7 +113,7 @@ describe("Agent v3 task host loop", () => {
   it("routes an opted-in preview through RunManager and exposes the durable task snapshot", async () => {
     const text = "Inspect note.txt";
     replies = [() => interpretation("inspect", text), () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "Inspected the saved source.", payload => {
-      const state = JSON.parse(payload.messages.at(-1).content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Source evidence saved" })) };
+      const state = JSON.parse(payload.messages[1].content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Source evidence saved" })) };
     }];
     const { result, runId, snapshot } = await run(text, true);
     expect(result.outcome, result.text).toBe("completed");
@@ -124,7 +124,7 @@ describe("Agent v3 task host loop", () => {
   it("keeps task continuity visible after a Chat run and does not enable v3 from historical engine data", async () => {
     const text = "Inspect note.txt";
     replies = [() => interpretation("inspect", text), () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "saved source", payload => {
-      const state = JSON.parse(payload.messages.at(-1).content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Source read" })) };
+      const state = JSON.parse(payload.messages[1].content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Source read" })) };
     }];
     const first = await run(text, true), taskId = getCurrentAgentTask(chatId)!.taskId;
     const question = "Give a short explanation.", messageId = addMessage({ chat_id: chatId, role: "user", content: question }).id;
@@ -138,8 +138,9 @@ describe("Agent v3 task host loop", () => {
   it("counts interpretation, reads once, performs a separate review, and completes an evidenced inspection", async () => {
     const text = "Inspect note.txt";
     replies = [() => interpretation("inspect", text), () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "The source was inspected.", payload => {
-      const state = JSON.parse(payload.messages.at(-1).content);
-      expect(state.evidenceSlices).toContainEqual(expect.objectContaining({ kind: "source", sourceText: "saved source\n", completeFile: true }));
+      const state = JSON.parse(payload.messages[1].content);
+      expect(state.evidenceSlices).toContainEqual(expect.objectContaining({ sourceText: "saved source\n", completeFile: true }));
+      expect(state.sourceComparisons).toContainEqual(expect.objectContaining({ completeFile: true, current: true, exactTextIncluded: false }));
       expect(state.results.every((item: any) => ["source_extracted", "execution"].includes(item.origin))).toBe(true);
       return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Saved source was read" })) };
     }];
@@ -161,7 +162,7 @@ describe("Agent v3 task host loop", () => {
     const text = "Inspect note.txt";
     replies = [() => interpretation("inspect", text), () => '```json\n{"tool_calls":[{"name":"write_file","arguments":{"path":"note.txt","content":"bad"}}]}\n```',
       () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "saved source", payload => {
-        const state = JSON.parse(payload.messages.at(-1).content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Saved source was read" })) };
+        const state = JSON.parse(payload.messages[1].content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Saved source was read" })) };
       }];
     const { result, approve, runId } = await run(text);
     expect(result.outcome).toBe("completed"); expect(approve).not.toHaveBeenCalled();
@@ -186,10 +187,32 @@ describe("Agent v3 task host loop", () => {
     const { result, approve } = await run(text);
     expect(result.stopReason).toBe("read_only_task"); expect(approve).not.toHaveBeenCalled();
   });
+  it("corrects literal delivery from saved evidence without another read and audits scope separately", async () => {
+    const text = "Read note.txt and report its exact content.";
+    replies = [() => ({ disposition: "continue", requirements: [{ kind: "inspect", description: text, quote: text, checks: [{ description: text, kind: "inspection", operation: "verbatim_source", path: "note.txt" }] }], updates: [], full_suite: false }),
+      () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "saved source", () => "```\nsaved source\n```", payload => {
+        const input = JSON.parse(payload.messages[1].content);
+        expect(input.hostVerifiedChecks).toContainEqual(expect.objectContaining({ passed: true, path: "note.txt" }));
+        return { covered: true, missing: [] };
+      }];
+    const { result, runId, approve } = await run(text);
+    expect(result.outcome, result.text).toBe("completed"); expect(approve).not.toHaveBeenCalled();
+    expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action => action.operation)).toEqual(["read_file"]);
+    expect(getExecutionLedger(runId)?.agentProgress?.deliveryAttempts).toHaveLength(2);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(5);
+  });
+  it("stops a repeated literal delivery proposal without repeatedly reading unchanged source", async () => {
+    const text = "Read note.txt and report its exact content.";
+    replies = [() => ({ disposition: "continue", requirements: [{ kind: "inspect", description: text, quote: text, checks: [{ description: text, kind: "inspection", operation: "verbatim_source", path: "note.txt" }] }], updates: [], full_suite: false }),
+      () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "wrong content", () => "wrong content"];
+    const { result, runId } = await run(text);
+    expect(result.outcome).toBe("partial"); expect(result.stopReason).toBe("repeated_delivery");
+    expect(getExecutionLedger(runId)?.agentProgress?.actions).toHaveLength(1);
+  });
   it("keeps an approved observed edit and returns Partial when mandatory project tests are unavailable", async () => {
     const text = "Read note.txt, replace source with content, and run existing tests.";
     const digest = createHash("sha256").update("saved source\n").digest("hex");
-    replies = [() => ({ disposition: "continue", requirements: ["inspect", "change", "execute"].map(kind => ({ kind, description: kind, quote: text, checks: [{ description: kind, kind: kind === "execute" ? "execution" : "inspection" }] })), updates: [], full_suite: false }),
+    replies = [() => ({ disposition: "continue", requirements: ["inspect", "change", "execute"].map(kind => ({ kind, description: kind, quote: text, checks: [{ description: kind, kind: kind === "execute" ? "execution" : "inspection", operation: "semantic", path: null }] })), updates: [], full_suite: false }),
       () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }),
       () => ({ tool_calls: [{ name: "edit_file", arguments: { path: "note.txt", expected_digest: digest, replacements: [{ old: "source", new: "content" }] } }] }),
       () => ({ tool_calls: [{ name: "finish", arguments: { text: "The edit is saved. Tests are still required." } }] })];
@@ -208,7 +231,7 @@ describe("Agent v3 task host loop", () => {
   });
   it("retains mixed requirement kinds and rejects fabricated source quotes", () => {
     const text = "Inspect, reproduce, repair both bugs, preserve behavior, and run the full suite.";
-    const parsed = parseTaskInterpretation(JSON.stringify({ disposition: "continue", requirements: ["inspect", "execute", "change", "preserve", "deliver"].map(kind => ({ kind, description: kind, quote: text, checks: [{ description: kind, kind: "review" }] })), updates: [], full_suite: true }), "11111111-1111-4111-8111-111111111111", text);
+    const parsed = parseTaskInterpretation(JSON.stringify({ disposition: "continue", requirements: ["inspect", "execute", "change", "preserve", "deliver"].map(kind => ({ kind, description: kind, quote: text, checks: [{ description: kind, kind: "review", operation: "semantic", path: null }] })), updates: [], full_suite: true }), "11111111-1111-4111-8111-111111111111", text);
     expect(parsed.updates).toHaveLength(5); expect(parsed.fullSuite).toBe(true);
     expect(() => parseTaskInterpretation(JSON.stringify(interpretation("change", "Invented instruction")), "11111111-1111-4111-8111-111111111111", text)).toThrow("exact span");
   });

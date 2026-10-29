@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { AgentToolDefinition } from "../../shared/contracts.js";
@@ -8,7 +8,7 @@ import { listDir, clearListDirCache } from "../harness/tools/list-dir.js";
 import { search } from "../harness/tools/search.js";
 import { writeFile } from "../harness/tools/write-file.js";
 import { deleteFile } from "../harness/tools/delete-file.js";
-import { editFile, fileDigest, observedRange, prepareFileEdit } from "../harness/tools/edit-file.js";
+import { editFile, fileDigest, observedRange, prepareFileEdit, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 import { getExecutionLedger } from "../run/execution-ledger.js";
 import { captureAgentVerificationManifest } from "./test-verification.js";
 
@@ -41,7 +41,7 @@ export function validateAgentFileProposal(operation: string, args: Record<string
     const replacements = z.array(z.object({ old: z.string().min(1), new: z.string() }).strict()).min(1).parse(args.replacements);
     prepareFileEdit(context.workspaceRoot, { path: canonical, expectedDigest: digest.parse(args.expected_digest), replacements, requirementId: context.agentRequirementId ?? "", reason: context.agentChangeReason ?? "" }, receipts);
   } else if (existsSync(target)) {
-    const bytes = readFileSync(target), actual = fileDigest(bytes);
+    const bytes = readAgentSourceBytes(context.workspaceRoot, canonical), actual = fileDigest(bytes);
     if (actual !== args.expected_digest || (operation === "write_file" && args.replace_existing !== true) || !observedRange(receipts, canonical, actual, 0, bytes.length)) throw new PermissionError("This proposal needs the complete current source and matching digest. Use read_file or bounded edits first.");
   } else if (operation === "delete_file" || args.expected_digest) throw new PermissionError("The target is missing or changed.");
 }
@@ -49,8 +49,7 @@ export function validateAgentFileProposal(operation: string, args: Record<string
 export const agentWorkspaceActions: AgentTool[] = [
   tool("read_file", "Read a bounded UTF-8 source page. Continue using its cursor. Returns file digest and byte/line ranges.", { path: pathProperty, start_line: { type: "integer", minimum: 1 }, max_bytes: { type: "integer", minimum: 64, maximum: 4000 }, cursor: { type: "string" } }, ["path"], async (args, context) => {
     const input = z.object({ path: relative, start_line: z.number().int().positive().default(1), max_bytes: z.number().int().min(64).max(4000).default(3000), cursor: z.string().max(4096).optional() }).strict().parse(args);
-    const canonical = canonicalSourcePath(context, input.path), bytes = readFileSync(resolveSafe(context.workspaceRoot, canonical));
-    if (bytes.length > 4 * 1024 * 1024) throw new Error("This source exceeds the 4 MiB observation limit. Select a smaller source.");
+    const canonical = canonicalSourcePath(context, input.path), bytes = readAgentSourceBytes(context.workspaceRoot, canonical);
     const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes), revision = fileDigest(bytes);
     const lines = text.split("\n");
     if (!input.cursor && input.start_line > lines.length) throw new Error("The requested source line does not exist.");
@@ -98,7 +97,7 @@ export const agentWorkspaceActions: AgentTool[] = [
       context.assertAuthority?.(); context.signal?.throwIfAborted();
       const target = resolveSafe(context.workspaceRoot, canonical);
       if (existsSync(target)) {
-        const bytes = readFileSync(target), revision = fileDigest(bytes);
+        const bytes = readAgentSourceBytes(context.workspaceRoot, canonical), revision = fileDigest(bytes);
         if (revision !== input.expected_digest || (operation === "write_file" && !input.replace_existing)) throw new PermissionError("Existing file replacement requires a fresh complete read, an expected digest, and explicit replacement.");
         if (!observedRange(getExecutionLedger(context.runId)?.agentProgress?.reads ?? [], canonical, revision, 0, bytes.length)) throw new PermissionError("The complete current source was not supplied to the model.");
       } else if (operation === "delete_file" || input.expected_digest) throw new PermissionError("The target file is missing or changed.");

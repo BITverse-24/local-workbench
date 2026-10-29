@@ -51,7 +51,8 @@
     "saxes": "^6.0.0",
     "uuid": "^14.0.2",
     "vectra": "^0.15.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "3.25.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

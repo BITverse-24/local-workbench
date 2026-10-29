@@ -60,6 +60,22 @@ A failed baseline is historical evidence, not a mandatory completion failure aft
 
 Type checking passed. The focused run passed 43 tests across four files, with one opt-in live inspection skipped. This covers full-suite discovery, empty projects, actual baseline failures, repair allowance, existing real test execution, and the v3 host boundary. The reporter test now selects its reporter through Node's CLI because Electron can disable NODE_OPTIONS in a child; it still executes the existing test and reopens the generated report.
 
+## Host source checks and scope review
+
+The reviewer diagnostic isolated a wrong rejection. The 7B model rejected both byte-identical source delivery and incorrect content. Input counts matched provider usage. Changing prompt wording or evidence framing did not resolve it. Literal byte comparison therefore belongs to the host.
+
+Requirements now select an explicit check operation. `verbatim_source` is valid only for a direct request for exact file content and a quoted source path. The host compares real source observations with current file bytes, requires complete range coverage, and checks the raw answer or a complete fenced quote. Partial pages, forged content, stale digests, changed line endings, and arbitrary text for an empty file fail. These checks do not establish software behavior or authorize a mutation. A separate model scope audit still checks the full original request. Uncovered semantic criteria retain their review and execution requirements.
+
+Requirement responses use a JSON schema generated from the same Zod validator used at ingress. This avoids a model omitting an optional check field. The existing installed `zod-to-json-schema` dependency is now direct and pinned at 3.25.2. The schema distinguishes source inspection from program/test execution. Invalid interpretations retain the complete request and use the existing single correction limit. Source quotations and schema validation still do not prove understanding.
+
+Source reads now bound allocation before reading and reject a file that grows during observation. The read, edit, replacement, and literal-check paths share this bounded reader. Path containment, locks, backups, and digest checks remain in force.
+
+A failed literal answer can be corrected from saved source evidence. It does not need another file read. An identical repeated answer for unchanged evidence stops with `repeated_delivery`. These calls retain the persisted 40-call budget across resume.
+
+The live reviewer diagnostic now accepts byte-identical and quoted content and rejects wrong content. The full 7B inspection passed twice, including the final source runtime: four calls with exact admission and matching usage, one read, zero mutation approvals, and unchanged source. This is a narrow inspection result. It does not establish live repair reliability. Saved before/after diagnostic and final-loop evidence: `docs/evidence/agent-literal-delivery-2026-10-29.json`.
+
+The final focused run passed 277 tests across 15 files; three opt-in live checks were skipped in that offline run. Type checking and the Electron source build passed. The live scope/reviewer and full-loop runs were separate opt-in checks. Packaged execution and the required repair trials remain open.
+
 ## Current proof and limits
 
 The focused offline check passed 237 tests in 12 files; two opt-in live tests were skipped. This includes task storage, gateway admission, revision-bound edits, host-loop control, verification, storage isolation, and Chat/Work boundaries. Full type checking passed. The Electron source build passed. These results do not establish packaged behavior or live repair quality.
@@ -68,7 +84,7 @@ Live inspection evidence is saved in `docs/evidence/agent-host-inspection-probes
 
 ## Work still required
 
-1. Resolve live requirement and coverage review failures from saved evidence. Complete host-owned progress after edits and bounded per-requirement evidence checks. Do not weaken acceptance or replace existing tests.
+1. Extend current evidence and bounded assessment to general repair and document requirements. The typed literal inspection case is now checked live. Complete host-owned progress after edits and bounded per-requirement evidence checks. Do not weaken acceptance or replace existing tests.
 2. Add the separate task progress facts to the UI. Complete task-authorized cross-run evidence retrieval in the active loop. Retain all original obligations on follow-ups and regressions.
 3. Finish structured constraints and protected-path extraction. Keep policy checks at the tool boundary.
 4. Complete test-environment probing in the actual launch environment. Cache unchanged missing-command failures. Finish baseline, full-suite, post-edit test scheduling, and repair-cycle integration.
@@ -84,4 +100,5 @@ The damaged Flow D workspace was not restored or edited by this work. Production
 - `ef35bfc`: final gateway admission and saved usage receipts.
 - `b008c3b`: integrated v3 host loop, revision-bound edits, strict action transport, and failed live-inspection evidence.
 - `a258005`: tested task controls and same-session resume.
-- This milestone closes empty-suite false passes and separates baseline history from final acceptance. Earlier Flow D assets and AGENTS.md edits remain separate.
+- `5c01c36`: closes empty-suite false passes and separates baseline history from final acceptance.
+- This milestone adds typed host source checks, separate scope review, and bounded literal-delivery correction. Earlier Flow D assets and AGENTS.md edits remain separate.

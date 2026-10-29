@@ -157,6 +157,8 @@ Task status represents open work, completion, or a blocked/partial outcome. Run 
 | `SourceReadReceipt` | Task/run/request ID, canonical relative path, complete-file digest, included line or byte ranges, and completeness. The host records receipts for the source actually included in an admitted request. |
 | `AgentTaskView` | Task ID/revision, status, requirement states, applied changes, passed checks, unavailable checks, remaining work, and latest run. Expose through the existing run snapshot. |
 
+Acceptance checks can select `verbatim_source` with a quoted source path when the user explicitly requests exact file content. The host checks complete observed byte coverage, the current file digest, and a raw or fenced literal copy. This check cannot establish program behavior. A separate scope audit still checks the original request. Other criteria retain semantic review and required execution proof. The model must select a check operation in its structured requirement response; the host does not infer a test pass from words in an answer.
+
 ### File observation and edit contracts
 
 `read_file` gains start position and bounded length. Return path, file digest, included ranges, complete flag, result ID, and continuation cursor. Use line ranges for normal code and byte ranges for an oversized single line. Preserve UTF-8 boundaries. Search and directory cursors bind to their query and source revision. Changed input invalidates the cursor.
@@ -287,7 +289,7 @@ All figures above are proposed acceptance targets. They are not achieved results
 Implementation is approved. The project owner supplied these setup decisions:
 
 1. Use LM Studio for development. Its selected driver assets are in `~/.lmstudio/models/lmstudio-community/Qwen2.5-Coder-7B-Instruct-MLX-4bit/`. Load only tokenizer and template data. Never load model weights in the app's counting code.
-2. Pin current counting dependencies. The implementation pins `@huggingface/tokenizers` 0.2.0, `@huggingface/jinja` 0.5.11, and `@lmstudio/sdk` 1.5.0. Electron remains pinned at 44.7.0. LM Studio's SDK can render and count a prompt without generation. Compare its result with local rendering and provider usage; do not assume that all API conversions are equivalent.
+2. Pin current counting dependencies. The implementation pins `@huggingface/tokenizers` 0.2.0, `@huggingface/jinja` 0.5.11, and `@lmstudio/sdk` 1.5.0. The requirement schema is generated from the host Zod validator with pinned `zod-to-json-schema` 3.25.2, which was already installed as a transitive dependency. Electron remains pinned at 44.7.0. LM Studio's SDK can render and count a prompt without generation. Compare its result with local rendering and provider usage; do not assume that all API conversions are equivalent.
 3. Defer exact vision counting. Use a fixed file-extension estimate for this version and label it explicitly. Establish exact processor counting in a later version.
 4. Use port 1234. Both `127.0.0.1` and the user-supplied private address `192.168.0.140` responded during setup. The driver is `qwen2.5-coder-7b-instruct-mlx`; vision is `qwen/qwen3-vl-4b`; embeddings is `text-embedding-nomic-embed-text-v1.5`. The loaded driver reports an 8,192-token context and no native tool training. Certify its JSON transport first.
 

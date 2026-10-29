@@ -47,6 +47,7 @@ const executionContextSchema = z.object({
 const pendingAuthorizationSchema = z.object({ callId: z.string(), tool: z.string(), targetPath: z.string().max(1024).optional(), summary: z.string().max(240), createdAt: z.string().datetime() });
 const agentProgressSchema = z.object({
   deliveryEvidenceDigest: z.string().optional(),
+  deliveryAttempts: z.array(z.object({ evidenceDigest: z.string(), answerDigest: z.string() })).max(40).default([]),
   latestResultId: z.string().uuid().optional(), feedback: z.string().max(10000).default(""),
   actions: z.array(z.object({ id: z.string().uuid(), hash: z.string(), requirementId: z.string(), operation: z.string(), status: z.enum(["proposed", "completed", "failed", "uncertain"]), resultId: z.string().uuid().optional() })).max(40).default([]),
   reads: z.array(z.object({ path: z.string(), digest: z.string(), startByte: z.number().int().nonnegative(), endByte: z.number().int().nonnegative(), sizeBytes: z.number().int().nonnegative(), resultId: z.string().uuid(), requestId: z.string().uuid() })).max(200).default([]),

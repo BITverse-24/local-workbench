@@ -12,7 +12,7 @@ const workspace = z.object({ root: z.string().min(1).max(4096), registeredAt: z.
 const requirement = z.object({
   id: key, kind: z.enum(["inspect", "change", "execute", "preserve", "deliver"]), description: z.string().min(1).max(4096),
   source: quote, mandatory: z.boolean(), dependencies: z.array(key),
-  acceptance: z.array(z.object({ id: key, description: z.string().min(1).max(4096), kind: z.enum(["inspection", "execution", "review", "delivery"]) }).strict()).min(1),
+  acceptance: z.array(z.object({ id: key, description: z.string().min(1).max(4096), kind: z.enum(["inspection", "execution", "review", "delivery"]), operation: z.literal("verbatim_source").optional(), path: z.string().min(1).max(1024).optional() }).strict().refine(check => Boolean(check.operation) === Boolean(check.path), "A source comparison needs its operation and path.")).min(1),
   state: z.enum(["active", "superseded", "waived"]), resolution: quote.optional(),
 }).strict();
 const revision = z.object({ schemaVersion: z.literal(1), taskId: id, revision: z.number().int().positive(),
