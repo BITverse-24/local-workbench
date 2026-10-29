@@ -110,10 +110,12 @@ ResultStore remains run-scoped. Earlier evidence is accessed through a task-auth
 
 ### Admission and task update
 
+Implementation diagnostic: the 7B Flow D probe changed the case of a quoted source word and failed exact provenance before actions. Preserve the exact quotation requirement. Supply host-created source spans for the model to select, then construct the stored quotations from the selected original bytes. Span selection still requires separate scope review; it does not prove understanding. The complete request remains durable.
+
 1. Save the user message first. Accept Agent mode, the selected model, current workspace identity, and `agentTaskIntent` of `continue` or `new`. Default to continue for Agent callers that omit this field.
 2. Resolve the current task in the chat. New task clears the current pointer and creates a new task. A different workspace identity requires a new binding; no prior side-effect authority transfers.
 3. For a follow-up, interpret whether the message supplies evidence, continues execution, revises scope, or asks for an answer only. Persist that disposition. An answer-only run receives no workspace execution tools and cannot resume pending actions.
-4. Preserve the complete message. Extract requirements with exact source spans. A removal or replacement must cite a later user instruction. Pasted logs are stored as evidence. Existing unresolved requirements survive extraction failure.
+4. Preserve the complete message. Extract requirements with exact source spans. The model check schema must distinguish semantic checks from literal byte checks: a literal check needs an observed source path and cannot claim program execution. A removal or replacement must cite a later user instruction. Pasted logs are stored as evidence. Existing unresolved requirements survive extraction failure.
 5. Save the task revision and run binding before any side effect. Show proposed requirements and relevant constraints in the existing approval preview for concrete mutations.
 
 ### One action cycle

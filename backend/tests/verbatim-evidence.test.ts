@@ -7,7 +7,8 @@ import type { AgentRequirement } from "../src/shared/contracts.js";
 import type { ToolExecutionContext } from "../src/main/tools/types.js";
 import { agentWorkspaceActions } from "../src/main/agent/workspace-actions.js";
 import { verifyVerbatimChecks } from "../src/main/agent/verbatim-evidence.js";
-import { parseTaskInterpretation } from "../src/main/agent/task-interpretation.js";
+import { agentInterpretationResponseSchema, parseTaskInterpretation } from "../src/main/agent/task-interpretation.js";
+import { Validator } from "jsonschema";
 import { fileDigest, MAX_AGENT_SOURCE_BYTES } from "../src/main/harness/tools/edit-file.js";
 import { closeDb, initDb } from "../src/main/persistence/db.js";
 import { createChat } from "../src/main/persistence/chats.js";
@@ -74,5 +75,16 @@ describe("Host literal source evidence", () => {
     const text = "Repair sample.txt and preserve its interface.";
     const response = { disposition: "continue", requirements: [{ kind: "change", description: text, quote: text, checks: [{ description: "Repair behavior", kind: "inspection", operation: "verbatim_source", path: "sample.txt" }] }], updates: [], full_suite: false };
     expect(() => parseTaskInterpretation(JSON.stringify(response), "00000000-0000-4000-8000-000000000001", text)).toThrow("direct request for exact file content");
+  });
+  it.each([
+    ["semantic","execution",null,true], ["semantic","inspection","sample.txt",false],
+    ["verbatim_source","inspection","sample.txt",true], ["verbatim_source","delivery","sample.txt",true],
+    ["verbatim_source","execution","sample.txt",false], ["verbatim_source","inspection",null,false],
+  ])("agrees at the model and host boundaries for %s/%s with path %s", (operation,kind,path,valid) => {
+    const text = "Read sample.txt and report its exact content.";
+    const response = {disposition:"continue",requirements:[{kind:"inspect",description:text,quote:text,checks:[{description:text,kind,operation,path}]}],updates:[],full_suite:false};
+    expect(new Validator().validate(response,agentInterpretationResponseSchema.schema).valid).toBe(valid);
+    const parse = () => parseTaskInterpretation(JSON.stringify(response),"00000000-0000-4000-8000-000000000001",text);
+    if(valid)expect(parse).not.toThrow(); else expect(parse).toThrow();
   });
 });

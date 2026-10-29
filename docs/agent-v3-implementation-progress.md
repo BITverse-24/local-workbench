@@ -90,6 +90,18 @@ The host no longer moves past a change requirement because one tool call succeed
 
 The focused check passed 48 tests across four files, with one live inspection skipped. Full type checking and the Electron source build passed. One host test makes two observed edits while testing is unavailable, retains all three obligations, and returns Partial without consuming a test repair cycle. Another test uses a separate coverage review to move from the first repair to the remaining repair. General evidence selection still needs work: the semantic review currently receives only the latest three source/execution slices. These scripted tests do not establish live repair quality.
 
+## Live Flow D interpretation diagnostic
+
+The new opt-in repair diagnostic copies a prepared pristine Flow D workspace into a disposable directory. Approval permits only the discovered full-suite commands and the two repair modules. Other original files are protected. It records prepared requests, saved results, source digests, approvals, and an independent test execution. The incident workspace remains untouched. This diagnostic is not the packaged or independent UI release check.
+
+Three fresh-workspace probes stopped before workspace actions. The first two exposed an invalid check combination allowed by the model schema: `verbatim_source` with an execution check and a null path. Exact counts matched provider usage. Captured requests show that the full instructions and correction reached the transport. The check schema now uses disjoint semantic and literal variants. The host and model schema both reject invalid combinations. This change does not establish correct interpretation.
+
+The next live probe passed that check shape but failed exact source provenance. The model capitalized a word in a quoted instruction, so the quoted span did not exist in the original request. Both attempts were rejected. No approval or mutation occurred; the outcome stayed Partial. Saved evidence: `docs/evidence/agent-flow-d-interpretation-2026-10-29.json`.
+
+The next implementation step is host-owned source spans. The model should select a supplied span reference; the host should construct and validate the exact source quotation. It must retain the full request and check scope separately. Do not weaken quotation checks, ignore missing repairs, or turn this failed diagnostic into a passing repair trial.
+
+The offline schema and host-loop check passed 30 tests across two files, with one live inspection skipped. Full type checking passed. Live repair certification remains closed.
+
 ## Current proof and limits
 
 The focused offline check passed 237 tests in 12 files; two opt-in live tests were skipped. This includes task storage, gateway admission, revision-bound edits, host-loop control, verification, storage isolation, and Chat/Work boundaries. Full type checking passed. The Electron source build passed. These results do not establish packaged behavior or live repair quality.
@@ -98,7 +110,7 @@ Live inspection evidence is saved in `docs/evidence/agent-host-inspection-probes
 
 ## Work still required
 
-1. Extend current evidence and bounded assessment to general repair and document requirements. The typed literal inspection case is now checked live. Complete host-owned progress after edits and bounded per-requirement evidence checks. Do not weaken acceptance or replace existing tests.
+1. Move requirement provenance to host-created source spans. Live Flow D interpretation now stops on model-copied quotations. Then extend current evidence and bounded assessment to general repair and document requirements. The typed literal inspection case is checked live. Complete host-owned progress after edits and bounded per-requirement evidence checks. Do not weaken acceptance or replace existing tests.
 2. Add the separate task progress facts to the UI. Complete task-authorized cross-run evidence retrieval in the active loop. Retain all original obligations on follow-ups and regressions.
 3. Finish structured constraints and protected-path extraction. Keep policy checks at the tool boundary.
 4. Complete test-environment probing in the actual launch environment. Cache unchanged missing-command failures. Finish baseline, full-suite, post-edit test scheduling, and repair-cycle integration.
