@@ -156,14 +156,14 @@ describe("Agent v3 task host loop", () => {
     replies=[()=>interpretation("change",request),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
       ()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),
       ()=>({tool_calls:[{name:"finish",arguments:{text:"The wording is corrected by the saved source-to-content replacement."}}]}),
-      payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The saved text edit and explanation meet the request."}))};}];
+      ...Array.from({length:2},()=>(payload:any)=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The saved text edit and explanation meet the request."}))};})];
     const {result,runId,approve}=await run(request);
     expect(result.outcome,result.text).toBe("completed");expect(approve).toHaveBeenCalledTimes(1);
     const requirements=getCurrentAgentTask(chatId)!.snapshot.requirements;
     expect(requirements.map(item=>item.kind)).toEqual(["change","deliver"]);
     expect(requirements[0].source.quote).toBe(request);
     expect(requirements[1].source.quote).toBe(" Explain the change.");
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(10);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(13);
   });
   it("shares the 40-call limit with source scope review and leaves the full request pending",async()=>{
     const request=Array.from({length:45},(_,index)=>`Inspect source ${index}.`).join(" ");
@@ -252,7 +252,7 @@ describe("Agent v3 task host loop", () => {
       expect(state.selectedSources.pages).toContainEqual(expect.objectContaining({path:"value.test.cjs",content:test,complete:true}));
       expect(state.feedback.text).toContain("wrong value");
       return {tool_calls:[{name:"edit_file",arguments:{path:"value.cjs",expected_digest:createHash("sha256").update(implementation).digest("hex"),replacements:[{old:'throw new Error("wrong value");',new:'return "ready";'}]}}]};
-    },()=>({tool_calls:[{name:"finish",arguments:{text:"The existing test now passes after the value repair."}}]}),payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source was inspected; the baseline failed and the existing test passed after repair."}))};}];
+    },()=>({tool_calls:[{name:"finish",arguments:{text:"The existing test now passes after the value repair."}}]}),...Array.from({length:3},()=>(payload:any)=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source was inspected; the baseline failed and the existing test passed after repair."}))};})];
     const {result,runId,approve,emit}=await run(request,false,undefined,undefined,workspace);
     expect(result.outcome,result.text+JSON.stringify(emit.mock.calls.filter(([event])=>event.type === "tool_result"))).toBe("completed");
     const ledger=getExecutionLedger(runId)!;
@@ -335,7 +335,7 @@ describe("Agent v3 task host loop", () => {
     await first.manager!.resume(first.runId);
     await vi.waitFor(() => expect(first.manager!.getRunSnapshot({ runId: first.runId })?.state).toBe("completed"), { timeout: 10000 });
     const after = getExecutionLedger(first.runId)!;
-    expect(after.agentTask?.modelCalls).toBe(before.agentTask!.modelCalls + 3);
+    expect(after.agentTask?.modelCalls).toBe(before.agentTask!.modelCalls + 4);
     expect(after.resumeCount).toBe(1);
     expect(after.agentTask?.taskId).toBe(task.taskId);
     expect(getCurrentAgentTask(chatId)?.snapshot.revision).toBe(task.snapshot.revision);
@@ -373,7 +373,7 @@ describe("Agent v3 task host loop", () => {
     }];
     const { result, runId, snapshot } = await run(text, true);
     expect(result.outcome, result.text).toBe("completed");
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(5);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(6);
     expect(getCurrentAgentTask(chatId)?.status).toBe("completed");
     expect(snapshot?.agentV3Available).toBe(true);
   });
@@ -397,12 +397,12 @@ describe("Agent v3 task host loop", () => {
       const state = JSON.parse(payload.messages[1].content);
       expect(state.evidenceSlices).toContainEqual(expect.objectContaining({ sourceText: "saved source\n", completeFile: true }));
       expect(state.sourceComparisons).toContainEqual(expect.objectContaining({ completeFile: true, current: true, exactTextIncluded: false }));
-      expect(state.results.every((item: any) => ["source_extracted", "execution"].includes(item.origin))).toBe(true);
+      expect(state.results.items.every((item: any) => ["source_extracted", "execution"].includes(item.origin))).toBe(true);
       return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Saved source was read" })) };
     }];
     const { result, runId, emit } = await run(text);
     expect(result.outcome, `${result.text}\n${JSON.stringify(emit.mock.calls)}`).toBe("completed");
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(5);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(6);
     expect(getExecutionLedger(runId)?.agentAdmissions[0]).toMatchObject({ phase: "requirements", status: "usage_verified" });
     expect(getExecutionLedger(runId)?.agentAdmissions[0]).toMatchObject({taskId:getCurrentAgentTask(chatId)!.taskId,taskRevision:1});
     expect(getExecutionLedger(runId)?.agentProgress?.reads[0].path).toBe("note.txt");
@@ -566,7 +566,7 @@ describe("Agent v3 task host loop", () => {
         const state=JSON.parse(payload.messages[1].content);
         expect(state.selectedSources.pages.map((page:any)=>page.path)).not.toContain("note.txt");
         expect(state.selectedSources.pages).toContainEqual(expect.objectContaining({path:"other.txt",content:second}));
-        expect(JSON.parse(state.latestResult.content).afterDigest).not.toBe(digest);
+        expect(state.latestResult.value.afterDigest).not.toBe(digest);
         return {tool_calls:[{name:"finish",arguments:{text:"The text edit is saved; other.txt is preserved."}}]};
       },payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The inspected text edit is saved."}))};}];
     const {result,runId}=await run("Repair note.txt and preserve other.txt");
@@ -603,7 +603,7 @@ describe("Agent v3 task host loop", () => {
     expect(dispatched[0].obligations).toEqual(rejected[0].obligations);
     expect(dispatched[0].originalRequest).toEqual(rejected[0].originalRequest);
     expect(dispatched[0].selectedSources).toMatchObject({pages:[],complete:false,totalEligiblePages:1});
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(7);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(8);
     // The omitted old page was supplied on its own earlier request, never forged by packing.
     expect(getExecutionLedger(runId)?.agentProgress?.reads.filter(read=>read.path === "note.txt")).toHaveLength(1);
   });
@@ -634,7 +634,7 @@ describe("Agent v3 task host loop", () => {
     },()=>({tool_calls:[{name:"finish",arguments:{text:"The exact tail replacement is saved."}}]}),payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The observed tail anchor was replaced."}))};}];
     const {result,runId,approve}=await run("Repair the tail anchor in large.txt");
     expect(result.outcome,result.text).toBe("completed");expect(rejected).toBe(9);expect(approve).toHaveBeenCalledTimes(1);
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(8);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(9);
     expect(getExecutionLedger(runId)?.agentProgress?.reads.map(read=>[read.startByte,read.endByte])).toEqual([[0,2000],[0,2000],[2000,4000]]);
     expect(readFileSync(path.join(root,"large.txt"),"utf8")).toBe(source.replace("TAIL_ANCHOR","REPAIRED"));
   });
@@ -727,16 +727,71 @@ describe("Agent v3 task host loop", () => {
     };
     replies = [() => ({disposition:"continue",requirements:["Repair note.txt.","Repair other.txt."].map(quote => ({kind:"change",description:quote,source_id:"request",checks:[{description:quote,kind:"review",operation:"semantic",path:null}]})),updates:[],full_suite:false}),
       () => action("read_file",{path:"note.txt"}), () => edit("note.txt","saved source\n"), () => action("finish",{text:"First repair saved."}),
+      payload => { const state = JSON.parse(payload.messages[1].content); expect(state.requirements).toHaveLength(1); return {covered:true,missing:[],requirements:[{id:state.requirements[0].id,satisfied:true,reason:"First edit saved."}]}; },
       payload => {
-        const state = JSON.parse(payload.messages[1].content); remainingId = state.requirements[1].id;
-        return {covered:false,missing:["Second repair remains."],requirements:state.requirements.map((item: any,index: number)=>({id:item.id,satisfied:index===0,reason:index===0?"First edit is saved.":"Inspect and edit the second file."}))};
+        const state = JSON.parse(payload.messages[1].content); expect(state.requirements).toHaveLength(1); remainingId = state.requirements[0].id;
+        return {covered:false,missing:["Second repair remains."],requirements:[{id:remainingId,satisfied:false,reason:"Inspect and edit the second file."}]};
       }, remainingTurn(action("read_file",{path:"other.txt"})), remainingTurn(edit("other.txt","other source\n")), remainingTurn(action("finish",{text:"Both text repairs are saved."})),
-      payload => { const state = JSON.parse(payload.messages[1].content); return {covered:true,missing:[],requirements:state.requirements.map((item: any)=>({id:item.id,satisfied:true,reason:"Observed direct edits are saved."}))}; }];
+      ...Array.from({length:2},()=> (payload:any) => { const state = JSON.parse(payload.messages[1].content); expect(state.requirements).toHaveLength(1); return {covered:true,missing:[],requirements:state.requirements.map((item: any)=>({id:item.id,satisfied:true,reason:"Observed direct edit is saved."}))}; })];
     const {result,runId} = await run(text);
     expect(result.outcome,result.text).toBe("completed");
     expect(getExecutionLedger(runId)?.agentProgress?.remainingRequirementIds).toEqual([]);
     expect(getCurrentAgentTask(chatId)?.snapshot.requirements).toHaveLength(2);
     expect(readFileSync(path.join(root,"other.txt"),"utf8")).toBe("other content\n");
+  });
+  it.each(["write_file","delete_file"] as const)("checks the saved final revision for %s",async operation=>{
+    const target=operation === "write_file" ? "new.txt" : "note.txt";
+    const calls:Reply[]=[];
+    if(operation === "delete_file")calls.push(()=>({tool_calls:[{name:"read_file",arguments:{path:target}}]}));
+    calls.push(()=>({tool_calls:[{name:operation,arguments:operation === "write_file" ? {path:target,content:"new content\n"} : {path:target,expected_digest:createHash("sha256").update("saved source\n").digest("hex")}}]}));
+    calls.push(()=>({tool_calls:[{name:"finish",arguments:{text:"The requested change is saved."}}]}));
+    calls.push(payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:[{id:state.requirements[0].id,satisfied:true,reason:"The requested file change is saved."}]};});
+    replies=[()=>interpretation("change",`${operation} ${target}`),...calls];
+    const {result,runId,approve}=await run(`${operation} ${target}`);
+    expect(result.outcome,result.text).toBe("completed");expect(approve).toHaveBeenCalledTimes(1);
+    const store=new RunResultStore(runId),record=store.listResults({limit:50}).find(record=>record.producer.tool === operation)!;
+    const expected=operation === "delete_file" ? null : createHash("sha256").update("new content\n").digest("hex");
+    expect(store.retrieveResultSlice(record.resultId,{mode:"json",pointer:"/afterDigest"}).content).toBe(expected ?? "null");
+  });
+  it("rejects text changed after the approved edit even when the reviewer says satisfied", async()=>{
+    const action=(name:string,args:object)=>({tool_calls:[{name,arguments:args}]});
+    replies=[()=>interpretation("change","Repair note.txt"),()=>action("read_file",{path:"note.txt"}),()=>action("edit_file",{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}),()=>action("finish",{text:"The edit is saved."}),payload=>{
+      const state=JSON.parse(payload.messages[1].content); expect(state.requirements).toHaveLength(1);
+      writeFileSync(path.join(root,"note.txt"),"external update\n");
+      return {covered:true,missing:[],requirements:[{id:state.requirements[0].id,satisfied:true,reason:"Edit is saved."}]};
+    },payload=>{const state=JSON.parse(payload.messages[1].content);expect(state.feedback.text).toContain("changed during review");return action("finish",{text:"The edit is saved."});}];
+    const {result,approve}=await run("Repair note.txt");
+    expect(result.outcome).toBe("partial"); expect(result.stopReason).toBe("repeated_action"); expect(approve).toHaveBeenCalledTimes(1);
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("external update\n");
+  });
+  it("does not review a text edit whose saved post-edit digest is already stale",async()=>{
+    const action=(name:string,args:object)=>({tool_calls:[{name,arguments:args}]});
+    replies=[()=>interpretation("change","Repair note.txt"),()=>action("read_file",{path:"note.txt"}),()=>action("edit_file",{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}),()=>{writeFileSync(path.join(root,"note.txt"),"external update\n");return action("finish",{text:"The edit is saved."});},payload=>{
+      const state=JSON.parse(payload.messages[1].content);expect(state.feedback.text).toContain("no longer current");return action("finish",{text:"The edit is saved."});
+    }];
+    const {result,runId}=await run("Repair note.txt");
+    expect(result.outcome).toBe("partial");expect(result.stopReason).toBe("repeated_action");
+    expect(new RunResultStore(runId).listResults({limit:50}).some(record=>record.producer.tool === "agent_requirement_review")).toBe(false);
+  });
+  it("reduces review source pages after exact rejection without dropping the requirement",async()=>{
+    const source="text ".repeat(700)+"ANCHOR\n",digest=createHash("sha256").update(source).digest("hex");
+    writeFileSync(path.join(root,"large.txt"),source);
+    const original=ModelGateway.prototype.chatWithTools;let rejections=0;
+    vi.spyOn(ModelGateway.prototype,"chatWithTools").mockImplementation(async function(this:ModelGateway,modelId,messages,tools,options){
+      const input=JSON.parse(messages[1]?.content ?? "{}");
+      if(input.proposedAnswer !== undefined && input.evidenceSlices.some((slice:any)=>slice.sourceText?.length>1000)){
+        expect(input.requirements).toHaveLength(1);expect(input.originalRequests[0].content).toBe("Repair large.txt");rejections++;
+        return {ok:false,error:{kind:"ai-error",code:"agent_context_limit",message:"Prepared review exceeds context",retryable:false}};
+      }
+      return original.call(this,modelId,messages,tools,options);
+    });
+    replies=[()=>interpretation("change","Repair large.txt"),()=>({tool_calls:[{name:"read_file",arguments:{path:"large.txt",max_bytes:4000}}]}),()=>({tool_calls:[{name:"edit_file",arguments:{path:"large.txt",expected_digest:digest,replacements:[{old:"ANCHOR",new:"REPAIRED"}]}}]}),()=>({tool_calls:[{name:"finish",arguments:{text:"Edit saved."}}]}),payload=>{
+      const input=JSON.parse(payload.messages[1].content);expect(input.requirements).toHaveLength(1);
+      expect(input.evidenceSlices).toContainEqual(expect.objectContaining({kind:"source",completeFile:false,byteRange:[0,1000]}));
+      return {covered:true,missing:[],requirements:[{id:input.requirements[0].id,satisfied:true,reason:"Observed edit saved."}]};
+    }];
+    const {result,runId}=await run("Repair large.txt");expect(result.outcome,result.text).toBe("completed");expect(rejections).toBe(2);
+    const ledger=getExecutionLedger(runId)!;expect(ledger.agentTask?.modelCalls).toBe(7);expect(ledger.agentAdmissions).toHaveLength(7);
   });
   it("permits one malformed-action correction and never executes either multi-action response", async () => {
     const text = "Inspect note.txt", calls = { tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }, { name: "write_file", arguments: { path: "other.txt", content: "bad" } }] };

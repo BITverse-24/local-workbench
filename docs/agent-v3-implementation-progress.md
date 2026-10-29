@@ -190,6 +190,16 @@ Result retrieval now preserves structured payloads and parent lineage. Filtered 
 
 Type checking and the Electron source build passed. The focused seven-file check passed 243 tests with one opt-in live test skipped. It includes an actual counted 4,096-token window, unseen edit anchors, UTF-8 continuation, filtered retrieval, and read paths restored after repacking. The three earlier diagnostics in `docs/evidence/agent-bounded-evidence-live-2026-10-30.json` remain failures. Two 7B runs repeated evidence acquisition without edits; 9B stopped at setup because it was not loaded. These traces predate the final read-agenda fix. No successful live repair has been established.
 
+## Bounded completion review and current file proof
+
+Completion now reviews one active requirement per request. It supplies the exact requirement, its user source, global preservation constraints, bounded relevant source or execution slices, and host check facts. An exact context rejection reduces source pages before another admission attempt. Result indexes state their total and completeness. Model proposals, approvals, and earlier reviews cannot become source or test proof. Each original source span receives a separate scope audit. Literal-copy delivery also audits original spans separately after host byte comparison. Earlier quoted waivers remain visible in those audits.
+
+The host checks each successful file operation against its saved post-operation digest before review and checks again after the review awaits. This includes ordinary text edits, new files, and deletion. Approval records cannot stand in for mutation outcomes, even when they share a call ID. Complete writes and deletions now save before/after revision evidence. Edits save structured outcome payloads. A source change during a positive model assessment keeps the task Partial; applied files and backups remain available.
+
+Full type checking and the Electron source build passed. The focused six-file check passed 240 tests, with one opt-in live test skipped. It includes per-requirement repair agendas, exact review repacking, current text revisions, creation, deletion, literal delivery, and Chat/Work boundaries.
+
+The next 7B trial still failed. It used 18 exact usage-verified calls, reached source reads and repeated test commands, then stopped Partial on a repeated read. No files changed. The independent scope assessment accepted mixed repair and explanation obligations under execute requirements. The driver then selected execution and broad source acquisition repeatedly. This trace is saved in `docs/evidence/agent-current-agenda-live-2026-10-30.json`. It predates this completion-review change and never reached completion review. The repair transition and category-dependent mutation guard still need a coherent change; do not treat these review improvements as a live repair fix.
+
 ## Current implementation scope
 
 The user has deferred release certification and will test 14B manually. Current work is implementation and harness quality for the 7B–14B range, with local 7B and 9B models available for development checks. The machine has Qwen2.5 Coder 7B and Qwen3.5 9B assets; no 14B model is installed. Do not download weights or treat release trial counts as a current completion requirement. Keep the release controls documented and keep production promotion separate. Packaged-environment implementation checks remain useful because the original failure occurred in a production build.
@@ -202,7 +212,7 @@ Live inspection evidence is saved in `docs/evidence/agent-host-inspection-probes
 
 ## Work still required
 
-1. Complete bounded relevant source packing and prove the repair transition with the real model. Typed actions, retained current source pages, bounded host failure reads, and a pre-action scope assessment are present, but the live model still has no successful repair. Then complete bounded per-requirement evidence checks and task-authorized cross-run applicability. Audit explicit full-suite scope independently of an omitted model Boolean. Do not weaken acceptance or replace existing tests.
+1. Complete bounded relevant source packing and prove the repair transition with the real model. Typed actions, retained current source pages, bounded host failure reads, and a pre-action scope assessment are present, but the live model still has no successful repair. Bounded per-requirement reviews and source-change checks are now present. Complete task-authorized cross-run applicability and current-evidence retrieval for larger requirements. Audit explicit full-suite scope independently of an omitted model Boolean. Do not weaken acceptance or replace existing tests.
 2. Add the separate task progress facts to the UI. Complete task-authorized cross-run evidence retrieval in the active loop. Retain all original obligations on follow-ups and regressions.
 3. Finish structured constraints and protected-path extraction. Keep policy checks at the tool boundary.
 4. Complete test-environment probing in the actual launch environment. Cache unchanged missing-command failures. Finish baseline, full-suite, post-edit test scheduling, and repair-cycle integration.

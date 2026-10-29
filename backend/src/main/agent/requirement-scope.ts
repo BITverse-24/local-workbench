@@ -4,7 +4,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import type { AgentRequirement, AgentTask } from "../../shared/contracts.js";
 import type { ToolExecutionContext } from "../tools/types.js";
 import { assertRuntimeActive } from "../run/runtime-scope.js";
-import { agentScopeSources, agentSourceRequirementFormat, parseAgentData, parseAgentSourceRequirements, type AgentScopeSource, type parseTaskInterpretation } from "./task-interpretation.js";
+import { agentMessageSources, agentScopeSources, agentSourceRequirementFormat, parseAgentData, parseAgentSourceRequirements, type AgentScopeSource, type parseTaskInterpretation } from "./task-interpretation.js";
 
 type Interpretation = ReturnType<typeof parseTaskInterpretation>;
 export interface AgentScopeGap { source: AgentScopeSource; detail: string }
@@ -25,15 +25,15 @@ function proposedRequirements(task: AgentTask, candidate: Interpretation) {
 const outline = (item: AgentRequirement) => ({kind:item.kind,description:item.description});
 
 /** Review only new/pending sources before actions. Final coverage still checks every original message. */
-export async function reviewAgentInterpretation(task: AgentTask, candidate: Interpretation, context: ToolExecutionContext, modelId: string, messageId: string) {
-  const units = agentScopeSources(task,messageId), requirements = proposedRequirements(task,candidate);
+export async function reviewAgentInterpretation(task: AgentTask, candidate: Interpretation, context: ToolExecutionContext, modelId: string, messageId: string, allSources = false) {
+  const units = allSources ? task.snapshot.messages.flatMap(message => agentMessageSources(message.content).map(span => ({ messageId: message.id, sourceId: `${message.id}:${span.id}`, start: span.start, end: span.end, text: span.text }))) : agentScopeSources(task,messageId), requirements = proposedRequirements(task,candidate);
   const gaps: AgentScopeGap[] = [];let fullSuite=candidate.fullSuite;
   for (let index=0;index<units.length;index++) {
     const source=units[index];
     if(!source.text.trim())continue;
     const input={source:{sourceId:source.sourceId,text:source.text},proposedDisposition:candidate.disposition,
-      requirements:requirements.filter(item=>item.source.messageId === source.messageId && item.source.start < source.end && item.source.end > source.start).map(outline),
-      scopeUpdates:candidate.updates.flatMap(update=>update.operation !== "append" && update.source.messageId === source.messageId && update.source.start < source.end && update.source.end > source.start ? [{operation:update.operation,requirement:task.snapshot.requirements.filter(item=>item.id === update.requirementId).map(outline),sourceText:update.source.quote}] : [])};
+      requirements:(allSources ? task.snapshot.requirements : requirements).filter(item=>item.source.messageId === source.messageId && item.source.start < source.end && item.source.end > source.start).map(item=>({...outline(item),...(allSources ? {state:item.state,resolution:item.resolution ?? null} : {})})),
+      scopeUpdates:[...candidate.updates,...(allSources ? task.snapshot.requirements.flatMap(item => item.resolution ? [{operation:item.state === "waived" ? "waive" as const : "supersede" as const,requirementId:item.id,source:item.resolution}] : []) : [])].flatMap(update=>update.operation !== "append" && update.source.messageId === source.messageId && update.source.start < source.end && update.source.end > source.start ? [{operation:update.operation,requirement:task.snapshot.requirements.filter(item=>item.id === update.requirementId).map(outline),sourceText:update.source.quote}] : [])};
     const response=await context.gateway.chatWithTools(modelId,[{role:"system",content:instructions},{role:"user",content:JSON.stringify(input)}],[],{runId:context.runId,maxTokens:512,purpose:"classification",temperature:0,signal:context.signal,
       responseSchema:{name:"agent_requirement_scope",schema:zodToJsonSchema(schema,{$refStrategy:"none"}) as Record<string,unknown>}});
     assertRuntimeActive();

@@ -176,6 +176,8 @@ Acceptance checks can select `verbatim_source` with a quoted source path when th
 
 Implementation check: request repacking now pages immutable source at UTF-8 boundaries and records only actually admitted ranges. Every source page supplied in a packet informs the read agenda. Removed pages become readable again after tool definitions are rebuilt. Result retrieval preserves structured payloads, parent lineage, and explicit completeness; it cannot promote retrieved model-derived data into original source evidence. The focused check passed 243 tests, with one live test skipped. Live repair and bounded per-requirement completion review remain open.
 
+Completion implementation: semantic reviews now use one active requirement per request and reduce optional source slices after an exact admission rejection. Separate source-span audits retain the original request coverage check, including earlier explicit waivers. Literal-copy tasks use host byte comparison plus bounded source-span scope audits. Saved successful file outcomes carry before/after digests; approval evidence cannot replace an operation result. Current bytes are checked before and after review, including text edits, new files, and deletion. These checks do not resolve the separate repair-transition defect seen in the latest 18-call 7B trace.
+
 ### Gateway and tokenizer contract
 
 The gateway prepares a request before sending it. Preparation produces the final payload, selected transport, model identity, template identity, and output reservation. Admission returns exact input tokens, reserved output tokens, context limit, safety reserve, counter identity, and a digest of the prepared request. Dispatch requires a matching admission receipt.

@@ -89,7 +89,7 @@ export const agentWorkspaceActions: AgentTool[] = [
       context.assertAuthority?.(); context.signal?.throwIfAborted();
       const result = editFile(context.workspaceRoot, { path: canonical, expectedDigest: input.expected_digest, replacements: input.replacements, requirementId: context.agentRequirementId ?? "", reason: context.agentChangeReason ?? "" }, getExecutionLedger(context.runId)?.agentProgress?.reads ?? []);
       context.harness?.notifyWorkspaceTreeUpdated();
-      return { output: JSON.stringify(result), summary: `Edited ${canonical}`, data: result, sideEffects: [`modified:${canonical}`] };
+      return { output: JSON.stringify(result), summary: `Edited ${canonical}`, data: result, intermediate: { type: "structured", status: "complete", origin: "execution", payload: result, sources: [{ filename: canonical, relation: "source" }] }, sideEffects: [`modified:${canonical}`] };
     });
   }),
   ...(["write_file", "delete_file"] as const).map(operation => tool(operation, operation === "write_file" ? "Create a complete new file. Replacing an existing file requires replace_existing, its digest, and a complete prior read." : "Delete a fully inspected file at its expected digest.", { path: pathProperty, ...(operation === "write_file" ? { content: { type: "string", format: "multiline" }, replace_existing: { type: "boolean" } } : {}), expected_digest: { type: "string" } }, operation === "write_file" ? ["path", "content"] : ["path", "expected_digest"], async (args, context) => {
@@ -99,15 +99,16 @@ export const agentWorkspaceActions: AgentTool[] = [
     return context.policyGuard!.withMutationLock(`file:${canonical}`, () => {
       context.assertAuthority?.(); context.signal?.throwIfAborted();
       const target = resolveSafe(context.workspaceRoot, canonical);
+      let beforeDigest: string | null = null;
       if (existsSync(target)) {
-        const bytes = readAgentSourceBytes(context.workspaceRoot, canonical), revision = fileDigest(bytes);
+        const bytes = readAgentSourceBytes(context.workspaceRoot, canonical), revision = fileDigest(bytes); beforeDigest = revision;
         if (revision !== input.expected_digest || (operation === "write_file" && !input.replace_existing)) throw new PermissionError("Existing file replacement requires a fresh complete read, an expected digest, and explicit replacement.");
         if (!observedRange(getExecutionLedger(context.runId)?.agentProgress?.reads ?? [], canonical, revision, 0, bytes.length)) throw new PermissionError("The complete current source was not supplied to the model.");
       } else if (operation === "delete_file" || input.expected_digest) throw new PermissionError("The target file is missing or changed.");
       const result = operation === "write_file" ? writeFile(context.workspaceRoot, canonical, input.content!) : deleteFile(context.workspaceRoot, canonical);
       context.harness?.notifyWorkspaceTreeUpdated();
       const { backupPath, ...rest } = result;
-      const data = { ...rest, ...(backupPath === undefined ? {} : { backupPath }) };
+      const data = { ...rest, beforeDigest, afterDigest: operation === "delete_file" ? null : fileDigest(input.content!), ...(backupPath === undefined ? {} : { backupPath }) };
       return { output: JSON.stringify(data), summary: `${operation} ${canonical}`, data, intermediate: { type: "structured", status: "complete", origin: "execution", payload: data, sources: [{ filename: canonical, relation: "source" }] }, sideEffects: [`${operation === "write_file" ? "modified" : "deleted"}:${canonical}`] };
     });
   })),
