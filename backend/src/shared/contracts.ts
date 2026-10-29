@@ -171,6 +171,8 @@ export interface RunSnapshot {
   chatId: string;
   mode: ExecutionMode | null;
   engineVersion: string | null;
+  /** Current host capability. Historical engine identity does not enable v3. */
+  agentV3Available?: boolean;
   agentTask?: import("./agent-task.js").AgentTask;
   agentTaskBinding?: import("./agent-task.js").AgentTaskBinding;
   state: RunState;

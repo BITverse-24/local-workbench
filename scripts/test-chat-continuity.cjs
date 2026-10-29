@@ -16,7 +16,8 @@ const chats = [{ id: a, title: 'Source task', updated_at: new Date().toISOString
 const messages = new Map([[a, [{ id: userA, role: 'user', content: 'Original request', run_id: runA }, { id: randomUUID(), role: 'assistant', content: 'Original saved answer', run_id: runA }]], [b, [{ id: userB, role: 'user', content: 'Create a report', run_id: runB }]]]);
 const snapshots = new Map([[a, { runId: runA, chatId: a, mode: 'chat', state: 'completed', engineVersion: 'fixture', progress: [], artifacts: [], metrics: {} }], [b, { runId: runB, chatId: b, mode: 'work', state: 'partial', engineVersion: 'fixture', progress: [], artifacts: [], metrics: {}, recovery: { canResume: true, largerGenerationAllowance: false, sourceMessageId: userB, reason: 'The app stopped during review.', completed: ['Read selected sources'], remaining: ['Check the report'] } }]]);
 const settings = new Map([['lastChatId', a]]), failures = new Set(), starts = [], resumes = [], uploads = [];
-let win;
+let win, fixtureWorkspace = null;
+const agentTasks = new Map();
 const emit = event => win.webContents.send('continuity:Run', event);
 const complete = (chatId, runId) => {
  const messageId = randomUUID();
@@ -35,9 +36,11 @@ ipcMain.handle('continuity:call', async (_event, method, args) => {
  case 'getSetting': return { value: settings.get(args[0]) ?? null };
  case 'setSetting': settings.set(args[0], args[1]); return;
  case 'getMessages': return { messages: messages.get(args[0]) ?? [] };
- case 'getRunSnapshot': return args[0].chatId ? snapshots.get(args[0].chatId) : [...snapshots.values()].find(value => value.runId === args[0].runId);
+ case 'getRunSnapshot': { const snapshot = args[0].chatId ? snapshots.get(args[0].chatId) : [...snapshots.values()].find(value => value.runId === args[0].runId); return snapshot ? { ...snapshot, agentV3Available: !!fixtureWorkspace, agentTask: agentTasks.get(snapshot.chatId) } : undefined; }
  case 'getRunHistory': return [...snapshots.values()];
- case 'getCurrentWorkspace': case 'getExecutionCapabilities': case 'getVerificationReport': return null;
+ case 'getCurrentWorkspace': return fixtureWorkspace;
+ case 'listWorkspaceDir': return { result: [] };
+ case 'getExecutionCapabilities': case 'getVerificationReport': return null;
  case 'getHealth': case 'kbListDocs': return [];
  case 'kbStats': return { docCount: 0, chunkCount: 0 };
  case 'notifyResponse': return { notified: false };
@@ -45,8 +48,8 @@ ipcMain.handle('continuity:call', async (_event, method, args) => {
  case 'registerAttachment': { const input = args[0]; uploads.push(input); return { runId: randomUUID(), attachment: { attachmentId: randomUUID(), filename: input.filename, mediaType: input.mediaType, sizeBytes: input.sizeBytes, relativePath: 'fixture/input' } }; }
  case 'sendMessage': { const [id, role, content] = args, messageId = randomUUID(); messages.get(id).push({ id: messageId, role, content }); return { messageId, seq: messages.get(id).length - 1 }; }
  case 'startRun': { const input = args[0]; starts.push(input); messages.get(input.chatId).find(message => message.id === input.userMessageId).run_id = input.runId;
-  snapshots.set(input.chatId, { runId: input.runId, chatId: input.chatId, mode: input.mode, state: 'acting', engineVersion: 'fixture', progress: [], artifacts: [], metrics: {} });
-  setTimeout(() => { emit({ type: 'run_registered', runId: input.runId, chatId: input.chatId, mode: input.mode }); emit({ type: 'run_state', runId: input.runId, state: 'acting' }); setTimeout(() => complete(input.chatId, input.runId), 100); }, 10);
+  snapshots.set(input.chatId, { runId: input.runId, chatId: input.chatId, mode: input.mode, state: 'acting', engineVersion: input.mode === 'agent' ? 'agent-v3' : 'fixture', progress: [], artifacts: [], metrics: {} });
+  setTimeout(() => { emit({ type: 'run_registered', runId: input.runId, chatId: input.chatId, mode: input.mode }); emit({ type: 'run_state', runId: input.runId, state: 'acting' }); setTimeout(() => complete(input.chatId, input.runId), input.mode === 'agent' ? 250 : 100); }, 10);
   return { runId: input.runId }; }
  case 'resumeRun': { const input = args[0]; resumes.push(input); const snap = [...snapshots.values()].find(value => value.runId === input.runId); snap.state = 'acting';
   setTimeout(() => { emit({ type: 'run_state', runId: input.runId, state: 'acting' }); setTimeout(() => complete(snap.chatId, input.runId), 100); }, 10); return { runId: input.runId }; }
@@ -132,6 +135,40 @@ app.whenReady().then(async () => {
   assert(await run(`document.body.innerText.includes('View original')`), 'Attempt lineage missing');
   await button('View original'); await wait(`document.querySelector('h1').textContent==='Source task' && document.querySelector('textarea[aria-label="Prompt"]').value==='unsaved text after disk failure'`);
   console.log('Passed: Edit and rerun, linked original, and retained original draft');
+  // New task is a one-shot choice in its owning chat. It cannot itself start work.
+  fixtureWorkspace = { root: path.join(out, 'workspace'), registeredAt: new Date().toISOString() }; fs.mkdirSync(fixtureWorkspace.root);
+  const agentChat = randomUUID(), agentRun = randomUUID();
+  chats.unshift({ id: agentChat, title: 'Agent task', updated_at: new Date().toISOString() }); messages.set(agentChat, []);
+  snapshots.set(agentChat, { runId: agentRun, chatId: agentChat, mode: 'agent', state: 'completed', engineVersion: 'agent-v3', progress: [], artifacts: [], metrics: {} });
+  agentTasks.set(agentChat, { taskId: randomUUID(), chatId: agentChat, workspace: fixtureWorkspace, status: 'completed', current: true, snapshot: { schemaVersion: 1, revision: 1, messages: [], requirements: [] } });
+  settings.set('lastChatId', agentChat); win.reload();
+  await wait(`!!document.querySelector('[title="Agent task"]') && !document.querySelector('textarea[aria-label="Prompt"]').disabled`);
+  await select('Agent task');
+  await button('Agent'); await wait(`!!document.querySelector('[aria-label="Agent task controls"]')`);
+  await input('Continue the saved objective'); await saved(); await click('[aria-label="Send prompt"]');
+  await wait(`document.querySelector('textarea[aria-label="Prompt"]').value==='' && !document.querySelector('textarea[aria-label="Prompt"]').disabled`);
+  assert(starts.at(-1).agentTaskIntent==='continue', 'Agent did not continue the current task by default');
+  const beforeNewTask = starts.length; await button('New task');
+  assert(starts.length===beforeNewTask && await run(`document.body.innerText.includes('The next message starts a new task.')`), 'New task itself started work or its intent is not visible');
+  await button('Work'); await input('Create a separate Work answer'); await saved(); await click('[aria-label="Send prompt"]');
+  await wait(`document.querySelector('textarea[aria-label="Prompt"]').value==='' && !document.querySelector('textarea[aria-label="Prompt"]').disabled`);
+  assert(starts.at(-1).mode==='work' && starts.at(-1).agentTaskIntent===undefined, 'Agent task intent changed a Work request');
+  await button('Agent'); await wait(`document.body.innerText.includes('The next message starts a new task.')`);
+  await select('Source task'); assert(!await run(`!!document.querySelector('[aria-label="Agent task controls"]')`), 'Agent task choice leaked into another chat');
+  await select('Agent task'); await wait(`document.body.innerText.includes('The next message starts a new task.')`);
+  await input('Start a separate objective'); await saved();
+  await run(`window.continuityFixture.fail('startRun',true)`); await click('[aria-label="Send prompt"]');
+  await wait(`document.body.innerText.includes('send_failed') && !document.querySelector('textarea[aria-label="Prompt"]').disabled`);
+  assert(await run(`document.body.innerText.includes('The next message starts a new task.') && document.querySelector('textarea[aria-label="Prompt"]').value==='Start a separate objective'`), 'Failed send lost the New task choice');
+  await run(`window.continuityFixture.fail('startRun',false)`); await click('[aria-label="Send prompt"]');
+  await wait(`document.querySelector('[aria-label="Agent task controls"] button')?.disabled===true`);
+  await wait(`document.querySelector('textarea[aria-label="Prompt"]').value==='' && !document.querySelector('textarea[aria-label="Prompt"]').disabled`);
+  assert(starts.at(-1).agentTaskIntent==='new', 'New task intent did not reach startRun');
+  await wait(`document.body.innerText.includes('The next message continues the current task.')`);
+  await input('Follow up on the separate objective'); await saved(); await click('[aria-label="Send prompt"]');
+  await wait(`document.querySelector('textarea[aria-label="Prompt"]').value==='' && !document.querySelector('textarea[aria-label="Prompt"]').disabled`);
+  assert(starts.at(-1).agentTaskIntent==='continue', 'A successful New task choice was reused');
+  console.log('Passed: Agent default continuation, per-chat New task, failed send, and one-shot intent');
   settings.set('lastChatId',null); win.reload();
   await wait(`document.querySelector('h1')?.textContent==='New chat' && !document.querySelector('textarea[aria-label="Prompt"]').disabled`);
   await input('Initial unsent draft'); await saved(); await click('[title="New conversation"]');
@@ -139,6 +176,9 @@ app.whenReady().then(async () => {
   await select('Unsent draft'); await wait(`document.querySelector('textarea[aria-label="Prompt"]').value==='Initial unsent draft'`);
   console.log('Passed: an initial unsent draft stays visible after New chat');
   fs.writeFileSync(path.join(out,'continuity.png'),(await win.webContents.capturePage()).toPNG());
+  fs.writeFileSync(path.join(out,'continuity-result.json'), JSON.stringify({ recordedAt: new Date().toISOString(), passed: true, fixtureBridge: true,
+   checks: ['drafts and attachments', 'pins and startup', 'storage failures', 'interruption and explicit resume', 'linked message attempts', 'Agent default continuation', 'New task per chat', 'New task disabled during execution', 'failed send retains task intent', 'successful send clears task intent'],
+   agentTaskIntents: starts.filter(input => input.mode === 'agent').map(input => input.agentTaskIntent) }, null, 2));
   console.log('Continuity checks passed. Evidence: '+out);
   win.destroy(); app.quit();
  } catch(error) { console.error(error); fs.writeFileSync(path.join(out,'failure.png'),(await win.webContents.capturePage()).toPNG()); console.error('Evidence: '+out); win.destroy(); app.exit(1); }

@@ -7,7 +7,7 @@ import type { ToolExecutionContext } from "../tools/types.js";
 import { getDb } from "../persistence/db.js";
 import { bindAgentTaskRun, getAgentTask, getAgentTaskBinding, getCurrentAgentTask, setAgentTaskStatus } from "../run/agent-task-store.js";
 import { bindAgentExecutionLedger, configureExecutionLedger, getExecutionLedger, initializeAgentInterpretationBudget, initializeExecutionLedger, takeAgentProtocolCorrection, updateAgentProgress } from "../run/execution-ledger.js";
-import { persistRunContract } from "../run/contract.js";
+import { getRunContract, persistRunContract } from "../run/contract.js";
 import { currentRuntimeScope, assertRuntimeActive } from "../run/runtime-scope.js";
 import { ToolDispatcher } from "./tool-dispatcher.js";
 import { getAllAvailableTools, filterToolsForTurn } from "../router/tool-compositor.js";
@@ -35,7 +35,7 @@ export class AgentTaskRunner {
     if (!scope || scope.mode !== "agent" || scope.runId !== runId || !context.resultStore || !context.policyGuard || !context.envelope) throw new Error("Agent v3 requires a bound host runtime and result store.");
     const source = getDb().prepare("SELECT content FROM messages WHERE id=? AND chat_id=? AND role='user'").get(input.messageId, input.chatId) as { content: string } | undefined;
     if (!source) throw new Error("Agent requires the saved original user message.");
-    const contract: RunContract = persistRunContract({ schemaVersion: 1, runId, createdAt: new Date().toISOString(), objective: source.content.slice(0, 500) || "Inspect selected inputs", resolution: { status: "resolved" }, routing: { intentType: "general_qa", taskType: "code", driverModel: modelId, actionable: true }, response: { required: true, chatOnly: false }, workspace: { requested: false, operations: [] }, deliverables: [], constraints: { protectedPaths: [], restrictMutationsToTargets: false, userConstraints: [] }, acceptance: { validateWrittenCode: false, validatedPythonDeliverables: [], artifactChecks: [] } });
+    const contract: RunContract = getRunContract(runId) ?? persistRunContract({ schemaVersion: 1, runId, createdAt: new Date().toISOString(), objective: source.content.slice(0, 500) || "Inspect selected inputs", resolution: { status: "resolved" }, routing: { intentType: "general_qa", taskType: "code", driverModel: modelId, actionable: true }, response: { required: true, chatOnly: false }, workspace: { requested: false, operations: [] }, deliverables: [], constraints: { protectedPaths: [], restrictMutationsToTargets: false, userConstraints: [] }, acceptance: { validateWrittenCode: false, validatedPythonDeliverables: [], artifactChecks: [] } });
     initializeExecutionLedger(contract); initializeAgentInterpretationBudget(runId);
     configureExecutionLedger(runId, { modelId, mode: "agent", workspaceRoot: context.workspaceRoot, groundingEnabled: !!context.grounding });
     context.runContract = contract; context.executionLedger = getExecutionLedger(runId); context.automaticCodeValidation = true;

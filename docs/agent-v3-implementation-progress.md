@@ -40,18 +40,28 @@ Baseline and final tests use the existing verification stage and repair limits. 
 
 Live inspection exposed two separate failures. The model initially returned action JSON inside Markdown fences. Those examples remained text and caused no tool action. The JSON action transport now requests a constrained single-action envelope where supported; the host still validates the operation and authority. Rejected examples use the one protocol correction and are saved as rejected responses. The selected LM Studio server accepted the structured format. Counting still checks the final request and provider usage.
 
-The next live probes reached source reads but coverage review rejected the correct reported content and the loop stopped on repeated actions. Source evidence is now unwrapped before review. Model proposals and old reviews are excluded from source/execution proof. This closes a review feedback path; live success remains unproven. An interpretation correction also exposed an adjacent-user-message rendering mismatch. Corrections now stay within one bounded user packet. The exact admission guard blocked the mismatched request before generation.
+The next live probes reached source reads but coverage review rejected the reported source text and the loop stopped on repeated actions. Source evidence is now unwrapped before review. Model proposals and old reviews are excluded from source/execution proof. This closes a review feedback path; live success remains unproven. An interpretation correction also exposed an adjacent-user-message rendering mismatch. Corrections now stay within one bounded user packet. The exact admission guard blocked the mismatched request before generation.
+
+## Task controls and explicit resume
+
+The renderer now has a New task action for chats with a v3 task. It is disabled during execution. The choice stays in its owning chat and survives a failed send. A successful Agent submission clears it. A Work submission does not consume the Agent choice or send task intent. The host exposes v3 availability separately from historical engine identity. A task remains visible in the snapshot after another mode runs in the same chat.
+
+The desktop check found a stale loading flag when a new blank chat opened while an older history load was pending. The new view now clears that old flag. Existing draft, attachment, storage failure, recovery, and linked-attempt checks pass with the new task controls.
+
+V3 now reuses the persisted run contract on explicit resume. A manager test confirms that it keeps the same task revision and adds to the existing call count without repeating requirement extraction. This proves same-session resume. Backend restart, workspace-registration renewal, and legacy-to-v3 continuation still need separate proof.
+
+The final desktop interface check passed with a fixture bridge and real draft storage. It checked default continuation, per-chat New task choice, failure retention, one-shot reset, the disabled control during execution, and the Work boundary. Evidence: `docs/evidence/agent-task-controls-2026-10-29.json`. This is not a packaged-backend check.
 
 ## Current proof and limits
 
 The focused offline check passed 237 tests in 12 files; two opt-in live tests were skipped. This includes task storage, gateway admission, revision-bound edits, host-loop control, verification, storage isolation, and Chat/Work boundaries. Full type checking passed. The Electron source build passed. These results do not establish packaged behavior or live repair quality.
 
-Live inspection evidence is being retained with full saved proposals, source observations, reviews, admission receipts, and stop reasons. Failed probes returned Partial and requested no mutation approvals. The selected 7B model is available. The 14B release trials have not run.
+Live inspection evidence is saved in `docs/evidence/agent-host-inspection-probes-2026-10-29.json`, with full saved proposals, source observations, reviews, admission receipts, and stop reasons. Failed probes returned Partial and requested no mutation approvals. The selected 7B model is available. The 14B release trials have not run.
 
 ## Work still required
 
 1. Resolve live requirement and coverage review failures from saved evidence. Complete host-owned progress after edits and bounded per-requirement evidence checks. Do not weaken acceptance or replace existing tests.
-2. Add the New task control and task progress display. Complete task-authorized cross-run evidence retrieval in the active loop. Retain all original obligations on follow-ups and regressions.
+2. Add the separate task progress facts to the UI. Complete task-authorized cross-run evidence retrieval in the active loop. Retain all original obligations on follow-ups and regressions.
 3. Finish structured constraints and protected-path extraction. Keep policy checks at the tool boundary.
 4. Complete test-environment probing in the actual launch environment. Cache unchanged missing-command failures. Finish baseline, full-suite, post-edit test scheduling, and repair-cycle integration.
 5. Complete restart and uncertain-mutation reconciliation, approval expiry UI, and linked legacy-to-v3 attempts with fresh authority. The preview currently refuses to resume the old engine.
@@ -64,4 +74,5 @@ The damaged Flow D workspace was not restored or edited by this work. Production
 
 - `4ce72cb`: durable tasks, schema backup, local/server counter foundations, pinned dependencies, and initial counting evidence.
 - `ef35bfc`: final gateway admission and saved usage receipts.
-- The integrated host-loop and revision-bound edit milestone is ready for a regular commit after its final focused checks. Earlier Flow D assets and AGENTS.md edits remain separate.
+- `b008c3b`: integrated v3 host loop, revision-bound edits, strict action transport, and failed live-inspection evidence.
+- This milestone adds tested task controls and same-session resume. Earlier Flow D assets and AGENTS.md edits remain separate.

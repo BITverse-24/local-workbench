@@ -56,13 +56,35 @@ async function run(text: string, managerPath = false) {
     await vi.waitFor(() => expect(["completed", "partial", "failed", "cancelled"]).toContain(manager.getRunSnapshot({ runId })?.state), { timeout: 10000 });
     const snapshot = manager.getRunSnapshot({ runId })!;
     const answer = getDb().prepare("SELECT content FROM messages WHERE run_id=? AND role='assistant' ORDER BY seq DESC LIMIT 1").get(runId) as { content: string };
-    return { result: { outcome: snapshot.state, stopReason: getExecutionLedger(runId)?.agentProgress?.stopReason, text: answer.content }, runId, approve, emit, snapshot };
+    return { result: { outcome: snapshot.state, stopReason: getExecutionLedger(runId)?.agentProgress?.stopReason, text: answer.content }, runId, approve, emit, snapshot, manager };
   }
   const result = await withRuntimeScope({ runId, mode: "agent", signal: new AbortController().signal }, () => new AgentTaskRunner().run({ modelId: "driver", chatId, messageId, workspace: { root, registeredAt: "first" }, approve, state: state => { if (getDb().prepare("SELECT state FROM runs WHERE id=?").get(runId)) transition(runId, state); }, context: { runId, workspaceRoot: root, gateway, resultStore: new RunResultStore(runId), policyGuard: new MutationPolicyGuard(), envelope: buildExecutionEnvelope({ runId, mode: "agent", modelId: "driver", hasWorkspace: true, workspaceRoot: root }), emitRunEvent: emit } }));
   transition(runId, result.outcome === "completed" ? "completed" : result.outcome === "cancelled" ? "cancelled" : "partial");
-  return { result, runId, approve, emit };
+  return { result, runId, approve, emit, manager: undefined };
 }
 describe("Agent v3 task host loop", () => {
+  it("explicitly resumes the saved v3 contract, task, and call budget without repeating interpretation", async () => {
+    const text = "Inspect note.txt";
+    const covered = (payload: any) => {
+      const state = JSON.parse(payload.messages.at(-1).content);
+      return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Inspected source" })) };
+    };
+    replies = [() => interpretation("inspect", text), () => "Advice without an inspection.", covered, () => "More advice."];
+    const first = await run(text, true);
+    expect(first.result.outcome).toBe("partial");
+    const before = getExecutionLedger(first.runId)!;
+    const task = getCurrentAgentTask(chatId)!;
+    expect(before.agentProgress?.reads).toHaveLength(0);
+    replies = [() => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "saved source", covered];
+    await first.manager!.resume(first.runId);
+    await vi.waitFor(() => expect(first.manager!.getRunSnapshot({ runId: first.runId })?.state).toBe("completed"), { timeout: 10000 });
+    const after = getExecutionLedger(first.runId)!;
+    expect(after.agentTask?.modelCalls).toBe(before.agentTask!.modelCalls + 3);
+    expect(after.resumeCount).toBe(1);
+    expect(after.agentTask?.taskId).toBe(task.taskId);
+    expect(getCurrentAgentTask(chatId)?.snapshot.revision).toBe(task.snapshot.revision);
+    expect(after.agentAdmissions.filter(item => item.phase === "requirements")).toHaveLength(1);
+  });
   it.skipIf(!process.env.WORKBENCH_LMSTUDIO_RUNNER_PROBE)("runs an actual 7B inspection through the new loop without workspace mutations", async () => {
     vi.restoreAllMocks();
     const endpoint = process.env.WORKBENCH_LMSTUDIO_PROBE_ENDPOINT ?? "http://127.0.0.1:1234";
@@ -93,10 +115,25 @@ describe("Agent v3 task host loop", () => {
     replies = [() => interpretation("inspect", text), () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "Inspected the saved source.", payload => {
       const state = JSON.parse(payload.messages.at(-1).content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Source evidence saved" })) };
     }];
-    const { result, runId } = await run(text, true);
+    const { result, runId, snapshot } = await run(text, true);
     expect(result.outcome, result.text).toBe("completed");
     expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(4);
     expect(getCurrentAgentTask(chatId)?.status).toBe("completed");
+    expect(snapshot?.agentV3Available).toBe(true);
+  });
+  it("keeps task continuity visible after a Chat run and does not enable v3 from historical engine data", async () => {
+    const text = "Inspect note.txt";
+    replies = [() => interpretation("inspect", text), () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "saved source", payload => {
+      const state = JSON.parse(payload.messages.at(-1).content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Source read" })) };
+    }];
+    const first = await run(text, true), taskId = getCurrentAgentTask(chatId)!.taskId;
+    const question = "Give a short explanation.", messageId = addMessage({ chat_id: chatId, role: "user", content: question }).id;
+    replies = [() => "A direct Chat answer."];
+    const next = await first.manager!.start({ chatId, userMessageId: messageId, userText: question, mode: "chat", selectedModel: "driver" });
+    await vi.waitFor(() => expect(first.manager!.getRunSnapshot({ runId: next.runId })?.state).toBe("completed"), { timeout: 10000 });
+    expect(first.manager!.getRunSnapshot({ runId: next.runId })).toMatchObject({ mode: "chat", agentV3Available: true, agentTask: { taskId } });
+    const closed = new RunManager(first.manager!.getGateway());
+    expect(closed.getRunSnapshot({ runId: first.runId })).toMatchObject({ engineVersion: "agent-v3", agentV3Available: false });
   });
   it("counts interpretation, reads once, performs a separate review, and completes an evidenced inspection", async () => {
     const text = "Inspect note.txt";
@@ -148,6 +185,20 @@ describe("Agent v3 task host loop", () => {
     replies = [() => interpretation("inspect", text), () => ({ tool_calls: [{ name: "edit_file", arguments: { path: "note.txt", expected_digest: "0".repeat(64), replacements: [{ old: "source", new: "broken" }] } }] })];
     const { result, approve } = await run(text);
     expect(result.stopReason).toBe("read_only_task"); expect(approve).not.toHaveBeenCalled();
+  });
+  it("keeps an approved observed edit and returns Partial when mandatory project tests are unavailable", async () => {
+    const text = "Read note.txt, replace source with content, and run existing tests.";
+    const digest = createHash("sha256").update("saved source\n").digest("hex");
+    replies = [() => ({ disposition: "continue", requirements: ["inspect", "change", "execute"].map(kind => ({ kind, description: kind, quote: text, checks: [{ description: kind, kind: kind === "execute" ? "execution" : "inspection" }] })), updates: [], full_suite: false }),
+      () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }),
+      () => ({ tool_calls: [{ name: "edit_file", arguments: { path: "note.txt", expected_digest: digest, replacements: [{ old: "source", new: "content" }] } }] }),
+      () => ({ tool_calls: [{ name: "finish", arguments: { text: "The edit is saved. Tests are still required." } }] })];
+    const { result, runId, approve } = await run(text);
+    expect(result.outcome, result.text).toBe("partial"); expect(result.stopReason).toBe("checks_unavailable");
+    expect(approve).toHaveBeenCalledTimes(1);
+    expect(readFileSync(path.join(root, "note.txt"), "utf8")).toBe("saved content\n");
+    expect(getExecutionLedger(runId)?.completedOperations.some(item => item.tool === "edit_file")).toBe(true);
+    expect(getCurrentAgentTask(chatId)?.snapshot.requirements).toHaveLength(3);
   });
   it("permits one malformed-action correction and never executes either multi-action response", async () => {
     const text = "Inspect note.txt", calls = { tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }, { name: "write_file", arguments: { path: "other.txt", content: "bad" } }] };

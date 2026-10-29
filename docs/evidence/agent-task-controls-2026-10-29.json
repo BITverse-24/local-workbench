@@ -1,0 +1,28 @@
+{
+  "recordedAt": "2026-10-29T13:20:35.156Z",
+  "passed": true,
+  "fixtureBridge": true,
+  "checks": [
+    "drafts and attachments",
+    "pins and startup",
+    "storage failures",
+    "interruption and explicit resume",
+    "linked message attempts",
+    "Agent default continuation",
+    "New task per chat",
+    "New task disabled during execution",
+    "failed send retains task intent",
+    "successful send clears task intent"
+  ],
+  "agentTaskIntents": [
+    "continue",
+    "new",
+    "continue"
+  ],
+  "command": "node scripts/test-chat-continuity.cjs",
+  "scope": "Isolated Electron interface with fixture IPC and real local draft storage. This is not packaged-backend or live-model certification.",
+  "frontendAssets": {
+    "index-CKPVJEPy.css": "047798207b8f0c9119e9ace46b81f138d66f119032e9965658b77e70197c3c8e",
+    "index-FbUGIVmT.js": "80eb789ffc3de44f1af3d055fc1f8f5d3a88d633be93621d4f774fa7e264ca54"
+  }
+}

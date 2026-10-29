@@ -17,7 +17,7 @@ import type { AttachmentReference, ModelConfigRow, ModelConversationMessage, Mod
 import { ChatResponder } from "./chat-responder.js";
 import { WorkOrchestrator } from "./work-orchestrator.js";
 import { AgentTaskRunner } from "../agent/agent-task-runner.js";
-import { getAgentTaskBinding, getAgentTask, setAgentTaskStatus } from "./agent-task-store.js";
+import { getAgentTaskBinding, getAgentTask, getCurrentAgentTask, setAgentTaskStatus } from "./agent-task-store.js";
 import { withRuntimeScope, assertRuntimeActive, currentRuntimeScope } from "./runtime-scope.js";
 import { workspaceExecutionSlots } from "../gateway/inference-scheduler.js";
 import { buildExecutionEnvelope } from "./envelope.js";
@@ -529,7 +529,9 @@ export class RunManager {
     const draft=getDb().prepare("SELECT message_id as messageId,model_id as modelId,text FROM run_drafts WHERE run_id=?").get(row.runId) as RunSnapshot["draft"];
     const state = getState(row.runId);
     const recovery = ["partial", "limit_exceeded", "failed", "cancelled"].includes(state) ? this.recoveryForRun(row.runId, row.chatId, state, metrics) : undefined;
-    return {runId:row.runId,chatId:row.chatId,mode:row.mode??null,engineVersion:row.engineVersion??null,...(row.engineVersion==="agent-v3"?{agentTaskBinding:getAgentTaskBinding(row.runId),agentTask:getAgentTaskBinding(row.runId)?getAgentTask(getAgentTaskBinding(row.runId)!.taskId):undefined}:{}),state,queued:metrics.queued===true,progress:[...(this.taskCheckpoints.get(row.runId)?.values()??(Array.isArray(metrics.progress)?metrics.progress:[]))],pendingAction:this.pendingActions.get(row.runId),pendingPageSelection:pendingSourcePages(row.runId),sourceInspections:loadSourceInspections(row.runId),artifacts,verification:getVerificationReport(row.runId),metrics,draft,recovery};
+    const agentTaskBinding = row.engineVersion === "agent-v3" ? getAgentTaskBinding(row.runId) : undefined;
+    const agentTask = agentTaskBinding ? getAgentTask(agentTaskBinding.taskId) : this.engineOptions.agentV3Preview ? getCurrentAgentTask(row.chatId) : undefined;
+    return {runId:row.runId,chatId:row.chatId,mode:row.mode??null,engineVersion:row.engineVersion??null,agentV3Available:this.engineOptions.agentV3Preview===true,agentTaskBinding,agentTask,state,queued:metrics.queued===true,progress:[...(this.taskCheckpoints.get(row.runId)?.values()??(Array.isArray(metrics.progress)?metrics.progress:[]))],pendingAction:this.pendingActions.get(row.runId),pendingPageSelection:pendingSourcePages(row.runId),sourceInspections:loadSourceInspections(row.runId),artifacts,verification:getVerificationReport(row.runId),metrics,draft,recovery};
   }
 
   private recoveryForRun(runId: string, chatId: string, state: RunState, metrics: Record<string, unknown>): NonNullable<RunSnapshot["recovery"]> {
