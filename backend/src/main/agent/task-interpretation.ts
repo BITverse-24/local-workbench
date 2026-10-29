@@ -46,15 +46,36 @@ export function interpretationMessages(text: string, current?: AgentTask, messag
 }
 // Express cross-field invariants in the model schema and the ingress validator.
 // Literal byte checks cannot stand in for program execution or omit their source.
+const semanticCheckSchema = z.object({ description: z.string().min(1).max(4096), kind: z.enum(["inspection", "execution", "review", "delivery"]), operation: z.literal("semantic"), path: z.null() }).strict();
 const checkSchema = z.discriminatedUnion("operation", [
-  z.object({ description: z.string().min(1).max(4096), kind: z.enum(["inspection", "execution", "review", "delivery"]), operation: z.literal("semantic"), path: z.null() }).strict(),
+  semanticCheckSchema,
   z.object({ description: z.string().min(1).max(4096), kind: z.enum(["inspection", "delivery"]), operation: z.literal("verbatim_source"), path: z.string().min(1).max(1024) }).strict(),
 ]);
+const requirementSchema = z.object({ kind: z.enum(["inspect", "change", "execute", "preserve", "deliver"]), description: z.string().min(1).max(4096), source_id: z.string().regex(/^(?:p[1-9][0-9]*:)?(?:request|s[1-9][0-9]*)$/), checks: z.array(checkSchema).min(1) }).strict();
 const interpretationSchema = z.object({ disposition: z.enum(["continue", "evidence", "scope_revision", "status", "regression"]),
-    requirements: z.array(z.object({ kind: z.enum(["inspect", "change", "execute", "preserve", "deliver"]), description: z.string().min(1).max(4096), source_id: z.string().regex(/^(?:p[1-9][0-9]*:)?(?:request|s[1-9][0-9]*)$/), checks: z.array(checkSchema).min(1) }).strict()).max(30),
+    requirements: z.array(requirementSchema).max(30),
     updates: z.array(z.object({ operation: z.enum(["waive", "supersede"]), requirementId: z.string(), source_id: z.string().regex(/^(?:p[1-9][0-9]*:)?(?:request|s[1-9][0-9]*)$/) }).strict()).max(30).default([]), full_suite: z.boolean().default(false),
   }).strict();
 export const agentInterpretationResponseSchema = { name: "agent_requirements", schema: zodToJsonSchema(interpretationSchema, { $refStrategy: "none" }) as Record<string, unknown> };
+
+function hasVerbatimBasis(text: string): boolean {
+  return /\b(?:exact\s+content|verbatim|contents?\s+exactly|exact(?:ly)?\s+as\s+(?:it\s+)?(?:appears|is))\b/i.test(text);
+}
+/** Present literal-copy checks only when a supplied user source can support them. Ingress still validates the exact path and quote. */
+export function agentInterpretationFormat(text: string, current?: AgentTask, messageId?: string) {
+  if ([text,...pendingRequests(current,messageId).map(message=>message.content)].some(hasVerbatimBasis)) return agentInterpretationResponseSchema;
+  const semanticOnly = interpretationSchema.extend({requirements:z.array(requirementSchema.extend({checks:z.array(semanticCheckSchema).min(1)})).max(30)});
+  return {name:"agent_requirements",schema:zodToJsonSchema(semanticOnly,{$refStrategy:"none"}) as Record<string,unknown>};
+}
+
+/** Fixed, independent scope dimensions prevent one selected category from hiding another. */
+export function agentRequirementRefinement(kind: z.infer<typeof requirementSchema>["kind"], disposition: AgentMessageDisposition, text = "", current?: AgentTask, messageId?: string) {
+  const literalEligible = ["inspect","deliver"].includes(kind) && [text,...pendingRequests(current,messageId).map(message=>message.content)].some(hasVerbatimBasis);
+  const checkKind = kind === "execute" ? "execution" : kind === "inspect" ? "inspection" : kind === "deliver" ? "delivery" : "review";
+  const checks = literalEligible ? checkSchema : semanticCheckSchema.extend({kind:z.literal(checkKind)});
+  const focused = interpretationSchema.extend({disposition:z.literal(disposition),requirements:z.array(requirementSchema.extend({kind:z.literal(kind),checks:z.array(checks).min(1)})).max(30),updates:interpretationSchema.shape.updates.removeDefault().max(0)});
+  return {name:`agent_${kind}_requirements`,schema:zodToJsonSchema(focused,{$refStrategy:"none"}) as Record<string,unknown>};
+}
 
 export function parseTaskInterpretation(content: string, messageId: string, text: string, task?: AgentTask): { disposition: AgentMessageDisposition; updates: AgentRequirementUpdate[]; fullSuite: boolean } {
   const parsed = interpretationSchema.parse(parseAgentData(content));
@@ -63,7 +84,7 @@ export function parseTaskInterpretation(content: string, messageId: string, text
   const updates: AgentRequirementUpdate[] = parsed.requirements.map((item, index) => {
     const origin = source(messageId, text, item.source_id, task), id = `r-${createHash("sha256").update(`${origin.messageId}:${index}:${item.kind}:${origin.start}:${origin.end}`).digest("hex").slice(0, 12)}`;
     for (const check of item.checks) {
-      if (check.operation === "verbatim_source" && (!origin.quote.includes(check.path!) || !/\b(?:exact\s+content|verbatim|contents?\s+exactly|exact(?:ly)?\s+as\s+(?:it\s+)?(?:appears|is))\b/i.test(origin.quote))) throw new Error("A verbatim source check must cite a direct request for exact file content and its path.");
+      if (check.operation === "verbatim_source" && (!origin.quote.includes(check.path!) || !hasVerbatimBasis(origin.quote))) throw new Error("A verbatim source check must cite a direct request for exact file content and its path.");
     }
     if (item.kind === "execute" && item.checks.every(check => check.operation === "verbatim_source")) throw new Error("A pure file-content read is an inspect requirement. An execute requirement needs a program or test execution check. Preserve all other user obligations.");
     return { operation: "append", requirement: { id, kind: item.kind, description: item.description, source: origin, mandatory: true, dependencies: [], state: "active",

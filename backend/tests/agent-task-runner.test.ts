@@ -27,8 +27,9 @@ const template = "{% for m in messages %}{{m.role}} {{m.content}} EOS {% endfor 
 type Reply = (payload: any) => unknown;
 let replies: Reply[];
 let scopeReplies: Reply[];
+let refinementReplies: Reply[];
 let runSignal:AbortSignal|undefined;
-beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); previousRoot = dataRoot(); setDataDir(root); initDb(path.join(root, "db.sqlite")); chatId = createChat(); replies = [];scopeReplies=[];runSignal=undefined;
+beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); previousRoot = dataRoot(); setDataDir(root); initDb(path.join(root, "db.sqlite")); chatId = createChat(); replies = [];scopeReplies=[];refinementReplies=[];runSignal=undefined;
   writeFileSync(path.join(root, "tokenizer.json"), JSON.stringify({ version: "1.0", added_tokens: [], normalizer: null, decoder: null, post_processor: null, pre_tokenizer: { type: "WhitespaceSplit" }, model: { type: "WordPiece", unk_token: "UNK", vocab: { UNK: 0, user: 1, EOS: 2, assistant: 3, Setup: 4 }, continuing_subword_prefix: "##", max_input_chars_per_word: 200000 } }));
   writeFileSync(path.join(root, "tokenizer_config.json"), JSON.stringify({ chat_template: template })); writeFileSync(path.join(root, "note.txt"), "saved source\n");
   vi.spyOn(server, "countLMStudioPreparedRequest").mockImplementation(async options => { const local = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload: options.payload }); return { inputTokens: local.inputTokens, renderedDigest: local.renderedDigest, instanceReference: "loaded", modelPath: "local", contextLimit: 8192, counterIdentity: "lmstudio-sdk-1.5.0" }; });
@@ -44,7 +45,8 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
   const gateway = new ModelGateway({ async request(_url, init) {
     const payload = JSON.parse(init.body!), title = String(payload.messages?.[0]?.content).includes("short chat topic title");
     const scopeReview = String(payload.messages?.[0]?.content).startsWith("Audit proposed requirement coverage");
-    const answer = title ? () => "Inspect saved source" : scopeReview ? scopeReplies.shift() ?? (()=>({covered:true,missing:[],full_suite:false})) : replies.shift();
+    const refinement = String(payload.messages?.[0]?.content).startsWith("Extract one requirement kind");
+    const answer = refinement ? refinementReplies.shift() : title ? () => "Inspect saved source" : scopeReview ? scopeReplies.shift() ?? (()=>({covered:true,missing:[],full_suite:false})) : replies.shift();
     if (!answer) throw new Error("Unexpected model generation");
     const input = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload });
     const content = answer(payload);
@@ -86,33 +88,49 @@ describe("Agent v3 task host loop", () => {
       return {covered:false,missing:["Inspection, file repair, and explanation must be separate requirements."],full_suite:true};
     },payload=>{
       const input=JSON.parse(payload.messages[1].content);
-      expect(input.requirements.map((item:any)=>item.kind)).toEqual(["inspect","change","execute","deliver"]);
+      expect(input.requirements.map((item:any)=>item.kind)).toEqual(["execute","inspect","change","execute","deliver"]);
       return {covered:true,missing:[],full_suite:true};
     }];
-    replies=[()=>interpretation("execute",request),payload=>{
-      expect(JSON.parse(payload.messages[1].content).correction).toContain("separate scope review");
-      return {disposition:"continue",requirements:["inspect","change","execute","deliver"].map(kind=>({kind,description:kind,source_id:"request",checks:[{description:kind,kind:kind === "execute"?"execution":"review",operation:"semantic",path:null}]})),updates:[],full_suite:false};
-    },()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
+    refinementReplies=["inspect","change","execute","preserve","deliver"].map(kind=>payload=>{
+      const input=JSON.parse(payload.messages[1].content);
+      expect(input.focusedKind).toBe(kind);expect(input.correction).toContain("separate scope review");
+      return {disposition:"continue",requirements:kind === "preserve"?[]:[{kind,description:kind,source_id:"request",checks:[{description:kind,kind:kind === "execute"?"execution":kind === "inspect"?"inspection":kind === "deliver"?"delivery":"review",operation:"semantic",path:null}]}],updates:[],full_suite:false};
+    });
+    replies=[()=>interpretation("execute",request),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
     ()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),
     ()=>({tool_calls:[{name:"finish",arguments:{text:"The wording edit is saved. The full test suite remains unavailable."}}]})];
     const {result,runId,approve}=await run(request);
     expect(result.stopReason,result.text).toBe("checks_unavailable");expect(approve).toHaveBeenCalledTimes(1);
-    expect(getCurrentAgentTask(chatId)?.snapshot.requirements.map(item=>item.kind)).toEqual(["inspect","change","execute","deliver"]);
+    expect(getCurrentAgentTask(chatId)?.snapshot.requirements.map(item=>item.kind)).toEqual(["execute","inspect","change","execute","deliver"]);
     expect(getExecutionLedger(runId)?.agentProgress).toMatchObject({scopeCorrectionUsed:true,fullSuite:true});
     expect(getExecutionLedger(runId)?.agentTask?.protocolCorrections).toBe(0);
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(7);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(11);
   });
   it("keeps the full request pending when independent scope assessment still rejects its one revision",async()=>{
     const request="Inspect and repair note.txt, then run all tests.";
     scopeReplies=[()=>({covered:false,missing:["Repair obligation is absent."],full_suite:true}),()=>({covered:false,missing:["Repair obligation is still absent."],full_suite:true})];
-    replies=[()=>({disposition:"status",requirements:[],updates:[],full_suite:false}),()=>interpretation("inspect",request)];
+    replies=[()=>({disposition:"status",requirements:[],updates:[],full_suite:false})];
+    refinementReplies=Array.from({length:5},()=>()=>({disposition:"continue",requirements:[],updates:[],full_suite:false}));
     const {result,runId,approve,emit}=await run(request);
     expect(result.stopReason).toBe("requirement_coverage_unverified");expect(approve).not.toHaveBeenCalled();
     expect(emit.mock.calls.some(([event])=>event.type === "tool_call")).toBe(false);
     expect(getCurrentAgentTask(chatId)?.snapshot.messages[0]).toMatchObject({content:request,disposition:"pending"});
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(4);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(8);
     expect(getExecutionLedger(runId)?.agentTask?.taskRevision).toBeUndefined();
     expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved source\n");
+  });
+  it("cancels a bounded scope revision before binding authority or starting workspace actions",async()=>{
+    const controller=new AbortController();runSignal=controller.signal;
+    const request="Inspect and repair note.txt.";
+    replies=[()=>interpretation("inspect",request)];
+    scopeReplies=[()=>({covered:false,missing:["Repair obligation is absent."],full_suite:false})];
+    refinementReplies=[()=>{controller.abort();return {disposition:"continue",requirements:[],updates:[],full_suite:false};}];
+    const {result,runId,approve,emit}=await run(request);
+    expect(result.outcome).toBe("cancelled");expect(approve).not.toHaveBeenCalled();
+    expect(emit.mock.calls.some(([event])=>event.type === "tool_call")).toBe(false);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(3);
+    expect(getCurrentAgentTask(chatId)?.snapshot.messages[0]).toMatchObject({content:request,disposition:"pending"});
+    expect(getExecutionLedger(runId)?.agentProgress?.scopeCorrectionUsed).toBe(true);
   });
   it("retains an unparsed original through setup failure and interprets it on a later continuation", async () => {
     const original = "Repair note.txt by replacing source with content.";

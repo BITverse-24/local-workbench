@@ -164,9 +164,17 @@ This check also exposed a v3 fallback approval defect: the fallback check omitte
 
 The current live probe adds the new scope assessment. It remains a source diagnostic, not a packaged or release trial. Do not enable production v3 from offline test success.
 
+## Bounded scope revision and request-specific checks
+
+A real scope assessment rejected the omitted repair obligations, then the single revision call dropped more obligations. The host stopped before workspace actions. The one scope revision now uses five short sequential calls, one each for inspection, changes, execution, preservation, and delivery. Each pass has a fixed requirement kind and cannot waive existing requirements. The host retains the earlier draft obligations and merges new ones; an empty pass cannot erase them. It resolves draft ID collisions without replacing existing records. All five calls, both assessments, and any retries count toward the same persisted 40-call limit. Cancellation during revision leaves the original request pending.
+
+The next live probes exposed two contract faults before workspace actions. LM Studio rejected a negation keyword used to describe an empty updates array; the schema now uses its supported array length constraint. A later pass invented a literal-copy check without a matching user instruction, and ingress correctly rejected it. Presentation now offers literal checks only when the supplied request or an earlier pending request has a direct literal-copy basis. Only inspection and delivery passes can present those checks. Other passes use semantic checks for their fixed kind. The ingress quote/path validation remains unchanged.
+
+Evidence for all three failed probes is in `docs/evidence/agent-scope-revision-live-2026-10-30.json`. No workspace actions, edits, or repair passes occurred. Provider errors stay recorded and consume their calls. These failures do not establish live repair quality. Full type checking and the Electron source build passed. The latest focused run passed 240 tests across six files, with one live test skipped. A further isolated probe is running against the merged scope and request-specific schemas.
+
 ## Current proof and limits
 
-The focused offline check passed 237 tests in 12 files; two opt-in live tests were skipped. This includes task storage, gateway admission, revision-bound edits, host-loop control, verification, storage isolation, and Chat/Work boundaries. Full type checking passed. The Electron source build passed. These results do not establish packaged behavior or live repair quality.
+The latest focused check passed 240 tests in six files, with one opt-in live test skipped. It covers action schemas, literal-source checks, the host loop, gateway admission, test-report interpretation, and Chat/Work boundaries. Earlier checks cover task storage, revision-bound edits, verification, and storage isolation. Full type checking and the Electron source build passed. These results do not establish packaged behavior or live repair quality.
 
 Live inspection evidence is saved in `docs/evidence/agent-host-inspection-probes-2026-10-29.json`, with full saved proposals, source observations, reviews, admission receipts, and stop reasons. Failed probes returned Partial and requested no mutation approvals. The selected 7B model is available. The 14B release trials have not run.
 

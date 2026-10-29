@@ -15,8 +15,8 @@ import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js"
 import { resolveSafe } from "../harness/path-guard.js";
 import { buildAgentContextPacket, conciseAgentTool, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
 import { obtainAgentFailureSources } from "./source-evidence.js";
-import { reviewAgentInterpretation } from "./requirement-scope.js";
-import { agentInterpretationResponseSchema, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
+import { refineAgentInterpretation, reviewAgentInterpretation } from "./requirement-scope.js";
+import { agentInterpretationFormat, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
 import { runAgentVerificationStage } from "./verification-stage.js";
 import { isCodeVerificationPath } from "./test-verification.js";
 import { extractVerificationSkipBasis, recordVerificationTermination, recordVerificationUserSkip } from "../run/verification-controller.js";
@@ -62,7 +62,7 @@ export class AgentTaskRunner {
         for (;;) {
           const messages = interpretationMessages(source.content, current, input.messageId);
           if (feedback) messages[1].content = JSON.stringify({ ...JSON.parse(messages[1].content), correction: feedback });
-          const response = await context.gateway.chatWithTools(modelId, messages, [], { runId, maxTokens: 1024, purpose: "classification", temperature: 0, responseSchema: agentInterpretationResponseSchema, signal: scope.signal });
+          const response = await context.gateway.chatWithTools(modelId, messages, [], { runId, maxTokens: 1024, purpose: "classification", temperature: 0, responseSchema: agentInterpretationFormat(source.content,current,input.messageId), signal: scope.signal });
           assertRuntimeActive();
           if (!response.ok) return stop("interpretation_unavailable", response.error.message);
           try {
@@ -83,8 +83,11 @@ export class AgentTaskRunner {
             if (!reviewed.covered) {
               if (getExecutionLedger(runId)?.agentProgress?.scopeCorrectionUsed) return stop("requirement_coverage_unverified",reviewed.detail);
               updateAgentProgress(runId,progress=>{progress.scopeCorrectionUsed=true;});
-              feedback = `The separate scope review found missing obligations. Revise the requirement interpretation once, preserving all original messages and obligations: ${reviewed.detail}`;
-              continue;
+              try {
+                interpreted = await refineAgentInterpretation(current!,interpreted,input.messageId,source.content,reviewed.detail,context,modelId);
+                reviewed = await reviewAgentInterpretation(current!,interpreted,context,modelId);
+              } catch (error) { assertRuntimeActive();return stop("requirement_coverage_unverified",String(error)); }
+              if (!reviewed.covered) return stop("requirement_coverage_unverified",reviewed.detail);
             }
             interpreted.fullSuite ||= reviewed.fullSuite;
           }
