@@ -347,10 +347,10 @@ export class ToolDispatcher {
           context.assertAuthority?.();
           if (context.envelope) {
             const mode=currentRuntimeScope()?.mode??context.envelope.mode;
-            const registered=new Set(["request_capability","list_dir","read_file","search","write_file","delete_file","run_command","execute_python","generate_deliverable","retrieve_result","retrieve_knowledge","extract_document"]);
+            const registered=new Set(["request_capability","list_dir","read_file","search","write_file","edit_file","delete_file","run_command","execute_python","generate_deliverable","retrieve_result","retrieve_knowledge","extract_document"]);
             if(!registered.has(call.name))throw new PermissionError("Unlisted tools cannot execute.");
             if(mode==="chat"&&!["extract_document","retrieve_result","retrieve_knowledge"].includes(call.name))throw new PermissionError("Chat cannot use this tool.");
-            if(mode==="agent"&&["write_file","delete_file","run_command"].includes(call.name)&&(!context.policyGuard?.isEnforcingExplicit(context.runId)||!context.policyGuard.isAuthorized(context.runId,call.name as "write_file"|"delete_file"|"run_command",call.arguments,true)))throw new PermissionError("Agent operation requires an approved run scope.");
+            if(mode==="agent"&&["write_file","edit_file","delete_file","run_command"].includes(call.name)&&(!context.policyGuard?.isEnforcingExplicit(context.runId)||!context.policyGuard.isAuthorized(context.runId,call.name as "write_file"|"edit_file"|"delete_file"|"run_command",{...call.arguments,operation_digest:context.agentOperationDigest},true)))throw new PermissionError("Agent operation requires an approved run scope.");
             if(mode!=="agent"){
               const relative=path.relative(runRoot(context.runId),context.workspaceRoot);
               if(context.harness || relative.startsWith("..") || path.isAbsolute(relative))throw new PermissionError(`${mode} requires run-scoped storage.`);
@@ -366,7 +366,7 @@ export class ToolDispatcher {
               throw new PermissionError("Work cannot modify a persistent workspace or execute workspace commands.");
             }
           }
-          if (context.resultStore && (call.name === "write_file" || call.name === "delete_file")) {
+          if (context.resultStore && (["write_file", "edit_file", "delete_file"].includes(call.name))) {
             const target = resolveSafe(context.workspaceRoot, extractPathArg(call.arguments));
             if (context.resultStore.isStoragePath(target)) throw new PermissionError("Durable result payloads are immutable; create a new result instead");
           }
@@ -535,7 +535,9 @@ export class ToolDispatcher {
 
           // Persist before returning success or publishing the observation. The store is run-bound;
           // standalone/legacy callers without it retain their original tool contract.
-          if (context.resultStore && call.name !== "retrieve_result" && (
+          const v3Observation = context.agentRequirementId !== undefined;
+          if (context.resultStore && (call.name !== "retrieve_result" || v3Observation) && (
+            v3Observation ||
             rawResult.intermediate || ["read_file", "extract_document", "execute_python", "run_command"].includes(call.name) ||
             // Command output also drives P0 verification inside AgentLoop; retain that typed control result.
             (call.name !== "run_command" && rawOutput.length > 4000 && !normalizedResult.artifacts?.length)
@@ -544,10 +546,10 @@ export class ToolDispatcher {
             const data = rawResult.data ?? tryParseJson(rawOutput);
             const filename = call.arguments.filename ?? call.arguments.path ?? call.arguments.file;
             const sources: SourceReference[] = typeof filename === "string" && call.name !== "execute_python" ? [{ filename, relation: "source" }] : [];
-            const origin = call.name === "read_file" ? "source_extracted" : ["execute_python", "run_command"].includes(call.name) ? "execution" : "model_derived";
+            const origin = call.name === "read_file" ? "source_extracted" : (["execute_python", "run_command"].includes(call.name) || (v3Observation && ["write_file", "edit_file", "delete_file"].includes(call.name))) ? "execution" : "model_derived";
             const intermediate: Omit<IntermediateResultInput, "producer" | "summary"> = rawResult.intermediate ?? {
               type: call.name === "read_file" ? "text" : ["execute_python", "run_command"].includes(call.name) ? "execution" : typeof data === "object" && data !== null ? "structured" : "text",
-              payload: typeof data === "string" || (data !== null && typeof data === "object") ? data as string | Record<string, unknown> | unknown[] : rawOutput,
+              payload: v3Observation ? rawOutput : typeof data === "string" || (data !== null && typeof data === "object") ? data as string | Record<string, unknown> | unknown[] : rawOutput,
               status: normalizedResult.ok ? "complete" : "partial", origin, sources,
             };
             let record;

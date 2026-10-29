@@ -97,6 +97,9 @@ export interface ToolExecutionContext {
   /** Backend controller authority; model arguments cannot enable verification. */
   agentVerification?: AgentTestExecutionRequest;
   automaticCodeValidation?: boolean;
+  agentRequirementId?: string;
+  agentChangeReason?: string;
+  agentOperationDigest?: string;
 }
 
 export interface ToolExecutionResult {

@@ -65,6 +65,13 @@ function transport(replies?: (payload: Record<string, any>, index: number) => Pr
 function call(gateway: ModelGateway, extra = {}) { return withRuntimeScope(scope, () => gateway.chatWithTools(model.id, [{ role: "user", content: "Inspect source" }], tools, { runId, maxTokens: 2048, ...extra })); }
 
 describe("Agent v3 gateway dispatch boundary", () => {
+  it("keeps no-tool phases free of action-envelope instructions", async () => {
+    const gateway = new ModelGateway(transport(), [{ ...model, toolCallingFormat: "json" }]);
+    const messages = [{ role: "system", content: "Review coverage. Return coverage JSON." }, { role: "user", content: "Saved task and evidence" }];
+    const result = await withRuntimeScope(scope, () => gateway.chatWithTools(model.id, messages, [], { runId, maxTokens: 512 }));
+    expect(result.ok).toBe(true); expect(dispatched[0].messages).toEqual(messages);
+    expect(prepared).toEqual(dispatched);
+  });
   it("counts the actual streamed native payload and saves usage evidence before returning an action", async () => {
     const raw = transport();
     raw.streamRequest = async (url, init, timeout, chunk) => { chunk("draft"); return raw.request(url, init, timeout); };
@@ -85,6 +92,7 @@ describe("Agent v3 gateway dispatch boundary", () => {
     expect(prepared).toEqual(dispatched);
     expect(dispatched[1].tools).toBeUndefined();
     expect(dispatched[1].messages[0].content).toContain("AVAILABLE TOOLS");
+    expect(dispatched[1].response_format).toMatchObject({ type: "json_schema", json_schema: { schema: { properties: { tool_calls: { maxItems: 1 } } } } });
     expect(getExecutionLedger(runId)?.agentAdmissions.map(item => [item.transport, item.status])).toEqual([["native", "provider_error"], ["json", "usage_verified"]]);
   });
 

@@ -11,6 +11,8 @@ export interface RuntimeScope {
   remainingRecoveryAttempts?: number;
   /** Set only after host counting setup. Each selected transport needs its own verification. */
   agentCountingProfiles?: AgentCountingProfile[];
+  /** Requirements calls have no workspace tools and precede the immutable run/task binding. */
+  agentPhase?: "requirements" | "actions";
   assertAuthority?: () => void;
   approveUncontainedPython?: (code: string, inputs: string[], digest: string) => Promise<boolean>;
   observe?: (values: Record<string, unknown>) => void;

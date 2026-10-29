@@ -26,12 +26,14 @@ export async function runAgentVerificationStage(input: {
   changedPaths: string[];
   userCommand?: string;
   successMarker?: string;
+  baseline?: boolean;
   authorize: (calls: AgentToolCall[]) => Promise<boolean>;
 }): Promise<AgentVerificationStageResult> {
   const { context, dispatcher } = input;
   const runId = context.runId;
+  const criterion = input.baseline ? "baseline:project-tests" : CRITERION;
   const evidence = (status: VerificationCheck["status"], reason: string, extra: Partial<VerificationCheck> = {}) => {
-    recordVerificationEvidence(runId, [{ criterionId: CRITERION, requirement: "Run tests against the latest saved code", status,
+    recordVerificationEvidence(runId, [{ criterionId: criterion, requirement: "Run tests against the latest saved code", status,
       method: "execution_record", evidence: [], reason: reason.slice(0, 500), verifiedAt: new Date().toISOString(), mandatory: true, ...extra }]);
   };
   const stop = (reason: string, detail: string): AgentVerificationStageResult => {
@@ -57,7 +59,7 @@ export async function runAgentVerificationStage(input: {
     let manifest: ReturnType<typeof captureAgentVerificationManifest>;
     try { manifest = captureAgentVerificationManifest(context.workspaceRoot); }
     catch (error) { activity.block("The test snapshot could not be prepared."); return stop("verification_environment_unavailable", String(error)); }
-    const prior = state?.evidence.find(check => check.criterionId === CRITERION && check.revision === manifest.sha256);
+    const prior = state?.evidence.find(check => check.criterionId === criterion && check.revision === manifest.sha256);
     if (prior?.status === "passed" && prior.evidence.length > 0 && prior.evidence.every(ref => ref.kind === "result" && resultStore.verifyIntegrity(ref.id).valid)) return { action: "passed", detail: prior.reason };
     if (prior?.status === "failed" && state?.termination?.reason === "repair_budget_exhausted") {
       return { action: "stop", detail: state.termination.detail };
@@ -77,7 +79,7 @@ export async function runAgentVerificationStage(input: {
           try { request.command = appendVerificationSuccessMarker(request.command, input.successMarker); request.successMarker = input.successMarker; }
           catch (error) { return stop("unsupported_verification", String(error)); }
         }
-        const planId = createHash("sha256").update(plan.id).update(phase).update(manifest.sha256).update(request.command).digest("hex");
+        const planId = createHash("sha256").update(input.baseline ? "baseline:" : "").update(plan.id).update(phase).update(manifest.sha256).update(request.command).digest("hex");
         request.planId = planId;
         const latestState = getRunVerificationState(runId);
         const previous = latestState?.attempts.filter(attempt => attempt.planId === planId).at(-1);
@@ -87,7 +89,7 @@ export async function runAgentVerificationStage(input: {
         }
         if (phase === "related" && latestState?.fullSuiteRevisions.includes(`${manifest.sha256}:${plan.id}`)) { phase = "full"; continue; }
         registerVerificationPlan(runId, { id: planId, kind: "agent_tests", revision: manifest.sha256,
-          criterionIds: [CRITERION], command: request.command, targets: plan.changedPaths, runner: plan.runner });
+          criterionIds: [criterion], command: request.command, targets: plan.changedPaths, runner: plan.runner });
         const call = createAgentVerificationCall(request, randomUUID());
         if (!await input.authorize([call])) {
           const detail = "Test execution approval was declined. Saved changes remain available.";
@@ -132,6 +134,7 @@ export async function runAgentVerificationStage(input: {
           evidence(status, detail, { revision: manifest.sha256, planId,
             sourceManifest: manifest.files, evidence: resultId ? [{ kind: "result", id: resultId }] : [] });
           if (status === "failed") {
+            if (input.baseline) return { action: "repair", detail: `Baseline failures were recorded. ${detail}` };
             activity.block(detail);
             if (takeAgentVerificationRepair(runId)) {
               context.refreshVerificationReport?.();

@@ -51,3 +51,12 @@ export interface TaskEvidenceRef {
   requirementIds: string[];
   sourceRevision: string;
 }
+export interface SourceReadReceipt {
+  path: string;
+  digest: string;
+  startByte: number;
+  endByte: number;
+  sizeBytes: number;
+  resultId: string;
+  requestId: string;
+}

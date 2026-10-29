@@ -22,29 +22,46 @@ The loaded driver was `qwen2.5-coder-7b-instruct-mlx`, at an 8,192-token context
 
 Four JSON transport probes tested plain messages, tool definitions in the prompt, an earlier tool result, and Unicode. Local rendered digests matched server rendered digests. Local counts, server counts, and generation usage matched at 22, 40, 89, and 40 tokens. Evidence: `docs/evidence/agent-counting-live-probe-2026-10-27.json`.
 
-This evidence covers those fixed probes and that loaded instance. It does not establish repair success or certify all future requests. No live repair trial has run.
+This evidence covers those fixed probes and that loaded instance. It does not establish repair success or certify all future requests. No live repair trial has run. Isolated live inspection probes now exercise the new loop; they are not repair certification.
 
 The real gateway then admitted a JSON transport request at 145 input tokens. Provider usage also reported 145. The saved receipt reached `usage_verified`. Evidence: `docs/evidence/agent-gateway-live-probe-2026-10-27.json`. This was a source-runtime check, not a packaged-app check or repair trial.
 
 The latest focused offline run passed 229 tests across ten files; one opt-in live test was skipped in that offline run. The separate live run passed all three tests in `lmstudio-token-counter.test.ts`, including actual gateway dispatch. Full project type checking and the Electron build passed. `git diff --check` passed. `agent-gateway-boundary.test.ts` checks final streaming payloads, native/JSON fallback, JSON format retry, provider usage failures, drift, authority rechecks, call limits, and the vision exception. Existing database, storage isolation, ledger, gateway, and three-mode checks also passed.
 
+## Integrated host loop and source operations
+
+The non-production preview now selects `agent-v3` when `WORKBENCH_AGENT_V3=true`. Production promotion stays closed. RunManager binds the saved user message and workspace registration, prepares counting profiles, then enters the new host loop. Chat and Work retain their execution paths.
+
+The loop uses a restricted requirements phase, durable task binding, fresh context packets, one validated action per call, a persisted 40-call limit, one protocol correction, and saved proposals and observations. Status replies do not dispatch workspace tools. Advice cannot complete a change requirement. The host runs a separate coverage review before delivery and marks the task complete only after the final answer is saved and run verification accepts it.
+
+Source tools now return bounded pages and revision-bound cursors. The host records source receipts only after a verified admitted request includes the source. `edit_file` checks unique observed anchors and the expected digest before approval and again under the file lock. Edits use backups and atomic writes. Existing-file replacement and deletion need a complete current read. Concrete file approvals bind the operation digest. Markdown examples cannot become actions in v3.
+
+Baseline and final tests use the existing verification stage and repair limits. A missing check can leave approved edits in place, but completion stays Partial. The current environment probe and test agenda still need further work below.
+
+Live inspection exposed two separate failures. The model initially returned action JSON inside Markdown fences. Those examples remained text and caused no tool action. The JSON action transport now requests a constrained single-action envelope where supported; the host still validates the operation and authority. Rejected examples use the one protocol correction and are saved as rejected responses. The selected LM Studio server accepted the structured format. Counting still checks the final request and provider usage.
+
+The next live probes reached source reads but coverage review rejected the correct reported content and the loop stopped on repeated actions. Source evidence is now unwrapped before review. Model proposals and old reviews are excluded from source/execution proof. This closes a review feedback path; live success remains unproven. An interpretation correction also exposed an adjacent-user-message rendering mismatch. Corrections now stay within one bounded user packet. The exact admission guard blocked the mismatched request before generation.
+
+## Current proof and limits
+
+The focused offline check passed 237 tests in 12 files; two opt-in live tests were skipped. This includes task storage, gateway admission, revision-bound edits, host-loop control, verification, storage isolation, and Chat/Work boundaries. Full type checking passed. The Electron source build passed. These results do not establish packaged behavior or live repair quality.
+
+Live inspection evidence is being retained with full saved proposals, source observations, reviews, admission receipts, and stop reasons. Failed probes returned Partial and requested no mutation approvals. The selected 7B model is available. The 14B release trials have not run.
+
 ## Work still required
 
-1. Connect task binding and requirement extraction to RunManager before any v3 action. Complete task intent through IPC and add the New task control. Expose bound revision and current task progress in snapshots. Handle status without workspace actions. Preserve full request coverage on extraction failure and legacy continuation.
-2. Add host setup and model selection for normal v3 runs, using fixed prepared probes for the exact selected transport. The dispatch boundary is implemented and tested, but RunManager does not yet create the verified counting profiles for a new v3 task. Finish the standalone server-counting source and setup recovery as required by the report.
-3. Build the fresh context packet and the host action loop. Keep all capabilities registered by mode and environment. Remove category-based acceptance and Markdown action conversion from v3. Add bounded source/result pagination, action validation, repeat detection, and specific Partial reasons.
-4. Add source read receipts and `edit_file`. Require observed anchors and current digests under locks. Bind approvals to concrete operations. Restrict whole-file replacement to complete observations. Preserve backups on failure.
-5. Complete test-environment discovery, baseline and required test execution, revision-bound requirement evidence, a separate coverage review, and deterministic completion. Keep unavailable checks unverified. Reopen and invalidate evidence on regression.
-6. Connect recovery, approval expiry, uncertain-mutation handling, legacy-to-v3 attempts, and the four separate progress facts in the UI. Preserve Chat and Work behavior.
-7. Run isolated Flow D checks from preserved originals, other Agent workloads, packaged minimal-environment checks, and ten repair trials each on representative 7B and 14B models. The selected 7B is available. A 14B trial model is still needed. Require at least nine completed repairs per model and zero false completion or unauthorized mutation before production enablement.
+1. Resolve live requirement and coverage review failures from saved evidence. Complete host-owned progress after edits and bounded per-requirement evidence checks. Do not weaken acceptance or replace existing tests.
+2. Add the New task control and task progress display. Complete task-authorized cross-run evidence retrieval in the active loop. Retain all original obligations on follow-ups and regressions.
+3. Finish structured constraints and protected-path extraction. Keep policy checks at the tool boundary.
+4. Complete test-environment probing in the actual launch environment. Cache unchanged missing-command failures. Finish baseline, full-suite, post-edit test scheduling, and repair-cycle integration.
+5. Complete restart and uncertain-mutation reconciliation, approval expiry UI, and linked legacy-to-v3 attempts with fresh authority. The preview currently refuses to resume the old engine.
+6. Verify document, knowledge, visual-source, and attached-repair workloads through v3. Complete bounded source/evidence packing for larger tasks.
+7. Run isolated Flow D checks from preserved originals, packaged minimal-environment checks, and ten repair trials each on representative 7B and 14B models. Require at least nine complete repairs per model and zero false completion or unauthorized mutation before production enablement.
 
-No v3 runner has replaced the existing Agent engine yet. Production databases and the damaged Flow D workspace were not opened for writes by this work. The source now contains a schema migration that will run when this build opens an older profile.
-
-## Next implementation step
-
-Finish M1 integration, host counting setup, and the v3 runner. Reuse the task store, ledger, current scheduler, policy guard, and ResultStore. Keep fresh authority separate from task continuity. Save new proof and make a commit after each tested structural milestone. Do not enable production v3 until every required release gate passes.
+The damaged Flow D workspace was not restored or edited by this work. Production storage was not opened for writes. Schema 4 will apply when this build opens an older profile, using the tested consistent backup path.
 
 ## Commits
 
 - `4ce72cb`: durable tasks, schema backup, local/server counter foundations, pinned dependencies, and initial counting evidence.
-- The gateway admission milestone is the next regular commit. Earlier unrelated work remains outside these commits.
+- `ef35bfc`: final gateway admission and saved usage receipts.
+- The integrated host-loop and revision-bound edit milestone is ready for a regular commit after its final focused checks. Earlier Flow D assets and AGENTS.md edits remain separate.

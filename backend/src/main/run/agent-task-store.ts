@@ -49,6 +49,13 @@ export function getCurrentAgentTask(chatId: string): AgentTask | undefined {
   return row && getAgentTask(row.task_id);
 }
 
+export function setAgentTaskStatus(runId: string, status: AgentTask["status"]): void {
+  const bound = binding(id.parse(runId));
+  if (!bound || bound.disposition === "status") return;
+  const db = getDb();
+  db.prepare("UPDATE agent_tasks SET status=?,updated_at=? WHERE task_id=? AND current_revision=? AND is_current=1").run(status, new Date().toISOString(), bound.taskId, bound.taskRevision);
+}
+
 /** Validate provenance only. An exact quotation is not proof of correct interpretation. */
 function validateQuote(source: AgentSourceQuote, snapshot: AgentTaskRevision, messageId: string): void {
   const message = snapshot.messages.find(item => item.id === source.messageId);

@@ -16,6 +16,8 @@ import { getSetting } from "../persistence/settings-store.js";
 import type { AttachmentReference, ModelConfigRow, ModelConversationMessage, ModelHealth, PendingAction, RunEvent, TaskProgressEvent, RunState, ExecutionMode, RunContract, RunSnapshot } from "../../shared/contracts.js";
 import { ChatResponder } from "./chat-responder.js";
 import { WorkOrchestrator } from "./work-orchestrator.js";
+import { AgentTaskRunner } from "../agent/agent-task-runner.js";
+import { getAgentTaskBinding, getAgentTask, setAgentTaskStatus } from "./agent-task-store.js";
 import { withRuntimeScope, assertRuntimeActive, currentRuntimeScope } from "./runtime-scope.js";
 import { workspaceExecutionSlots } from "../gateway/inference-scheduler.js";
 import { buildExecutionEnvelope } from "./envelope.js";
@@ -201,6 +203,7 @@ export interface StartRunInput {
   preferredRoute?: string;
   selectedModel?: string;
   mode?: ExecutionMode;
+  agentTaskIntent?: "continue" | "new";
   workspaceIdentity?: WorkspaceInfo;
   workspaceReferences?: WorkspaceReference[];
 }
@@ -233,6 +236,7 @@ export class RunManager {
     private readonly gateway = new ModelGateway(),
     private readonly emit: (event: RunEvent) => void = () => undefined,
     private readonly emitChat: (event: ChatTitleEvent) => void = () => undefined,
+    private readonly engineOptions: { agentV3Preview?: boolean } = {},
   ) {
     const publish = this.emit;
     this.emit = event => {
@@ -306,6 +310,8 @@ export class RunManager {
     const currentLedger = getExecutionLedger(runId);
     const saved = currentLedger?.executionContext;
     if (!saved) throw new Error("Run has no persisted execution context and cannot resume safely.");
+    const engine = getDb().prepare("SELECT engine_version FROM run_mode_details WHERE run_id=?").get(runId) as { engine_version: string };
+    if (saved.mode === "agent" && this.engineOptions.agentV3Preview && engine.engine_version !== "agent-v3") throw new Error("Legacy Agent evidence remains readable. Continue it through a linked v3 attempt with fresh approvals; the old engine will not resume in this preview.");
     const selection = resolveModelSelection({ explicitSelection: saved.modelId, gateway: this.gateway });
     if (!selection.ok || selection.modelId !== contract.routing.driverModel || selection.modelId !== saved.modelId) {
       throw new Error("The original model is unavailable. Resumption cannot change model selection.");
@@ -434,11 +440,12 @@ export class RunManager {
   async start(input: StartRunInput): Promise<{ runId: string }> {
     const text=input.userText??"";
     const mode=input.mode??"chat";
+    if(input.agentTaskIntent && mode!=="agent")throw new Error("Task intent is available only in Agent mode.");
     if(!["chat","work","agent"].includes(mode)) throw new Error("Invalid execution mode.");
     if(text.length>8000 || (!text.trim()&&!input.attachmentToken&&!input.attachmentTokens?.length)) throw new Error("Invalid run input.");
     const root=mode==="agent"&&this.harness?.isWorkspaceActive()?this.harness.requireActiveWorkspace().root:undefined;
     if(mode==="agent"&&(!root||!existsSync(root)||!statSync(root).isDirectory()))throw new Error("Agent requires an active workspace.");
-    if(process.env[`WORKBENCH_${mode.toUpperCase()}_ENGINE`]==="false" || (mode==="agent"&&process.env.WORKBENCH_AGENT_V2==="false"))throw new Error(`${mode} engine is unavailable.`);
+    if(process.env[`WORKBENCH_${mode.toUpperCase()}_ENGINE`]==="false" || (mode==="agent"&&!this.engineOptions.agentV3Preview&&process.env.WORKBENCH_AGENT_V2==="false"))throw new Error(`${mode} engine is unavailable.`);
     const requested=[...new Set(input.attachmentTokens??(input.attachmentToken?[input.attachmentToken]:[]))].map(id=>this.attachment(id));
     const references = input.workspaceReferences ?? (input.workspaceIdentity ? parseWorkspaceMentions(text) : []);
     if (references.length > 20) throw new Error("Select at most 20 workspace references.");
@@ -463,11 +470,17 @@ export class RunManager {
     if(stagedId && this.chatIdForRunIfPresent(stagedId) && (getState(stagedId)!=="created"||db.prepare("SELECT run_id FROM run_mode_details WHERE run_id=?").get(stagedId)))throw new Error("An executing or finished run cannot be started again or change mode.");
     const runId=createRun(chatId,text,requested[0]?.attachmentId,stagedId);
     createRunDirectories(runId);
-    const engineVersion = mode === "chat" ? "chat-v1" : mode === "work" ? "work-v4" : "agent-v2";
+    const engineVersion = mode === "chat" ? "chat-v1" : mode === "work" ? "work-v4" : this.engineOptions.agentV3Preview ? "agent-v3" : "agent-v2";
     db.prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,?,?,?)").run(runId,mode,engineVersion,root??null);
     if (input.userMessageId) db.prepare("UPDATE messages SET run_id=? WHERE id=?").run(runId, input.userMessageId);
     this.activeChats.set(chatId,runId);this.controllers.set(runId,new AbortController());this.runModes.set(runId,mode);
     this.runMetrics.set(runId,{requestReceivedAt:Date.now(),mode,engineVersion,modelCallCount:0,originalRequest:text,queueWaitMs:0,toolTimeMs:0,recoveryCount:0,isolationStatus:"not_used"});
+    if(engineVersion==="agent-v3") {
+      const active=this.harness!.requireActiveWorkspace();
+      const userMessageId=input.userMessageId??addMessage({chat_id:chatId,role:"user",content:text||" ",run_id:runId}).id;
+      Object.assign(this.runMetrics.get(runId)!,{userMessageId,agentTaskIntent:input.agentTaskIntent??"continue",workspaceIdentity:{root:active.root,registeredAt:active.registeredAt}});
+      db.prepare("UPDATE run_mode_details SET metrics_json=? WHERE run_id=?").run(JSON.stringify(this.runMetrics.get(runId)),runId);
+    }
     const attemptContext = chatMetadata(getChat(chatId)!).attemptSourceContext;
     if (typeof attemptContext === "string") this.runMetrics.get(runId)!.sourceReferenceEvidence = attemptContext;
     if(input.temperature!==undefined)this.runTemperatures.set(runId,input.temperature);
@@ -516,7 +529,7 @@ export class RunManager {
     const draft=getDb().prepare("SELECT message_id as messageId,model_id as modelId,text FROM run_drafts WHERE run_id=?").get(row.runId) as RunSnapshot["draft"];
     const state = getState(row.runId);
     const recovery = ["partial", "limit_exceeded", "failed", "cancelled"].includes(state) ? this.recoveryForRun(row.runId, row.chatId, state, metrics) : undefined;
-    return {runId:row.runId,chatId:row.chatId,mode:row.mode??null,engineVersion:row.engineVersion??null,state,queued:metrics.queued===true,progress:[...(this.taskCheckpoints.get(row.runId)?.values()??(Array.isArray(metrics.progress)?metrics.progress:[]))],pendingAction:this.pendingActions.get(row.runId),pendingPageSelection:pendingSourcePages(row.runId),sourceInspections:loadSourceInspections(row.runId),artifacts,verification:getVerificationReport(row.runId),metrics,draft,recovery};
+    return {runId:row.runId,chatId:row.chatId,mode:row.mode??null,engineVersion:row.engineVersion??null,...(row.engineVersion==="agent-v3"?{agentTaskBinding:getAgentTaskBinding(row.runId),agentTask:getAgentTaskBinding(row.runId)?getAgentTask(getAgentTaskBinding(row.runId)!.taskId):undefined}:{}),state,queued:metrics.queued===true,progress:[...(this.taskCheckpoints.get(row.runId)?.values()??(Array.isArray(metrics.progress)?metrics.progress:[]))],pendingAction:this.pendingActions.get(row.runId),pendingPageSelection:pendingSourcePages(row.runId),sourceInspections:loadSourceInspections(row.runId),artifacts,verification:getVerificationReport(row.runId),metrics,draft,recovery};
   }
 
   private recoveryForRun(runId: string, chatId: string, state: RunState, metrics: Record<string, unknown>): NonNullable<RunSnapshot["recovery"]> {
@@ -849,6 +862,8 @@ export class RunManager {
     if(row.mode==="agent") {
       try {
         if(!this.harness?.isWorkspaceActive() || this.harness.requireActiveWorkspace().root!==row.workspace_root)throw new Error("workspace changed");
+        const identity=this.runMetrics.get(runId)?.workspaceIdentity as WorkspaceInfo|undefined;
+        if(identity && this.harness.requireActiveWorkspace().registeredAt!==identity.registeredAt)throw new Error("workspace registration changed");
       } catch {
         this.policyGuard.revokeRunScopes(runId);throw new Error("Agent workspace binding changed. Authority was revoked.");
       }
@@ -865,7 +880,9 @@ export class RunManager {
   private async execute(runId:string,text:string,attachmentOrList?:AttachmentRow|AttachmentRow[],resume?:Parameters<RunManager["executeAgent"]>[3]):Promise<void> {
     if(this.controllers.get(runId)?.signal.aborted)return;
     const mode=this.runModes.get(runId)??"chat";
-    if(process.env[`WORKBENCH_${mode.toUpperCase()}_ENGINE`]==="false"||(mode==="agent"&&process.env.WORKBENCH_AGENT_V2==="false"))throw new Error(`${mode} engine is unavailable.`);
+    const v3=this.runMetrics.get(runId)?.engineVersion==="agent-v3";
+    if(process.env[`WORKBENCH_${mode.toUpperCase()}_ENGINE`]==="false"||(mode==="agent"&&!v3&&process.env.WORKBENCH_AGENT_V2==="false"))throw new Error(`${mode} engine is unavailable.`);
+    if(v3&&!this.engineOptions.agentV3Preview)throw new Error("Agent v3 is still in evaluation. This build cannot resume it.");
     const controller=this.controllers.get(runId)??new AbortController();this.controllers.set(runId,controller);
     const priorMetrics=this.runMetrics.get(runId)??{};
     const scope={runId,mode,remainingModelCalls:mode==="work"?Math.max(0,24-Number(priorMetrics.modelCallCount??0)):undefined,remainingRecoveryAttempts:mode==="work"?Math.max(0,2-Number(priorMetrics.recoveryCount??0)):undefined,signal:controller.signal,assertAuthority:()=>this.assertRunAuthority(runId),approveUncontainedPython:(code:string,inputs:string[],digest:string)=>this.askPythonApproval(runId,code,inputs,digest),observe:(values:Record<string,unknown>)=>{
@@ -931,7 +948,7 @@ export class RunManager {
       scope.observe({preprocessingMs:Date.now()-stagingStarted});
       if(mode==="agent"){
         const root=this.harness!.requireActiveWorkspace().root;
-        await workspaceExecutionSlots.run("agent",()=>this.executeAgent(runId,text,attachments,resume),controller.signal,root);return;
+        await workspaceExecutionSlots.run("agent",()=>v3?this.executeAgentV3(runId,text,attachments):this.executeAgent(runId,text,attachments,resume),controller.signal,root);return;
       }
       const selection=resolveModelSelection({explicitSelection:resume?.contract.routing.driverModel??this.runSelectedModels.get(runId),gateway:this.gateway});
       if(!selection.ok)throw new Error(selection.error);
@@ -956,6 +973,35 @@ export class RunManager {
         assertRuntimeActive();this.persistAssistant(runId,result.text,modelId);this.publishVerificationReport(runId);
         if(result.outcome==="completed")this.complete(runId);else if(result.outcome==="partial")this.partial(runId);else this.fail(runId,new Error(result.text));
       }
+    });
+  }
+
+  private async executeAgentV3(runId: string, text: string, attachments: AttachmentRow[]): Promise<void> {
+    const selected=resolveModelSelection({explicitSelection:this.runSelectedModels.get(runId),gateway:this.gateway});
+    if(!selected.ok)throw new Error(selected.error);
+    const modelId=selected.modelId, scope=currentRuntimeScope()!, root=this.harness!.requireActiveWorkspace().root;
+    const metrics=this.runMetrics.get(runId)!, identity=metrics.workspaceIdentity as WorkspaceInfo;
+    const grounding=this.groundingForRun(runId);
+    const envelope=buildExecutionEnvelope({runId,mode:"agent",modelId,hasWorkspace:true,workspaceRoot:root,attachments,hasKnowledgeBaseDocs:!!grounding,userPrompt:text,mutationRequested:true,commandExecutionRequested:true});
+    const context={runId,workspaceRoot:root,gateway:this.gateway,harness:this.harness,policyGuard:this.policyGuard,envelope,resultStore:new RunResultStore(runId),signal:scope.signal,assertAuthority:()=>this.assertRunAuthority(runId),originalUserRequest:text,grounding:grounding as any,
+      inputSources:metrics.sourceAliases as Array<{id:string;filename:string;relativePath:string;sha256:string}>,isCancelled:()=>scope.signal.aborted,refreshVerificationReport:()=>this.publishVerificationReport(runId),emitRunEvent:(event:RunEvent)=>{if(event.type==="artifact_ready")this.persistArtifact(event.artifact);this.emit(event);}};
+    const result=await new AgentTaskRunner().run({context,modelId,chatId:this.chatIdForRun(runId),messageId:String(metrics.userMessageId),workspace:{root:identity.root,registeredAt:identity.registeredAt},intent:metrics.agentTaskIntent as "continue"|"new",state:state=>this.state(runId,state),approve:preview=>this.askAgentApproval(runId,preview)});
+    if(scope.signal.aborted)return;
+    this.persistAssistant(runId,result.text,modelId);this.publishVerificationReport(runId);
+    if(result.outcome==="completed")this.complete(runId);else if(result.outcome==="cancelled")this.cancel(runId);else this.partial(runId,[result.text]);
+    if(result.stopReason!=="status_reply")setAgentTaskStatus(runId,getState(runId)==="completed"?"completed":"partial");
+  }
+
+  private async askAgentApproval(runId:string,preview:string):Promise<boolean> {
+    assertRuntimeActive(); const scope=currentRuntimeScope()!;
+    const action=createConfirmation(runId,"plan_approval",preview,"Approve this concrete action for the current task and source revision?");
+    this.pendingActions.set(runId,action);this.state(runId,"awaiting_confirmation");
+    return new Promise<boolean>(resolve=>{
+      let done=false;
+      const finish=(approved:boolean)=>{if(done)return;done=true;clearTimeout(timer);scope.signal.removeEventListener("abort",abort);this.approvalResolvers.delete(action.actionId);this.pendingActions.delete(runId);resolve(approved);};
+      const abort=()=>finish(false);
+      const timer=setTimeout(()=>{cancelPending(runId);this.cancel(runId);finish(false);},Math.max(0,Date.parse(action.expiresAt)-Date.now()));
+      this.approvalResolvers.set(action.actionId,finish);scope.signal.addEventListener("abort",abort,{once:true});this.emit({type:"confirmation_required",runId,action});
     });
   }
 

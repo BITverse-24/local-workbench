@@ -63,6 +63,7 @@ export { RAGService } from "./rag/rag-service.js";
 export { RAGGroundingProvider } from "./grounding/rag-grounding-provider.js";
 
 export interface BackendConfig {
+  agentV3Preview?: boolean;
   dataDir: string;
   modelsPath: string;
   schemaPath: string;
@@ -96,7 +97,7 @@ export function initBackend(
   reconcileInterruptedExecutions();
   recoverInterruptedModeRuns();
   registerChatHandlers(ipcMain, emitChat);
-  const manager = new RunManager(gateway, emit, emitChat);
+  const manager = new RunManager(gateway, emit, emitChat, { agentV3Preview: config?.agentV3Preview === true });
   registerRunHandlers(ipcMain, manager);
   const harness = new HarnessManager(event=>{manager.workspaceChanged();emitWorkspace?.(event);}, emit);
   registerWorkspaceHandlers(ipcMain, harness);

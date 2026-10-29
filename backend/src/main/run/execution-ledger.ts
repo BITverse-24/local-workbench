@@ -4,6 +4,7 @@ import { getDb, prepareCached } from "../persistence/db.js";
 import { matchesContractDeliverable } from "./contract.js";
 import type { AgentAdmissionReceipt, AgentVisionAdmissionReceipt } from "../gateway/agent-admission.js";
 import { BUILD_IDENTITY } from "../build-identity.js";
+import { currentRuntimeScope } from "./runtime-scope.js";
 
 
 export const verificationCheckSchema = z.object({
@@ -44,6 +45,14 @@ const executionContextSchema = z.object({
   workspaceRoot: z.string().max(4096).nullable(), groundingEnabled: z.boolean(),
 });
 const pendingAuthorizationSchema = z.object({ callId: z.string(), tool: z.string(), targetPath: z.string().max(1024).optional(), summary: z.string().max(240), createdAt: z.string().datetime() });
+const agentProgressSchema = z.object({
+  deliveryEvidenceDigest: z.string().optional(),
+  latestResultId: z.string().uuid().optional(), feedback: z.string().max(10000).default(""),
+  actions: z.array(z.object({ id: z.string().uuid(), hash: z.string(), requirementId: z.string(), operation: z.string(), status: z.enum(["proposed", "completed", "failed", "uncertain"]), resultId: z.string().uuid().optional() })).max(40).default([]),
+  reads: z.array(z.object({ path: z.string(), digest: z.string(), startByte: z.number().int().nonnegative(), endByte: z.number().int().nonnegative(), sizeBytes: z.number().int().nonnegative(), resultId: z.string().uuid(), requestId: z.string().uuid() })).max(200).default([]),
+  baseline: z.object({ status: z.string(), detail: z.string(), environmentKey: z.string() }).optional(),
+  stopReason: z.string().optional(), fullSuite: z.boolean().default(false),
+});
 const ledgerSchema = z.object({
   schemaVersion: z.literal(1), runId: z.string().uuid(), contract: z.object({ runId: z.string().uuid(), schemaVersion: z.literal(1) }),
   objective: z.string().max(500), status: z.enum(["active", "awaiting_authorization", "interrupted", "completed", "partial", "failed", "cancelled", "limit_exceeded"]),
@@ -53,9 +62,10 @@ const ledgerSchema = z.object({
   executionContext: executionContextSchema.optional(), resumeCount: z.number().int().nonnegative().default(0),
   tokenLimitRecoveryAvailable: z.boolean().default(false), tokenLimitRecoveryCount: z.number().int().nonnegative().default(0),
   verification: verificationStateSchema.optional(),
-  agentTask: z.object({ taskId: z.string().uuid(), taskRevision: z.number().int().positive(),
+  agentProgress: agentProgressSchema.optional(),
+  agentTask: z.object({ taskId: z.string().uuid().optional(), taskRevision: z.number().int().positive().optional(),
     modelCalls: z.number().int().min(0).max(40), protocolCorrections: z.number().int().min(0).max(1) }).strict().optional(),
-  agentAdmissions: z.array(z.object({ requestId: z.string().uuid(), taskId: z.string().uuid(), taskRevision: z.number().int().positive(),
+  agentAdmissions: z.array(z.object({ requestId: z.string().uuid(), taskId: z.string().uuid().optional(), taskRevision: z.number().int().positive().optional(), phase: z.enum(["requirements", "actions"]).default("actions"),
     buildIdentity: z.string().min(1),
     requestDigest: z.string().regex(/^[a-f0-9]{64}$/), renderedDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), modelIdentity: z.string().min(1),
     templateDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), assetDigests: z.record(z.string().regex(/^[a-f0-9]{64}$/)),
@@ -66,6 +76,17 @@ const ledgerSchema = z.object({
   blockers: z.array(z.string().max(500)).max(20), updatedAt: z.string().datetime(),
 });
 export type RunExecutionLedger = z.infer<typeof ledgerSchema>;
+export type AgentRunProgress = z.infer<typeof agentProgressSchema>;
+
+export function updateAgentProgress(runId: string, update: (state: AgentRunProgress) => void): AgentRunProgress {
+  return getDb().transaction(() => {
+    const ledger = getExecutionLedger(runId);
+    if (!ledger?.agentTask) throw new Error("Agent progress requires a durable run budget.");
+    const state = agentProgressSchema.parse(ledger.agentProgress ?? {});
+    update(state); ledger.agentProgress = agentProgressSchema.parse(state); save(ledger);
+    return ledger.agentProgress;
+  }).immediate();
+}
 
 function now() { return new Date().toISOString(); }
 function save(ledger: RunExecutionLedger): RunExecutionLedger {
@@ -105,18 +126,33 @@ export function bindAgentExecutionLedger(binding: AgentTaskBinding): void {
     if (!persisted || persisted.task_id !== binding.taskId || persisted.task_revision !== binding.taskRevision) throw new Error("Agent task binding does not match the saved run.");
     const ledger = getExecutionLedger(binding.runId);
     if (!ledger) throw new Error("Initialize the run ledger before binding an Agent task.");
-    if (ledger.agentTask) {
+    if (ledger.agentTask?.taskId) {
       if (ledger.agentTask.taskId !== binding.taskId || ledger.agentTask.taskRevision !== binding.taskRevision) throw new Error("The ledger is already bound to another task revision.");
       return;
     }
-    ledger.agentTask = { taskId: binding.taskId, taskRevision: binding.taskRevision, modelCalls: 0, protocolCorrections: 0 };
+    ledger.agentTask = { taskId: binding.taskId, taskRevision: binding.taskRevision, modelCalls: ledger.agentTask?.modelCalls ?? 0, protocolCorrections: ledger.agentTask?.protocolCorrections ?? 0 };
     save(ledger);
+  }).immediate();
+}
+
+/** Interpretation is generation too. Start its persisted budget before task binding; it has no tools. */
+export function initializeAgentInterpretationBudget(runId: string): void {
+  getDb().transaction(() => {
+    const row = getDb().prepare("SELECT engine_version FROM run_mode_details WHERE run_id=?").get(runId) as { engine_version: string } | undefined;
+    const ledger = getExecutionLedger(runId);
+    if (row?.engine_version !== "agent-v3" || !ledger) throw new Error("Agent interpretation requires a v3 run ledger.");
+    if (!ledger.agentTask) { ledger.agentTask = { modelCalls: 0, protocolCorrections: 0 }; save(ledger); }
   }).immediate();
 }
 
 function agentLedger(runId: string): RunExecutionLedger & { agentTask: NonNullable<RunExecutionLedger["agentTask"]> } {
   const ledger = getExecutionLedger(runId);
   if (!ledger?.agentTask) throw new Error("Agent call requires a saved task and ledger binding.");
+  if (!ledger.agentTask.taskId) {
+    const run = getDb().prepare("SELECT r.state,m.mode,m.engine_version FROM runs r JOIN run_mode_details m ON m.run_id=r.id WHERE r.id=?").get(runId) as { state: string; mode: string; engine_version: string } | undefined;
+    if (run?.mode !== "agent" || run.engine_version !== "agent-v3" || run.state !== "classifying" || currentRuntimeScope()?.agentPhase !== "requirements") throw new Error("Unbound Agent generation is restricted to requirement interpretation.");
+    return ledger as RunExecutionLedger & { agentTask: NonNullable<RunExecutionLedger["agentTask"]> };
+  }
   const row = getDb().prepare(`SELECT ar.task_id,ar.task_revision,t.current_revision,t.is_current,m.mode,m.engine_version,r.state
     FROM agent_task_runs ar JOIN agent_tasks t ON t.task_id=ar.task_id JOIN run_mode_details m ON m.run_id=ar.run_id JOIN runs r ON r.id=ar.run_id WHERE ar.run_id=?`).get(runId) as
     { task_id: string; task_revision: number; current_revision: number; is_current: number; mode: string; engine_version: string; state: string } | undefined;
@@ -134,6 +170,7 @@ export function consumeAgentModelCall(runId: string, admission?: { requestId: st
     if (admission) {
       const receipt = admission.receipt;
       ledger.agentAdmissions.push({ requestId: admission.requestId, taskId: ledger.agentTask.taskId, taskRevision: ledger.agentTask.taskRevision,
+        phase: ledger.agentTask.taskId ? "actions" : "requirements",
         buildIdentity: BUILD_IDENTITY,
         requestDigest: receipt.requestDigest, renderedDigest: receipt.countingMethod === "exact" ? receipt.renderedDigest : undefined, modelIdentity: receipt.binding.modelIdentity,
         templateDigest: receipt.countingMethod === "exact" ? receipt.templateDigest : undefined, assetDigests: receipt.assetDigests, counterIdentity: receipt.counterIdentity, transport: receipt.binding.transport, countingMethod: receipt.countingMethod,
@@ -230,7 +267,7 @@ export function recordAuthorizationDecision(runId: string): void {
   save(ledger);
 }
 
-const MUTATING_TOOLS = new Set(["write_file", "delete_file", "run_command", "execute_python", "generate_deliverable"]);
+const MUTATING_TOOLS = new Set(["write_file", "edit_file", "delete_file", "run_command", "execute_python", "generate_deliverable"]);
 export function recordExecutionToolStarted(input: { runId: string; callId: string; tool: string; args: Record<string, unknown>; summary: string }): void {
   const ledger = getExecutionLedger(input.runId);
   if (!ledger || (!MEANINGFUL_TOOLS.has(input.tool) && !MUTATING_TOOLS.has(input.tool))) return;
@@ -288,6 +325,7 @@ export function assertExecutionCanResume(runId: string, largerGenerationAllowanc
   const tokenLimited = ledger.status === "limit_exceeded" && largerGenerationAllowance && ledger.tokenLimitRecoveryAvailable;
   if (ledger.status !== "partial" && ledger.status !== "interrupted" && !tokenLimited) throw new Error(`Run status '${ledger.status}' is not eligible for resumption.`);
   if (ledger.operationAttempts.some((item) => item.status === "uncertain" && item.mutating)) throw new Error("Run has an uncertain mutation outcome. Verify it before resuming; no mutation was replayed.");
+  if (ledger.agentProgress?.actions.some(item => item.status === "uncertain")) throw new Error("Run has an uncertain Agent mutation outcome. Reconcile current files and backups before resuming.");
   if (ledger.resumeCount >= 3) throw new Error("This run reached the limit of three explicit resume attempts.");
   if (largerGenerationAllowance && (!ledger.tokenLimitRecoveryAvailable || ledger.tokenLimitRecoveryCount >= 1)) throw new Error("One-time larger generation recovery is unavailable for this run.");
   return ledger;

@@ -40,10 +40,11 @@ export interface LMStudioPromptCount {
   modelPath: string;
   contextLimit: number;
   counterIdentity: "lmstudio-sdk-1.5.0";
+  supportsNativeTools?: boolean;
 }
 const resultSchema = z.object({ inputTokens: z.number().int().positive(), renderedDigest: z.string().regex(/^[a-f0-9]{64}$/),
   instanceReference: z.string().min(1), modelPath: z.string().min(1), contextLimit: z.number().int().positive(),
-  counterIdentity: z.literal("lmstudio-sdk-1.5.0") }).strict();
+  counterIdentity: z.literal("lmstudio-sdk-1.5.0"), supportsNativeTools: z.boolean().optional() }).strict();
 const workerSource = String.raw`
 const {parentPort,workerData}=require('node:worker_threads');
 const {createHash}=require('node:crypto');
@@ -61,7 +62,7 @@ const {createHash}=require('node:crypto');
   const after=await dynamic.getModelInfo();
   if(after?.instanceReference!==before.instanceReference)throw new Error('Model changed while counting.');
   parentPort.postMessage({value:{inputTokens,renderedDigest:createHash('sha256').update(rendered).digest('hex'),
-    instanceReference:before.instanceReference,modelPath:before.path,contextLimit:await handle.getContextLength(),counterIdentity:'lmstudio-sdk-1.5.0'}});
+    instanceReference:before.instanceReference,modelPath:before.path,contextLimit:await handle.getContextLength(),counterIdentity:'lmstudio-sdk-1.5.0',supportsNativeTools:before.trainedForToolUse===true}});
 })().catch(error=>parentPort.postMessage({error:error.message}));
 `;
 

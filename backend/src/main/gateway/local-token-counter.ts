@@ -11,6 +11,7 @@ export interface LocalPromptCount {
   assetDigests: Record<string, string>;
   templateDigest: string;
   counterIdentity: "huggingface-tokenizers-0.2.0/jinja-0.5.11";
+  activeTemplate?: string;
 }
 
 // Same bounded-worker pattern as file-worker. Templates are data, never JavaScript.
@@ -44,7 +45,8 @@ try {
   const token=value=>typeof value==='string'?value:value?.content??'';
   const payload=workerData.payload;
   // The prepared payload is the source of messages and tools. No history is added here.
-  const variables={messages:payload.messages,tools:payload.tools??[],
+  const messages=payload.messages.map(message=>({...message,...(message.tool_calls?{tool_calls:message.tool_calls.map(call=>({...call,function:{...call.function,arguments:typeof call.function.arguments==='string'?JSON.parse(call.function.arguments):call.function.arguments}}))}:{})}));
+  const variables={messages,tools:payload.tools??[],
     bos_token:token(config.bos_token),eos_token:token(config.eos_token),
     add_generation_prompt:true};
   if(payload.enable_thinking!==undefined)variables.enable_thinking=payload.enable_thinking;
@@ -54,7 +56,7 @@ try {
   const count=tokenizer.encode(rendered,{add_special_tokens:false}).ids.length;
   if(!Number.isSafeInteger(count)||count<1)throw new Error('Tokenizer returned an invalid count.');
   parentPort.postMessage({value:{inputTokens:count,renderedDigest:hash(rendered),assetDigests:digests,
-    templateDigest:hash(source),counterIdentity:'huggingface-tokenizers-0.2.0/jinja-0.5.11'}});
+    templateDigest:hash(source),counterIdentity:'huggingface-tokenizers-0.2.0/jinja-0.5.11',...(workerData.includeTemplate?{activeTemplate:source}:{})}});
 } catch(error) {parentPort.postMessage({error:error.message});}
 `;
 
@@ -63,6 +65,7 @@ export async function countLocalAgentRequest(options: {
   assetsDir: string;
   payload: Record<string, unknown>;
   activeTemplate?: string;
+  includeTemplate?: boolean;
   signal?: AbortSignal;
 }): Promise<LocalPromptCount> {
   const assetsDir = z.string().min(1).max(4096).parse(options.assetsDir);
@@ -78,7 +81,7 @@ export async function countLocalAgentRequest(options: {
     const require = createRequire(typeof __filename === "string" ? __filename : path.join(process.cwd(), "package.json"));
     return new Promise<LocalPromptCount>((resolve, reject) => {
       const worker = new Worker(workerSource, { eval: true, resourceLimits: { maxOldGenerationSizeMb: 256, stackSizeMb: 4 }, workerData: {
-        assetsDir, activeTemplate, payload, tokenizerModule: require.resolve("@huggingface/tokenizers"), jinjaModule: require.resolve("@huggingface/jinja"),
+        assetsDir, activeTemplate, payload, includeTemplate: options.includeTemplate === true, tokenizerModule: require.resolve("@huggingface/tokenizers"), jinjaModule: require.resolve("@huggingface/jinja"),
       } });
       let settled = false;
       const finish = async (value?: LocalPromptCount, error?: Error) => {

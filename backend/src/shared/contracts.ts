@@ -518,6 +518,9 @@ export interface OnboardingStatus {
 // ── Local Workbench v2 Unified Agent Tool Contracts ────────────────────
 
 export interface FunctionToolParameterProperty {
+  minimum?: number;
+  maximum?: number;
+  additionalProperties?: boolean;
   format?: "multiline";
   minItems?: number;
   type: string;
@@ -529,6 +532,7 @@ export interface FunctionToolParameterProperty {
 }
 
 export interface FunctionToolParameters {
+  additionalProperties?: boolean;
   type: "object";
   properties: Record<string, FunctionToolParameterProperty>;
   required?: readonly string[] | string[];

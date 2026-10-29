@@ -97,10 +97,12 @@ export const startRunSchema = z
     preferredRoute: z.string().optional(),
     selectedModel: z.string().optional(),
     mode: z.enum(["chat", "work", "agent"]).optional(),
+    agentTaskIntent: z.enum(["continue", "new"]).optional(),
     workspaceIdentity: z.object({ root: z.string().min(1).max(4096), registeredAt: z.string().min(1).max(100) }).strict().optional(),
     workspaceReferences: z.array(z.object({ path: z.string().min(1).max(1024), kind: z.enum(["file", "directory"]) }).strict()).max(20).optional(),
   })
   .strict()
+  .refine(d => !d.agentTaskIntent || d.mode === "agent", { message: "Task intent is available only in Agent mode" })
   .refine(
     (d) =>
       d.userText.length > 0 ||
