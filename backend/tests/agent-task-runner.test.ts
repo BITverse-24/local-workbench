@@ -33,7 +33,7 @@ beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); pre
 });
 afterEach(() => { vi.restoreAllMocks(); closeDb(); setDataDir(previousRoot); rmSync(root, { recursive: true, force: true }); });
 function interpretation(kind: string, text: string) { return { disposition: "continue", requirements: [{ kind, description: text, source_id: "request", checks: [{ description: text, kind: "inspection", operation: "semantic", path: null }] }], updates: [], full_suite: false }; }
-async function run(text: string, managerPath = false, onApprove: (preview: string) => Promise<boolean> = async () => true) {
+async function run(text: string, managerPath = false, onApprove: (preview: string) => Promise<boolean> = async () => true, setupError?: string) {
   let runId = managerPath ? "" : createRun(chatId, text);
   const messageId = addMessage({ chat_id: chatId, role: "user", content: text }).id;
   if (!managerPath) getDb().prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,'agent','agent-v3',?)").run(runId, root);
@@ -47,7 +47,7 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
     const content = answer(payload);
     return { status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: typeof content === "string" ? content : JSON.stringify(content) }, finish_reason: "stop" }], usage: { prompt_tokens: input.inputTokens, completion_tokens: 30 } }) };
   } }, [{ id: "driver", runtime: "mlx-lm", baseUrl: "http://127.0.0.1:1234/v1", model: "driver", capabilities: ["text"], toolCallingFormat: "json", requestTimeoutMs: 1000, healthPath: "/models", enabled: true, contextLength: 8192 }]);
-  vi.spyOn(gateway, "prepareAgentCountingProfiles").mockResolvedValue([{ assetsDir: root, activeTemplate: template, verification }]);
+  vi.spyOn(gateway, "prepareAgentCountingProfiles").mockImplementation(async()=>{if(setupError)throw new Error(setupError);return [{assetsDir:root,activeTemplate:template,verification}];});
   const approve = vi.fn(onApprove), emit = vi.fn();
   if (managerPath) {
     const manager = new RunManager(gateway, emit, undefined, { agentV3Preview: true });
@@ -63,6 +63,69 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
   return { result, runId, approve, emit, manager: undefined };
 }
 describe("Agent v3 task host loop", () => {
+  it("retains an unparsed original through setup failure and interprets it on a later continuation", async () => {
+    const original = "Repair note.txt by replacing source with content.";
+    const first = await run(original,false,undefined,"Counting setup unavailable");
+    expect(first.result.outcome).toBe("partial"); expect(first.approve).not.toHaveBeenCalled();
+    expect(getExecutionLedger(first.runId)?.agentTask?.modelCalls).toBe(0);
+    const saved = getCurrentAgentTask(chatId)!;
+    expect(saved.snapshot.messages[0]).toMatchObject({content:original,disposition:"pending"});
+    expect(getExecutionLedger(first.runId)?.agentTask?.preparation).toMatchObject({taskId:saved.taskId,taskRevision:1,messageId:saved.snapshot.messages[0].id});
+    replies = [payload=>{
+      const input = JSON.parse(payload.messages[1].content);
+      expect(input.pendingRequests[0].sources.map((item:any)=>item.text).join("")).toBe(original);
+      return {disposition:"continue",requirements:[{kind:"change",description:original,source_id:"p1:request",checks:[{description:"Save the requested text edit",kind:"review",operation:"semantic",path:null}]}],updates:[],full_suite:false};
+    },()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
+    ()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),
+    ()=>({tool_calls:[{name:"finish",arguments:{text:"The requested text edit is saved."}}]}),payload=>{
+      const input = JSON.parse(payload.messages[1].content);
+      expect(input.originalRequests.some((message:any)=>message.content===original)).toBe(true);
+      return {covered:true,missing:[],requirements:input.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The observed text edit is saved."}))};
+    }];
+    const next = await run("Continue");
+    expect(next.result.outcome,next.result.text).toBe("completed");
+    expect(getCurrentAgentTask(chatId)?.taskId).toBe(saved.taskId);
+    expect(getCurrentAgentTask(chatId)?.snapshot.requirements[0].source.messageId).toBe(saved.snapshot.messages[0].id);
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved content\n");
+  });
+  it("keeps malformed interpretation pending and does not treat later logs as permission to discard it", async () => {
+    const original = "Repair note.txt";
+    replies = [()=>({invalid:"one"}),()=>({invalid:"two"})];
+    const first = await run(original);
+    expect(first.result.stopReason).toBe("requirement_interpretation_failed");
+    expect(getCurrentAgentTask(chatId)?.snapshot.messages[0].disposition).toBe("pending");
+    replies = [()=>({disposition:"evidence",requirements:[],updates:[],full_suite:false})];
+    const logs = await run("Error: old repair is still broken");
+    expect(logs.result.stopReason).toBe("requirements_pending");
+    expect(logs.approve).not.toHaveBeenCalled();
+    expect(getCurrentAgentTask(chatId)?.snapshot.messages.map(item=>item.disposition)).toEqual(["pending","evidence"]);
+  });
+  it("answers status about a pending original without taking workspace actions", async () => {
+    await run("Repair note.txt",false,undefined,"Counting setup unavailable");
+    const task = getCurrentAgentTask(chatId)!;
+    replies = [()=>({disposition:"status",requirements:[],updates:[],full_suite:false}),payload=>{
+      const input = JSON.parse(payload.messages[1].content);
+      expect(input.pendingRequests[0].content).toBe("Repair note.txt");
+      return "The original repair request still needs requirement interpretation.";
+    }];
+    const status = await run("What is the status?");
+    expect(status.result.stopReason).toBe("status_reply"); expect(status.approve).not.toHaveBeenCalled();
+    expect(status.emit.mock.calls.some(([event])=>event.type==="tool_call")).toBe(false);
+    expect(getCurrentAgentTask(chatId)?.taskId).toBe(task.taskId);
+    expect(getCurrentAgentTask(chatId)?.snapshot.messages[0].disposition).toBe("pending");
+    expect(getCurrentAgentTask(chatId)?.status).not.toBe("completed");
+  });
+  it("saves the task-level baseline approval with an explicit null requirement instead of an undefined value", async () => {
+    writeFileSync(path.join(root,"package.json"),JSON.stringify({type:"module",scripts:{test:"node --test"}}));
+    writeFileSync(path.join(root,"example.test.js"),'import test from "node:test"; test("existing test",()=>{});');
+    const text = "Run the existing project tests.";
+    replies = [()=>interpretation("execute",text),()=>({tool_calls:[{name:"finish",arguments:{text:"Report the available checks."}}]})];
+    const {runId,result} = await run(text);
+    expect(result.text).not.toContain("non-JSON value");
+    const store = new RunResultStore(runId), approval = store.listResults({limit:50}).find(record=>record.producer.tool==="agent_operation_approval");
+    expect(approval).toBeDefined();
+    expect(store.retrieveResultSlice(approval!.resultId,{mode:"json",pointer:"/requirementId"}).content).toBe("null");
+  });
   it("explicitly resumes the saved v3 contract, task, and call budget without repeating interpretation", async () => {
     const text = "Inspect note.txt";
     const covered = (payload: any) => {
@@ -148,6 +211,7 @@ describe("Agent v3 task host loop", () => {
     expect(result.outcome, `${result.text}\n${JSON.stringify(emit.mock.calls)}`).toBe("completed");
     expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(4);
     expect(getExecutionLedger(runId)?.agentAdmissions[0]).toMatchObject({ phase: "requirements", status: "usage_verified" });
+    expect(getExecutionLedger(runId)?.agentAdmissions[0]).toMatchObject({taskId:getCurrentAgentTask(chatId)!.taskId,taskRevision:1});
     expect(getExecutionLedger(runId)?.agentProgress?.reads[0].path).toBe("note.txt");
     expect(getCurrentAgentTask(chatId)?.snapshot.requirements).toHaveLength(1);
   });

@@ -22,7 +22,7 @@ export interface AgentTaskRevision {
   schemaVersion: 1;
   taskId: string;
   revision: number;
-  messages: Array<{ id: string; content: string; disposition: AgentMessageDisposition }>;
+  messages: Array<{ id: string; content: string; disposition: AgentMessageDisposition | "pending" }>;
   requirements: AgentRequirement[];
 }
 export interface AgentTask {

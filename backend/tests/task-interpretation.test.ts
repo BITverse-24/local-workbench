@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { agentMessageSources, interpretationMessages, parseTaskInterpretation } from "../src/main/agent/task-interpretation.js";
+import type { AgentTask } from "../src/shared/contracts.js";
 
 const messageId = "00000000-0000-4000-8000-000000000001";
 const requirement = (source_id: string, kind = "change") => ({kind,description:"Repair the requested behavior",source_id,checks:[{description:"Check the repair",kind:"review",operation:"semantic",path:null}]});
@@ -47,5 +48,16 @@ describe("Host-owned requirement source spans", () => {
     const updates = [{operation:"waive",requirementId:"tests",source_id:"s2"}];
     expect(parseTaskInterpretation(response([],updates,"scope_revision"),messageId,text).updates[0]).toMatchObject({operation:"waive",source:{messageId,quote:" Skip tests."}});
     expect(()=>parseTaskInterpretation(response([],updates),messageId,text)).toThrow("direct scope revision");
+  });
+  it("resolves earlier pending source references while refusing them as waiver authority", () => {
+    const priorId = "00000000-0000-4000-8000-000000000002";
+    const task:AgentTask = {taskId:priorId,chatId:priorId,workspace:{root:"/project",registeredAt:"first"},status:"open",current:true,
+      snapshot:{schemaVersion:1,taskId:priorId,revision:1,messages:[{id:priorId,content:"Repair startup. Keep UI.",disposition:"pending"}],requirements:[]}};
+    const input = JSON.parse(interpretationMessages("Continue",task,messageId)[1].content);
+    expect(input.pendingRequests[0].sources.map((item:any)=>item.text).join("")).toBe("Repair startup. Keep UI.");
+    expect(parseTaskInterpretation(response([requirement("p1:s2","preserve")]),messageId,"Continue",task).updates[0]).toMatchObject({requirement:{source:{messageId:priorId,quote:" Keep UI."}}});
+    expect(()=>parseTaskInterpretation(response([],[{operation:"waive",requirementId:"tests",source_id:"p1:request"}],"scope_revision"),messageId,"Continue",task)).toThrow("current user message");
+    task.snapshot.messages[0].disposition="continue";
+    expect(()=>parseTaskInterpretation(response([requirement("p1:request")]),messageId,"Continue",task)).toThrow("pending source reference is unknown");
   });
 });

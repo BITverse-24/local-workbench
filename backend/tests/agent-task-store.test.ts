@@ -9,12 +9,12 @@ import { closeDb, getDb, initDb } from "../src/main/persistence/db.js";
 import { createChat, deleteChat } from "../src/main/persistence/chats.js";
 import { addMessage, editMessage } from "../src/main/persistence/messages.js";
 import { createRun, transition } from "../src/main/run/store.js";
-import { bindAgentTaskRun, getAgentTask, getAgentTaskBinding, getCurrentAgentTask, retrieveTaskEvidence } from "../src/main/run/agent-task-store.js";
+import { bindAgentTaskRun, getAgentTask, getAgentTaskBinding, getCurrentAgentTask, ingestAgentTaskMessage, retrieveTaskEvidence } from "../src/main/run/agent-task-store.js";
 import { dataRoot, setDataDir } from "../src/main/run/filesystem.js";
 import { RunResultStore } from "../src/main/run/result-store.js";
 import { normalizeRunContract, persistRunContract } from "../src/main/run/contract.js";
 import { validateAndNormalizeIntent } from "../src/main/router/contextual-router.js";
-import { bindAgentExecutionLedger, consumeAgentModelCall, getExecutionLedger, initializeExecutionLedger, takeAgentProtocolCorrection } from "../src/main/run/execution-ledger.js";
+import { bindAgentExecutionLedger, consumeAgentModelCall, getExecutionLedger, initializeExecutionLedger, takeAgentProtocolCorrection, updateAgentProgress } from "../src/main/run/execution-ledger.js";
 
 let root: string, filename: string, chatId: string, previousDataRoot: string;
 const workspace = { root: "/project", registeredAt: "registration-1" };
@@ -44,6 +44,52 @@ function firstTask() {
 }
 
 describe("Agent task continuity and authority", () => {
+  it("ingests a complete pending request idempotently before run binding and survives restart", () => {
+    const input = attempt("Repair both defects. Keep the UI.");
+    const pending = ingestAgentTaskMessage({runId:input.runId,chatId,messageId:input.messageId,workspace});
+    expect(getAgentTaskBinding(input.runId)).toBeUndefined();
+    expect(pending.snapshot.messages).toEqual([{id:input.messageId,content:"Repair both defects. Keep the UI.",disposition:"pending"}]);
+    expect(pending.latestRunId).toBe(input.runId);
+    expect(ingestAgentTaskMessage({runId:input.runId,chatId,messageId:input.messageId,workspace})).toEqual(pending);
+    closeDb();initDb(filename);
+    expect(getCurrentAgentTask(chatId)).toEqual(pending);
+    const bound = bindAgentTaskRun({...input,expectedRevision:pending.snapshot.revision,updates:[append(input.messageId,"Repair both defects. Keep the UI.","change")]});
+    expect(bound.taskId).toBe(pending.taskId); expect(bound.taskRevision).toBe(2);
+    const old = getDb().prepare("SELECT snapshot_json FROM agent_task_revisions WHERE task_id=? AND revision=1").get(pending.taskId) as {snapshot_json:string};
+    expect(JSON.parse(old.snapshot_json).messages[0].disposition).toBe("pending");
+  });
+  it("reinterprets an earlier pending request without accepting it as authority to waive work", () => {
+    const original = attempt("Repair startup.");
+    ingestAgentTaskMessage({runId:original.runId,chatId,messageId:original.messageId,workspace}); transition(original.runId,"partial");
+    const next = attempt("Continue");
+    const pending = ingestAgentTaskMessage({runId:next.runId,chatId,messageId:next.messageId,workspace});
+    bindAgentTaskRun({...next,expectedRevision:pending.snapshot.revision,updates:[append(original.messageId,"Repair startup.","change")]});
+    expect(getCurrentAgentTask(chatId)?.snapshot.messages.map(item=>item.disposition)).toEqual(["continue","continue"]);
+    expect(getCurrentAgentTask(chatId)?.snapshot.requirements[0].source.messageId).toBe(original.messageId);
+    transition(next.runId,"partial");
+    const remove = attempt("Unrelated follow-up");
+    expect(()=>bindAgentTaskRun({...remove,disposition:"scope_revision",expectedRevision:3,updates:[{operation:"waive",requirementId:"change",source:{messageId:original.messageId,start:0,end:15,quote:"Repair startup."}}]})).toThrow("current user message");
+  });
+  it("preserves an older failed interpretation as pending in a new immutable revision", () => {
+    const original = attempt("Repair startup.");
+    const bound = bindAgentTaskRun({...original,disposition:"evidence"});
+    const intent = validateAndNormalizeIntent({intentType:"file_inspection",primaryGoal:"Inspect source",driverModel:"driver",taskType:"code",isActionable:true},{hasWorkspace:true,workspaceFiles:[],userPrompt:"Repair startup."});
+    initializeExecutionLedger(persistRunContract(normalizeRunContract(original.runId,intent))); bindAgentExecutionLedger(bound);
+    updateAgentProgress(original.runId,state=>{state.stopReason="requirement_interpretation_failed";}); transition(original.runId,"partial");
+    const next = attempt("Continue"), pending = ingestAgentTaskMessage({runId:next.runId,chatId,messageId:next.messageId,workspace});
+    expect(pending.snapshot.messages[0].disposition).toBe("pending");
+    const old = getDb().prepare("SELECT snapshot_json FROM agent_task_revisions WHERE task_id=? AND revision=1").get(bound.taskId) as {snapshot_json:string};
+    expect(JSON.parse(old.snapshot_json).messages[0].disposition).toBe("evidence");
+  });
+  it("does not carry pending requests into an explicit new task", () => {
+    const original = attempt("Repair startup.");
+    const previous = ingestAgentTaskMessage({runId:original.runId,chatId,messageId:original.messageId,workspace}); transition(original.runId,"partial");
+    const next = attempt("Inspect another objective");
+    const fresh = ingestAgentTaskMessage({runId:next.runId,chatId,messageId:next.messageId,workspace,intent:"new"});
+    expect(fresh.taskId).not.toBe(previous.taskId);
+    expect(fresh.snapshot.messages.map(item=>item.id)).toEqual([next.messageId]);
+    expect(getAgentTask(previous.taskId)?.current).toBe(false);
+  });
   it("persists the 40-call and one-correction budgets without resetting on restart or rebinding", () => {
     const input = attempt("Inspect source"), bound = bindAgentTaskRun(input);
     const intent = validateAndNormalizeIntent({ intentType: "file_inspection", primaryGoal: "Inspect source", driverModel: "driver", taskType: "code", isActionable: true }, { hasWorkspace: true, workspaceFiles: [], userPrompt: "Inspect source" });

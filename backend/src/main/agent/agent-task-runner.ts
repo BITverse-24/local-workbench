@@ -4,8 +4,8 @@ import { Validator } from "jsonschema";
 import type { AgentTask, AgentToolCall, AgentToolDefinition, RunContract } from "../../shared/contracts.js";
 import type { ToolExecutionContext } from "../tools/types.js";
 import { getDb } from "../persistence/db.js";
-import { bindAgentTaskRun, getAgentTask, getAgentTaskBinding, getCurrentAgentTask, setAgentTaskStatus } from "../run/agent-task-store.js";
-import { bindAgentExecutionLedger, configureExecutionLedger, getExecutionLedger, initializeAgentInterpretationBudget, initializeExecutionLedger, takeAgentProtocolCorrection, updateAgentProgress } from "../run/execution-ledger.js";
+import { bindAgentTaskRun, getAgentTask, getAgentTaskBinding, ingestAgentTaskMessage, setAgentTaskStatus } from "../run/agent-task-store.js";
+import { bindAgentExecutionLedger, configureExecutionLedger, getExecutionLedger, initializeAgentInterpretationBudget, initializeExecutionLedger, prepareAgentTaskInterpretation, takeAgentProtocolCorrection, updateAgentProgress } from "../run/execution-ledger.js";
 import { getRunContract, persistRunContract } from "../run/contract.js";
 import { currentRuntimeScope, assertRuntimeActive } from "../run/runtime-scope.js";
 import { ToolDispatcher } from "./tool-dispatcher.js";
@@ -49,32 +49,31 @@ export class AgentTaskRunner {
       return { outcome, stopReason: reason, text: `Changes applied: ${applied.join("; ") || "none"}\nChecks passed: ${checks.filter(item => item.status === "passed").map(item => item.reason).join("; ") || "none"}\nChecks unavailable: ${checks.filter(item => item.status === "unverified").map(item => item.reason).join("; ") || "none recorded"}\nRemaining requirements: ${outcome === "completed" ? "none" : detail}` };
     };
     try {
-      scope.agentCountingProfiles = await context.gateway.prepareAgentCountingProfiles(modelId, { signal: scope.signal });
       let bound = getAgentTaskBinding(runId);
+      const current = bound ? undefined : ingestAgentTaskMessage({runId,chatId:input.chatId,messageId:input.messageId,workspace:input.workspace,intent:input.intent,statusOnly:isAgentStatusQuestion(source.content)});
+      if (current) prepareAgentTaskInterpretation(runId,current.taskId,current.snapshot.revision,input.messageId);
+      scope.agentCountingProfiles = await context.gateway.prepareAgentCountingProfiles(modelId, { signal: scope.signal });
       if (!bound) {
         input.state("classifying"); scope.agentPhase = "requirements";
-        const current = input.intent === "new" ? undefined : getCurrentAgentTask(input.chatId);
         let interpreted: ReturnType<typeof parseTaskInterpretation> | undefined;
         let feedback = "";
         for (;;) {
-          const messages = interpretationMessages(source.content, current);
+          const messages = interpretationMessages(source.content, current, input.messageId);
           if (feedback) messages[1].content = JSON.stringify({ ...JSON.parse(messages[1].content), correction: feedback });
           const response = await context.gateway.chatWithTools(modelId, messages, [], { runId, maxTokens: 1024, purpose: "classification", temperature: 0, responseSchema: agentInterpretationResponseSchema, signal: scope.signal });
           if (!response.ok) return stop("interpretation_unavailable", response.error.message);
           try {
             if (response.value.finishReason === "length" || response.value.tool_calls?.length) throw new Error("Requirement interpretation must be complete JSON data, with no workspace action.");
-            interpreted = parseTaskInterpretation(response.value.content ?? "", input.messageId, source.content); break;
+            interpreted = parseTaskInterpretation(response.value.content ?? "", input.messageId, source.content, current); break;
           } catch (error) {
             context.resultStore.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_rejected_interpretation", callId: randomUUID() }, summary: "Rejected requirement interpretation; no workspace action", payload: { response: response.value.content ?? "", reason: String(error) }, sources: [] });
             if (!takeAgentProtocolCorrection(runId)) {
-              bound = bindAgentTaskRun({ runId, chatId: input.chatId, messageId: input.messageId, workspace: input.workspace, intent: input.intent, disposition: "evidence", expectedRevision: current?.snapshot.revision, predecessorRunId: input.predecessorRunId });
-              bindAgentExecutionLedger(bound);
               return stop("requirement_interpretation_failed", `The complete request is saved. Its requirements could not be validated: ${String(error)}`);
             }
             feedback = `Correct the JSON once. Keep every user obligation. ${String(error).slice(0, 1000)}`;
           }
         }
-        bound = bindAgentTaskRun({ runId, chatId: input.chatId, messageId: input.messageId, workspace: input.workspace, intent: input.intent, disposition: interpreted.disposition, expectedRevision: current?.snapshot.revision, updates: interpreted.updates, predecessorRunId: input.predecessorRunId });
+        bound = bindAgentTaskRun({ runId, chatId: input.chatId, messageId: input.messageId, workspace: input.workspace, intent: "continue", disposition: interpreted.disposition, expectedRevision: current?.snapshot.revision, updates: interpreted.updates, predecessorRunId: input.predecessorRunId });
         bindAgentExecutionLedger(bound);
         updateAgentProgress(runId, progress => { progress.fullSuite ||= interpreted!.fullSuite; });
         if (!["evidence", "status"].includes(interpreted.disposition)) { const waiver = extractVerificationSkipBasis(source.content); if (waiver) recordVerificationUserSkip(runId, waiver); }
@@ -83,9 +82,10 @@ export class AgentTaskRunner {
       const task = getAgentTask(bound.taskId)!;
       if (task.snapshot.revision !== bound.taskRevision || task.workspace.root !== input.workspace.root || task.workspace.registeredAt !== input.workspace.registeredAt) return stop("stale_task_binding", "The task or workspace binding changed. Start a fresh bound attempt.");
       if (bound.disposition === "status" || isAgentStatusQuestion(source.content)) {
-        const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: "Answer the status question from saved task facts only. Do not propose or perform workspace actions. State remaining requirements and unavailable checks." }, { role: "user", content: JSON.stringify({ question: source.content, requirements: task.snapshot.requirements, taskStatus: task.status }) }], [], { runId, maxTokens: 512, signal: scope.signal });
+        const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: "Answer the status question from saved task facts only. Do not propose or perform workspace actions. State remaining requirements and unavailable checks." }, { role: "user", content: JSON.stringify({ question: source.content, requirements: task.snapshot.requirements, pendingRequests: task.snapshot.messages.filter(message=>message.disposition === "pending"), taskStatus: task.status }) }], [], { runId, maxTokens: 512, signal: scope.signal });
         return answer.ok && answer.value.finishReason !== "length" ? { outcome: "completed", text: answer.value.content ?? "The saved task remains available.", stopReason: "status_reply" } : stop("status_reply_unavailable", answer.ok ? "The status answer was truncated." : answer.error.message);
       }
+      if (task.snapshot.messages.some(message => message.disposition === "pending")) return stop("requirements_pending", "An earlier request still needs requirement interpretation. Its complete text remains pending; it was not treated as logs or completed work.");
       if (!task.snapshot.requirements.some(item => item.state === "active")) return stop("requirements_missing", "The full message is saved, but no active requirement was extracted. Narrow or clarify this task.");
       const replacements = new Map(agentWorkspaceActions.map(tool => [tool.name, tool]));
       const registered = [...getAllAvailableTools(modelId).map(tool => replacements.get(tool.name) ?? tool), replacements.get("edit_file")!];
@@ -99,7 +99,7 @@ export class AgentTaskRunner {
         for (const call of calls) {
           assertRuntimeActive();
           const commandApproval = call.name === "run_command" ? { workspaceDigest: captureCommandWorkspaceDigest(context.workspaceRoot) } : undefined;
-          const previewData = { taskId: bound!.taskId, taskRevision: bound!.taskRevision, requirementId: context.agentRequirementId,
+          const previewData = { taskId: bound!.taskId, taskRevision: bound!.taskRevision, requirementId: context.agentRequirementId ?? null,
             constraints: task.snapshot.requirements.filter(item => item.state === "active" && item.kind === "preserve"),
             operation: call.name, arguments: call.arguments, ...(commandApproval ? { sourceRevision: commandApproval.workspaceDigest } : {}) };
           const preview = JSON.stringify(previewData, null, 2) + (call.name === "run_command" ? `\n\n${COMMAND_FALLBACK_DISCLOSURE}` : "");

@@ -5,6 +5,7 @@ import { matchesContractDeliverable } from "./contract.js";
 import type { AgentAdmissionReceipt, AgentVisionAdmissionReceipt } from "../gateway/agent-admission.js";
 import { BUILD_IDENTITY } from "../build-identity.js";
 import { currentRuntimeScope } from "./runtime-scope.js";
+import { getAgentTask } from "./agent-task-store.js";
 
 
 export const verificationCheckSchema = z.object({
@@ -67,6 +68,7 @@ const ledgerSchema = z.object({
   verification: verificationStateSchema.optional(),
   agentProgress: agentProgressSchema.optional(),
   agentTask: z.object({ taskId: z.string().uuid().optional(), taskRevision: z.number().int().positive().optional(),
+    preparation: z.object({taskId:z.string().uuid(),taskRevision:z.number().int().positive(),messageId:z.string().uuid()}).strict().optional(),
     modelCalls: z.number().int().min(0).max(40), protocolCorrections: z.number().int().min(0).max(1) }).strict().optional(),
   agentAdmissions: z.array(z.object({ requestId: z.string().uuid(), taskId: z.string().uuid().optional(), taskRevision: z.number().int().positive().optional(), phase: z.enum(["requirements", "actions"]).default("actions"),
     buildIdentity: z.string().min(1),
@@ -148,12 +150,30 @@ export function initializeAgentInterpretationBudget(runId: string): void {
   }).immediate();
 }
 
+function assertAgentPreparation(runId: string, preparation: {taskId:string;taskRevision:number;messageId:string}) {
+  const task = getAgentTask(preparation.taskId);
+  const run = getDb().prepare("SELECT r.chat_id,m.mode,m.engine_version,m.workspace_root FROM runs r JOIN run_mode_details m ON m.run_id=r.id JOIN messages u ON u.run_id=r.id AND u.id=? AND u.role='user' WHERE r.id=?").get(preparation.messageId,runId) as {chat_id:string;mode:string;engine_version:string;workspace_root:string} | undefined;
+  if (!task?.current || task.snapshot.revision !== preparation.taskRevision || run?.mode !== "agent" || run.engine_version !== "agent-v3" || task.chatId !== run.chat_id || task.workspace.root !== run.workspace_root || !task.snapshot.messages.some(message=>message.id===preparation.messageId && ["pending","status"].includes(message.disposition))) throw new Error("Agent preparation requires the current saved task and unparsed request.");
+}
+
+/** Preparation identity labels interpretation evidence; it grants no workspace authority. */
+export function prepareAgentTaskInterpretation(runId: string, taskId: string, taskRevision: number, messageId: string): void {
+  getDb().transaction(()=>{
+    const ledger = getExecutionLedger(runId);
+    if (!ledger?.agentTask || ledger.agentTask.taskId) throw new Error("Agent interpretation needs an unbound persisted budget.");
+    const preparation = {taskId,taskRevision,messageId}; assertAgentPreparation(runId,preparation);
+    ledger.agentTask.preparation = preparation; save(ledger);
+  }).immediate();
+}
+
 function agentLedger(runId: string): RunExecutionLedger & { agentTask: NonNullable<RunExecutionLedger["agentTask"]> } {
   const ledger = getExecutionLedger(runId);
   if (!ledger?.agentTask) throw new Error("Agent call requires a saved task and ledger binding.");
   if (!ledger.agentTask.taskId) {
     const run = getDb().prepare("SELECT r.state,m.mode,m.engine_version FROM runs r JOIN run_mode_details m ON m.run_id=r.id WHERE r.id=?").get(runId) as { state: string; mode: string; engine_version: string } | undefined;
     if (run?.mode !== "agent" || run.engine_version !== "agent-v3" || run.state !== "classifying" || currentRuntimeScope()?.agentPhase !== "requirements") throw new Error("Unbound Agent generation is restricted to requirement interpretation.");
+    if (!ledger.agentTask.preparation) throw new Error("Save the complete task request before Agent generation.");
+    assertAgentPreparation(runId,ledger.agentTask.preparation);
     return ledger as RunExecutionLedger & { agentTask: NonNullable<RunExecutionLedger["agentTask"]> };
   }
   const row = getDb().prepare(`SELECT ar.task_id,ar.task_revision,t.current_revision,t.is_current,m.mode,m.engine_version,r.state
@@ -172,7 +192,7 @@ export function consumeAgentModelCall(runId: string, admission?: { requestId: st
     ledger.agentTask.modelCalls++;
     if (admission) {
       const receipt = admission.receipt;
-      ledger.agentAdmissions.push({ requestId: admission.requestId, taskId: ledger.agentTask.taskId, taskRevision: ledger.agentTask.taskRevision,
+      ledger.agentAdmissions.push({ requestId: admission.requestId, taskId: ledger.agentTask.taskId ?? ledger.agentTask.preparation?.taskId, taskRevision: ledger.agentTask.taskRevision ?? ledger.agentTask.preparation?.taskRevision,
         phase: ledger.agentTask.taskId ? "actions" : "requirements",
         buildIdentity: BUILD_IDENTITY,
         requestDigest: receipt.requestDigest, renderedDigest: receipt.countingMethod === "exact" ? receipt.renderedDigest : undefined, modelIdentity: receipt.binding.modelIdentity,

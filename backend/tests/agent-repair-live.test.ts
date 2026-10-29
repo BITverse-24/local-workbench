@@ -31,6 +31,10 @@ function workspaceFiles(root: string, relative = ""): Record<string, string> {
 it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses an actual 7B Flow D repair in a fresh workspace", async () => {
   const source = process.env.WORKBENCH_AGENT_REPAIR_WORKSPACE, report = process.env.WORKBENCH_AGENT_REPAIR_REPORT;
   if (!source || !report) throw new Error("Set the prepared workspace and diagnostic report paths.");
+  const selectedRuntimeSourceDigests = Object.fromEntries([
+    "agent/agent-task-runner.ts","agent/task-interpretation.ts","agent/context-packet.ts","agent/requirement-review.ts",
+    "run/agent-task-store.ts","run/execution-ledger.ts","gateway/model-gateway.ts","harness/tools/run-command.ts",
+  ].map(file=>[file,createHash("sha256").update(readFileSync(path.join(process.cwd(),"backend/src/main",file))).digest("hex")]));
   const temporary = mkdtempSync(path.join(tmpdir(), "agent-repair-live-")), previous = dataRoot();
   const workspace = path.join(temporary, "workspace"); mkdirSync(workspace);
   cpSync(source, workspace, { recursive: true, filter: file => !file.split(path.sep).includes(".harness_backups") });
@@ -70,7 +74,7 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses an actual 7B 
       return {record,content};
     });
     const current = workspaceFiles(workspace), changed = [...new Set([...Object.keys(original),...Object.keys(current)])].filter(file=>original[file]!==current[file]);
-    const proof = {recordedAt:new Date().toISOString(),scope:"Source-runtime diagnostic; not packaged or release certification",model:"qwen2.5-coder-7b-instruct-mlx",contextLimit:8192,result,original,current,changed,
+    const proof = {recordedAt:new Date().toISOString(),scope:"Source-runtime diagnostic; not packaged or release certification",selectedRuntimeSourceDigests,model:"qwen2.5-coder-7b-instruct-mlx",contextLimit:8192,result,original,current,changed,
       protectedFilesUnchanged:changed.every(file=>mutable.has(file)),approvals,preparedRequests,task:getCurrentAgentTask(chatId),ledger:getExecutionLedger(runId),results,
       independentTests:{status:independent.status,signal:independent.signal,stdout:independent.stdout,stderr:independent.stderr,error:independent.error?.message},
       finalSources:Object.fromEntries([...mutable].map(file=>[file,readFileSync(path.join(workspace,file),"utf8")]))};
