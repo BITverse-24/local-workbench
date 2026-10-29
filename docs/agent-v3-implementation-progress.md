@@ -162,7 +162,7 @@ The real command-backed regression uses an existing failing test in a separate w
 
 This check also exposed a v3 fallback approval defect: the fallback check omitted the operation digest. The policy guard now requires the fallback flag, exact command, run identity, and source-bound operation in the same live grant. It cannot combine grants from different revisions. Full type checking and the Electron source build passed. The focused suite passed 236 tests across six files, with one live test skipped. Sixty command, publication, capability, and containment cases passed across four files. The network containment case first failed to start its loopback server under restricted permissions; the complete six-case containment suite passed when rerun with local server access.
 
-The current live probe adds the new scope assessment. It remains a source diagnostic, not a packaged or release trial. Do not enable production v3 from offline test success.
+Later probes below exercise this scope assessment. They remain source diagnostics, not packaged or release trials. Do not enable production v3 from offline test success.
 
 ## Bounded scope revision and request-specific checks
 
@@ -170,7 +170,9 @@ A real scope assessment rejected the omitted repair obligations, then the single
 
 The next live probes exposed two contract faults before workspace actions. LM Studio rejected a negation keyword used to describe an empty updates array; the schema now uses its supported array length constraint. A later pass invented a literal-copy check without a matching user instruction, and ingress correctly rejected it. Presentation now offers literal checks only when the supplied request or an earlier pending request has a direct literal-copy basis. Only inspection and delivery passes can present those checks. Other passes use semantic checks for their fixed kind. The ingress quote/path validation remains unchanged.
 
-Evidence for all three failed probes is in `docs/evidence/agent-scope-revision-live-2026-10-30.json`. No workspace actions, edits, or repair passes occurred. Provider errors stay recorded and consume their calls. These failures do not establish live repair quality. Full type checking and the Electron source build passed. The latest focused run passed 240 tests across six files, with one live test skipped. A further isolated probe is running against the merged scope and request-specific schemas.
+Evidence for all three failed probes is in `docs/evidence/agent-scope-revision-live-2026-10-30.json`. No workspace actions, edits, or repair passes occurred. Provider errors stay recorded and consume their calls. These failures do not establish live repair quality. Full type checking and the Electron source build passed. The latest focused run passed 240 tests across six files, with one live test skipped. The further isolated probe also stopped before workspace actions. All eight calls passed exact admission and provider-usage checks. The retained draft and focused passes contained repair and full-suite requirements, but the delivery pass returned no requirement. The final assessment rejected the missing separate explanation obligation. No baseline, source read, approval, or edit occurred in that probe. Evidence is in `docs/evidence/agent-preserved-scope-live-2026-10-30.json`.
+
+The remaining control gap is now explicit: the engine depends on complete model-written obligation kinds before it can enter repair. A separate model assessment prevents a false success, but it can also stop useful work on a scope interpretation fault. A five-kind pass still lets a short delivery obligation disappear when it shares a sentence with test execution. The next investigation must compare bounded source-clause extraction and review contracts, with precise source references for missing obligations. Keep direct source quotations and deterministic execution proof. Do not remove the failure gate or treat these assessments as proof of understanding to obtain a passing trial.
 
 ## Current proof and limits
 
@@ -197,4 +199,8 @@ The damaged Flow D workspace was not restored or edited by this work. Production
 - `b008c3b`: integrated v3 host loop, revision-bound edits, strict action transport, and failed live-inspection evidence.
 - `a258005`: tested task controls and same-session resume.
 - `5c01c36`: closes empty-suite false passes and separates baseline history from final acceptance.
-- This milestone adds typed host source checks, separate scope review, and bounded literal-delivery correction. Earlier Flow D assets and AGENTS.md edits remain separate.
+- `6c4eba0`: typed action schemas, active capability state, bounded read agenda, cancellation checks, and failed live evidence.
+- `c61ae75`: retained current source pages and exact admission after whole-page context reduction.
+- `ca9e17b`: bounded host source acquisition, pre-action scope assessment, and source-bound command fallback approval.
+- `487d6df`: bounded obligation passes, retained draft scope, request-specific check presentation, and failed scope diagnostics.
+- Earlier Flow D assets and AGENTS.md edits remain separate.
