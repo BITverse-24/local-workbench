@@ -32,8 +32,8 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses an actual 7B 
   const source = process.env.WORKBENCH_AGENT_REPAIR_WORKSPACE, report = process.env.WORKBENCH_AGENT_REPAIR_REPORT;
   if (!source || !report) throw new Error("Set the prepared workspace and diagnostic report paths.");
   const selectedRuntimeSourceDigests = Object.fromEntries([
-    "agent/agent-task-runner.ts","agent/task-interpretation.ts","agent/context-packet.ts","agent/source-evidence.ts","agent/requirement-review.ts",
-    "run/agent-task-store.ts","run/execution-ledger.ts","gateway/model-gateway.ts","harness/tools/run-command.ts","harness/tools/list-dir.ts",
+    "agent/agent-task-runner.ts","agent/task-interpretation.ts","agent/requirement-scope.ts","agent/context-packet.ts","agent/source-evidence.ts","agent/requirement-review.ts",
+    "agent/test-verification.ts","agent/verification-stage.ts","run/agent-task-store.ts","run/execution-ledger.ts","gateway/model-gateway.ts","harness/policy-guard.ts","harness/tools/run-command.ts","harness/tools/list-dir.ts",
   ].map(file=>[file,createHash("sha256").update(readFileSync(path.join(process.cwd(),"backend/src/main",file))).digest("hex")]));
   const temporary = mkdtempSync(path.join(tmpdir(), "agent-repair-live-")), previous = dataRoot();
   const workspace = path.join(temporary, "workspace"); mkdirSync(workspace);

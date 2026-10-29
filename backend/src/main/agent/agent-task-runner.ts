@@ -14,6 +14,8 @@ import { agentWorkspaceActions, canonicalSourcePath, validateAgentFileProposal }
 import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 import { resolveSafe } from "../harness/path-guard.js";
 import { buildAgentContextPacket, conciseAgentTool, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
+import { obtainAgentFailureSources } from "./source-evidence.js";
+import { reviewAgentInterpretation } from "./requirement-scope.js";
 import { agentInterpretationResponseSchema, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
 import { runAgentVerificationStage } from "./verification-stage.js";
 import { isCodeVerificationPath } from "./test-verification.js";
@@ -65,14 +67,28 @@ export class AgentTaskRunner {
           if (!response.ok) return stop("interpretation_unavailable", response.error.message);
           try {
             if (response.value.finishReason === "length" || response.value.tool_calls?.length) throw new Error("Requirement interpretation must be complete JSON data, with no workspace action.");
-            interpreted = parseTaskInterpretation(response.value.content ?? "", input.messageId, source.content, current); break;
+            interpreted = parseTaskInterpretation(response.value.content ?? "", input.messageId, source.content, current);
           } catch (error) {
             context.resultStore.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_rejected_interpretation", callId: randomUUID() }, summary: "Rejected requirement interpretation; no workspace action", payload: { response: response.value.content ?? "", reason: String(error) }, sources: [] });
             if (!takeAgentProtocolCorrection(runId)) {
               return stop("requirement_interpretation_failed", `The complete request is saved. Its requirements could not be validated: ${String(error)}`);
             }
             feedback = `Correct the JSON once. Keep every user obligation. ${String(error).slice(0, 1000)}`;
+            continue;
           }
+          if (!isAgentStatusQuestion(source.content)) {
+            let reviewed: Awaited<ReturnType<typeof reviewAgentInterpretation>>;
+            try { reviewed = await reviewAgentInterpretation(current!,interpreted,context,modelId); }
+            catch (error) { assertRuntimeActive();return stop("requirement_coverage_unverified",String(error)); }
+            if (!reviewed.covered) {
+              if (getExecutionLedger(runId)?.agentProgress?.scopeCorrectionUsed) return stop("requirement_coverage_unverified",reviewed.detail);
+              updateAgentProgress(runId,progress=>{progress.scopeCorrectionUsed=true;});
+              feedback = `The separate scope review found missing obligations. Revise the requirement interpretation once, preserving all original messages and obligations: ${reviewed.detail}`;
+              continue;
+            }
+            interpreted.fullSuite ||= reviewed.fullSuite;
+          }
+          break;
         }
         bound = bindAgentTaskRun({ runId, chatId: input.chatId, messageId: input.messageId, workspace: input.workspace, intent: "continue", disposition: interpreted.disposition, expectedRevision: current?.snapshot.revision, updates: interpreted.updates, predecessorRunId: input.predecessorRunId });
         bindAgentExecutionLedger(bound);
@@ -131,6 +147,7 @@ export class AgentTaskRunner {
         clearApprovals();
         updateAgentProgress(runId, progress => { progress.baseline = { status: baseline.action, detail: baseline.detail, environmentKey }; progress.feedback = baseline.detail.slice(0, 10000); });
         if (baseline.action === "cancelled") return stop("approval_denied", baseline.detail, "cancelled");
+        if (baseline.action === "repair" && task.snapshot.requirements.some(item=>item.state === "active" && item.kind === "change")) await obtainAgentFailureSources(context,dispatcher,baseline.sourceHints);
       }
       for (;;) {
         assertRuntimeActive();
@@ -222,7 +239,7 @@ export class AgentTaskRunner {
             if (baseline?.status === "stop" && baseline.environmentKey === environmentKey) return stop("checks_unavailable", baseline.detail);
             const checked = await runAgentVerificationStage({ context, dispatcher, changedPaths: progress?.fullSuite ? [] : changed, authorize });
             clearApprovals();
-            if (checked.action === "repair") { updateAgentProgress(runId, state => { state.feedback = checked.detail.slice(0, 10000); }); continue; }
+            if (checked.action === "repair") { updateAgentProgress(runId, state => { state.feedback = checked.detail.slice(0, 10000); }); await obtainAgentFailureSources(context,dispatcher,checked.sourceHints); continue; }
             if (!["passed", "skipped"].includes(checked.action)) return stop("checks_unavailable", checked.detail, checked.action === "cancelled" ? "cancelled" : "partial");
           }
           const complete = await reviewAgentTaskCoverage(task, context, modelId, changed, String(call.arguments.text));

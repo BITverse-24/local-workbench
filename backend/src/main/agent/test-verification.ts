@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { SaxesParser } from "saxes";
 import type { AgentToolCall } from "../../shared/contracts.js";
 import { PermissionError, resolveSafe } from "../harness/path-guard.js";
@@ -46,8 +47,11 @@ export interface AgentTestExecutionEvidence {
   executed: number; failed: number; skipped: number; testFiles: string[];
   reason?: string; detail?: string; resultId?: string; report?: string; isolationStatus?: string;
   failureOutput?: string;
+  failureLocations?: AgentFailureLocation[];
+  failureLocationsComplete?: boolean;
   successMarker?: string; successMarkerObserved?: boolean;
 }
+export interface AgentFailureLocation { path: string; line: number }
 export type AgentTestDiscovery = { ok: true; plans: AgentTestPlan[] } | { ok: false; reason: string; detail: string };
 const MAX_FILES = 10000, MAX_BYTES = 128 * 1024 * 1024;
 const hash = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
@@ -233,7 +237,35 @@ function testFile(file: string, executionRoot: string, suiteRoot: string): strin
   if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Test report path is outside the execution snapshot.");
   return slash(relative).replace(/^\.\//, "");
 }
-export function parseAgentTestReport(request: AgentTestExecutionRequest, report: string, executionRoot: string): ParsedTests {
+/** Stack locations are selection hints only. Only paths in this exact snapshot may be returned. */
+export function agentFailureLocations(text: string, executionRoot: string, sourceManifest: Record<string, string>): AgentFailureLocation[] {
+  const locations = new Map<string, AgentFailureLocation>();
+  for (const prefix of [path.join(executionRoot, path.sep), pathToFileURL(path.join(executionRoot, path.sep)).href]) {
+    let offset = 0;
+    while ((offset = text.indexOf(prefix, offset)) >= 0) {
+      const suffix = text.slice(offset + prefix.length).match(/^([^\r\n]+?):([1-9][0-9]*)(?::[0-9]+)?(?=[\s)]|$)/);
+      offset += prefix.length;
+      if (!suffix) continue;
+      let filename: string;
+      try { filename = prefix.startsWith("file:") ? decodeURIComponent(suffix[1]) : suffix[1]; } catch { continue; }
+      const relative = slash(path.relative(executionRoot, path.resolve(executionRoot, filename)));
+      const line = Number(suffix[2]);
+      if (!Number.isSafeInteger(line) || !Object.hasOwn(sourceManifest, relative)) continue;
+      if (!locations.has(relative)) locations.set(relative, { path: relative, line });
+      if (locations.size >= 16) return [...locations.values()];
+    }
+  }
+  return [...locations.values()];
+}
+
+export function parseAgentTestReport(request: AgentTestExecutionRequest, report: string, executionRoot: string): ParsedTests & Pick<AgentTestExecutionEvidence, "failureLocations" | "failureLocationsComplete"> {
+  const parsed = parseAgentTestReportData(request, report, executionRoot);
+  if (!parsed.failed) return parsed;
+  const failureLocations = agentFailureLocations(parsed.failureOutput ?? "", executionRoot, request.sourceManifest);
+  return { ...parsed, failureLocations, failureLocationsComplete: false };
+}
+
+function parseAgentTestReportData(request: AgentTestExecutionRequest, report: string, executionRoot: string): ParsedTests {
   if (request.reportFormat === "json") {
     const data = JSON.parse(report), results = data.testResults;
     if (!Array.isArray(results) || !results.every(item => Array.isArray(item.assertionResults))) throw new Error("Test report has no assertion results.");

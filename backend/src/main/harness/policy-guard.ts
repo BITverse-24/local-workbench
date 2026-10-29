@@ -355,11 +355,13 @@ export class MutationPolicyGuard {
     return false;
   }
 
-  isUnisolatedCommandAuthorized(runId: string | undefined, command: string): boolean {
-    return Boolean(runId && this.isAuthorized(runId, "run_command", { command }, true) &&
-      this.getActiveScopes(runId).some(scope => scope.runId === runId &&
-        scope.operation === "run_command" && scope.allowUnisolated === true &&
-        scope.command && isCommandMatch(scope.command, command)));
+  isUnisolatedCommandAuthorized(runId: string | undefined, command: string, operationDigest?: string): boolean {
+    // The fallback grant and source-bound operation must be in the same live scope.
+    return Boolean(runId && this.getActiveScopes(runId).some(scope => scope.runId === runId &&
+      scope.operation === "run_command" && scope.allowUnisolated === true &&
+      (!scope.operationDigest || scope.operationDigest === operationDigest) &&
+      (!scope.targetPath || scope.targetPath === "*") &&
+      scope.command && isCommandMatch(scope.command, command)));
   }
 
   async authorize(

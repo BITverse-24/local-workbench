@@ -1,9 +1,25 @@
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { AgentRequirement, SourceReadReceipt } from "../../shared/contracts.js";
 import type { ToolExecutionContext } from "../tools/types.js";
-import { getExecutionLedger } from "../run/execution-ledger.js";
+import { getExecutionLedger, updateAgentProgress } from "../run/execution-ledger.js";
 import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js";
+import type { AgentFailureLocation } from "./test-verification.js";
+import type { ToolDispatcher } from "./tool-dispatcher.js";
+import { assertRuntimeActive } from "../run/runtime-scope.js";
+
+/** Obtain bounded source from host test evidence before asking for a repair action. */
+export async function obtainAgentFailureSources(context: ToolExecutionContext, dispatcher: ToolDispatcher, hints: AgentFailureLocation[] = []): Promise<void> {
+  for (const location of hints.slice(0,4)) {
+    assertRuntimeActive(); context.assertAuthority?.();
+    let startLine = Math.max(1,location.line-8);
+    try { if (readAgentSourceBytes(context.workspaceRoot,location.path).length <= 2000) startLine = 1; } catch { /* The registered reader records the real failure. */ }
+    const [result] = await dispatcher.dispatchConcurrent([{id:randomUUID(),name:"read_file",arguments:{path:location.path,start_line:startLine,max_bytes:2000}}],context);
+    assertRuntimeActive();
+    if (result.result.ok && result.result.resultRef) updateAgentProgress(context.runId,progress=>{progress.sourceResultIds.push(result.result.resultRef!.resultId);});
+  }
+}
 
 const pageSchema = z.object({
   sourcePage: z.literal(true), path: z.string(), digest: z.string(),
@@ -45,6 +61,7 @@ export function sourcePageIsCurrent(context: ToolExecutionContext, page: AgentSo
 export function selectAgentSourcePages(context: ToolExecutionContext, requirement: AgentRequirement, latest: AgentSourcePage | undefined, focus: string, maxChars: number) {
   const progress = getExecutionLedger(context.runId)?.agentProgress;
   const ids = [...new Set([
+    ...(progress?.sourceResultIds ?? []),
     ...(progress?.reads.map(read => read.resultId) ?? []),
     ...(progress?.actions.filter(action => action.operation === "read_file" && action.status === "completed").flatMap(action => action.resultId ?? []) ?? []),
   ])].reverse().filter(id => id !== latest?.resultId);

@@ -5,6 +5,7 @@ import type { ToolDispatcher } from "./tool-dispatcher.js";
 import {
   appendVerificationSuccessMarker, assessAgentTestExecution, captureAgentVerificationManifest, createAgentVerificationCall,
   createAgentVerificationRequest, discoverAgentTestPlans,
+  type AgentFailureLocation,
 } from "./test-verification.js";
 import {
   finishVerificationAttempt, getRunVerificationState, recordVerificationEvidence,
@@ -17,6 +18,7 @@ const CRITERION = "acceptance:validate-written-code";
 export interface AgentVerificationStageResult {
   action: "passed" | "skipped" | "repair" | "stop" | "cancelled";
   detail: string;
+  sourceHints?: AgentFailureLocation[];
 }
 
 /** A runtime stage. Model tool arguments cannot select this execution context. */
@@ -134,11 +136,14 @@ export async function runAgentVerificationStage(input: {
           evidence(status, detail, { revision: manifest.sha256, planId,
             sourceManifest: manifest.files, evidence: resultId ? [{ kind: "result", id: resultId }] : [] });
           if (status === "failed") {
-            if (input.baseline) return { action: "repair", detail: `Baseline failures were recorded. ${detail}` };
+            const seen = new Set<string>();
+            const sourceHints = [...(testEvidence?.failureLocations ?? []),...(testEvidence?.testFiles ?? []).map(path=>({path,line:1}))]
+              .filter(location=>{if(seen.has(location.path))return false;seen.add(location.path);return true;}).slice(0,16);
+            if (input.baseline) return { action: "repair", detail: `Baseline failures were recorded. ${detail}`, sourceHints };
             activity.block(detail);
             if (takeAgentVerificationRepair(runId)) {
               context.refreshVerificationReport?.();
-              return { action: "repair", detail: `${detail}\nCorrect the saved code using the actual test failure. The runtime will run tests after the repair. Execution result: ${resultId}.` };
+              return { action: "repair", detail: `${detail}\nCorrect the saved code using the actual test failure. The runtime will run tests after the repair. Execution result: ${resultId}.`, sourceHints };
             }
             recordVerificationTermination(runId, { reason: "repair_budget_exhausted", criterionIds: [CRITERION], detail: `Tests still fail after two repair cycles. ${detail}` });
             return { action: "stop", detail: `Tests still fail after two repair cycles. ${detail}` };

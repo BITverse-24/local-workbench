@@ -17,6 +17,19 @@ function receipt(start = 0, end?: number): SourceReadReceipt {
 }
 function proposal() { return { path: "app.js", expectedDigest: receipt().digest, replacements: [{ old: "limit = 2", new: "limit = 3" }], requirementId: "repair-limit", reason: "Correct the limit" }; }
 describe("Revision-bound exact edits", () => {
+  it("requires the same run, command, and source operation for an approved unisolated fallback",()=>{
+    const guard=new MutationPolicyGuard(),runId=randomUUID();guard.setEnforceExplicit(runId,true);
+    const grant=guard.grantScope({runId,operation:"run_command",command:"node --test",operationDigest:"revision-one",allowUnisolated:true});
+    expect(guard.isUnisolatedCommandAuthorized(runId,"node --test")).toBe(false);
+    expect(guard.isUnisolatedCommandAuthorized(runId,"node --test","revision-two")).toBe(false);
+    expect(guard.isUnisolatedCommandAuthorized(randomUUID(),"node --test","revision-one")).toBe(false);
+    expect(guard.isUnisolatedCommandAuthorized(runId,"node --test other.js","revision-one")).toBe(false);
+    expect(guard.isUnisolatedCommandAuthorized(runId,"node --test","revision-one")).toBe(true);
+    guard.revokeScopes([grant.id]);
+    guard.grantScope({runId,operation:"run_command",command:"node --test",operationDigest:"revision-one"});
+    guard.grantScope({runId,operation:"run_command",command:"node --test",operationDigest:"revision-two",allowUnisolated:true});
+    expect(guard.isUnisolatedCommandAuthorized(runId,"node --test","revision-one")).toBe(false);
+  });
   it("pages UTF-8 bytes without splitting a code point and rejects a stale continuation", async () => {
     const text = `${"é".repeat(40)}\nsecond line\n`; writeFileSync(path.join(root, "unicode.txt"), text);
     const context = { runId: randomUUID(), workspaceRoot: root, gateway: new ModelGateway(undefined, []) };

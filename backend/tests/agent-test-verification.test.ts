@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
-import { discoverAgentTestPlans, createAgentVerificationRequest, parseAgentTestReport, assessAgentTestExecution, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, type AgentTestExecutionRequest } from "../src/main/agent/test-verification.js";
+import { agentFailureLocations, discoverAgentTestPlans, createAgentVerificationRequest, parseAgentTestReport, assessAgentTestExecution, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, type AgentTestExecutionRequest } from "../src/main/agent/test-verification.js";
 import { runCommand } from "../src/main/harness/tools/run-command.js";
 import { MutationPolicyGuard } from "../src/main/harness/policy-guard.js";
 import { executeProcess } from "../src/main/tools/child-process.js";
@@ -100,6 +101,15 @@ describe("Agent existing-test verification", () => {
     expect(() => parseAgentTestReport(request, '{"numFailedTests":4,"testResults":[]}', root)).toThrow(/counts/);
     expect(parseAgentTestReport(request, JSON.stringify({ ...JSON.parse(report(request)), success: false }), root).failed).toBeGreaterThan(0);
     expect(() => parseAgentTestReport(request, JSON.stringify({ ...JSON.parse(report(request)), wasInterrupted: true }), root)).toThrow(/interrupted/);
+  });
+  it("maps failure stack hints only to files in the exact execution snapshot",()=>{
+    const snapshot=path.join(root,"snapshot with spaces"),files={"src/café.js":"digest","tests/case.test.js":"digest"};
+    const uri=pathToFileURL(path.join(snapshot,"src/café.js")).href;
+    const stack=`at load (${uri}:24:8)\n at ${path.join(snapshot,"tests/case.test.js")}:19:2\n at /outside/project/src/café.js:8:4\n at ${snapshot}/../outside.js:1:2\n at ${snapshot}/missing.js:1:2\n at ${uri}:99:4`;
+    expect(agentFailureLocations(stack,snapshot,files)).toEqual([{path:"tests/case.test.js",line:19},{path:"src/café.js",line:24}]);
+    fixture();const request={...createAgentVerificationRequest(plan()),reportFormat:"unittest" as const};
+    const parsed=parseAgentTestReport(request,JSON.stringify({executed:1,failed:1,skipped:0,testFiles:[path.join(root,"src/value.test.ts")],failures:[{name:"value",stack:`at ${path.join(root,"src/value.ts")}:3:7`}]}),root);
+    expect(parsed).toMatchObject({failureLocations:[{path:"src/value.ts",line:3}],failureLocationsComplete:false,failed:1});
   });
   it("parses executed JUnit cases and rejects DTDs and incomplete XML", () => {
     fixture(); const request = { ...createAgentVerificationRequest(plan()), reportFormat: "junit" as const };

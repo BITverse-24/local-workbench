@@ -235,7 +235,7 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
     if (verification?.runner === "node") writeFileSync(reporterPath, NODE_EXISTING_TEST_REPORTER);
     const selected = await selectCommandLaunch(work, scratch, command, verification ? { WORKBENCH_TEST_REPORT: reportPath, WORKBENCH_TEST_REPORTER: reporterPath,
       ...(verification.runner === "node" ? { NODE_OPTIONS: `--test-reporter=${JSON.stringify(reporterPath)}` } : {}) } : {});
-    const fallbackApproved = () => Boolean(policy?.guard.isUnisolatedCommandAuthorized(policy.runId, command));
+    const fallbackApproved = () => Boolean(policy?.guard.isUnisolatedCommandAuthorized(policy.runId, command, authorization.operation_digest));
     if (selected.status === "unisolated" && !fallbackApproved()) {
       throw new PermissionError(`Unsupported sandbox containment: command execution without OS isolation requires approval for this exact command and run. No command was executed. ${selected.message}`);
     }

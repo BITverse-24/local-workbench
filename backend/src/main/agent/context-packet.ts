@@ -17,7 +17,7 @@ export function selectAgentRequirement(task: AgentTask, context: ToolExecutionCo
   const reviewedGap = active.find(item => progress?.remainingRequirementIds.includes(item.id));
   if (reviewedGap) return reviewedGap;
   const observations = new Set(["read_file", "extract_document", "retrieve_knowledge"]);
-  const inspection = active.find(item => item.kind === "inspect" && !progress?.actions.some(action =>
+  const inspection = active.find(item => item.kind === "inspect" && !progress?.sourceResultIds.length && !progress?.actions.some(action =>
     action.requirementId === item.id && action.status === "completed" && observations.has(action.operation)));
   return inspection ?? active.find(item => item.kind === "change") ?? active.find(item => item.kind === "execute") ?? active[0];
 }

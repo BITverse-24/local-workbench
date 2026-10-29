@@ -150,6 +150,20 @@ Full type checking and the Electron source build passed. The focused check passe
 
 The next structural gap is source acquisition. The host records a baseline failure but leaves the transition to inspected code to a general model action. Add bounded host reads from contained failure locations and reported test paths. Those locations are evidence-selection hints, not instructions, acceptance, or mutation authority. Record these reads through the existing dispatcher and ResultStore; include only actually supplied pages in observation receipts.
 
+## Source acquisition and requirement scope before actions
+
+The host now maps stack locations only to paths in the exact test snapshot manifest. Reported test files provide fallback hints. After a failed baseline or repair check, it obtains up to four bounded source pages through the existing dispatcher and saves them in ResultStore. The pages are included in current source selection; they become source receipts only when actually sent in a usage-verified request. Small files retain their complete source. Larger pages use the reported line region. Hint coverage is explicitly incomplete. Hints grant neither mutation authority nor acceptance.
+
+A live probe with source acquisition still failed before this stage. The model put the mixed reproduction-and-repair sentence into an execute requirement and omitted change requirements. Four calls had matching exact counts, but no host source reads or edits occurred. It repeated directory listing and stopped Partial. Evidence is in `docs/evidence/agent-host-evidence-live-2026-10-30.json`.
+
+The engine now performs a separate requirement scope assessment before binding execution. It compares every original message with the proposed active requirements and checks repair, execution, preservation, and delivery separately. It also assesses full-suite scope independently. Missing scope permits one persisted interpretation revision. A second failure leaves the full request pending and permits no workspace actions. A model status label cannot bypass this assessment unless the host recognizes a direct status question. Quotation/schema validity is still only provenance; this second model assessment is not proof of correct understanding. Completion retains its separate evidence checks.
+
+The real command-backed regression uses an existing failing test in a separate workspace. It confirms that host source reads precede an approved edit, the unchanged existing test passes afterward, and model actions need no redundant directory/read calls. Model turns are mocked in this offline case. A second case confirms omitted repair obligations are revised before actions; another leaves the request pending after two rejected interpretations.
+
+This check also exposed a v3 fallback approval defect: the fallback check omitted the operation digest. The policy guard now requires the fallback flag, exact command, run identity, and source-bound operation in the same live grant. It cannot combine grants from different revisions. Full type checking and the Electron source build passed. The focused suite passed 236 tests across six files, with one live test skipped. Sixty command, publication, capability, and containment cases passed across four files. The network containment case first failed to start its loopback server under restricted permissions; the complete six-case containment suite passed when rerun with local server access.
+
+The current live probe adds the new scope assessment. It remains a source diagnostic, not a packaged or release trial. Do not enable production v3 from offline test success.
+
 ## Current proof and limits
 
 The focused offline check passed 237 tests in 12 files; two opt-in live tests were skipped. This includes task storage, gateway admission, revision-bound edits, host-loop control, verification, storage isolation, and Chat/Work boundaries. Full type checking passed. The Electron source build passed. These results do not establish packaged behavior or live repair quality.
@@ -158,7 +172,7 @@ Live inspection evidence is saved in `docs/evidence/agent-host-inspection-probes
 
 ## Work still required
 
-1. Complete bounded relevant source packing. Typed action schemas, active capability state, and directory evidence are present, but the live model still has no successful repair. Then complete bounded per-requirement evidence checks and task-authorized cross-run applicability. Audit explicit full-suite scope independently of an omitted model Boolean. Do not weaken acceptance or replace existing tests.
+1. Complete bounded relevant source packing and prove the repair transition with the real model. Typed actions, retained current source pages, bounded host failure reads, and a pre-action scope assessment are present, but the live model still has no successful repair. Then complete bounded per-requirement evidence checks and task-authorized cross-run applicability. Audit explicit full-suite scope independently of an omitted model Boolean. Do not weaken acceptance or replace existing tests.
 2. Add the separate task progress facts to the UI. Complete task-authorized cross-run evidence retrieval in the active loop. Retain all original obligations on follow-ups and regressions.
 3. Finish structured constraints and protected-path extraction. Keep policy checks at the tool boundary.
 4. Complete test-environment probing in the actual launch environment. Cache unchanged missing-command failures. Finish baseline, full-suite, post-edit test scheduling, and repair-cycle integration.

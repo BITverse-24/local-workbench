@@ -54,6 +54,8 @@ const agentProgressSchema = z.object({
   latestResultId: z.string().uuid().optional(), feedback: z.string().max(10000).default(""),
   actions: z.array(z.object({ id: z.string().uuid(), hash: z.string(), requirementId: z.string(), operation: z.string(), status: z.enum(["proposed", "completed", "failed", "uncertain"]), resultId: z.string().uuid().optional() })).max(40).default([]),
   reads: z.array(z.object({ path: z.string(), digest: z.string(), startByte: z.number().int().nonnegative(), endByte: z.number().int().nonnegative(), sizeBytes: z.number().int().nonnegative(), resultId: z.string().uuid(), requestId: z.string().uuid() })).max(200).default([]),
+  sourceResultIds: z.array(z.string().uuid()).max(16).default([]),
+  scopeCorrectionUsed: z.boolean().default(false),
   baseline: z.object({ status: z.string(), detail: z.string(), environmentKey: z.string() }).optional(),
   stopReason: z.string().optional(), fullSuite: z.boolean().default(false),
 });
