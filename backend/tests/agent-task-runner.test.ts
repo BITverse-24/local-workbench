@@ -45,7 +45,7 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
   const gateway = new ModelGateway({ async request(_url, init) {
     const payload = JSON.parse(init.body!), title = String(payload.messages?.[0]?.content).includes("short chat topic title");
     const scopeReview = String(payload.messages?.[0]?.content).startsWith("Audit proposed requirement coverage");
-    const refinement = String(payload.messages?.[0]?.content).startsWith("Extract one requirement kind");
+    const refinement = String(payload.messages?.[0]?.content).startsWith("Extract every requested obligation");
     const answer = refinement ? refinementReplies.shift() : title ? () => "Inspect saved source" : scopeReview ? scopeReplies.shift() ?? (()=>({covered:true,missing:[],full_suite:false})) : replies.shift();
     if (!answer) throw new Error("Unexpected model generation");
     const input = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload });
@@ -82,7 +82,7 @@ describe("Agent v3 task host loop", () => {
     const request="Inspect note.txt, repair its source wording, run the full test suite, and explain the fix.";
     scopeReplies=[payload=>{
       const input=JSON.parse(payload.messages[1].content);
-      expect(input.originalMessages[0].content).toBe(request);
+      expect(input.source.text).toBe(request);
       expect(input.requirements.map((item:any)=>item.kind)).toEqual(["execute"]);
       expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved source\n");
       return {covered:false,missing:["Inspection, file repair, and explanation must be separate requirements."],full_suite:true};
@@ -91,11 +91,12 @@ describe("Agent v3 task host loop", () => {
       expect(input.requirements.map((item:any)=>item.kind)).toEqual(["execute","inspect","change","execute","deliver"]);
       return {covered:true,missing:[],full_suite:true};
     }];
-    refinementReplies=["inspect","change","execute","preserve","deliver"].map(kind=>payload=>{
+    refinementReplies=[payload=>{
       const input=JSON.parse(payload.messages[1].content);
-      expect(input.focusedKind).toBe(kind);expect(input.correction).toContain("separate scope review");
-      return {disposition:"continue",requirements:kind === "preserve"?[]:[{kind,description:kind,source_id:"request",checks:[{description:kind,kind:kind === "execute"?"execution":kind === "inspect"?"inspection":kind === "deliver"?"delivery":"review",operation:"semantic",path:null}]}],updates:[],full_suite:false};
-    });
+      expect(input.source.text).toBe(request);expect(input.source.sourceId).toBe("s1");
+      expect(input.missing).toContain("separate requirements");
+      return {requirements:["inspect","change","execute","deliver"].map(kind=>({kind,description:kind,check:{operation:"semantic",path:null}})),full_suite:true};
+    }];
     replies=[()=>interpretation("execute",request),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
     ()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),
     ()=>({tool_calls:[{name:"finish",arguments:{text:"The wording edit is saved. The full test suite remains unavailable."}}]})];
@@ -104,18 +105,18 @@ describe("Agent v3 task host loop", () => {
     expect(getCurrentAgentTask(chatId)?.snapshot.requirements.map(item=>item.kind)).toEqual(["execute","inspect","change","execute","deliver"]);
     expect(getExecutionLedger(runId)?.agentProgress).toMatchObject({scopeCorrectionUsed:true,fullSuite:true});
     expect(getExecutionLedger(runId)?.agentTask?.protocolCorrections).toBe(0);
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(11);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(7);
   });
   it("keeps the full request pending when independent scope assessment still rejects its one revision",async()=>{
     const request="Inspect and repair note.txt, then run all tests.";
     scopeReplies=[()=>({covered:false,missing:["Repair obligation is absent."],full_suite:true}),()=>({covered:false,missing:["Repair obligation is still absent."],full_suite:true})];
     replies=[()=>({disposition:"status",requirements:[],updates:[],full_suite:false})];
-    refinementReplies=Array.from({length:5},()=>()=>({disposition:"continue",requirements:[],updates:[],full_suite:false}));
+    refinementReplies=[()=>({requirements:[],full_suite:false})];
     const {result,runId,approve,emit}=await run(request);
     expect(result.stopReason).toBe("requirement_coverage_unverified");expect(approve).not.toHaveBeenCalled();
     expect(emit.mock.calls.some(([event])=>event.type === "tool_call")).toBe(false);
     expect(getCurrentAgentTask(chatId)?.snapshot.messages[0]).toMatchObject({content:request,disposition:"pending"});
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(8);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(4);
     expect(getExecutionLedger(runId)?.agentTask?.taskRevision).toBeUndefined();
     expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved source\n");
   });
@@ -124,13 +125,54 @@ describe("Agent v3 task host loop", () => {
     const request="Inspect and repair note.txt.";
     replies=[()=>interpretation("inspect",request)];
     scopeReplies=[()=>({covered:false,missing:["Repair obligation is absent."],full_suite:false})];
-    refinementReplies=[()=>{controller.abort();return {disposition:"continue",requirements:[],updates:[],full_suite:false};}];
+    refinementReplies=[()=>{controller.abort();return {requirements:[],full_suite:false};}];
     const {result,runId,approve,emit}=await run(request);
     expect(result.outcome).toBe("cancelled");expect(approve).not.toHaveBeenCalled();
     expect(emit.mock.calls.some(([event])=>event.type === "tool_call")).toBe(false);
     expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(3);
     expect(getCurrentAgentTask(chatId)?.snapshot.messages[0]).toMatchObject({content:request,disposition:"pending"});
     expect(getExecutionLedger(runId)?.agentProgress?.scopeCorrectionUsed).toBe(true);
+  });
+  it("binds a missing explanation to its exact source while preserving the earlier repair obligation",async()=>{
+    const request="Repair note.txt. Explain the change.";
+    scopeReplies=[()=>({covered:true,missing:[],full_suite:false}),payload=>{
+      const input=JSON.parse(payload.messages[1].content);
+      expect(input.source).toMatchObject({sourceId:"s2",text:" Explain the change."});
+      expect(input.originalMessages).toBeUndefined();expect(input.proposedUpdates).toBeUndefined();
+      return {covered:false,missing:["A delivery requirement for the explanation is missing."],full_suite:false};
+    },()=>({covered:true,missing:[],full_suite:false}),payload=>{
+      const input=JSON.parse(payload.messages[1].content);
+      expect(input.requirements.map((item:any)=>item.kind)).toEqual(["change","deliver"]);
+      return {covered:true,missing:[],full_suite:false};
+    }];
+    refinementReplies=[payload=>{
+      const input=JSON.parse(payload.messages[1].content);
+      expect(input.source).toMatchObject({sourceId:"s2",text:" Explain the change."});
+      expect(input.contextBefore).toBeUndefined();
+      expect(input.missing).toContain("delivery requirement");
+      return {requirements:[{kind:"deliver",description:"Explain the saved change",check:{operation:"semantic",path:null}}],full_suite:false};
+    }];
+    replies=[()=>interpretation("change",request),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
+      ()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"The wording is corrected by the saved source-to-content replacement."}}]}),
+      payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The saved text edit and explanation meet the request."}))};}];
+    const {result,runId,approve}=await run(request);
+    expect(result.outcome,result.text).toBe("completed");expect(approve).toHaveBeenCalledTimes(1);
+    const requirements=getCurrentAgentTask(chatId)!.snapshot.requirements;
+    expect(requirements.map(item=>item.kind)).toEqual(["change","deliver"]);
+    expect(requirements[0].source.quote).toBe(request);
+    expect(requirements[1].source.quote).toBe(" Explain the change.");
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(10);
+  });
+  it("shares the 40-call limit with source scope review and leaves the full request pending",async()=>{
+    const request=Array.from({length:45},(_,index)=>`Inspect source ${index}.`).join(" ");
+    replies=[()=>interpretation("inspect",request)];
+    const {result,runId,approve,emit}=await run(request);
+    expect(result.stopReason,result.text).toBe("model_call_limit");expect(approve).not.toHaveBeenCalled();
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(40);
+    expect(getExecutionLedger(runId)?.agentAdmissions).toHaveLength(40);
+    expect(emit.mock.calls.some(([event])=>event.type === "tool_call")).toBe(false);
+    expect(getCurrentAgentTask(chatId)?.snapshot.messages[0]).toMatchObject({content:request,disposition:"pending"});
   });
   it("retains an unparsed original through setup failure and interprets it on a later continuation", async () => {
     const original = "Repair note.txt by replacing source with content.";

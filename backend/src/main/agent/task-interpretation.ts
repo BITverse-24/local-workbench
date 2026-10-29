@@ -68,13 +68,38 @@ export function agentInterpretationFormat(text: string, current?: AgentTask, mes
   return {name:"agent_requirements",schema:zodToJsonSchema(semanticOnly,{$refStrategy:"none"}) as Record<string,unknown>};
 }
 
-/** Fixed, independent scope dimensions prevent one selected category from hiding another. */
-export function agentRequirementRefinement(kind: z.infer<typeof requirementSchema>["kind"], disposition: AgentMessageDisposition, text = "", current?: AgentTask, messageId?: string) {
-  const literalEligible = ["inspect","deliver"].includes(kind) && [text,...pendingRequests(current,messageId).map(message=>message.content)].some(hasVerbatimBasis);
-  const checkKind = kind === "execute" ? "execution" : kind === "inspect" ? "inspection" : kind === "deliver" ? "delivery" : "review";
-  const checks = literalEligible ? checkSchema : semanticCheckSchema.extend({kind:z.literal(checkKind)});
-  const focused = interpretationSchema.extend({disposition:z.literal(disposition),requirements:z.array(requirementSchema.extend({kind:z.literal(kind),checks:z.array(checks).min(1)})).max(30),updates:interpretationSchema.shape.updates.removeDefault().max(0)});
-  return {name:`agent_${kind}_requirements`,schema:zodToJsonSchema(focused,{$refStrategy:"none"}) as Record<string,unknown>};
+export interface AgentScopeSource { messageId: string; sourceId: string; start: number; end: number; text: string }
+
+/** Every current or pending byte belongs to a source unit. Historical bound requirements remain in the task. */
+export function agentScopeSources(task: AgentTask, messageId: string): AgentScopeSource[] {
+  const current = task.snapshot.messages.find(message=>message.id === messageId);
+  if (!current) throw new Error("The current source message is not in the saved task.");
+  return [
+    ...pendingRequests(task,messageId).flatMap((message,index)=>agentMessageSources(message.content).map(span=>({messageId:message.id,sourceId:`p${index+1}:${span.id}`,start:span.start,end:span.end,text:span.text}))),
+    ...agentMessageSources(current.content).map(span=>({messageId,sourceId:span.id,start:span.start,end:span.end,text:span.text})),
+  ];
+}
+
+const sourceCheckSchema = z.discriminatedUnion("operation",[
+  z.object({operation:z.literal("semantic"),path:z.null()}).strict(),
+  z.object({operation:z.literal("verbatim_source"),path:z.string().min(1).max(1024)}).strict(),
+]);
+const sourceRequirementsSchema = z.object({requirements:z.array(z.object({kind:requirementSchema.shape.kind,description:z.string().min(1).max(4096),check:sourceCheckSchema}).strict()).max(30),full_suite:z.boolean()}).strict();
+
+/** The host owns source binding and mechanical criterion fields; the model supplies the interpretation. */
+export function agentSourceRequirementFormat(text: string) {
+  const presented = hasVerbatimBasis(text) ? sourceRequirementsSchema : sourceRequirementsSchema.extend({requirements:z.array(sourceRequirementsSchema.shape.requirements.element.extend({check:sourceCheckSchema.options[0]})).max(30)});
+  return {name:"agent_source_requirements",schema:zodToJsonSchema(presented,{$refStrategy:"none"}) as Record<string,unknown>};
+}
+
+export function parseAgentSourceRequirements(content: string, unit: AgentScopeSource, messageId: string, text: string, disposition: AgentMessageDisposition, task: AgentTask) {
+  if (!agentScopeSources(task,messageId).some(saved=>saved.messageId === unit.messageId && saved.sourceId === unit.sourceId && saved.start === unit.start && saved.end === unit.end && saved.text === unit.text)) throw new Error("The requirement source does not match the saved user message.");
+  const parsed = sourceRequirementsSchema.parse(parseAgentData(content));
+  return parseTaskInterpretation(JSON.stringify({disposition,requirements:parsed.requirements.map(item=>{
+    if (item.check.operation === "verbatim_source" && !["inspect","deliver"].includes(item.kind)) throw new Error("Literal source checks can establish inspection or delivery only.");
+    const kind = item.kind === "execute" ? "execution" : item.kind === "inspect" ? "inspection" : item.kind === "deliver" ? "delivery" : "review";
+    return {kind:item.kind,description:item.description,source_id:unit.sourceId,checks:[{description:item.description,kind,...item.check}]};
+  }),updates:[],full_suite:parsed.full_suite}),messageId,text,task);
 }
 
 export function parseTaskInterpretation(content: string, messageId: string, text: string, task?: AgentTask): { disposition: AgentMessageDisposition; updates: AgentRequirementUpdate[]; fullSuite: boolean } {

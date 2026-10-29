@@ -50,6 +50,9 @@ export class AgentTaskRunner {
       const checks = ledger?.verification?.evidence ?? [];
       return { outcome, stopReason: reason, text: `Changes applied: ${applied.join("; ") || "none"}\nChecks passed: ${checks.filter(item => item.status === "passed").map(item => item.reason).join("; ") || "none"}\nChecks unavailable: ${checks.filter(item => item.status === "unverified").map(item => item.reason).join("; ") || "none recorded"}\nRemaining requirements: ${outcome === "completed" ? "none" : detail}` };
     };
+    const generationFailure = (reason: string, detail: string) => (getExecutionLedger(runId)?.agentTask?.modelCalls ?? 0) >= 40
+      ? stop("model_call_limit",`The run used its 40 model calls. The full request and unresolved work remain saved. ${detail}`)
+      : stop(reason,detail);
     try {
       let bound = getAgentTaskBinding(runId);
       const current = bound ? undefined : ingestAgentTaskMessage({runId,chatId:input.chatId,messageId:input.messageId,workspace:input.workspace,intent:input.intent,statusOnly:isAgentStatusQuestion(source.content)});
@@ -64,7 +67,7 @@ export class AgentTaskRunner {
           if (feedback) messages[1].content = JSON.stringify({ ...JSON.parse(messages[1].content), correction: feedback });
           const response = await context.gateway.chatWithTools(modelId, messages, [], { runId, maxTokens: 1024, purpose: "classification", temperature: 0, responseSchema: agentInterpretationFormat(source.content,current,input.messageId), signal: scope.signal });
           assertRuntimeActive();
-          if (!response.ok) return stop("interpretation_unavailable", response.error.message);
+          if (!response.ok) return generationFailure("interpretation_unavailable", response.error.message);
           try {
             if (response.value.finishReason === "length" || response.value.tool_calls?.length) throw new Error("Requirement interpretation must be complete JSON data, with no workspace action.");
             interpreted = parseTaskInterpretation(response.value.content ?? "", input.messageId, source.content, current);
@@ -78,15 +81,16 @@ export class AgentTaskRunner {
           }
           if (!isAgentStatusQuestion(source.content)) {
             let reviewed: Awaited<ReturnType<typeof reviewAgentInterpretation>>;
-            try { reviewed = await reviewAgentInterpretation(current!,interpreted,context,modelId); }
-            catch (error) { assertRuntimeActive();return stop("requirement_coverage_unverified",String(error)); }
+            try { reviewed = await reviewAgentInterpretation(current!,interpreted,context,modelId,input.messageId); }
+            catch (error) { assertRuntimeActive();return generationFailure("requirement_coverage_unverified",String(error)); }
             if (!reviewed.covered) {
               if (getExecutionLedger(runId)?.agentProgress?.scopeCorrectionUsed) return stop("requirement_coverage_unverified",reviewed.detail);
               updateAgentProgress(runId,progress=>{progress.scopeCorrectionUsed=true;});
               try {
-                interpreted = await refineAgentInterpretation(current!,interpreted,input.messageId,source.content,reviewed.detail,context,modelId);
-                reviewed = await reviewAgentInterpretation(current!,interpreted,context,modelId);
-              } catch (error) { assertRuntimeActive();return stop("requirement_coverage_unverified",String(error)); }
+                interpreted.fullSuite ||= reviewed.fullSuite;
+                interpreted = await refineAgentInterpretation(current!,interpreted,input.messageId,source.content,reviewed.gaps,context,modelId);
+                reviewed = await reviewAgentInterpretation(current!,interpreted,context,modelId,input.messageId);
+              } catch (error) { assertRuntimeActive();return generationFailure("requirement_coverage_unverified",String(error)); }
               if (!reviewed.covered) return stop("requirement_coverage_unverified",reviewed.detail);
             }
             interpreted.fullSuite ||= reviewed.fullSuite;

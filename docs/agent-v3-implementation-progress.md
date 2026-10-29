@@ -174,9 +174,21 @@ Evidence for all three failed probes is in `docs/evidence/agent-scope-revision-l
 
 The remaining control gap is now explicit: the engine depends on complete model-written obligation kinds before it can enter repair. A separate model assessment prevents a false success, but it can also stop useful work on a scope interpretation fault. A five-kind pass still lets a short delivery obligation disappear when it shares a sentence with test execution. The next investigation must compare bounded source-clause extraction and review contracts, with precise source references for missing obligations. Keep direct source quotations and deterministic execution proof. Do not remove the failure gate or treat these assessments as proof of understanding to obtain a passing trial.
 
+## Source-bound interpretation reviews
+
+The pre-action assessment now reviews one current or pending source span at a time. It receives the exact source text and short outlines of requirements linked to that span. It does not receive adjacent instruction text or repeated check and quote fields. Every gap carries a host-created message ID, span ID, and byte-for-byte source text. The one revision extracts only those gaps with a compact contract. The host supplies the selected source reference, check kind, check ID, and repeated criterion description. The model still interprets the request; validation cannot prove that interpretation correct. Earlier draft and bound requirements remain intact.
+
+Tests cover a mixed execution/explanation source, retained repair requirements, source-specific delivery refinement, prior pending sources, fake source units, extra waiver fields, literal checks, cancellation, and the shared 40-call limit during scope review. The latest focused check passed 208 tests across four files with one live test skipped. Earlier checks for this change passed 222 tests including literal-source checks. Full type checking and the Electron source build passed.
+
+The first live source-unit probe showed adjacent instructions leaking into the model assessment. The next probe removed that adjacent text. Its five source reviews used 188–242 input tokens. It entered the action loop, read the project files, and reran the failing tests. All 18 model calls had matching exact counts. It then stopped because the latest 4,000-byte source page plus task metadata could not fit. No edits occurred. Both traces are in `docs/evidence/agent-source-scope-reviews-live-2026-10-30.json`. This result requires true evidence pagination during request assembly; dropping only optional older pages is insufficient. It also leaves mixed requirement-kind interpretation unproved.
+
+## Current implementation scope
+
+The user has deferred release certification and will test 14B manually. Current work is implementation and harness quality for the 7B–14B range, with local 7B and 9B models available for development checks. The machine has Qwen2.5 Coder 7B and Qwen3.5 9B assets; no 14B model is installed. Do not download weights or treat release trial counts as a current completion requirement. Keep the release controls documented and keep production promotion separate. Packaged-environment implementation checks remain useful because the original failure occurred in a production build.
+
 ## Current proof and limits
 
-The latest focused check passed 240 tests in six files, with one opt-in live test skipped. It covers action schemas, literal-source checks, the host loop, gateway admission, test-report interpretation, and Chat/Work boundaries. Earlier checks cover task storage, revision-bound edits, verification, and storage isolation. Full type checking and the Electron source build passed. These results do not establish packaged behavior or live repair quality.
+The latest focused check passed 208 tests in four files, with one opt-in live test skipped; an earlier 222-case check also covered literal-source behavior. It covers action schemas, literal-source checks, the host loop, gateway admission, test-report interpretation, and Chat/Work boundaries. Earlier checks cover task storage, revision-bound edits, verification, and storage isolation. Full type checking and the Electron source build passed. These results do not establish packaged behavior or live repair quality.
 
 Live inspection evidence is saved in `docs/evidence/agent-host-inspection-probes-2026-10-29.json`, with full saved proposals, source observations, reviews, admission receipts, and stop reasons. Failed probes returned Partial and requested no mutation approvals. The selected 7B model is available. The 14B release trials have not run.
 
@@ -188,7 +200,7 @@ Live inspection evidence is saved in `docs/evidence/agent-host-inspection-probes
 4. Complete test-environment probing in the actual launch environment. Cache unchanged missing-command failures. Finish baseline, full-suite, post-edit test scheduling, and repair-cycle integration.
 5. Complete restart and uncertain-mutation reconciliation, approval expiry UI, and linked legacy-to-v3 attempts with fresh authority. The preview currently refuses to resume the old engine.
 6. Verify document, knowledge, visual-source, and attached-repair workloads through v3. Complete bounded source/evidence packing for larger tasks.
-7. Run isolated Flow D checks from preserved originals, packaged minimal-environment checks, and ten repair trials each on representative 7B and 14B models. Require at least nine complete repairs per model and zero false completion or unauthorized mutation before production enablement.
+7. Prove repair behavior in isolated Flow D copies and check the packaged launch environment. Use the local 7B and 9B models for implementation checks. Release certification and manual 14B trials are deferred to the user; keep the documented promotion control closed until that separate release decision.
 
 The damaged Flow D workspace was not restored or edited by this work. Production storage was not opened for writes. Schema 4 will apply when this build opens an older profile, using the tested consistent backup path.
 
