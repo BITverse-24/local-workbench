@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { Validator } from "jsonschema";
-import type { AgentTask, AgentToolCall, AgentToolDefinition, RunContract } from "../../shared/contracts.js";
+import type { AgentTask, AgentToolCall, AgentToolDefinition, CapabilityGroup, RunContract } from "../../shared/contracts.js";
 import type { ToolExecutionContext } from "../tools/types.js";
 import { getDb } from "../persistence/db.js";
 import { bindAgentTaskRun, getAgentTask, getAgentTaskBinding, ingestAgentTaskMessage, setAgentTaskStatus } from "../run/agent-task-store.js";
@@ -61,6 +61,7 @@ export class AgentTaskRunner {
           const messages = interpretationMessages(source.content, current, input.messageId);
           if (feedback) messages[1].content = JSON.stringify({ ...JSON.parse(messages[1].content), correction: feedback });
           const response = await context.gateway.chatWithTools(modelId, messages, [], { runId, maxTokens: 1024, purpose: "classification", temperature: 0, responseSchema: agentInterpretationResponseSchema, signal: scope.signal });
+          assertRuntimeActive();
           if (!response.ok) return stop("interpretation_unavailable", response.error.message);
           try {
             if (response.value.finishReason === "length" || response.value.tool_calls?.length) throw new Error("Requirement interpretation must be complete JSON data, with no workspace action.");
@@ -83,6 +84,7 @@ export class AgentTaskRunner {
       if (task.snapshot.revision !== bound.taskRevision || task.workspace.root !== input.workspace.root || task.workspace.registeredAt !== input.workspace.registeredAt) return stop("stale_task_binding", "The task or workspace binding changed. Start a fresh bound attempt.");
       if (bound.disposition === "status" || isAgentStatusQuestion(source.content)) {
         const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: "Answer the status question from saved task facts only. Do not propose or perform workspace actions. State remaining requirements and unavailable checks." }, { role: "user", content: JSON.stringify({ question: source.content, requirements: task.snapshot.requirements, pendingRequests: task.snapshot.messages.filter(message=>message.disposition === "pending"), taskStatus: task.status }) }], [], { runId, maxTokens: 512, signal: scope.signal });
+        assertRuntimeActive();
         return answer.ok && answer.value.finishReason !== "length" ? { outcome: "completed", text: answer.value.content ?? "The saved task remains available.", stopReason: "status_reply" } : stop("status_reply_unavailable", answer.ok ? "The status answer was truncated." : answer.error.message);
       }
       if (task.snapshot.messages.some(message => message.disposition === "pending")) return stop("requirements_pending", "An earlier request still needs requirement interpretation. Its complete text remains pending; it was not treated as logs or completed work.");
@@ -145,6 +147,7 @@ export class AgentTaskRunner {
         if (inspectionDelivery) {
           updateAgentProgress(runId, state => { state.deliveryEvidenceDigest = evidenceDigest; });
           const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: "The host has obtained source evidence. Propose the requested answer from the supplied requirements and observed content. Do not request or perform more tools in this delivery step. For verbatim_source checks, quote the complete observed source in a fenced block and preserve its whitespace and line endings. Do not claim complete coverage beyond the supplied evidence. The host will review every requirement separately." }, packet.messages[1]], [], { runId, maxTokens: 768, signal: scope.signal });
+          assertRuntimeActive();
           if (!answer.ok || answer.value.finishReason === "length" || answer.value.tool_calls?.length || !answer.value.content?.trim()) return stop("delivery_unavailable", answer.ok ? "The delivery proposal was incomplete or requested another action." : answer.error.message);
           const answerDigest = hash(answer.value.content);
           if (progress?.deliveryAttempts.some(attempt => attempt.evidenceDigest === evidenceDigest && attempt.answerDigest === answerDigest)) return stop("repeated_delivery", "The same answer was proposed for unchanged source evidence. Remaining requirements stay saved.");
@@ -153,14 +156,20 @@ export class AgentTaskRunner {
           if (admitted?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push({ ...packet.observedSource!, requestId: admitted.requestId }); });
           context.resultStore.registerResult({ type: "text", status: "complete", origin: "model_derived", producer: { tool: "agent_delivery_proposal", callId: randomUUID() }, summary: "Proposed answer from observed evidence", payload: answer.value.content, sources: [] });
           const reviewed = await reviewAgentTaskCoverage(task, context, modelId, [], answer.value.content);
+          assertRuntimeActive();
           if (reviewed.ok) { const completed = stop("requirements_satisfied", "", "completed"); return { ...completed, text: `${answer.value.content}\n\n${completed.text}` }; }
           updateAgentProgress(runId, state => { state.feedback = reviewed.detail; if (reviewed.next === "delivery") state.deliveryEvidenceDigest = undefined; });
           continue;
         }
-        const visible = filterToolsForTurn(registered, context.envelope, context.activeCapabilities!, { hasRetrievableResults: true });
-        const definitions: AgentToolDefinition[] = visible.map(tool => conciseAgentTool({ ...tool.definition, function: { ...tool.definition.function, parameters: { ...tool.definition.function.parameters, properties: { ...tool.definition.function.parameters.properties, requirement_id: { type: "string" } } } } }));
+        const inactiveCapabilities = context.envelope.permittedCapabilities.filter(capability=>!context.activeCapabilities!.has(capability));
+        const visible = filterToolsForTurn(registered, context.envelope, context.activeCapabilities!, { hasRetrievableResults: true }).filter(tool=>tool.name !== "request_capability" || inactiveCapabilities.length > 0);
+        const definitions: AgentToolDefinition[] = visible.map(tool => conciseAgentTool({ ...tool.definition, function: { ...tool.definition.function, parameters: { ...tool.definition.function.parameters, properties: { ...tool.definition.function.parameters.properties,
+          ...(tool.name === "request_capability" ? {capability:{type:"string",enum:inactiveCapabilities}} : {}),
+          ...(tool.name === "read_file" && packet.readPaths ? {path:{type:"string",enum:packet.readPaths}} : {}),
+          requirement_id: { type: "string" } } } } }));
         const deliveryGap = agentDeliveryGap(task,context,changedPaths());
         const response = await context.gateway.chatWithTools(modelId, packet.messages, deliveryGap ? definitions : [...definitions, FINISH_TOOL], { runId, maxTokens: 2048, toolChoice:"required", signal: scope.signal });
+        assertRuntimeActive();
         if (!response.ok) return stop("model_generation_unavailable", response.error.message);
         const admission = getExecutionLedger(runId)?.agentAdmissions.at(-1);
         if (packet.observedSource && admission?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push({ ...packet.observedSource!, requestId: admission.requestId }); });
@@ -179,6 +188,7 @@ export class AgentTaskRunner {
           const schema = JSON.parse(JSON.stringify(call.name === "finish" ? FINISH_TOOL.function.parameters : dispatcher.getTool(call.name)!.definition.function.parameters));
           const validation = new Validator().validate(args, schema);
           if (!validation.valid || "raw" in args) throw new Error(validation.errors.map(item => item.stack).join("; ") || "Malformed action arguments.");
+          if (call.name === "request_capability" && context.activeCapabilities!.has(args.capability as CapabilityGroup)) throw new Error("This capability is already active. Select one of its available tools instead of activating it again.");
           // Approve the complete executable command, including host-built Python checks.
           if (call.name === "run_command") {
             call.arguments = normalizeRunCommandArgs(args);
@@ -206,6 +216,7 @@ export class AgentTaskRunner {
             if (!["passed", "skipped"].includes(checked.action)) return stop("checks_unavailable", checked.detail, checked.action === "cancelled" ? "cancelled" : "partial");
           }
           const complete = await reviewAgentTaskCoverage(task, context, modelId, changed, String(call.arguments.text));
+          assertRuntimeActive();
           if (!complete.ok) { updateAgentProgress(runId, state => { state.feedback = complete.detail; if (complete.next === "delivery") state.deliveryEvidenceDigest = undefined; }); continue; }
           const completed = stop("requirements_satisfied", "", "completed");
           return { ...completed, text: `${String(call.arguments.text)}\n\n${completed.text}` };

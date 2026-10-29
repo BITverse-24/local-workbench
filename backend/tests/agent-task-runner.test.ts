@@ -26,7 +26,8 @@ let root: string, previousRoot: string, chatId: string;
 const template = "{% for m in messages %}{{m.role}} {{m.content}} EOS {% endfor %}assistant";
 type Reply = (payload: any) => unknown;
 let replies: Reply[];
-beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); previousRoot = dataRoot(); setDataDir(root); initDb(path.join(root, "db.sqlite")); chatId = createChat(); replies = [];
+let runSignal:AbortSignal|undefined;
+beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); previousRoot = dataRoot(); setDataDir(root); initDb(path.join(root, "db.sqlite")); chatId = createChat(); replies = [];runSignal=undefined;
   writeFileSync(path.join(root, "tokenizer.json"), JSON.stringify({ version: "1.0", added_tokens: [], normalizer: null, decoder: null, post_processor: null, pre_tokenizer: { type: "WhitespaceSplit" }, model: { type: "WordPiece", unk_token: "UNK", vocab: { UNK: 0, user: 1, EOS: 2, assistant: 3, Setup: 4 }, continuing_subword_prefix: "##", max_input_chars_per_word: 200000 } }));
   writeFileSync(path.join(root, "tokenizer_config.json"), JSON.stringify({ chat_template: template })); writeFileSync(path.join(root, "note.txt"), "saved source\n");
   vi.spyOn(server, "countLMStudioPreparedRequest").mockImplementation(async options => { const local = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload: options.payload }); return { inputTokens: local.inputTokens, renderedDigest: local.renderedDigest, instanceReference: "loaded", modelPath: "local", contextLimit: 8192, counterIdentity: "lmstudio-sdk-1.5.0" }; });
@@ -58,11 +59,21 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
     const answer = getDb().prepare("SELECT content FROM messages WHERE run_id=? AND role='assistant' ORDER BY seq DESC LIMIT 1").get(runId) as { content: string };
     return { result: { outcome: snapshot.state, stopReason: getExecutionLedger(runId)?.agentProgress?.stopReason, text: answer.content }, runId, approve, emit, snapshot, manager };
   }
-  const result = await withRuntimeScope({ runId, mode: "agent", signal: new AbortController().signal }, () => new AgentTaskRunner().run({ modelId: "driver", chatId, messageId, workspace: { root, registeredAt: "first" }, approve, state: state => { if (getDb().prepare("SELECT state FROM runs WHERE id=?").get(runId)) transition(runId, state); }, context: { runId, workspaceRoot: root, gateway, resultStore: new RunResultStore(runId), policyGuard: new MutationPolicyGuard(), envelope: buildExecutionEnvelope({ runId, mode: "agent", modelId: "driver", hasWorkspace: true, workspaceRoot: root }), emitRunEvent: emit } }));
+  const result = await withRuntimeScope({ runId, mode: "agent", signal: runSignal ?? new AbortController().signal }, () => new AgentTaskRunner().run({ modelId: "driver", chatId, messageId, workspace: { root, registeredAt: "first" }, approve, state: state => { if (getDb().prepare("SELECT state FROM runs WHERE id=?").get(runId)) transition(runId, state); }, context: { runId, workspaceRoot: root, gateway, resultStore: new RunResultStore(runId), policyGuard: new MutationPolicyGuard(), envelope: buildExecutionEnvelope({ runId, mode: "agent", modelId: "driver", hasWorkspace: true, workspaceRoot: root }), emitRunEvent: emit } }));
   transition(runId, result.outcome === "completed" ? "completed" : result.outcome === "cancelled" ? "cancelled" : "partial");
   return { result, runId, approve, emit, manager: undefined };
 }
 describe("Agent v3 task host loop", () => {
+  it("honors cancellation at generation return before binding an execution attempt",async()=>{
+    const controller=new AbortController();runSignal=controller.signal;
+    replies=[()=>{controller.abort();return interpretation("change","Repair note.txt");}];
+    const {result,runId,approve}=await run("Repair note.txt");
+    expect(result.outcome).toBe("cancelled");expect(result.stopReason).toBe("cancelled");expect(approve).not.toHaveBeenCalled();
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(1);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions).toEqual([]);
+    expect(getCurrentAgentTask(chatId)?.snapshot.messages[0].disposition).toBe("pending");
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved source\n");
+  });
   it("retains an unparsed original through setup failure and interprets it on a later continuation", async () => {
     const original = "Repair note.txt by replacing source with content.";
     const first = await run(original,false,undefined,"Counting setup unavailable");
@@ -305,11 +316,11 @@ describe("Agent v3 task host loop", () => {
     replies = [()=>({disposition:"continue",requirements:["change","execute"].map(kind=>({kind,description:kind,source_id:"request",checks:[{description:kind,kind:kind === "execute"?"execution":"review",operation:"semantic",path:null}]})),updates:[],full_suite:false}),
       payload=>{
         const schema = payload.response_format.json_schema.schema.properties.tool_calls;
-        expect(schema.minItems).toBe(1);expect(schema.items.properties.name.enum).not.toContain("finish");
+        expect(schema.minItems).toBe(1);expect(schema.items.anyOf.flatMap((tool:any)=>tool.properties.name.enum)).not.toContain("finish");
         return "I will repair the file and run tests.";
       },()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
       ()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),
-      payload=>{expect(payload.response_format.json_schema.schema.properties.tool_calls.items.properties.name.enum).toContain("finish");return {tool_calls:[{name:"finish",arguments:{text:"The edit is saved; testing remains unavailable."}}]};}];
+      payload=>{expect(payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.flatMap((tool:any)=>tool.properties.name.enum)).toContain("finish");return {tool_calls:[{name:"finish",arguments:{text:"The edit is saved; testing remains unavailable."}}]};}];
     const {result,runId,approve} = await run(text);
     expect(result.stopReason,result.text).toBe("checks_unavailable");expect(approve).toHaveBeenCalledTimes(1);
     expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved content\n");
@@ -327,6 +338,46 @@ describe("Agent v3 task host loop", () => {
     },()=>"The source was inspected.",payload=>{const input=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:input.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source evidence saved."}))};}];
     const {result} = await run(text);
     expect(result.outcome,result.text).toBe("completed");
+  });
+  it("carries active capability state and directory evidence across a later fresh request", async()=>{
+    const text="Inspect note.txt";
+    replies=[()=>interpretation("inspect",text),()=>({tool_calls:[{name:"list_dir",arguments:{path:"."}}]}),()=>({tool_calls:[{name:"request_capability",arguments:{capability:"document_processing"}}]}),payload=>{
+      const input=JSON.parse(payload.messages[1].content);
+      expect(input.activeCapabilities).toContain("document_processing");
+      expect(input.availableCapabilities.some((item:any)=>item.name === "document_processing")).toBe(false);
+      expect(input.directoryEvidence.entries).toContainEqual(expect.objectContaining({name:"note.txt",type:"file"}));
+      const choice=payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.find((item:any)=>item.properties.name.enum[0] === "request_capability");
+      expect(choice.properties.arguments.properties.capability.enum).not.toContain("document_processing");
+      return {tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]};
+    },()=>"Source inspected.",payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source read"}))};}];
+    const {result,approve}=await run(text);
+    expect(result.outcome,result.text).toBe("completed");expect(approve).not.toHaveBeenCalled();
+  });
+  it("keeps a partial source eligible, then reopens a fully observed source after an edit",async()=>{
+    const text="Repair the head of note.txt",source="head\n"+"x".repeat(180)+"\nend\n";
+    writeFileSync(path.join(root,"note.txt"),source);
+    const readChoice=(payload:any)=>payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.find((tool:any)=>tool.properties.name.enum[0] === "read_file").properties.arguments.properties.path.enum;
+    replies=[()=>interpretation("change",text),()=>({tool_calls:[{name:"list_dir",arguments:{path:"."}}]}),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt",max_bytes:64}}]}),payload=>{
+      expect(readChoice(payload)).toContain("note.txt");
+      const state=JSON.parse(payload.messages[1].content);
+      return {tool_calls:[{name:"read_file",arguments:{path:"note.txt",cursor:state.latestResult.nextCursor}}]};
+    },payload=>{
+      expect(readChoice(payload)).not.toContain("note.txt");
+      return {tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update(source).digest("hex"),replacements:[{old:"head",new:"fixed"}]}}]};
+    },payload=>{expect(readChoice(payload)).toContain("note.txt");return {tool_calls:[{name:"finish",arguments:{text:"The requested head edit is saved."}}]};},
+    payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The inspected head edit is saved."}))};}];
+    const {result}=await run(text);
+    expect(result.outcome,result.text).toBe("completed");expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe(source.replace("head","fixed"));
+  });
+  it("rejects repeated capability activation without executing it and permits the one protocol correction",async()=>{
+    const text="Inspect note.txt";
+    const cap=()=>({tool_calls:[{name:"request_capability",arguments:{capability:"document_processing"}}]});
+    replies=[()=>interpretation("inspect",text),cap,cap,()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),()=>"Source inspected.",payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source read"}))};}];
+    const {result,runId,emit}=await run(text);
+    expect(result.outcome,result.text).toBe("completed");
+    expect(emit.mock.calls.filter(([event])=>event.type === "capability_expanded")).toHaveLength(1);
+    expect(getExecutionLedger(runId)?.agentTask?.protocolCorrections).toBe(1);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions.filter(action=>action.operation === "request_capability")).toHaveLength(1);
   });
   it("retains a repair focus across reads and several edits without consuming its test repair cycles", async () => {
     const text = "Inspect the sources, repair both notes, and run existing tests.";

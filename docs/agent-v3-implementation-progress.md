@@ -132,6 +132,14 @@ The focused check passed 242 tests across seven files, with one live inspection 
 
 The remaining contract fault is visible in the prepared requests: JSON transport constrains the tool name but leaves its arguments as a generic object. Capability state is also absent from the fresh request. Bind argument schemas to their selected tool, expose active presentation state, and prevent repeat activation of an already visible group. Keep task-relevant registered tools reachable. The live repair target is still unproved.
 
+## Typed actions, source agenda, and cancellation
+
+JSON transport now binds each tool name to its argument schema. Multiline line arrays decode to the same action as native strings; literal backslashes, Unicode, and final newlines remain intact. Fresh packets include active capabilities and complete structured directory evidence. Repeated capability activation is rejected before execution and uses the existing one protocol correction. The read presentation lists up to eight known files not fully observed at their current digest. Partial reads stay eligible; an edit reopens a changed file. The registered general reader remains available.
+
+The next live probes still failed. Typed actions produced seven usage-verified calls, then a repeated read. The read agenda moved through the project sources, but its external 240-second deadline ended the run before an edit. Twelve calls had verified usage; the last remained admitted when the request failed. Evidence is saved in `docs/evidence/agent-typed-actions-live-2026-10-30.json`. Neither probe proves repair quality or packaged behavior.
+
+Cancellation is now checked immediately after each model return, before binding interpretation, proposals, or completion. An admitted dispatch that fails before provider usage records `provider_error`; its call stays consumed. The focused check passed 198 tests across five files with one live test skipped. Full type checking passed. The next source-packing work must retain relevant earlier source bodies, with complete ranges and revision labels. Current packets retain only the last source body; an index alone is not enough for a small model to repair a multi-file project.
+
 ## Current proof and limits
 
 The focused offline check passed 237 tests in 12 files; two opt-in live tests were skipped. This includes task storage, gateway admission, revision-bound edits, host-loop control, verification, storage isolation, and Chat/Work boundaries. Full type checking passed. The Electron source build passed. These results do not establish packaged behavior or live repair quality.
@@ -140,7 +148,7 @@ Live inspection evidence is saved in `docs/evidence/agent-host-inspection-probes
 
 ## Work still required
 
-1. Complete the action contract: bind JSON argument schemas to tool names, include active capability state in fresh requests, and stop repeated presentation-group activation. Retain useful directory evidence between steps. The live model still has no successful repair. Then complete bounded per-requirement evidence checks and task-authorized cross-run applicability. Audit explicit full-suite scope independently of an omitted model Boolean. Do not weaken acceptance or replace existing tests.
+1. Complete bounded relevant source packing. Typed action schemas, active capability state, and directory evidence are present, but the live model still has no successful repair. Then complete bounded per-requirement evidence checks and task-authorized cross-run applicability. Audit explicit full-suite scope independently of an omitted model Boolean. Do not weaken acceptance or replace existing tests.
 2. Add the separate task progress facts to the UI. Complete task-authorized cross-run evidence retrieval in the active loop. Retain all original obligations on follow-ups and regressions.
 3. Finish structured constraints and protected-path extraction. Keep policy checks at the tool boundary.
 4. Complete test-environment probing in the actual launch environment. Cache unchanged missing-command failures. Finish baseline, full-suite, post-edit test scheduling, and repair-cycle integration.

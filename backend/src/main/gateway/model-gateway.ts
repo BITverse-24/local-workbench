@@ -1,7 +1,7 @@
 import { isInferenceConcurrencyError, localInferenceScheduler, modelInferenceGroup } from "./inference-scheduler.js";
 import { currentRuntimeScope, assertRuntimeActive } from "../run/runtime-scope.js";
 import { getDb } from "../persistence/db.js";
-import { consumeAgentModelCall, recordAgentAdmissionOutcome } from "../run/execution-ledger.js";
+import { consumeAgentModelCall, getExecutionLedger, recordAgentAdmissionOutcome } from "../run/execution-ledger.js";
 import { AgentAdmissionError, AgentRequestTooLargeError, admitLocalAgentRequest, admitEstimatedAgentVisionRequest, assertAgentAdmissionReceipt, assertAgentProviderUsage, assertSavedAgentCountingVerification, invalidateAgentCountingVerification, loadAgentCountingVerification, preparedRequestDigest, saveAgentCountingVerification, verifyLocalAgentCounter, type AgentAdmissionReceipt, type AgentVisionAdmissionReceipt, type AgentCountingProfile } from "./agent-admission.js";
 import { countLMStudioPreparedRequest } from "./lmstudio-token-counter.js";
 import { countLocalAgentRequest } from "./local-token-counter.js";
@@ -288,11 +288,14 @@ export function formatMessagesForFallback(
   return formatted;
 }
  
-export function formatJSONToolMessages(messages: Parameters<typeof formatMessagesForFallback>[0], tools: AgentToolDefinition[], required = false, strict = false) {
-  const schema = (field: any): any => field.format === "multiline"
+function jsonToolParameterSchema(field: any): any {
+  return field.format === "multiline"
     ? { type: "array", items: { type: "string" }, description: `${field.description ? field.description + " " : ""}One raw string per line; retain indentation. Blank lines are empty strings.` }
-    : { ...field, ...(field.properties ? { properties: Object.fromEntries(Object.entries(field.properties).map(([key, value]) => [key, schema(value)])) } : {}), ...(field.items ? { items: schema(field.items) } : {}) };
-  const descriptions = tools.map(tool => `- ${tool.function.name}: ${tool.function.description}\n  Arguments schema: ${JSON.stringify(schema(tool.function.parameters))}`).join("\n\n");
+    : { ...field, ...(field.properties ? { properties: Object.fromEntries(Object.entries(field.properties).map(([key, value]) => [key, jsonToolParameterSchema(value)])) } : {}), ...(field.items ? { items: jsonToolParameterSchema(field.items) } : {}) };
+}
+
+export function formatJSONToolMessages(messages: Parameters<typeof formatMessagesForFallback>[0], tools: AgentToolDefinition[], required = false, strict = false) {
+  const descriptions = tools.map(tool => `- ${tool.function.name}: ${tool.function.description}\n  Arguments schema: ${JSON.stringify(jsonToolParameterSchema(tool.function.parameters))}`).join("\n\n");
   return formatMessagesForFallback(messages, `\n\nAVAILABLE TOOLS:\n${descriptions}\n\nReturn JSON: {"tool_calls":[{"name": <available tool name>, "arguments": <schema fields>}], "content":""}. ${strict ? "Return ONE bare JSON object. Do not wrap it in Markdown fences or prose. Fenced examples never execute. Select at most one tool call. " : ""}Emit each operation once. Multiline arguments are arrays of raw lines; preserve indentation, use empty strings for blank lines, and do not add newline escapes. ${required ? "A required operation remains incomplete. Call its tool now." : "If no operation is needed, tool_calls is [] and content is your final response."}`);
 }
 
@@ -300,9 +303,10 @@ export function formatJSONToolMessages(messages: Parameters<typeof formatMessage
 export function agentJSONResponseFormat(tools: AgentToolDefinition[], required = false) {
   return { type: "json_schema", json_schema: { name: "agent_action", strict: true, schema: {
     type: "object", properties: {
-      tool_calls: { type: "array", minItems: required ? 1 : 0, maxItems: 1, items: { type: "object", properties: {
-        name: { type: "string", enum: tools.map(tool => tool.function.name) }, arguments: { type: "object" },
-      }, required: ["name", "arguments"], additionalProperties: false } },
+      tool_calls: { type: "array", minItems: required ? 1 : 0, maxItems: 1, items: { anyOf: tools.map(tool=>({
+        type:"object",properties:{name:{type:"string",enum:[tool.function.name]},arguments:jsonToolParameterSchema(tool.function.parameters)},
+        required:["name","arguments"],additionalProperties:false,
+      })) } },
       content: { type: "string" },
     }, required: ["tool_calls", "content"], additionalProperties: false,
   } } };
@@ -688,6 +692,7 @@ export class ModelGateway implements ModelClient {
       const queueWaitMs = Date.now() - queuedAt;queueWait=queueWaitMs;startedAt=Date.now();
       scope?.observe?.({ queued: false, queueWaitMs, ...(!v3 ? { modelCallCount: 1 } : {}) });
       let inferenceStarted = Date.now();
+      let activeDispatchId: string | undefined;
       try {
         assertRuntimeActive();
         const stream = Boolean(this.transport.streamRequest && (onChunk || this.progressListeners.size));
@@ -723,6 +728,7 @@ export class ModelGateway implements ModelClient {
           if (v3 && receipt) {
             assertRuntimeActive();
             consumeAgentModelCall(v3.runId, { requestId: dispatchId, receipt });
+            activeDispatchId = dispatchId;
             v3.observe?.({ modelCallCount: 1, [receipt.countingMethod === "exact" ? "admittedInputTokens" : "estimatedVisionInputTokens"]: receipt.inputTokens });
           }
           const outbound = { ...init, signal: requestSignal, body: JSON.stringify(payload), ...(v3 ? { redirect: "error" as const } : {}) };
@@ -774,6 +780,7 @@ export class ModelGateway implements ModelClient {
         publish(true);
         return { status: response.status, text: async () => body };
       } catch (error) {
+        if (v3 && activeDispatchId && getExecutionLedger(v3.runId)?.agentAdmissions.find(item=>item.requestId === activeDispatchId)?.status === "admitted") recordAgentAdmissionOutcome(v3.runId,activeDispatchId,"provider_error");
         snapshot.status = "failed";
         publish(true);
         throw error;

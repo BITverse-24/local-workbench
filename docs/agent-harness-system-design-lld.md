@@ -135,6 +135,8 @@ Consume the model-call budget atomically before each task generation. Count requ
 
 Retain existing configured call timeouts and cancellation. Permit one malformed-action correction per run and two test-driven repair cycles. Detect repeats using action arguments plus the relevant source and evidence revisions. A repeated unchanged failure cannot consume unlimited calls.
 
+Implementation check: JSON actions now bind tool names to their argument schemas. Fresh packets retain active capability state, directory evidence, and a bounded agenda of source not fully observed at its current digest. Native and JSON transports preserve the same code bytes. Check cancellation after every generation await before using its output; an admitted dispatch without provider usage records a provider error and keeps the call consumed. Failed live probes on 30 October still show no repair. The next source-selection step must retain useful earlier source bodies within the final exact admission limit.
+
 Cancellation stops the current run and revokes its authority. The task and pending work remain saved for explicit continuation. A write with uncertain outcome blocks automatic replay. No budget, authority, or success claim is reconstructed from assistant prose.
 
 ## 6. API and Data Contracts

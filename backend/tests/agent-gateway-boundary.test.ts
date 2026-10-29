@@ -65,6 +65,36 @@ function transport(replies?: (payload: Record<string, any>, index: number) => Pr
 function call(gateway: ModelGateway, extra = {}) { return withRuntimeScope(scope, () => gateway.chatWithTools(model.id, [{ role: "user", content: "Inspect source" }], tools, { runId, maxTokens: 2048, ...extra })); }
 
 describe("Agent v3 gateway dispatch boundary", () => {
+  it("retains the consumed call and records a transport failure when cancellation prevents provider usage",async()=>{
+    const controller=new AbortController();scope.signal=controller.signal;
+    const raw=transport(async()=>{controller.abort();throw new Error("The request was cancelled before a response body arrived.");});
+    expect((await call(new ModelGateway(raw,[{...model,toolCallingFormat:"json"}]))).ok).toBe(false);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(1);
+    expect(getExecutionLedger(runId)?.agentAdmissions).toHaveLength(1);
+    expect(getExecutionLedger(runId)?.agentAdmissions[0]).toMatchObject({status:"provider_error"});
+    expect(getExecutionLedger(runId)?.agentAdmissions[0].providerInputTokens).toBeUndefined();
+  });
+  it("decodes native strings and typed JSON multiline arrays into the same code action",async()=>{
+    const definition:AgentToolDefinition={type:"function",function:{name:"edit_file",description:"Edit observed source",parameters:{type:"object",properties:{path:{type:"string"},replacements:{type:"array",items:{type:"object",properties:{old:{type:"string",format:"multiline"},new:{type:"string",format:"multiline"}},required:["old","new"],additionalProperties:false}}},required:["path","replacements"],additionalProperties:false}}};
+    const old='const pattern = "\\n";',lines=['const pattern = "\\t";','const label = "café 🛠️";',""];
+    const args={path:"src/app.js",replacements:[{old,new:lines.join("\n")}]};
+    const actions=[];
+    for(const format of ["native","json"] as const){
+      const raw=transport(async payload=>{
+        const count=(await countLocalAgentRequest({assetsDir:root,activeTemplate:template,payload})).inputTokens;
+        if(format === "native")return {status:200,body:JSON.stringify({choices:[{message:{content:null,tool_calls:[{id:"native-edit",type:"function",function:{name:"edit_file",arguments:JSON.stringify(args)}}]},finish_reason:"stop"}],usage:{prompt_tokens:count,completion_tokens:10}})};
+        expect(payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf[0].properties.arguments.properties.replacements.items.properties.old.type).toBe("array");
+        return {status:200,body:response(JSON.stringify({tool_calls:[{name:"edit_file",arguments:{path:args.path,replacements:[{old:[old],new:lines}]}}],content:""}),count)};
+      });
+      const gateway=new ModelGateway(raw,[{...model,toolCallingFormat:format}]);
+      const result=await withRuntimeScope(scope,()=>gateway.chatWithTools(model.id,[{role:"user",content:"Edit source"}],[definition],{runId,maxTokens:2048,toolChoice:"required"}));
+      expect(result.ok).toBe(true);if(!result.ok)throw new Error(result.error.message);
+      actions.push({name:result.value.tool_calls?.[0].name,arguments:result.value.tool_calls?.[0].arguments});
+    }
+    expect(actions).toEqual([{name:"edit_file",arguments:args},{name:"edit_file",arguments:args}]);
+    expect(prepared).toEqual(dispatched);
+    expect(getExecutionLedger(runId)?.agentAdmissions.map(item=>item.status)).toEqual(["usage_verified","usage_verified"]);
+  });
   it("keeps no-tool phases free of action-envelope instructions", async () => {
     const gateway = new ModelGateway(transport(), [{ ...model, toolCallingFormat: "json" }]);
     const messages = [{ role: "system", content: "Review coverage. Return coverage JSON." }, { role: "user", content: "Saved task and evidence" }];
