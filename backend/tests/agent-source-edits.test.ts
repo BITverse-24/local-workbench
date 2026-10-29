@@ -8,6 +8,7 @@ import { MutationPolicyGuard } from "../src/main/harness/policy-guard.js";
 import type { SourceReadReceipt } from "../src/shared/contracts.js";
 import { agentWorkspaceActions } from "../src/main/agent/workspace-actions.js";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
+import { sliceAgentSourcePage } from "../src/main/agent/source-evidence.js";
 let root: string;
 beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-edit-")); writeFileSync(path.join(root, "app.js"), "import { load } from './storage.js';\nexport const limit = 2;\nstart(load());\n"); });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -17,6 +18,19 @@ function receipt(start = 0, end?: number): SourceReadReceipt {
 }
 function proposal() { return { path: "app.js", expectedDigest: receipt().digest, replacements: [{ old: "limit = 2", new: "limit = 3" }], requirementId: "repair-limit", reason: "Correct the limit" }; }
 describe("Revision-bound exact edits", () => {
+  it("repages saved UTF-8 source with an exact continuation and preserves the immutable page",async()=>{
+    const text=`${"é".repeat(80)}\nsecond line\n`;writeFileSync(path.join(root,"unicode.txt"),text);
+    const context={runId:randomUUID(),workspaceRoot:root,gateway:new ModelGateway(undefined,[])};
+    const read=agentWorkspaceActions.find(tool=>tool.name === "read_file")!;
+    const stored={...(await read.execute({path:"unicode.txt"},context)).data as any,resultId:randomUUID()},before=structuredClone(stored);
+    const page=sliceAgentSourcePage(stored,65);
+    expect(stored).toEqual(before);expect(page.endByte).toBe(64);expect(page.content).toBe("é".repeat(32));
+    expect(page.complete).toBe(false);expect(page.endLine).toBe(1);expect(page.digest).toBe(stored.digest);
+    const next=(await read.execute({path:"unicode.txt",cursor:page.nextCursor},context)).data as any;
+    expect(next.startByte).toBe(page.endByte);expect(page.content+next.content).toBe(text);
+    writeFileSync(path.join(root,"unicode.txt"),text+"new");
+    await expect(read.execute({path:"unicode.txt",cursor:page.nextCursor},context)).rejects.toThrow("source changed");
+  });
   it("requires the same run, command, and source operation for an approved unisolated fallback",()=>{
     const guard=new MutationPolicyGuard(),runId=randomUUID();guard.setEnforceExplicit(runId,true);
     const grant=guard.grantScope({runId,operation:"run_command",command:"node --test",operationDigest:"revision-one",allowUnisolated:true});

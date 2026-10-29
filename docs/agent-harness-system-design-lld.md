@@ -174,6 +174,8 @@ Acceptance checks can select `verbatim_source` with a quoted source path when th
 
 `write_file` remains available for new files. Replacing an existing file requires an explicit replacement flag, expected digest, and a complete source receipt. If the full source or proposed replacement cannot fit, use bounded edits instead. Approval binds the operation, source digest, and proposed content digest. A changed proposal requires fresh approval under the applicable scope.
 
+Implementation check: request repacking now pages immutable source at UTF-8 boundaries and records only actually admitted ranges. Every source page supplied in a packet informs the read agenda. Removed pages become readable again after tool definitions are rebuilt. Result retrieval preserves structured payloads, parent lineage, and explicit completeness; it cannot promote retrieved model-derived data into original source evidence. The focused check passed 243 tests, with one live test skipped. Live repair and bounded per-requirement completion review remain open.
+
 ### Gateway and tokenizer contract
 
 The gateway prepares a request before sending it. Preparation produces the final payload, selected transport, model identity, template identity, and output reservation. Admission returns exact input tokens, reserved output tokens, context limit, safety reserve, counter identity, and a digest of the prepared request. Dispatch requires a matching admission receipt.

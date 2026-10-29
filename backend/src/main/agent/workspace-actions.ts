@@ -17,6 +17,9 @@ export function canonicalSourcePath(context: ToolExecutionContext, requested: st
   return path.relative(resolveSafe(context.workspaceRoot, "."), resolveSafe(context.workspaceRoot, requested)).split(path.sep).join("/");
 }
 const cursor = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+export function sourcePageCursor(path: string, digest: string, offset: number): string {
+  return cursor({offset,revision:digest,query:path});
+}
 function continueAt(raw: string | undefined, revision: string, query: string): number {
   if (!raw) return 0;
   const value = z.object({ offset: z.number().int().nonnegative(), revision: z.string(), query: z.string() }).strict().parse(JSON.parse(Buffer.from(raw, "base64url").toString()));
@@ -60,7 +63,7 @@ export const agentWorkspaceActions: AgentTool[] = [
     const data = { sourcePage: true, path: canonical, digest: revision, startByte: start, endByte: end, sizeBytes: bytes.length,
       startLine: bytes.subarray(0, start).toString().split("\n").length, endLine: bytes.subarray(0, end).toString().split("\n").length,
       content: bytes.subarray(start, end).toString(), complete: start === 0 && end === bytes.length,
-      ...(end < bytes.length ? { nextCursor: cursor({ offset: end, revision, query: canonical }) } : {}) };
+      ...(end < bytes.length ? { nextCursor: sourcePageCursor(canonical,revision,end) } : {}) };
     return sourceResult(data);
   }),
   tool("list_dir", "List a bounded directory page. Continue using its cursor.", { path: pathProperty, cursor: { type: "string" } }, [], async (args, context) => {

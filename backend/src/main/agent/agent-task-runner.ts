@@ -154,7 +154,7 @@ export class AgentTaskRunner {
         clearApprovals();
         updateAgentProgress(runId, progress => { progress.baseline = { status: baseline.action, detail: baseline.detail, environmentKey }; progress.feedback = baseline.detail.slice(0, 10000); });
         if (baseline.action === "cancelled") return stop("approval_denied", baseline.detail, "cancelled");
-        if (baseline.action === "repair" && task.snapshot.requirements.some(item=>item.state === "active" && item.kind === "change")) await obtainAgentFailureSources(context,dispatcher,baseline.sourceHints);
+        if (baseline.action === "repair") await obtainAgentFailureSources(context,dispatcher,baseline.sourceHints);
       }
       for (;;) {
         assertRuntimeActive();
@@ -187,24 +187,25 @@ export class AgentTaskRunner {
         }
         const inactiveCapabilities = context.envelope.permittedCapabilities.filter(capability=>!context.activeCapabilities!.has(capability));
         const visible = filterToolsForTurn(registered, context.envelope, context.activeCapabilities!, { hasRetrievableResults: true }).filter(tool=>tool.name !== "request_capability" || inactiveCapabilities.length > 0);
-        const definitions: AgentToolDefinition[] = visible.map(tool => conciseAgentTool({ ...tool.definition, function: { ...tool.definition.function, parameters: { ...tool.definition.function.parameters, properties: { ...tool.definition.function.parameters.properties,
+        const definitions = (): AgentToolDefinition[] => visible.map(tool => conciseAgentTool({ ...tool.definition, function: { ...tool.definition.function, parameters: { ...tool.definition.function.parameters, properties: { ...tool.definition.function.parameters.properties,
           ...(tool.name === "request_capability" ? {capability:{type:"string",enum:inactiveCapabilities}} : {}),
           ...(tool.name === "read_file" && packet.readPaths ? {path:{type:"string",enum:packet.readPaths}} : {}),
           requirement_id: { type: "string" } } } } }));
         const deliveryGap = agentDeliveryGap(task,context,changedPaths());
-        const actionTools = deliveryGap ? definitions : [...definitions, FINISH_TOOL];
-        const generate = () => context.gateway.chatWithTools(modelId, packet.messages, actionTools, { runId, maxTokens: 2048, toolChoice:"required", signal: scope.signal });
+        const generate = () => context.gateway.chatWithTools(modelId, packet.messages, deliveryGap ? definitions() : [...definitions(), FINISH_TOOL], { runId, maxTokens: 2048, toolChoice:"required", signal: scope.signal });
         let response = await generate();
         // Admission rejects before dispatch and call consumption. Remove whole optional pages,
         // retaining requirements, constraints, and the latest result in every exact recount.
-        for (const budget of [3000, 0]) {
+        for (const packing of [{additionalSourceChars:3000},{additionalSourceChars:0},{additionalSourceChars:0,latestSourceBytes:2000},{additionalSourceChars:0,latestSourceBytes:1000}]) {
           assertRuntimeActive();
           if (response.ok || response.error.code !== "agent_context_limit") break;
-          packet = buildAgentContextPacket(task, context, selected, budget);
+          packet = buildAgentContextPacket(task, context, selected, packing);
           response = await generate();
         }
         assertRuntimeActive();
-        if (!response.ok) return stop("model_generation_unavailable", response.error.message);
+        if (!response.ok) return response.error.code === "agent_context_limit"
+          ? stop("context_limit",`The required task state and minimum evidence still do not fit. Narrow the task or split its remaining work. ${response.error.message}`)
+          : stop("model_generation_unavailable", response.error.message);
         const admission = getExecutionLedger(runId)?.agentAdmissions.at(-1);
         if (admission?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push(...packet.observedSources.map(source=>({...source,requestId:admission.requestId}))); });
         let call: AgentToolCall;

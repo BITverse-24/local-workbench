@@ -182,6 +182,14 @@ Tests cover a mixed execution/explanation source, retained repair requirements, 
 
 The first live source-unit probe showed adjacent instructions leaking into the model assessment. The next probe removed that adjacent text. Its five source reviews used 188–242 input tokens. It entered the action loop, read the project files, and reran the failing tests. All 18 model calls had matching exact counts. It then stopped because the latest 4,000-byte source page plus task metadata could not fit. No edits occurred. Both traces are in `docs/evidence/agent-source-scope-reviews-live-2026-10-30.json`. This result requires true evidence pagination during request assembly; dropping only optional older pages is insufficient. It also leaves mixed requirement-kind interpretation unproved.
 
+## Evidence paging and structured retrieval
+
+Action requests now reduce optional source pages, then page the latest source at UTF-8 boundaries when exact admission rejects a larger request. Each page retains its digest, byte and line ranges, completeness, and continuation. Only admitted bytes become edit receipts. Requirements, constraints, and the complete request remain present. An essential state that still exceeds the verified window stops Partial with a request to narrow scope.
+
+Result retrieval now preserves structured payloads and parent lineage. Filtered result indexes support source-only pagination within the run. Retrieved results remain model-derived and cannot create source or execution authority. Small result slices are honored. The read agenda includes every source page in the current packet and uses the saved test manifest when a directory listing is absent. Tool path choices are rebuilt after repacking, so omitted source can be read again.
+
+Type checking and the Electron source build passed. The focused seven-file check passed 243 tests with one opt-in live test skipped. It includes an actual counted 4,096-token window, unseen edit anchors, UTF-8 continuation, filtered retrieval, and read paths restored after repacking. The three earlier diagnostics in `docs/evidence/agent-bounded-evidence-live-2026-10-30.json` remain failures. Two 7B runs repeated evidence acquisition without edits; 9B stopped at setup because it was not loaded. These traces predate the final read-agenda fix. No successful live repair has been established.
+
 ## Current implementation scope
 
 The user has deferred release certification and will test 14B manually. Current work is implementation and harness quality for the 7B–14B range, with local 7B and 9B models available for development checks. The machine has Qwen2.5 Coder 7B and Qwen3.5 9B assets; no 14B model is installed. Do not download weights or treat release trial counts as a current completion requirement. Keep the release controls documented and keep production promotion separate. Packaged-environment implementation checks remain useful because the original failure occurred in a production build.

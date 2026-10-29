@@ -3,7 +3,7 @@ import type { ToolExecutionContext } from "../tools/types.js";
 import { getExecutionLedger } from "../run/execution-ledger.js";
 import { z } from "zod";
 import { CAPABILITY_GROUPS } from "../tools/capabilities.js";
-import { loadAgentSourcePage, selectAgentSourcePages, sourcePageIsCurrent, sourcePageReceipt, type AgentSourcePage } from "./source-evidence.js";
+import { loadAgentSourcePage, selectAgentSourcePages, sliceAgentSourcePage, sourcePageIsCurrent, sourcePageReceipt, type AgentSourcePage } from "./source-evidence.js";
 import { canonicalSourcePath } from "./workspace-actions.js";
 import { fileDigest, observedRange, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 
@@ -47,7 +47,8 @@ export function agentEvidenceSlice(context: ToolExecutionContext, resultId: stri
 }
 
 /** Fresh state and selected immutable evidence only. No growing chat transcript or head/tail compaction. */
-export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionContext, selected?: AgentRequirement, additionalSourceChars = 6000): AgentContextPacket {
+export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionContext, selected?: AgentRequirement, packing: {additionalSourceChars?:number;latestSourceBytes?:number} = {}): AgentContextPacket {
+  const additionalSourceChars=packing.additionalSourceChars ?? 6000,latestSourceBytes=packing.latestSourceBytes ?? 4000;
   const ledger = getExecutionLedger(context.runId), progress = ledger?.agentProgress;
   const requirement = selected ?? task.snapshot.requirements.find(item => item.state === "active");
   if (!requirement) throw new Error("No interpreted requirement is available. Preserve the request and ask for scope clarification.");
@@ -57,13 +58,14 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
   let latestPage: AgentSourcePage | undefined;
   if (progress?.latestResultId && context.resultStore) {
     const record = context.resultStore.getResult(progress.latestResultId);
-    const page = latestPage = loadAgentSourcePage(context, record.resultId);
+    const storedPage=loadAgentSourcePage(context, record.resultId);
+    const page = latestPage = storedPage ? sliceAgentSourcePage(storedPage,latestSourceBytes) : undefined;
     if (page) {
       result = { ...page, currentAtAssembly: sourcePageIsCurrent(context, page) };
       observedSource = sourcePageReceipt(page);
-    } else result = agentEvidenceSlice(context,record.resultId,4000);
+    } else result = agentEvidenceSlice(context,record.resultId,latestSourceBytes);
   }
-  const selectedSources = selectAgentSourcePages(context, requirement, latestPage, `${progress?.feedback ?? ""}\n${JSON.stringify(result)}`, additionalSourceChars);
+  const selectedSources = selectAgentSourcePages(context, requirement, latestPage, `${progress?.feedback ?? ""}\n${progress?.baseline?.detail ?? ""}\n${JSON.stringify(result)}`, additionalSourceChars);
   const observedSources = [...(observedSource ? [observedSource] : []),...selectedSources.pages.map(sourcePageReceipt)];
   const source = task.snapshot.messages.find(message => message.id === requirement.source.messageId);
   const directory = [...(progress?.actions ?? [])].reverse().find(action=>action.operation === "list_dir" && action.status === "completed" && action.resultId);
@@ -77,15 +79,19 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
       {resultId:directory.resultId,complete:false,readVia:{tool:"retrieve_result",action:"read",result_id:directory.resultId}};
     if (parsed.success) listedFiles=parsed.data.value.entries.filter(entry=>entry.type === "file").map(entry=>entry.name);
   }
-  const reads=[...(progress?.reads ?? []),...(observedSource ? [observedSource] : [])];
+  // Presentation can avoid source supplied in this very packet. Receipts are persisted
+  // only after this exact request has verified usage, including any smaller repack.
+  const reads=[...(progress?.reads ?? []),...observedSources];
   const observations = [...new Map(reads.map(read=>[
     `${read.path}:${read.digest}:${read.startByte}:${read.endByte}`,
     {path:read.path,observedDigest:read.digest,startByte:read.startByte,endByte:read.endByte,sizeBytes:read.sizeBytes,resultId:read.resultId},
   ])).values()];
   let readPaths: string[] | undefined;
   let remainingReadCount=0;
-  if (listedFiles) {
-    const candidates=[...listedFiles,...(ledger?.operationAttempts.filter(attempt=>attempt.status === "completed" && ["write_file","edit_file"].includes(attempt.tool)).flatMap(attempt=>attempt.targetPath ?? []) ?? [])];
+  const verificationManifest=[...(ledger?.verification?.evidence ?? [])].reverse().find(check=>check.sourceManifest)?.sourceManifest;
+  const indexedFiles=listedFiles ?? (verificationManifest ? Object.keys(verificationManifest) : undefined);
+  if (indexedFiles) {
+    const candidates=[...indexedFiles,...(ledger?.operationAttempts.filter(attempt=>attempt.status === "completed" && ["write_file","edit_file"].includes(attempt.tool)).flatMap(attempt=>attempt.targetPath ?? []) ?? [])];
     const remaining=new Set<string>();
     for (const filename of candidates) {
       let canonical: string;
@@ -110,14 +116,14 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
     constraints, unresolvedRequirementIds: task.snapshot.requirements.filter(item => item.state === "active").map(item => item.id),
     obligations: task.snapshot.requirements.filter(item => item.state === "active").map(item => ({ id: item.id, kind: item.kind, description: item.description, acceptance: item.acceptance })),
     appliedOperations: ledger?.completedOperations.slice(-5).map(item => ({ tool: item.tool, summary: item.summary, resultIds: item.resultIds })),
-    sourceObservations: {items:observations.slice(-8),total:observations.length,complete:observations.length<=8,earlierEvidenceVia:{tool:"retrieve_result",action:"list"}},
+    sourceObservations: {items:observations.slice(-4),total:observations.length,complete:observations.length<=4,earlierEvidenceVia:{tool:"retrieve_result",action:"list",origin:"source_extracted"}},
     directoryEvidence,
     suggestedReadPaths:readPaths,
-    readSelection:readPaths ? {totalKnownRemaining:remainingReadCount,complete:remainingReadCount === readPaths.length,otherPathsVia:{tool:"list_dir",purpose:"Narrow the directory or use its continuation page"}} : undefined,
+    readSelection:readPaths ? {indexSource:listedFiles ? "directory page" : "saved verification manifest",totalKnownRemaining:remainingReadCount,complete:remainingReadCount === readPaths.length,otherPathsVia:{tool:"list_dir",purpose:"Narrow the directory or use its continuation page"}} : undefined,
     observationRule:"Use retrieved results for source already fully supplied at its observed digest. Suggested reads identify known source not fully observed at its current digest. Inspection is progress, not acceptance.",
     activeCapabilities:[...(context.activeCapabilities ?? [])],
     availableCapabilities:context.envelope?.permittedCapabilities.filter(capability=>!context.activeCapabilities?.has(capability)).map(capability=>({name:capability,description:CAPABILITY_GROUPS[capability].description,tools:CAPABILITY_GROUPS[capability].tools})),
-    recentActions: progress?.actions.slice(-8).map(action=>({operation:action.operation,status:action.status,resultId:action.resultId})),
+    recentActions: {items:progress?.actions.slice(-4).map(action=>({operation:action.operation,status:action.status,resultId:action.resultId})) ?? [],total:progress?.actions.length ?? 0,complete:(progress?.actions.length ?? 0)<=4},
     selectedSources, latestResult: result, feedback: {text:progress?.feedback.slice(0,1000) ?? "",complete:(progress?.feedback.length ?? 0)<=1000},
     checkEvidence: ledger?.verification?.evidence.map(check=>({criterionId:check.criterionId,status:check.status,reason:check.reason,resultIds:check.evidence.filter(ref=>ref.kind === "result").map(ref=>ref.id)})), inputSources: context.inputSources,
     originalRequest: source?.content };

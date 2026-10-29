@@ -8,6 +8,7 @@ import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js"
 import type { AgentFailureLocation } from "./test-verification.js";
 import type { ToolDispatcher } from "./tool-dispatcher.js";
 import { assertRuntimeActive } from "../run/runtime-scope.js";
+import { sourcePageCursor } from "./workspace-actions.js";
 
 /** Obtain bounded source from host test evidence before asking for a repair action. */
 export async function obtainAgentFailureSources(context: ToolExecutionContext, dispatcher: ToolDispatcher, hints: AgentFailureLocation[] = []): Promise<void> {
@@ -28,6 +29,18 @@ const pageSchema = z.object({
   content: z.string(), complete: z.boolean(), nextCursor: z.string().optional(),
 }).strict();
 export type AgentSourcePage = z.infer<typeof pageSchema> & { resultId: string };
+
+/** Repage immutable evidence, without rereading a changing file or granting unseen ranges. */
+export function sliceAgentSourcePage(page: AgentSourcePage, maxBytes: number): AgentSourcePage {
+  z.number().int().min(64).max(4000).parse(maxBytes);
+  const bytes=Buffer.from(page.content);
+  if(bytes.length<=maxBytes)return page;
+  let length=maxBytes;
+  while(length>0 && (bytes[length]&0xc0) === 0x80)length--;
+  const content=bytes.subarray(0,length).toString(),endByte=page.startByte+length;
+  return {...page,content,endByte,endLine:page.startLine+content.split("\n").length-1,complete:false,
+    nextCursor:sourcePageCursor(page.path,page.digest,endByte)};
+}
 
 /** Read complete stored pages only. Partial JSON is never source authority. */
 export function loadAgentSourcePage(context: ToolExecutionContext, resultId: string): AgentSourcePage | undefined {
@@ -91,6 +104,6 @@ export function selectAgentSourcePages(context: ToolExecutionContext, requiremen
     pages.push(page); usedChars += size;
   }
   return { pages, totalEligiblePages: ranges.size, complete: pages.length === ranges.size,
-    omittedPagesVia: { tool: "retrieve_result", action: "list" },
+    omittedPagesVia: { tool: "retrieve_result", action: "list", origin:"source_extracted" },
     rule: "These are complete observed pages of currently matching source revisions. Page coverage is explicit. Selection does not prove requirement coverage; retrieve omitted pages when needed." };
 }

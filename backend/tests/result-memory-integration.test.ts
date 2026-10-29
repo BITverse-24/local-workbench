@@ -17,6 +17,7 @@ import { readFileTool, listDirTool, writeFileTool } from "../src/main/tools/work
 import { retrieveResultTool } from "../src/main/tools/result-retrieval.js";
 import { normalizeRunContract } from "../src/main/run/contract.js";
 import { validateAndNormalizeIntent } from "../src/main/router/contextual-router.js";
+import { agentEvidenceSlice } from "../src/main/agent/context-packet.js";
 
 describe("P1 production result registration and retrieval integration", () => {
   let root: string, dbPath: string, runId: string, runDir: string, context: ToolExecutionContext, oldRoot: string | undefined;
@@ -124,6 +125,31 @@ describe("P1 production result registration and retrieval integration", () => {
     expect(slice.content).toBe(payload.slice(0, slice.nextOffset));
     expect(result.output).not.toContain("OBSERVATION COMPACTED");
     expect(JSON.parse(result.output.slice(result.output.indexOf("\n") + 1)).content).toBe(slice.content);
+  });
+  it("persists v3 retrieval as structured evidence without nested JSON or undefined metadata",async()=>{
+    context.agentRequirementId="r-source";
+    const code='const pattern = "\\n";\nconst name = "café 🛠️";\n';
+    const record=context.resultStore!.registerResult({type:"structured",status:"complete",origin:"source_extracted",producer:{tool:"read_file",callId:"original"},summary:"Original code",payload:{sourceText:code},sources:[]});
+    const dispatcher=new ToolDispatcher([retrieveResultTool]);
+    const actions=[{action:"read",result_id:record.resultId,mode:"json",pointer:"/sourceText",max_chars:code.length},{action:"inspect",result_id:record.resultId},{action:"list",origin:"source_extracted",count:1}];
+    const saved=[];
+    for(const args of actions){
+      const [result]=await dispatcher.dispatchConcurrent([{id:`retrieval-${saved.length}`,name:"retrieve_result",arguments:args}],context);
+      expect(result.result.ok,result.result.output).toBe(true);
+      const reference=result.result.resultRef!;expect(reference.storage.encoding).toBe("json");expect(reference.origin).toBe("model_derived");
+      saved.push(reference);
+    }
+    const slice=agentEvidenceSlice(context,saved[0].resultId,5000) as any;
+    expect(slice).toMatchObject({completeResult:true,value:{content:code,truncated:false,resultId:record.resultId}});
+    expect(slice.value).not.toHaveProperty("nextOffset");
+    expect(saved[0].sources).toEqual([{resultId:record.resultId,relation:"source"}]);
+    const inspected=agentEvidenceSlice(context,saved[1].resultId,5000) as any;
+    expect(inspected.value).not.toHaveProperty("structuredSchema");expect(inspected.value).not.toHaveProperty("nextSourceOffset");
+    const listing=agentEvidenceSlice(context,saved[2].resultId,5000) as any;
+    expect(listing.value.results.map((item:any)=>item.resultId)).toEqual([record.resultId]);expect(listing.value.origin).toBe("source_extracted");
+    expect(listing.value).not.toHaveProperty("nextOffset");
+    const one=await retrieveResultTool.execute({result_id:record.resultId,mode:"json",pointer:"/sourceText",max_chars:1},context);
+    expect(one.data).toMatchObject({content:code[0],nextOffset:1,truncated:true});
   });
   it("does not publish canonical workspace writes as deliverable artifacts", async () => {
     context.runContract = normalizeRunContract(runId, validateAndNormalizeIntent({ intentType: "code_modification", primaryGoal: "Write a workspace module", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: ["module.py"], expectedDeliverables: [] }, { hasWorkspace: true, workspaceFiles: [], userPrompt: "Write module.py" }));

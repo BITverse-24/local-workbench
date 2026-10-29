@@ -29,10 +29,11 @@ let replies: Reply[];
 let scopeReplies: Reply[];
 let refinementReplies: Reply[];
 let runSignal:AbortSignal|undefined;
-beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); previousRoot = dataRoot(); setDataDir(root); initDb(path.join(root, "db.sqlite")); chatId = createChat(); replies = [];scopeReplies=[];refinementReplies=[];runSignal=undefined;
+let runContextLimit=8192;
+beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); previousRoot = dataRoot(); setDataDir(root); initDb(path.join(root, "db.sqlite")); chatId = createChat(); replies = [];scopeReplies=[];refinementReplies=[];runSignal=undefined;runContextLimit=8192;
   writeFileSync(path.join(root, "tokenizer.json"), JSON.stringify({ version: "1.0", added_tokens: [], normalizer: null, decoder: null, post_processor: null, pre_tokenizer: { type: "WhitespaceSplit" }, model: { type: "WordPiece", unk_token: "UNK", vocab: { UNK: 0, user: 1, EOS: 2, assistant: 3, Setup: 4 }, continuing_subword_prefix: "##", max_input_chars_per_word: 200000 } }));
   writeFileSync(path.join(root, "tokenizer_config.json"), JSON.stringify({ chat_template: template })); writeFileSync(path.join(root, "note.txt"), "saved source\n");
-  vi.spyOn(server, "countLMStudioPreparedRequest").mockImplementation(async options => { const local = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload: options.payload }); return { inputTokens: local.inputTokens, renderedDigest: local.renderedDigest, instanceReference: "loaded", modelPath: "local", contextLimit: 8192, counterIdentity: "lmstudio-sdk-1.5.0" }; });
+  vi.spyOn(server, "countLMStudioPreparedRequest").mockImplementation(async options => { const local = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload: options.payload }); return { inputTokens: local.inputTokens, renderedDigest: local.renderedDigest, instanceReference: "loaded", modelPath: "local", contextLimit: runContextLimit, counterIdentity: "lmstudio-sdk-1.5.0" }; });
 });
 afterEach(() => { vi.restoreAllMocks(); closeDb(); setDataDir(previousRoot); rmSync(root, { recursive: true, force: true }); });
 function interpretation(kind: string, text: string) { return { disposition: "continue", requirements: [{ kind, description: text, source_id: "request", checks: [{ description: text, kind: "inspection", operation: "semantic", path: null }] }], updates: [], full_suite: false }; }
@@ -40,7 +41,7 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
   let runId = managerPath ? "" : createRun(chatId, text);
   const messageId = addMessage({ chat_id: chatId, role: "user", content: text }).id;
   if (!managerPath) getDb().prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,'agent','agent-v3',?)").run(runId, workspaceRoot);
-  const verification = await verifyLocalAgentCounter({ binding: { endpoint: "http://127.0.0.1:1234/v1", modelIdentity: "loaded", providerModel: "driver", transport: "json", templateDigest: createHash("sha256").update(template).digest("hex"), contextLimit: 8192 }, assetsDir: root, activeTemplate: template, probes: (["plain", "tools", "tool_result", "unicode"] as const).map(name => ({ name, payload: { model: "driver", messages: [{ role: "user", content: "Setup" }] } })), providerProbe: async () => ({ inputTokens: 4 }) });
+  const verification = await verifyLocalAgentCounter({ binding: { endpoint: "http://127.0.0.1:1234/v1", modelIdentity: "loaded", providerModel: "driver", transport: "json", templateDigest: createHash("sha256").update(template).digest("hex"), contextLimit: runContextLimit }, assetsDir: root, activeTemplate: template, probes: (["plain", "tools", "tool_result", "unicode"] as const).map(name => ({ name, payload: { model: "driver", messages: [{ role: "user", content: "Setup" }] } })), providerProbe: async () => ({ inputTokens: 4 }) });
   saveAgentCountingVerification(verification);
   const gateway = new ModelGateway({ async request(_url, init) {
     const payload = JSON.parse(init.body!), title = String(payload.messages?.[0]?.content).includes("short chat topic title");
@@ -263,6 +264,60 @@ describe("Agent v3 task host loop", () => {
     expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation.replace('throw new Error("wrong value");','return "ready";'));
     expect(readFileSync(path.join(workspace,"value.test.cjs"),"utf8")).toBe(test);
     expect(approve).toHaveBeenCalledTimes(3);
+  });
+  it("obtains read-only failure evidence without requiring a change category",async()=>{
+    const workspace=path.join(root,"project");mkdirSync(workspace);
+    const implementation='exports.readValue = () => { throw new Error("failure to inspect"); };\n';
+    writeFileSync(path.join(workspace,"package.json"),JSON.stringify({scripts:{test:"node --test"}}));
+    writeFileSync(path.join(workspace,"value.cjs"),implementation);
+    writeFileSync(path.join(workspace,"value.test.cjs"),'const {test}=require("node:test");const {readValue}=require("./value.cjs");test("existing failure",()=>readValue());\n');
+    const controller=new AbortController();runSignal=controller.signal;
+    const request="Inspect source and reproduce the existing test failure.";
+    replies=[()=>({disposition:"continue",requirements:["inspect","execute"].map(kind=>({kind,description:request,source_id:"request",checks:[{description:request,kind:kind === "execute"?"execution":"inspection",operation:"semantic",path:null}]})),updates:[],full_suite:true}),payload=>{
+      const state=JSON.parse(payload.messages[1].content);
+      expect(state.selectedSources.pages).toContainEqual(expect.objectContaining({path:"value.cjs",content:implementation}));
+      expect(state.currentRequirement.kind).toBe("execute");
+      const read=payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.find((item:any)=>item.properties.name.enum[0] === "read_file");
+      expect(read.properties.arguments.properties.path.enum).not.toContain("value.cjs");
+      expect(state.readSelection.indexSource).toBe("saved verification manifest");
+      controller.abort();return {tool_calls:[{name:"finish",arguments:{text:"The baseline failure has saved source evidence."}}]};
+    }];
+    const {result,runId,approve}=await run(request,false,undefined,undefined,workspace);
+    expect(result.outcome,result.text).toBe("cancelled");expect(approve).toHaveBeenCalledTimes(1);
+    expect(getExecutionLedger(runId)?.agentProgress?.sourceResultIds).toHaveLength(2);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions).toEqual([]);
+    expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
+  });
+  it("restores read paths omitted by repacking instead of keeping the larger packet's tool enum",async()=>{
+    const workspace=path.join(root,"project");mkdirSync(workspace);
+    const implementation='exports.value = () => { throw new Error("failure"); };\n';
+    writeFileSync(path.join(workspace,"package.json"),JSON.stringify({scripts:{test:"node --test"}}));
+    writeFileSync(path.join(workspace,"value.cjs"),implementation);
+    writeFileSync(path.join(workspace,"value.test.cjs"),'const {test}=require("node:test");const {value}=require("./value.cjs");test("existing failure",()=>value());\n');
+    const original=ModelGateway.prototype.chatWithTools;let rejected=0;
+    vi.spyOn(ModelGateway.prototype,"chatWithTools").mockImplementation(async function(this:ModelGateway,modelId,messages,tools,options){
+      const state=JSON.parse(messages[1]?.content ?? "{}");
+      if(state.selectedSources?.pages.length){
+        const read=tools.find(tool=>tool.function.name === "read_file")!;
+        expect(read.function.parameters.properties.path.enum).not.toContain("value.cjs");
+        rejected++;return {ok:false,error:{kind:"ai-error",code:"agent_context_limit",message:"Remove optional source pages",retryable:false}};
+      }
+      return original.call(this,modelId,messages,tools,options);
+    });
+    const controller=new AbortController();runSignal=controller.signal;
+    replies=[()=>interpretation("execute","Reproduce the existing failure"),payload=>{
+      const state=JSON.parse(payload.messages[1].content);
+      expect(state.selectedSources).toMatchObject({pages:[],complete:false});
+      const read=payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.find((item:any)=>item.properties.name.enum[0] === "read_file");
+      expect(read.properties.arguments.properties.path.enum).toContain("value.cjs");
+      expect(state.suggestedReadPaths).toContain("value.cjs");
+      controller.abort();return {tool_calls:[{name:"read_file",arguments:{path:"value.cjs"}}]};
+    }];
+    const {result,runId,approve}=await run("Reproduce the existing failure",false,undefined,undefined,workspace);
+    expect(result.outcome,result.text).toBe("cancelled");expect(rejected).toBe(2);expect(approve).toHaveBeenCalledTimes(1);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(3);
+    expect(getExecutionLedger(runId)?.agentProgress?.reads).toEqual([]);
+    expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
   });
   it("explicitly resumes the saved v3 contract, task, and call budget without repeating interpretation", async () => {
     const text = "Inspect note.txt";
@@ -551,6 +606,75 @@ describe("Agent v3 task host loop", () => {
     expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(7);
     // The omitted old page was supplied on its own earlier request, never forged by packing.
     expect(getExecutionLedger(runId)?.agentProgress?.reads.filter(read=>read.path === "note.txt")).toHaveLength(1);
+  });
+  it("repages the latest source after admission rejection and cannot authorize its omitted edit anchor",async()=>{
+    const source="top\n"+"é".repeat(1200)+"\nTAIL_ANCHOR\n"+"z".repeat(1800)+"\nend\n";
+    writeFileSync(path.join(root,"large.txt"),source);
+    const digest=createHash("sha256").update(source).digest("hex"),original=ModelGateway.prototype.chatWithTools;
+    let rejected=0;
+    vi.spyOn(ModelGateway.prototype,"chatWithTools").mockImplementation(async function(this:ModelGateway,modelId,messages,tools,options){
+      const state=JSON.parse(messages[1]?.content ?? "{}");
+      if(state.latestResult?.sourcePage && state.latestResult.endByte-state.latestResult.startByte>2000){rejected++;return {ok:false,error:{kind:"ai-error",code:"agent_context_limit",message:"Prepared source page exceeds the input budget",retryable:false}};}
+      return original.call(this,modelId,messages,tools,options);
+    });
+    const edit=()=>({tool_calls:[{name:"edit_file",arguments:{path:"large.txt",expected_digest:digest,replacements:[{old:"TAIL_ANCHOR",new:"REPAIRED"}]}}]});
+    replies=[()=>interpretation("change","Repair the tail anchor in large.txt"),()=>({tool_calls:[{name:"read_file",arguments:{path:"large.txt",max_bytes:4000}}]}),payload=>{
+      const state=JSON.parse(payload.messages[1].content);
+      expect(state.latestResult).toMatchObject({startByte:0,endByte:2000,complete:false,digest});
+      expect(state.latestResult.content).not.toContain("TAIL_ANCHOR");
+      return edit();
+    },payload=>{
+      const state=JSON.parse(payload.messages[1].content);
+      expect(state.feedback.text).toContain("outside the source ranges");expect(readFileSync(path.join(root,"large.txt"),"utf8")).toBe(source);
+      return {tool_calls:[{name:"read_file",arguments:{path:"large.txt",cursor:state.latestResult.nextCursor,max_bytes:4000}}]};
+    },payload=>{
+      const state=JSON.parse(payload.messages[1].content);
+      expect(state.latestResult).toMatchObject({startByte:2000,endByte:4000,complete:false,digest});
+      expect(state.latestResult.content).toContain("TAIL_ANCHOR");return edit();
+    },()=>({tool_calls:[{name:"finish",arguments:{text:"The exact tail replacement is saved."}}]}),payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The observed tail anchor was replaced."}))};}];
+    const {result,runId,approve}=await run("Repair the tail anchor in large.txt");
+    expect(result.outcome,result.text).toBe("completed");expect(rejected).toBe(9);expect(approve).toHaveBeenCalledTimes(1);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(8);
+    expect(getExecutionLedger(runId)?.agentProgress?.reads.map(read=>[read.startByte,read.endByte])).toEqual([[0,2000],[0,2000],[2000,4000]]);
+    expect(readFileSync(path.join(root,"large.txt"),"utf8")).toBe(source.replace("TAIL_ANCHOR","REPAIRED"));
+  });
+  it("repacks actual counted requests under a smaller verified server window before accepting any action",async()=>{
+    runContextLimit=4096;
+    const source="x ".repeat(1300)+"TAIL_ANCHOR\n"+"y ".repeat(100),digest=createHash("sha256").update(source).digest("hex");
+    writeFileSync(path.join(root,"large.txt"),source);
+    let attemptedUnseen=false,sawReduced=false,reviewCalls=0;const finalFeedback:string[]=[];
+    const edit=()=>({tool_calls:[{name:"edit_file",arguments:{path:"large.txt",expected_digest:digest,replacements:[{old:"TAIL_ANCHOR",new:"REPAIRED"}]}}]});
+    const next:Reply=payload=>{
+      const state=JSON.parse(payload.messages[1].content);
+      if(state.proposedAnswer !== undefined){reviewCalls++;return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The observed text edit is saved."}))};}
+      if(state.latestResult?.tool === "edit_file"){finalFeedback.push(state.feedback.text);return {tool_calls:[{name:"finish",arguments:{text:"The observed tail replacement is saved."}}]};}
+      const page=state.latestResult;
+      expect(page.sourcePage).toBe(true);
+      if(!attemptedUnseen){attemptedUnseen=true;sawReduced=page.endByte<4000;expect(page.content).not.toContain("TAIL_ANCHOR");return edit();}
+      if(page.content.includes("TAIL_ANCHOR"))return edit();
+      return {tool_calls:[{name:"read_file",arguments:{path:"large.txt",cursor:page.nextCursor,max_bytes:4000}}]};
+    };
+    replies=[()=>interpretation("change","Repair the tail in large.txt"),()=>({tool_calls:[{name:"read_file",arguments:{path:"large.txt",max_bytes:4000}}]}),...Array.from({length:12},()=>next)];
+    const {result,runId,approve}=await run("Repair the tail in large.txt");
+    expect(result.outcome,result.text+JSON.stringify({reviewCalls,finalFeedback})).toBe("completed");expect(sawReduced).toBe(true);expect(approve).toHaveBeenCalledTimes(1);
+    const ledger=getExecutionLedger(runId)!;
+    expect(ledger.agentTask?.modelCalls).toBe(ledger.agentAdmissions.length);
+    expect(ledger.agentAdmissions.every(admission=>admission.status === "usage_verified" && admission.contextLimit === 4096 && admission.inputTokens+admission.outputTokens+admission.safetyTokens<=4096)).toBe(true);
+    expect(ledger.agentProgress?.actions).toContainEqual(expect.objectContaining({operation:"edit_file",status:"failed"}));
+    expect(reviewCalls).toBe(1);
+    expect(readFileSync(path.join(root,"large.txt"),"utf8")).toBe(source.replace("TAIL_ANCHOR","REPAIRED"));
+  });
+  it("retains all essential task text and stops before dispatch when that state cannot fit",async()=>{
+    runContextLimit=4096;
+    const request="Inspect note.txt with this context: "+"context ".repeat(400);
+    replies=[()=>interpretation("inspect",request)];
+    const {result,runId,approve}=await run(request);
+    expect(result.stopReason,result.text).toBe("context_limit");expect(result.text).toContain("Narrow the task");
+    expect(approve).not.toHaveBeenCalled();expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(2);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions).toEqual([]);
+    expect(getCurrentAgentTask(chatId)?.snapshot.messages[0].content).toBe(request);
+    expect(getCurrentAgentTask(chatId)?.snapshot.requirements[0].description).toBe(request);
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved source\n");
   });
   it("rejects repeated capability activation without executing it and permits the one protocol correction",async()=>{
     const text="Inspect note.txt";

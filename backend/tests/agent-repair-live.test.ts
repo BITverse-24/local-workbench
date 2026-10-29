@@ -28,12 +28,12 @@ function workspaceFiles(root: string, relative = ""): Record<string, string> {
 }
 
 // Input must be a prepared, pristine evaluation copy. Never restore or edit the incident workspace.
-it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses an actual 7B Flow D repair in a fresh workspace", async () => {
+it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses a local model Flow D repair in a fresh workspace", async () => {
   const source = process.env.WORKBENCH_AGENT_REPAIR_WORKSPACE, report = process.env.WORKBENCH_AGENT_REPAIR_REPORT;
   if (!source || !report) throw new Error("Set the prepared workspace and diagnostic report paths.");
   const selectedRuntimeSourceDigests = Object.fromEntries([
     "agent/agent-task-runner.ts","agent/task-interpretation.ts","agent/requirement-scope.ts","agent/context-packet.ts","agent/source-evidence.ts","agent/requirement-review.ts",
-    "agent/test-verification.ts","agent/verification-stage.ts","run/agent-task-store.ts","run/execution-ledger.ts","gateway/model-gateway.ts","harness/policy-guard.ts","harness/tools/run-command.ts","harness/tools/list-dir.ts",
+    "agent/test-verification.ts","agent/verification-stage.ts","agent/workspace-actions.ts","run/agent-task-store.ts","run/execution-ledger.ts","run/result-store.ts","tools/result-retrieval.ts","gateway/model-gateway.ts","harness/policy-guard.ts","harness/tools/edit-file.ts","harness/tools/run-command.ts","harness/tools/list-dir.ts",
   ].map(file=>[file,createHash("sha256").update(readFileSync(path.join(process.cwd(),"backend/src/main",file))).digest("hex")]));
   const temporary = mkdtempSync(path.join(tmpdir(), "agent-repair-live-")), previous = dataRoot();
   const workspace = path.join(temporary, "workspace"); mkdirSync(workspace);
@@ -50,7 +50,8 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses an actual 7B 
   const request = "Inspect the FieldOps work-order web app in this workspace. Reproduce its failing tests, then repair both defects: the status filter must work with search, and invalid saved browser data must not stop the app from loading. Keep the current design and public behavior. Do not add dependencies. Run the full test suite and explain the cause and fix in each module.";
   setDataDir(temporary); initDb(path.join(temporary, "db.sqlite"));
   const endpoint = process.env.WORKBENCH_LMSTUDIO_PROBE_ENDPOINT ?? "http://127.0.0.1:1234";
-  const gateway = new ModelGateway(undefined, [{ id:"live-driver",runtime:"mlx-lm",baseUrl:`${endpoint.replace(/\/$/,"")}/v1`,model:"qwen2.5-coder-7b-instruct-mlx",capabilities:["text"],requestTimeoutMs:60000,healthPath:"/models",enabled:true,contextLength:8192,toolCallingFormat:"json" }]);
+  const providerModel = process.env.WORKBENCH_AGENT_REPAIR_MODEL ?? "qwen2.5-coder-7b-instruct-mlx";
+  const gateway = new ModelGateway(undefined, [{ id:"live-driver",runtime:"mlx-lm",baseUrl:`${endpoint.replace(/\/$/,"")}/v1`,model:providerModel,capabilities:["text"],requestTimeoutMs:60000,healthPath:"/models",enabled:true,contextLength:8192,toolCallingFormat:"json" }]);
   const chatId = createChat(), runId = createRun(chatId, request), messageId = addMessage({chat_id:chatId,role:"user",content:request}).id;
   getDb().prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,'agent','agent-v3',?)").run(runId, workspace);
   const guard = new MutationPolicyGuard(); guard.setProtectedPaths(runId,Object.keys(original).filter(file => !mutable.has(file)));
@@ -80,7 +81,7 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses an actual 7B 
       return {record,content};
     });
     const current = workspaceFiles(workspace), changed = [...new Set([...Object.keys(original),...Object.keys(current)])].filter(file=>original[file]!==current[file]);
-    const proof = {recordedAt:new Date().toISOString(),scope:"Source-runtime diagnostic; not packaged or release certification",diagnosticDeadlineMs,selectedRuntimeSourceDigests,model:"qwen2.5-coder-7b-instruct-mlx",contextLimit:8192,result,original,current,changed,
+    const proof = {recordedAt:new Date().toISOString(),scope:"Source-runtime diagnostic; not packaged or release certification",diagnosticDeadlineMs,selectedRuntimeSourceDigests,model:providerModel,contextLimit:8192,result,original,current,changed,
       protectedFilesUnchanged:changed.every(file=>mutable.has(file)),approvals,preparedRequests,task:getCurrentAgentTask(chatId),ledger:getExecutionLedger(runId),results,
       independentTests:{status:independent.status,signal:independent.signal,stdout:independent.stdout,stderr:independent.stderr,error:independent.error?.message},
       finalSources:Object.fromEntries([...mutable].map(file=>[file,readFileSync(path.join(workspace,file),"utf8")]))};
