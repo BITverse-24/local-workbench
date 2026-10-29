@@ -46,6 +46,8 @@ const executionContextSchema = z.object({
 });
 const pendingAuthorizationSchema = z.object({ callId: z.string(), tool: z.string(), targetPath: z.string().max(1024).optional(), summary: z.string().max(240), createdAt: z.string().datetime() });
 const agentProgressSchema = z.object({
+  /** Review feedback selects work; it never establishes acceptance or grants authority. */
+  remainingRequirementIds: z.array(z.string().min(1).max(128)).default([]),
   deliveryEvidenceDigest: z.string().optional(),
   deliveryAttempts: z.array(z.object({ evidenceDigest: z.string(), answerDigest: z.string() })).max(40).default([]),
   latestResultId: z.string().uuid().optional(), feedback: z.string().max(10000).default(""),

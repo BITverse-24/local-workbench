@@ -13,7 +13,7 @@ import { getAllAvailableTools, filterToolsForTurn } from "../router/tool-composi
 import { agentWorkspaceActions, canonicalSourcePath, validateAgentFileProposal } from "./workspace-actions.js";
 import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 import { resolveSafe } from "../harness/path-guard.js";
-import { buildAgentContextPacket, FINISH_TOOL } from "./context-packet.js";
+import { buildAgentContextPacket, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
 import { agentInterpretationResponseSchema, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
 import { runAgentVerificationStage } from "./verification-stage.js";
 import { isCodeVerificationPath } from "./test-verification.js";
@@ -131,7 +131,7 @@ export class AgentTaskRunner {
         if ((getExecutionLedger(runId)?.agentTask?.modelCalls ?? 0) >= 40) return stop("model_call_limit", "The run used its 40 model calls. Pending requirements remain saved.");
         const progress = getExecutionLedger(runId)?.agentProgress;
         const pending = task.snapshot.requirements.filter(item => item.state === "active");
-        const selected = pending.find(item => !progress?.actions.some(action => action.requirementId === item.id && action.status === "completed")) ?? pending.find(item => item.kind === "change") ?? pending[0];
+        const selected = selectAgentRequirement(task, context);
         const packet = buildAgentContextPacket(task, context, selected);
         // Assess obtained evidence before asking the model to repeat an inspection step.
         // This changes the host phase, not requirement status or registered capabilities.

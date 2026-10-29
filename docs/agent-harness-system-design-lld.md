@@ -118,7 +118,7 @@ ResultStore remains run-scoped. Earlier evidence is accessed through a task-auth
 
 ### One action cycle
 
-1. Select one pending requirement and load relevant evidence references. Global constraints remain visible. Other requirements remain durable with stable IDs.
+1. Select one pending requirement and load relevant evidence references. Global constraints and all active obligations remain visible. Other requirements remain durable with stable IDs. A completed tool call does not establish requirement acceptance. Keep a repair in focus across its reads and edits. Persist unresolved requirement IDs from coverage review as work-selection feedback; they do not grant authority or replace completion checks.
 2. Build the packet and prepare the actual native or JSON request. Count the complete prompt. If it cannot fit, reduce optional observations and page the evidence. Do not remove required constraints or cut an action payload.
 3. Call the model with one action schema. Accept one structured tool call, a typed finish proposal, or an answer-only response. Multiple actions or malformed arguments receive one correction opportunity before Partial.
 4. Validate the requirement ID, tool schema, workspace binding, source receipt, and budget. Apply the existing approval gate to side effects. Tool registration does not grant permission.

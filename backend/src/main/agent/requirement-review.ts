@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { AgentTask } from "../../shared/contracts.js";
 import type { ToolExecutionContext } from "../tools/types.js";
-import { getExecutionLedger } from "../run/execution-ledger.js";
+import { getExecutionLedger, updateAgentProgress } from "../run/execution-ledger.js";
 import { agentEvidenceSlice } from "./context-packet.js";
 import { parseAgentData } from "./task-interpretation.js";
 import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js";
@@ -52,7 +52,10 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
   if (!response.ok || response.value.finishReason === "length") return { ok: false, detail: response.ok ? "Coverage review was truncated." : response.error.message };
   const parsed = z.object({ covered: z.boolean(), missing: z.array(z.string()), requirements: z.array(z.object({ id: z.string(), satisfied: z.boolean(), reason: z.string() }).strict()) }).strict().parse(parseAgentData(response.value.content ?? ""));
   context.resultStore!.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_requirement_review", callId: randomUUID() }, summary: "Separate requirement coverage review; executable proof remains host-owned", payload: parsed, sources: [] });
-  if (new Set(parsed.requirements.map(item => item.id)).size !== required.length || parsed.requirements.length !== required.length || required.some(item => !parsed.requirements.some(review => review.id === item.id && review.satisfied))) return { ok: false, detail: "Requirement review did not establish every active obligation." };
+  if (new Set(parsed.requirements.map(item => item.id)).size !== required.length || parsed.requirements.length !== required.length || required.some(item => !parsed.requirements.some(review => review.id === item.id))) return { ok: false, detail: "Requirement review did not account for every active obligation." };
+  // This is a work agenda only. Host execution, source, and coverage gates still own acceptance.
+  updateAgentProgress(context.runId, progress => { progress.remainingRequirementIds = parsed.requirements.filter(item => !item.satisfied).map(item => item.id); });
+  if (parsed.requirements.some(item => !item.satisfied)) return { ok: false, detail: parsed.requirements.filter(item => !item.satisfied).map(item => `${item.id}: ${item.reason}`).join("; ") };
   if (required.some(item => item.kind === "inspect") && !results.some(item => ["read_file", "extract_document", "retrieve_knowledge"].includes(item.producer.tool))) return { ok: false, detail: "Inspection needs saved source evidence." };
   for (const source of required.some(item => item.kind === "change") ? [] : sourceComparisons) {
     try { if (!source.current || fileDigest(readAgentSourceBytes(context.workspaceRoot, source.path)) !== source.sourceDigest) return { ok: false, detail: `Source evidence is stale for ${source.path}. Read its current bytes before delivery.` }; }

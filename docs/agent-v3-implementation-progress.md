@@ -84,6 +84,12 @@ The command boundary checks that binding after the isolation probe and before ex
 
 The focused check passed 199 tests across five files, with one live inspection skipped. Full type checking passed. Tests include the full workspace-tool path, a workspace change during approval, changed inputs before execution, substituted command/source grants, changed unrelated inputs during execution, and v3 calls with no revision-bound approval. Chat and Work boundary tests passed. General task constraint enforcement and live repair checks remain open.
 
+## Host repair focus
+
+The host no longer moves past a change requirement because one tool call succeeded. An initial inspection can obtain source evidence, then a repair stays in focus across reads and several edits. Every action request lists all active obligations and their acceptance checks. The model can select another active requirement ID. A coverage review can name unresolved requirements; this feedback persists in the run ledger and directs later work. It does not establish acceptance, change requirement state, or grant authority.
+
+The focused check passed 48 tests across four files, with one live inspection skipped. Full type checking and the Electron source build passed. One host test makes two observed edits while testing is unavailable, retains all three obligations, and returns Partial without consuming a test repair cycle. Another test uses a separate coverage review to move from the first repair to the remaining repair. General evidence selection still needs work: the semantic review currently receives only the latest three source/execution slices. These scripted tests do not establish live repair quality.
+
 ## Current proof and limits
 
 The focused offline check passed 237 tests in 12 files; two opt-in live tests were skipped. This includes task storage, gateway admission, revision-bound edits, host-loop control, verification, storage isolation, and Chat/Work boundaries. Full type checking passed. The Electron source build passed. These results do not establish packaged behavior or live repair quality.

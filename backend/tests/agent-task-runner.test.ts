@@ -236,6 +236,57 @@ describe("Agent v3 task host loop", () => {
     expect(getExecutionLedger(runId)?.completedOperations.some(item => item.tool === "edit_file")).toBe(true);
     expect(getCurrentAgentTask(chatId)?.snapshot.requirements).toHaveLength(3);
   });
+  it("retains a repair focus across reads and several edits without consuming its test repair cycles", async () => {
+    const text = "Inspect the sources, repair both notes, and run existing tests.";
+    writeFileSync(path.join(root,"other.txt"),"other source\n");
+    const edit = (filename: string, source: string) => ({ tool_calls: [{ name: "edit_file", arguments: { path: filename,
+      expected_digest: createHash("sha256").update(source).digest("hex"), replacements: [{ old: "source", new: "content" }] } }] });
+    const repairTurn = (answer: unknown) => (payload: any) => {
+      const state = JSON.parse(payload.messages[1].content);
+      expect(state.currentRequirement.kind).toBe("change");
+      expect(state.obligations.map((item: any) => item.kind)).toEqual(["inspect","change","execute"]);
+      expect(state.unresolvedRequirementIds).toHaveLength(3);
+      return answer;
+    };
+    replies = [() => ({ disposition: "continue", requirements: ["inspect","change","execute"].map(kind => ({kind,description:kind,quote:text,checks:[{description:kind,kind:kind === "execute" ? "execution" : "inspection",operation:"semantic",path:null}]})),updates:[],full_suite:false }),
+      () => ({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
+      repairTurn(edit("note.txt","saved source\n")),
+      repairTurn({tool_calls:[{name:"read_file",arguments:{path:"other.txt"}}]}),
+      repairTurn(edit("other.txt","other source\n")),
+      repairTurn({tool_calls:[{name:"finish",arguments:{text:"Both edits are saved. Tests remain unavailable."}}]})];
+    const {result,runId,approve} = await run(text);
+    expect(result.outcome).toBe("partial"); expect(result.stopReason).toBe("checks_unavailable");
+    expect(approve).toHaveBeenCalledTimes(2);
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved content\n");
+    expect(readFileSync(path.join(root,"other.txt"),"utf8")).toBe("other content\n");
+    expect(getExecutionLedger(runId)?.verification?.repairCount).toBe(0);
+    expect(getCurrentAgentTask(chatId)?.snapshot.requirements.every(item => item.state === "active")).toBe(true);
+  });
+  it("uses a separate coverage review to focus an unresolved repair while retaining all obligations", async () => {
+    const text = "Repair note.txt. Repair other.txt.";
+    writeFileSync(path.join(root,"other.txt"),"other source\n");
+    let remainingId: string;
+    const action = (name: string, args: object) => ({tool_calls:[{name,arguments:args}]});
+    const edit = (filename: string, source: string) => action("edit_file",{path:filename,expected_digest:createHash("sha256").update(source).digest("hex"),replacements:[{old:"source",new:"content"}]});
+    const remainingTurn = (answer: unknown) => (payload: any) => {
+      const state = JSON.parse(payload.messages[1].content);
+      expect(state.currentRequirement.id).toBe(remainingId);
+      expect(state.obligations).toHaveLength(2);
+      return answer;
+    };
+    replies = [() => ({disposition:"continue",requirements:["Repair note.txt.","Repair other.txt."].map(quote => ({kind:"change",description:quote,quote,checks:[{description:quote,kind:"review",operation:"semantic",path:null}]})),updates:[],full_suite:false}),
+      () => action("read_file",{path:"note.txt"}), () => edit("note.txt","saved source\n"), () => action("finish",{text:"First repair saved."}),
+      payload => {
+        const state = JSON.parse(payload.messages[1].content); remainingId = state.requirements[1].id;
+        return {covered:false,missing:["Second repair remains."],requirements:state.requirements.map((item: any,index: number)=>({id:item.id,satisfied:index===0,reason:index===0?"First edit is saved.":"Inspect and edit the second file."}))};
+      }, remainingTurn(action("read_file",{path:"other.txt"})), remainingTurn(edit("other.txt","other source\n")), remainingTurn(action("finish",{text:"Both text repairs are saved."})),
+      payload => { const state = JSON.parse(payload.messages[1].content); return {covered:true,missing:[],requirements:state.requirements.map((item: any)=>({id:item.id,satisfied:true,reason:"Observed direct edits are saved."}))}; }];
+    const {result,runId} = await run(text);
+    expect(result.outcome,result.text).toBe("completed");
+    expect(getExecutionLedger(runId)?.agentProgress?.remainingRequirementIds).toEqual([]);
+    expect(getCurrentAgentTask(chatId)?.snapshot.requirements).toHaveLength(2);
+    expect(readFileSync(path.join(root,"other.txt"),"utf8")).toBe("other content\n");
+  });
   it("permits one malformed-action correction and never executes either multi-action response", async () => {
     const text = "Inspect note.txt", calls = { tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }, { name: "write_file", arguments: { path: "other.txt", content: "bad" } }] };
     replies = [() => interpretation("inspect", text), () => calls, () => calls];
