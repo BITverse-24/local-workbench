@@ -200,6 +200,16 @@ Full type checking and the Electron source build passed. The focused six-file ch
 
 The next 7B trial still failed. It used 18 exact usage-verified calls, reached source reads and repeated test commands, then stopped Partial on a repeated read. No files changed. The independent scope assessment accepted mixed repair and explanation obligations under execute requirements. The driver then selected execution and broad source acquisition repeatedly. This trace is saved in `docs/evidence/agent-current-agenda-live-2026-10-30.json`. It predates this completion-review change and never reached completion review. The repair transition and category-dependent mutation guard still need a coherent change; do not treat these review improvements as a live repair fix.
 
+## Concrete operation scope instead of a mutation category gate
+
+The file mutation gate now assesses the exact operation against the bound requirement's quoted user instruction, complete source message, acceptance checks, and active preservation constraints. It does not require an exclusive change label. The source scope audit now compares descriptions and acceptance checks rather than requiring a separate label for each obligation. A model assessment remains an interpretation. It grants no permission and proves no repair.
+
+The existing source-range and digest check runs before assessment and again after its inference await. The normal concrete approval, protected paths, run scopes, lock, backup, and under-lock digest check still own mutation authority. An unavailable or malformed scope assessment stops before approval. Status and evidence sources cannot supply an edit instruction. Cancellation is checked before approval or execution. These short calls share the persisted 40-call run limit.
+
+The final seven-file check passed 244 tests with two opt-in live tests skipped. The file-scope live check was run separately and passed. Full type checking and the Electron source build passed. Offline cases keep an inspection-only request read-only, allow a mixed execute/repair requirement to reach concrete approval, honor a rejected approval, and cancel before mutation. A separate read-only 7B diagnostic accepted the requested repair proposal and rejected the explicitly forbidden edit. Both calls matched exact counts (391 and 379 input tokens); no files changed. See `docs/evidence/agent-file-scope-live-2026-10-30.json`. Its requirements were controlled test inputs. It does not prove extraction, source validation, approvals, or an end-to-end repair.
+
+The host still needs a reliable transition from a failed baseline to a small repair step. The last full trial kept reading and rerunning tests; no successful full live repair is claimed.
+
 ## Current implementation scope
 
 The user has deferred release certification and will test 14B manually. Current work is implementation and harness quality for the 7B–14B range, with local 7B and 9B models available for development checks. The machine has Qwen2.5 Coder 7B and Qwen3.5 9B assets; no 14B model is installed. Do not download weights or treat release trial counts as a current completion requirement. Keep the release controls documented and keep production promotion separate. Packaged-environment implementation checks remain useful because the original failure occurred in a production build.

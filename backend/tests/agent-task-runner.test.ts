@@ -28,9 +28,10 @@ type Reply = (payload: any) => unknown;
 let replies: Reply[];
 let scopeReplies: Reply[];
 let refinementReplies: Reply[];
+let fileScopeReplies: Reply[];
 let runSignal:AbortSignal|undefined;
 let runContextLimit=8192;
-beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); previousRoot = dataRoot(); setDataDir(root); initDb(path.join(root, "db.sqlite")); chatId = createChat(); replies = [];scopeReplies=[];refinementReplies=[];runSignal=undefined;runContextLimit=8192;
+beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); previousRoot = dataRoot(); setDataDir(root); initDb(path.join(root, "db.sqlite")); chatId = createChat(); replies = [];scopeReplies=[];refinementReplies=[];fileScopeReplies=[];runSignal=undefined;runContextLimit=8192;
   writeFileSync(path.join(root, "tokenizer.json"), JSON.stringify({ version: "1.0", added_tokens: [], normalizer: null, decoder: null, post_processor: null, pre_tokenizer: { type: "WhitespaceSplit" }, model: { type: "WordPiece", unk_token: "UNK", vocab: { UNK: 0, user: 1, EOS: 2, assistant: 3, Setup: 4 }, continuing_subword_prefix: "##", max_input_chars_per_word: 200000 } }));
   writeFileSync(path.join(root, "tokenizer_config.json"), JSON.stringify({ chat_template: template })); writeFileSync(path.join(root, "note.txt"), "saved source\n");
   vi.spyOn(server, "countLMStudioPreparedRequest").mockImplementation(async options => { const local = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload: options.payload }); return { inputTokens: local.inputTokens, renderedDigest: local.renderedDigest, instanceReference: "loaded", modelPath: "local", contextLimit: runContextLimit, counterIdentity: "lmstudio-sdk-1.5.0" }; });
@@ -47,7 +48,8 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
     const payload = JSON.parse(init.body!), title = String(payload.messages?.[0]?.content).includes("short chat topic title");
     const scopeReview = String(payload.messages?.[0]?.content).startsWith("Audit proposed requirement coverage");
     const refinement = String(payload.messages?.[0]?.content).startsWith("Extract every requested obligation");
-    const answer = refinement ? refinementReplies.shift() : title ? () => "Inspect saved source" : scopeReview ? scopeReplies.shift() ?? (()=>({covered:true,missing:[],full_suite:false})) : replies.shift();
+    const fileScope = String(payload.messages?.[0]?.content).startsWith("Assess whether this exact file operation");
+    const answer = fileScope ? fileScopeReplies.shift() ?? (()=>({withinScope:true,reason:"The quoted user request includes this file change."})) : refinement ? refinementReplies.shift() : title ? () => "Inspect saved source" : scopeReview ? scopeReplies.shift() ?? (()=>({covered:true,missing:[],full_suite:false})) : replies.shift();
     if (!answer) throw new Error("Unexpected model generation");
     const input = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload });
     const content = answer(payload);
@@ -106,7 +108,7 @@ describe("Agent v3 task host loop", () => {
     expect(getCurrentAgentTask(chatId)?.snapshot.requirements.map(item=>item.kind)).toEqual(["execute","inspect","change","execute","deliver"]);
     expect(getExecutionLedger(runId)?.agentProgress).toMatchObject({scopeCorrectionUsed:true,fullSuite:true});
     expect(getExecutionLedger(runId)?.agentTask?.protocolCorrections).toBe(0);
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(7);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(8);
   });
   it("keeps the full request pending when independent scope assessment still rejects its one revision",async()=>{
     const request="Inspect and repair note.txt, then run all tests.";
@@ -163,7 +165,7 @@ describe("Agent v3 task host loop", () => {
     expect(requirements.map(item=>item.kind)).toEqual(["change","deliver"]);
     expect(requirements[0].source.quote).toBe(request);
     expect(requirements[1].source.quote).toBe(" Explain the change.");
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(13);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(14);
   });
   it("shares the 40-call limit with source scope review and leaves the full request pending",async()=>{
     const request=Array.from({length:45},(_,index)=>`Inspect source ${index}.`).join(" ");
@@ -438,11 +440,43 @@ describe("Agent v3 task host loop", () => {
     expect(getCurrentAgentTask(chatId)!.snapshot.requirements).toEqual(original);
     expect(getCurrentAgentTask(chatId)!.status).toBe("partial");
   });
-  it("keeps inspection read-only even when the model proposes an edit", async () => {
-    const text = "Inspect note.txt";
-    replies = [() => interpretation("inspect", text), () => ({ tool_calls: [{ name: "edit_file", arguments: { path: "note.txt", expected_digest: "0".repeat(64), replacements: [{ old: "source", new: "broken" }] } }] })];
+  it("keeps inspection read-only even when a valid observed edit is proposed", async () => {
+    const text = "Inspect note.txt and reproduce the failure without edits";
+    fileScopeReplies=[payload=>{const input=JSON.parse(payload.messages[1].content);expect(input.userInstruction.quote).toBe(text);return {withinScope:false,reason:"The user requested inspection only."};}];
+    replies = [() => interpretation("execute", text), () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }),()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"broken"}]}}]})];
     const { result, approve } = await run(text);
-    expect(result.stopReason).toBe("read_only_task"); expect(approve).not.toHaveBeenCalled();
+    expect(result.outcome).toBe("partial");expect(result.stopReason).toBe("action_outside_task");expect(approve).not.toHaveBeenCalled();
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved source\n");
+  });
+  it.each([true,false])("assesses a mixed execute repair against its source and requires concrete approval=%s",async approved=>{
+    const request="Reproduce the failure, then repair note.txt by replacing source with content.";
+    fileScopeReplies=[payload=>{
+      const input=JSON.parse(payload.messages[1].content);
+      expect(input.userInstruction.quote).toBe(request);expect(input.operation.name).toBe("edit_file");
+      expect(input.operation.arguments.replacements).toEqual([{old:"source",new:"content"}]);
+      return {withinScope:true,reason:"The quoted instruction requests the concrete repair."};
+    }];
+    replies=[()=>interpretation("execute",request),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),()=>({tool_calls:[{name:"finish",arguments:{text:"The repair is saved; tests are unavailable."}}]})];
+    const {result,runId,approve}=await run(request,false,async()=>approved);
+    expect(approve).toHaveBeenCalledTimes(1);expect(getCurrentAgentTask(chatId)?.snapshot.requirements.map(item=>item.kind)).toEqual(["execute"]);
+    expect(result.stopReason,result.text).toBe(approved ? "checks_unavailable" : "approval_denied");
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe(approved ? "saved content\n" : "saved source\n");
+    const records=new RunResultStore(runId).listResults({limit:50});
+    expect(records.find(record=>record.producer.tool === "agent_file_scope_review")?.origin).toBe("model_derived");
+    expect(records.some(record=>record.producer.tool === "edit_file")).toBe(approved);
+  });
+  it("honors cancellation during scope assessment before approval or mutation",async()=>{
+    const controller=new AbortController();runSignal=controller.signal;
+    fileScopeReplies=[()=>{controller.abort();return {withinScope:true,reason:"The requested edit is related."};}];
+    replies=[()=>interpretation("change","Repair note.txt"),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]})];
+    const {result,approve}=await run("Repair note.txt");expect(result.outcome).toBe("cancelled");expect(approve).not.toHaveBeenCalled();
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved source\n");
+  });
+  it("blocks a malformed file scope assessment before requesting approval",async()=>{
+    fileScopeReplies=[()=>"invalid scope response"];
+    replies=[()=>interpretation("change","Repair note.txt"),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]})];
+    const {result,approve}=await run("Repair note.txt");expect(result.stopReason).toBe("action_scope_unverified");expect(approve).not.toHaveBeenCalled();
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved source\n");
   });
   it("binds command approval to the shown source and stops when it changes during approval", async () => {
     const text = "Inspect note.txt with a command";
@@ -507,7 +541,7 @@ describe("Agent v3 task host loop", () => {
     expect(result.stopReason,result.text).toBe("checks_unavailable");expect(approve).toHaveBeenCalledTimes(1);
     expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved content\n");
     expect(getExecutionLedger(runId)?.verification?.repairCount).toBe(0);
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(6);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(7);
   });
   it("provides complete structured directory observations without nested JSON text", async () => {
     const text = "Inspect note.txt";
@@ -603,7 +637,7 @@ describe("Agent v3 task host loop", () => {
     expect(dispatched[0].obligations).toEqual(rejected[0].obligations);
     expect(dispatched[0].originalRequest).toEqual(rejected[0].originalRequest);
     expect(dispatched[0].selectedSources).toMatchObject({pages:[],complete:false,totalEligiblePages:1});
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(8);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(9);
     // The omitted old page was supplied on its own earlier request, never forged by packing.
     expect(getExecutionLedger(runId)?.agentProgress?.reads.filter(read=>read.path === "note.txt")).toHaveLength(1);
   });
@@ -634,7 +668,7 @@ describe("Agent v3 task host loop", () => {
     },()=>({tool_calls:[{name:"finish",arguments:{text:"The exact tail replacement is saved."}}]}),payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The observed tail anchor was replaced."}))};}];
     const {result,runId,approve}=await run("Repair the tail anchor in large.txt");
     expect(result.outcome,result.text).toBe("completed");expect(rejected).toBe(9);expect(approve).toHaveBeenCalledTimes(1);
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(9);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(10);
     expect(getExecutionLedger(runId)?.agentProgress?.reads.map(read=>[read.startByte,read.endByte])).toEqual([[0,2000],[0,2000],[2000,4000]]);
     expect(readFileSync(path.join(root,"large.txt"),"utf8")).toBe(source.replace("TAIL_ANCHOR","REPAIRED"));
   });
@@ -791,7 +825,7 @@ describe("Agent v3 task host loop", () => {
       return {covered:true,missing:[],requirements:[{id:input.requirements[0].id,satisfied:true,reason:"Observed edit saved."}]};
     }];
     const {result,runId}=await run("Repair large.txt");expect(result.outcome,result.text).toBe("completed");expect(rejections).toBe(2);
-    const ledger=getExecutionLedger(runId)!;expect(ledger.agentTask?.modelCalls).toBe(7);expect(ledger.agentAdmissions).toHaveLength(7);
+    const ledger=getExecutionLedger(runId)!;expect(ledger.agentTask?.modelCalls).toBe(8);expect(ledger.agentAdmissions).toHaveLength(8);
   });
   it("permits one malformed-action correction and never executes either multi-action response", async () => {
     const text = "Inspect note.txt", calls = { tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }, { name: "write_file", arguments: { path: "other.txt", content: "bad" } }] };

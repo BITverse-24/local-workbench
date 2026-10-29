@@ -15,7 +15,7 @@ import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js"
 import { resolveSafe } from "../harness/path-guard.js";
 import { buildAgentContextPacket, conciseAgentTool, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
 import { obtainAgentFailureSources } from "./source-evidence.js";
-import { refineAgentInterpretation, reviewAgentInterpretation } from "./requirement-scope.js";
+import { assessAgentFileScope, refineAgentInterpretation, reviewAgentInterpretation } from "./requirement-scope.js";
 import { agentInterpretationFormat, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
 import { runAgentVerificationStage } from "./verification-stage.js";
 import { isCodeVerificationPath } from "./test-verification.js";
@@ -256,10 +256,17 @@ export class AgentTaskRunner {
           const completed = stop("requirements_satisfied", "", "completed");
           return { ...completed, text: `${String(call.arguments.text)}\n\n${completed.text}` };
         }
-        if (fileMutations.has(call.name) && !pending.some(item => item.kind === "change")) return stop("read_only_task", "This task has no user requirement for file changes. No file was changed.");
         if (fileMutations.has(call.name)) {
           try { validateAgentFileProposal(call.name, call.arguments, context); }
           catch (error) { updateAgentProgress(runId, state => { state.actions.find(item => item.id === call.id)!.status = "failed"; state.feedback = String(error).slice(0, 1000); }); continue; }
+          const assessed = await assessAgentFileScope(task,context.agentRequirementId!,call,context,modelId);
+          if (!assessed.verified || !assessed.withinScope) {
+            updateAgentProgress(runId,state=>{state.actions.find(item=>item.id === call.id)!.status="failed";});
+            return assessed.verified ? stop("action_outside_task",assessed.reason) : generationFailure("action_scope_unverified",assessed.reason);
+          }
+          // Scope assessment can await inference. Recheck before showing a concrete preview.
+          try { validateAgentFileProposal(call.name,call.arguments,context); }
+          catch (error) { updateAgentProgress(runId,state=>{state.actions.find(item=>item.id === call.id)!.status="failed";state.feedback=String(error).slice(0,1000);});continue; }
         }
         if (mutations.has(call.name) && !await authorize([call])) return stop("approval_denied", "The proposed action was declined.", "cancelled");
         const [output] = await dispatcher.dispatchConcurrent([call], context);
