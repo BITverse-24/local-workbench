@@ -3,7 +3,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { runCommand } from '../src/main/harness/tools/run-command.js';
+import { captureCommandWorkspaceDigest, commandApprovalDigest, runCommand } from '../src/main/harness/tools/run-command.js';
+import { runCommandTool } from '../src/main/tools/workspace-tools.js';
 import { MutationPolicyGuard } from '../src/main/harness/policy-guard.js';
 import { withRuntimeScope } from '../src/main/run/runtime-scope.js';
 import { executeProcess } from '../src/main/tools/child-process.js';
@@ -29,6 +30,52 @@ describe('Command publication and approval scopes', () => {
     });
   });
   afterEach(() => rmSync(root, {recursive:true,force:true}));
+  function boundApproval(command = 'fixture command') {
+    const approval = { workspaceDigest: captureCommandWorkspaceDigest(work) };
+    const guard = new MutationPolicyGuard({strict:true});
+    guard.setEnforceExplicit('run',true);
+    guard.grantScope({runId:'run',operation:'run_command',command,operationDigest:commandApprovalDigest(command,approval)});
+    return { guard, runId:'run', approval };
+  }
+  it('passes the revision-bound approval through the workspace tool and preserves backups', async () => {
+    const policy = boundApproval();
+    apply = cwd => writeFileSync(path.join(cwd,'target.txt'),'NEW');
+    const result = await runCommandTool.execute({command:'fixture command'}, {runId:'run',workspaceRoot:work,gateway:{} as any,policyGuard:policy.guard,agentCommandApproval:policy.approval});
+    expect(result.sideEffects).toContain('written:target.txt');
+    expect(readFileSync(path.join(work,'target.txt'),'utf8')).toBe('NEW');
+    expect(readdirSync(path.join(work,'.harness_backups'))).toHaveLength(1);
+  });
+  it('rejects changed inputs before executing the approved command', async () => {
+    const policy = boundApproval();
+    writeFileSync(path.join(work,'new-input.txt'),'LATER');
+    await expect(runCommand(work,'fixture command',5000,policy)).rejects.toThrow(/approval is stale/);
+    expect(vi.mocked(executeProcess).mock.calls.every(call => call[1].at(-1)==='printf WORKBENCH_ISOLATED')).toBe(true);
+    expect(existsSync(path.join(work,'.harness_backups'))).toBe(false);
+  });
+  it.each(['modify', 'create', 'delete'])('rejects publication if an unchanged command input changes externally: %s', async operation => {
+    const other = path.join(work,'other.txt'); writeFileSync(other,'OTHER');
+    const policy = boundApproval();
+    apply = cwd => {
+      writeFileSync(path.join(cwd,'target.txt'),'NEW');
+      if (operation === 'modify') writeFileSync(other,'EXTERNAL');
+      if (operation === 'create') writeFileSync(path.join(work,'added.txt'),'EXTERNAL');
+      if (operation === 'delete') rmSync(other);
+    };
+    await expect(runCommand(work,'fixture command',5000,policy)).rejects.toThrow(/Workspace changed/);
+    expect(readFileSync(path.join(work,'target.txt'),'utf8')).toBe('ORIGINAL');
+    expect(existsSync(path.join(work,'.harness_backups'))).toBe(false);
+  });
+  it('rejects a substituted command or source binding despite a valid command grant', async () => {
+    const policy = boundApproval();
+    await expect(runCommand(work,'other command',5000,policy)).rejects.toThrow(/revoked/);
+    await expect(runCommand(work,'fixture command',5000,{...policy,approval:{workspaceDigest:'0'.repeat(64)}})).rejects.toThrow(/revoked/);
+    expect(vi.mocked(executeProcess).mock.calls.every(call => call[1].at(-1)==='printf WORKBENCH_ISOLATED')).toBe(true);
+  });
+  it('requires revision-bound authority at the v3 command boundary', async () => {
+    const guard = new MutationPolicyGuard({strict:true}); guard.grantScope({runId:'run',operation:'run_command',command:'fixture command'});
+    await expect(withRuntimeScope({runId:randomUUID(),mode:'agent',agentPhase:'actions',signal:new AbortController().signal},()=>runCommand(work,'fixture command',5000,{guard,runId:'run'}))).rejects.toThrow(/revision-bound approval/);
+    expect(executeProcess).not.toHaveBeenCalled();
+  });
   it('publishes authorized content edits through backups', async () => {
     const guard = new MutationPolicyGuard({strict:true});
     guard.grantScope({runId:'run',operation:'run_command',command:'fixture command'});

@@ -76,6 +76,14 @@ The live reviewer diagnostic now accepts byte-identical and quoted content and r
 
 The final focused run passed 277 tests across 15 files; three opt-in live checks were skipped in that offline run. Type checking and the Electron source build passed. The live scope/reviewer and full-loop runs were separate opt-in checks. Packaged execution and the required repair trials remain open.
 
+## Command source authority
+
+V3 command approval now binds the exact executable command to the complete command snapshot. The snapshot identity includes the workspace root, file bytes, file modes, directory names, and input link targets. The approval preview shows its source revision and active preservation requirements. The approved operation and digest are saved before execution. Python check arguments are normalized before approval, so the preview contains the command that will run.
+
+The command boundary checks that binding after the isolation probe and before executing user code. It checks the complete input snapshot again before publishing successful command changes. A change to another input, a new input, or a removed input invalidates publication. Existing backup, protected-path, cancellation, fallback disclosure, and exact command checks remain. The legacy command path remains compatible. Approval for execution without OS isolation still permits user-level access; snapshot checks do not add OS isolation.
+
+The focused check passed 199 tests across five files, with one live inspection skipped. Full type checking passed. Tests include the full workspace-tool path, a workspace change during approval, changed inputs before execution, substituted command/source grants, changed unrelated inputs during execution, and v3 calls with no revision-bound approval. Chat and Work boundary tests passed. General task constraint enforcement and live repair checks remain open.
+
 ## Current proof and limits
 
 The focused offline check passed 237 tests in 12 files; two opt-in live tests were skipped. This includes task storage, gateway admission, revision-bound edits, host-loop control, verification, storage isolation, and Chat/Work boundaries. Full type checking passed. The Electron source build passed. These results do not establish packaged behavior or live repair quality.

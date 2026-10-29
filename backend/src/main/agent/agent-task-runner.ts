@@ -19,7 +19,8 @@ import { runAgentVerificationStage } from "./verification-stage.js";
 import { isCodeVerificationPath } from "./test-verification.js";
 import { extractVerificationSkipBasis, recordVerificationTermination, recordVerificationUserSkip } from "../run/verification-controller.js";
 import { reviewAgentTaskCoverage } from "./requirement-review.js";
-import { COMMAND_FALLBACK_DISCLOSURE } from "../harness/tools/run-command.js";
+import { captureCommandWorkspaceDigest, commandApprovalDigest, COMMAND_FALLBACK_DISCLOSURE } from "../harness/tools/run-command.js";
+import { normalizeRunCommandArgs } from "../tools/workspace-tools.js";
 
 type RunnerInput = { context: ToolExecutionContext; modelId: string; chatId: string; messageId: string; workspace: AgentTask["workspace"]; intent?: "continue" | "new"; predecessorRunId?: string;
   state: (state: "classifying" | "planning" | "acting") => void; approve: (preview: string) => Promise<boolean> };
@@ -93,18 +94,25 @@ export class AgentTaskRunner {
       for (const capability of ["source_access", "workspace_mutation", "system_execution", "result_retrieval"] as const) context.activeCapabilities.add(capability);
       context.policyGuard.setEnforceExplicit(runId, true);
       const granted: string[] = [];
-      const clearApprovals = () => { context.policyGuard!.revokeScopes(granted.splice(0)); context.agentOperationDigest = undefined; };
+      const clearApprovals = () => { context.policyGuard!.revokeScopes(granted.splice(0)); context.agentOperationDigest = undefined; context.agentCommandApproval = undefined; };
       const authorize = async (calls: AgentToolCall[]) => {
         for (const call of calls) {
           assertRuntimeActive();
-          const preview = JSON.stringify({ taskId: bound!.taskId, taskRevision: bound!.taskRevision, requirementId: context.agentRequirementId, operation: call.name, arguments: call.arguments }, null, 2) + (call.name === "run_command" ? `\n\n${COMMAND_FALLBACK_DISCLOSURE}` : "");
+          const commandApproval = call.name === "run_command" ? { workspaceDigest: captureCommandWorkspaceDigest(context.workspaceRoot) } : undefined;
+          const previewData = { taskId: bound!.taskId, taskRevision: bound!.taskRevision, requirementId: context.agentRequirementId,
+            constraints: task.snapshot.requirements.filter(item => item.state === "active" && item.kind === "preserve"),
+            operation: call.name, arguments: call.arguments, ...(commandApproval ? { sourceRevision: commandApproval.workspaceDigest } : {}) };
+          const preview = JSON.stringify(previewData, null, 2) + (call.name === "run_command" ? `\n\n${COMMAND_FALLBACK_DISCLOSURE}` : "");
           const before = fileMutations.has(call.name) ? this.sourceVersion(context, call.arguments) : undefined;
           if (!await input.approve(preview)) return false;
           assertRuntimeActive();
           if (before !== undefined && before !== this.sourceVersion(context, call.arguments)) throw new Error("The proposed source changed while approval was pending. Read it again and request a new approval.");
-          context.agentOperationDigest = hash([call.name, call.arguments]);
+          if (commandApproval && commandApproval.workspaceDigest !== captureCommandWorkspaceDigest(context.workspaceRoot)) throw new Error("The command workspace changed while approval was pending. Propose it again for the current source.");
+          context.agentCommandApproval = commandApproval;
+          context.agentOperationDigest = commandApproval ? commandApprovalDigest(String(call.arguments.command), commandApproval) : hash([call.name, call.arguments]);
+          context.resultStore!.registerResult({ type: "structured", status: "complete", origin: "execution", producer: { tool: "agent_operation_approval", callId: call.id }, summary: "Approved concrete operation and source revision", payload: { ...previewData, operationDigest: context.agentOperationDigest }, sources: [] });
           const grantedScope = context.policyGuard!.grantScope({ runId, operation: call.name as "write_file", targetPath: typeof call.arguments.path === "string" ? canonicalSourcePath(context, call.arguments.path) : undefined,
-            command: typeof call.arguments.command === "string" ? call.arguments.command : undefined, operationDigest: fileMutations.has(call.name) ? context.agentOperationDigest : undefined, allowUnisolated: call.name === "run_command" });
+            command: typeof call.arguments.command === "string" ? call.arguments.command : undefined, operationDigest: fileMutations.has(call.name) || commandApproval ? context.agentOperationDigest : undefined, allowUnisolated: call.name === "run_command" });
           granted.push(grantedScope.id);
         }
         return true;
@@ -166,6 +174,11 @@ export class AgentTaskRunner {
           const schema = JSON.parse(JSON.stringify(call.name === "finish" ? FINISH_TOOL.function.parameters : dispatcher.getTool(call.name)!.definition.function.parameters));
           const validation = new Validator().validate(args, schema);
           if (!validation.valid || "raw" in args) throw new Error(validation.errors.map(item => item.stack).join("; ") || "Malformed action arguments.");
+          // Approve the complete executable command, including host-built Python checks.
+          if (call.name === "run_command") {
+            call.arguments = normalizeRunCommandArgs(args);
+            if ("raw" in call.arguments) throw new Error("The command check arguments could not be normalized.");
+          }
         } catch (error) {
           context.resultStore.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_rejected_response", callId: randomUUID() }, summary: "Rejected action format; no operation executed", payload: { response: response.value.content ?? "", toolCalls: response.value.tool_calls ?? [], reason: String(error) }, sources: [] });
           if (!takeAgentProtocolCorrection(runId)) return stop("malformed_action", String(error));

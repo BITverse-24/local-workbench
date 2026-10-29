@@ -33,7 +33,7 @@ beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); pre
 });
 afterEach(() => { vi.restoreAllMocks(); closeDb(); setDataDir(previousRoot); rmSync(root, { recursive: true, force: true }); });
 function interpretation(kind: string, text: string) { return { disposition: "continue", requirements: [{ kind, description: text, quote: text, checks: [{ description: text, kind: "inspection", operation: "semantic", path: null }] }], updates: [], full_suite: false }; }
-async function run(text: string, managerPath = false) {
+async function run(text: string, managerPath = false, onApprove: (preview: string) => Promise<boolean> = async () => true) {
   let runId = managerPath ? "" : createRun(chatId, text);
   const messageId = addMessage({ chat_id: chatId, role: "user", content: text }).id;
   if (!managerPath) getDb().prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,'agent','agent-v3',?)").run(runId, root);
@@ -48,7 +48,7 @@ async function run(text: string, managerPath = false) {
     return { status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: typeof content === "string" ? content : JSON.stringify(content) }, finish_reason: "stop" }], usage: { prompt_tokens: input.inputTokens, completion_tokens: 30 } }) };
   } }, [{ id: "driver", runtime: "mlx-lm", baseUrl: "http://127.0.0.1:1234/v1", model: "driver", capabilities: ["text"], toolCallingFormat: "json", requestTimeoutMs: 1000, healthPath: "/models", enabled: true, contextLength: 8192 }]);
   vi.spyOn(gateway, "prepareAgentCountingProfiles").mockResolvedValue([{ assetsDir: root, activeTemplate: template, verification }]);
-  const approve = vi.fn(async () => true), emit = vi.fn();
+  const approve = vi.fn(onApprove), emit = vi.fn();
   if (managerPath) {
     const manager = new RunManager(gateway, emit, undefined, { agentV3Preview: true });
     const harness = new HarnessManager(); harness.registerWorkspace(root); manager.setHarness(harness);
@@ -186,6 +186,19 @@ describe("Agent v3 task host loop", () => {
     replies = [() => interpretation("inspect", text), () => ({ tool_calls: [{ name: "edit_file", arguments: { path: "note.txt", expected_digest: "0".repeat(64), replacements: [{ old: "source", new: "broken" }] } }] })];
     const { result, approve } = await run(text);
     expect(result.stopReason).toBe("read_only_task"); expect(approve).not.toHaveBeenCalled();
+  });
+  it("binds command approval to the shown source and stops when it changes during approval", async () => {
+    const text = "Inspect note.txt with a command";
+    replies = [() => interpretation("inspect", text), () => ({ tool_calls: [{ name: "run_command", arguments: { command: "cat note.txt" } }] })];
+    const { result, runId, approve } = await run(text, false, async preview => {
+      expect(JSON.parse(preview.split("\n\n")[0])).toMatchObject({ operation: "run_command", sourceRevision: expect.stringMatching(/^[a-f0-9]{64}$/) });
+      writeFileSync(path.join(root,"note.txt"),"EXTERNAL");
+      return true;
+    });
+    expect(result.outcome).toBe("partial"); expect(result.text).toContain("changed while approval was pending");
+    expect(approve).toHaveBeenCalledTimes(1);
+    expect(getExecutionLedger(runId)?.operationAttempts).toHaveLength(0);
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("EXTERNAL");
   });
   it("corrects literal delivery from saved evidence without another read and audits scope separately", async () => {
     const text = "Read note.txt and report its exact content.";

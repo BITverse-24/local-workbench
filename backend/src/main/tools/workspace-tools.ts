@@ -10,7 +10,7 @@ import { search } from "../harness/tools/search.js";
 import { writeFile } from "../harness/tools/write-file.js";
 import { deleteFile } from "../harness/tools/delete-file.js";
 import { getPythonExecutable } from "./python-runtime.js";
-import { runCommand } from "../harness/tools/run-command.js";
+import { runCommand, commandApprovalDigest } from "../harness/tools/run-command.js";
 import { PermissionError, resolveSafe } from "../harness/path-guard.js";
 import { resolveRunPath } from "../run/filesystem.js";
 import { isTextExtractableDocument, readDocumentContent } from "./document-reader.js";
@@ -617,7 +617,8 @@ export const runCommandTool: AgentTool = {
     }
 
     if (context.policyGuard && context.policyGuard.isEnforcingExplicit(context.runId)) {
-      const isAuth = context.policyGuard.isAuthorized(context.runId, "run_command", { command });
+      const isAuth = context.policyGuard.isAuthorized(context.runId, "run_command", { command,
+        ...(context.agentCommandApproval ? { operation_digest: commandApprovalDigest(command, context.agentCommandApproval) } : {}) });
       if (!isAuth) {
         throw new PermissionError(`Operation not authorized: run_command ${command}`);
       }
@@ -625,7 +626,7 @@ export const runCommandTool: AgentTool = {
 
     const res = context.policyGuard
       ? await context.policyGuard.withMutationLock("workspace:run_command", () =>
-          runCommand(context.workspaceRoot, command, 60000, context.policyGuard ? { guard: context.policyGuard, runId: context.runId, assertAuthority: context.assertAuthority } : undefined, context.agentVerification),
+          runCommand(context.workspaceRoot, command, 60000, { guard: context.policyGuard!, runId: context.runId, assertAuthority: context.assertAuthority, approval: context.agentCommandApproval }, context.agentVerification),
         )
       : await runCommand(context.workspaceRoot, command, 60000, context.policyGuard ? { guard: context.policyGuard, runId: context.runId, assertAuthority: context.assertAuthority } : undefined, context.agentVerification);
 

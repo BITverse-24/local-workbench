@@ -3,7 +3,7 @@ import { findBubblewrap } from "../../tools/python-runtime.js";
 import { MACOS_TOOL_SELECTORS, macosReadRules } from "../../tools/macos-sandbox.js";
 import { executeProcess } from "../../tools/child-process.js";
 import { assertRuntimeActive, currentRuntimeScope } from "../../run/runtime-scope.js";
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, lstatSync, readFileSync, writeFileSync, rmSync, realpathSync, chmodSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, lstatSync, readFileSync, readlinkSync, writeFileSync, rmSync, realpathSync, chmodSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -60,11 +60,30 @@ export function validateCommandSafety(command: string): void {
 const MAX_FILES = 10000;
 const MAX_BYTES = 128 * 1024 * 1024;
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
-type Snapshot = Map<string, { bytes: Buffer; mode: number; hash: string }> & { directories: Set<string> };
+type Snapshot = Map<string, { bytes: Buffer; mode: number; hash: string; linkTarget?: string }> & { directories: Set<string> };
+
+/** Host-only approval identity. Never accepted from model tool arguments. */
+export interface CommandApproval { workspaceDigest: string }
+
+function snapshotDigest(root: string, files: Snapshot): string {
+  return createHash("sha256").update(JSON.stringify({ root,
+    directories: [...files.directories].sort(),
+    files: [...files].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([name, file]) => [name, file.hash, file.mode, file.linkTarget ?? null]),
+  })).digest("hex");
+}
+
+export function captureCommandWorkspaceDigest(workspaceRoot: string): string {
+  const root = resolveSafe(workspaceRoot, ".");
+  return snapshotDigest(root, snapshot(root, false));
+}
+
+export function commandApprovalDigest(command: string, approval: CommandApproval): string {
+  return createHash("sha256").update(JSON.stringify(["run_command", command, approval.workspaceDigest])).digest("hex");
+}
 
 /** Never follow links while taking a snapshot or publishing subprocess output. */
 function snapshot(root: string, rejectLinks: boolean): Snapshot {
-  const files = Object.assign(new Map<string, { bytes: Buffer; mode: number; hash: string }>(), { directories: new Set<string>() });
+  const files: Snapshot = Object.assign(new Map(), { directories: new Set<string>() });
   let total = 0;
   const visit = (relative: string) => {
     assertRuntimeActive();
@@ -81,7 +100,7 @@ function snapshot(root: string, rejectLinks: boolean): Snapshot {
         total += lstatSync(resolved).size;
         if (total > MAX_BYTES) throw new PermissionError("Command snapshot exceeds 128 MiB.");
         const bytes = readFileSync(resolved);
-        files.set(name, { bytes, mode: 0o600, hash: digest(bytes) });
+        files.set(name, { bytes, mode: 0o600, hash: digest(bytes), linkTarget: readlinkSync(file) });
       } else if (stat.isDirectory()) { files.directories.add(name); visit(name); }
       else if (stat.isFile()) {
         total += stat.size;
@@ -196,12 +215,14 @@ export async function getCommandCapability(): Promise<ExecutionCapability> {
  * guarded writers with backups. Failed/cancelled commands publish no changes.
  */
 export async function runCommand(workspaceRoot: string, command: string, timeoutMs = 60000,
-  policy?: { guard: MutationPolicyGuard; runId?: string; assertAuthority?: () => void }, verification?: AgentTestExecutionRequest): Promise<CommandResult> {
+  policy?: { guard: MutationPolicyGuard; runId?: string; assertAuthority?: () => void; approval?: CommandApproval }, verification?: AgentTestExecutionRequest): Promise<CommandResult> {
   assertRuntimeActive();
   if (currentRuntimeScope() && currentRuntimeScope()!.mode !== "agent") throw new PermissionError("Only Agent may execute workspace commands.");
   policy?.assertAuthority?.();
   const root = resolveSafe(workspaceRoot, ".");
   validateCommandSafety(command);
+  if (currentRuntimeScope()?.agentPhase === "actions" && !policy?.approval) throw new PermissionError("Agent v3 command execution requires a revision-bound approval.");
+  const authorization = { command, ...(policy?.approval ? { operation_digest: commandApprovalDigest(command, policy.approval) } : {}) };
   if (verification && verification.command !== command) throw new PermissionError("The verification command does not match its approved test plan.");
   const started = Date.now();
   const temporary = realpathSync(mkdtempSync(path.join(tmpdir(), "workbench-command-")));
@@ -220,8 +241,9 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
     }
     assertRuntimeActive();
     policy?.assertAuthority?.();
-    if (policy && !policy.guard.isAuthorized(policy.runId, "run_command", { command })) throw new PermissionError("Command approval was revoked before execution.");
+    if (policy && !policy.guard.isAuthorized(policy.runId, "run_command", authorization)) throw new PermissionError("Command approval was revoked before execution.");
     const before = snapshot(root, false);
+    if (policy?.approval && snapshotDigest(root, before) !== policy.approval.workspaceDigest) throw new PermissionError("Command approval is stale: workspace inputs changed before execution. No command was executed.");
     const beforeFiles = Object.fromEntries([...before].map(([name, file]) => [name.split(path.sep).join("/"), file.hash]));
     if (verification && agentManifestDigest(beforeFiles) !== verification.workspaceManifestSha256) throw new PermissionError("Test plan is stale: workspace inputs changed before execution.");
     for (const directory of before.directories) mkdirSync(path.join(work, directory), { recursive: true });
@@ -245,7 +267,7 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
     const result: CommandResult = { stdout: stdout.slice(0,8000), stderr: stderr.slice(0,8000), exitCode, timedOut, durationMs: Date.now()-started, changes: [], backupPaths: [], isolationStatus: selected.status, isolationMessage: selected.message };
     if (verification) {
       policy?.assertAuthority?.();
-      if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", { command }) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before verification completed.");
+      if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", authorization) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before verification completed.");
       const evidence: AgentTestExecutionEvidence = { planId: verification.planId, command, runner: verification.runner, phase: verification.phase,
         manifestSha256: verification.workspaceManifestSha256, sourceManifest: beforeFiles, exitCode, timedOut, executed: 0, failed: 0, skipped: 0,
         testFiles: [], isolationStatus: selected.status,
@@ -288,7 +310,8 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
         }
       } catch (error) { evidence.reason = "test_snapshot_invalid"; evidence.detail = String(error); }
       try {
-        if (captureAgentVerificationManifest(root).sha256 !== verification.workspaceManifestSha256) { evidence.reason = "stale_test_evidence"; evidence.detail = "Workspace inputs changed during test execution."; }
+        if (captureAgentVerificationManifest(root).sha256 !== verification.workspaceManifestSha256 ||
+          (policy?.approval && captureCommandWorkspaceDigest(root) !== policy.approval.workspaceDigest)) { evidence.reason = "stale_test_evidence"; evidence.detail = "Workspace inputs changed during test execution."; }
       } catch (error) { evidence.reason = "stale_test_evidence"; evidence.detail = String(error); }
       result.durationMs = Date.now() - started;
       return result;
@@ -304,7 +327,8 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
     const changes = [...new Set([...before.keys(), ...after.keys()])].filter(name => before.get(name)?.hash !== after.get(name)?.hash || before.get(name)?.mode !== after.get(name)?.mode);
     // Validate the entire change set and current authority before the first write.
     policy?.assertAuthority?.();
-    if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", { command }) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before publication.");
+    if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", authorization) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before publication.");
+    if (policy?.approval && captureCommandWorkspaceDigest(root) !== policy.approval.workspaceDigest) throw new PermissionError("Workspace changed during command execution. No changes were published.");
     for (const name of changes) {
       if (policy && (policy.guard.isPathProtected(policy.runId, name) || policy.guard.isPathTargetRestricted(policy.runId, name))) throw new PermissionError(`Command attempted an out-of-scope change: ${name}. No changes were published.`);
       if (existsSync(path.join(root, name)) && lstatSync(path.join(root, name)).isSymbolicLink()) throw new PermissionError(`Command changed a symlink input: ${name}. No changes were published.`);

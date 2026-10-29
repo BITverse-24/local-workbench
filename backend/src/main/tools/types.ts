@@ -100,6 +100,7 @@ export interface ToolExecutionContext {
   agentRequirementId?: string;
   agentChangeReason?: string;
   agentOperationDigest?: string;
+  agentCommandApproval?: import("../harness/tools/run-command.js").CommandApproval;
 }
 
 export interface ToolExecutionResult {
