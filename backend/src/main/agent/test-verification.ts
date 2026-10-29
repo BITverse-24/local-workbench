@@ -61,7 +61,7 @@ export function isCodeVerificationPath(filename: string): boolean {
   return /\.(?:[cm]?[jt]sx?|py|pyi|java|kt|kts|go|rs|c|cc|cpp|cxx|h|hpp|cs|fs|rb|php|swift|scala|sh|bash|ps1|sql|vue|svelte|json|ya?ml|toml|ini|cfg)$/i.test(filename) ||
     /(?:^|\/)(?:package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|pyproject\.toml|pytest\.ini|setup\.cfg|tox\.ini|requirements[^/]*\.txt|Cargo\.(?:toml|lock)|go\.(?:mod|sum)|Makefile|CMakeLists\.txt|pom\.xml|build\.gradle|[^/]*(?:vitest|jest|tsconfig)[^/]*)$/i.test(filename);
 }
-const isTestPath = (filename: string) => /\.(?:[cm]?[jt]sx?|py|java|kt|go|rs|c|cc|cpp|cs|rb|php|swift|scala)$/i.test(filename) &&
+export const isAgentTestPath = (filename: string) => /\.(?:[cm]?[jt]sx?|py|java|kt|go|rs|c|cc|cpp|cs|rb|php|swift|scala)$/i.test(filename) &&
   !/(?:^|\/)(?:helpers?|fixtures?|support)(?:\/|$)/i.test(filename) &&
   /(?:^|\/)(?:__tests__|tests?|spec)(?:\/|$)|(?:^|\/)(?:test[_-][^/]+|[^/]+(?:[._-](?:test|spec)|_test))\.[^/]+$/i.test(filename);
 export function agentManifestDigest(files: Record<string, string>): string {
@@ -148,15 +148,15 @@ export function discoverAgentTestPlans(input: { workspaceRoot: string; changedPa
       // Baseline and explicit full-suite requests have no changed-file mapping.
       // Discover existing suite roots; an empty plan is never test evidence.
       for (const file of Object.keys(manifest.files)) {
-        if (/(?:^|\/)(?:node_modules|\.git|\.venv|venv|vendor)\//.test(file) || !isTestPath(file)) continue;
+        if (/(?:^|\/)(?:node_modules|\.git|\.venv|venv|vendor)\//.test(file) || !isAgentTestPath(file)) continue;
         groups.set(closestRoot(root, file), []);
       }
       if (!groups.size) groups.set(".", []);
     }
     const plans: AgentTestPlan[] = [];
     for (const [dir, changedPaths] of groups) {
-      const testFiles = Object.keys(manifest.files).filter(file => (dir === "." || file.startsWith(`${dir}/`)) && !/(?:^|\/)(?:node_modules|\.git|\.venv|venv|vendor)\//.test(file) && isTestPath(file));
-      const changedTestPaths = changedPaths.filter(file => isTestPath(file) && manifest.files[file]);
+      const testFiles = Object.keys(manifest.files).filter(file => (dir === "." || file.startsWith(`${dir}/`)) && !/(?:^|\/)(?:node_modules|\.git|\.venv|venv|vendor)\//.test(file) && isAgentTestPath(file));
+      const changedTestPaths = changedPaths.filter(file => isAgentTestPath(file) && manifest.files[file]);
       const relativeChanged = changedPaths.map(file => slash(path.posix.relative(dir, file)));
       const configOrShared = !changedPaths.length || changedPaths.some(file => !/\.(?:[cm]?[jt]sx?|py|vue|svelte)$/i.test(file) || /(?:^|\/)(?:shared|common)\/|(?:config|setup)\.[^/]+$/i.test(file));
       let runner: AgentTestRunner | undefined, full = "", related: string | undefined, configuredExplicit = false, format: AgentTestPlan["reportFormat"] = "json";

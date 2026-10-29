@@ -267,6 +267,41 @@ describe("Agent v3 task host loop", () => {
     expect(readFileSync(path.join(workspace,"value.test.cjs"),"utf8")).toBe(test);
     expect(approve).toHaveBeenCalledTimes(3);
   });
+  it("keeps one failure module in focus, follows failed-test imports, then verifies both saved edits",async()=>{
+    const workspace=path.join(root,"project");mkdirSync(workspace);
+    const storage='exports.load = () => { throw new Error("bad data"); };\n';
+    const filters='exports.select = (items, status) => items;\n';
+    const storageTest='const {test}=require("node:test");const assert=require("node:assert/strict");const {load}=require("./storage.cjs");test("invalid data",()=>assert.deepEqual(load(),[]));\n';
+    const filtersTest='const {test}=require("node:test");const assert=require("node:assert/strict");const {select}=require("./filters.cjs");test("status filter",()=>assert.equal(select([{status:"open"},{status:"closed"}],"open").length,1));\n';
+    for(const [file,content] of Object.entries({"package.json":JSON.stringify({scripts:{test:"node --test"}}),"storage.cjs":storage,"filters.cjs":filters,"storage.test.cjs":storageTest,"filters.test.cjs":filtersTest,"unrelated.txt":"do not read this as a checklist"}))writeFileSync(path.join(workspace,file),content);
+    const request="Inspect, reproduce, and repair both existing module failures. Run the full suite.";
+    const edit=(file:string,source:string,old:string,replacement:string)=>({tool_calls:[{name:"edit_file",arguments:{path:file,expected_digest:createHash("sha256").update(source).digest("hex"),replacements:[{old,new:replacement}]}}]});
+    replies=[()=>interpretation("execute",request),payload=>{
+      const input=JSON.parse(payload.messages[1].content);
+      expect(input.currentStep).toMatchObject({phase:"address_failure",target:{path:"storage.cjs",role:"implementation",digest:createHash("sha256").update(storage).digest("hex")}});
+      expect(input.currentStep.executionResultIds).toHaveLength(1);
+      expect(input.selectedSources.pages).toContainEqual(expect.objectContaining({path:"storage.cjs",content:storage}));
+      expect(input.suggestedReadPaths).toBeUndefined();
+      return edit("storage.cjs",storage,'throw new Error("bad data");','return [];');
+    },payload=>{
+      const input=JSON.parse(payload.messages[1].content);
+      expect(input.currentStep).toMatchObject({phase:"address_failure",target:{path:"filters.cjs",role:"implementation"},relatedPaths:["filters.cjs","filters.test.cjs"]});
+      expect(input.selectedSources.pages[0]).toMatchObject({path:"filters.cjs",content:filters});
+      expect(input.selectedSources.pages.some((page:any)=>page.path === "storage.cjs")).toBe(false);
+      return edit("filters.cjs",filters,"=> items;","=> items.filter(item => item.status === status);");
+    },payload=>{
+      const input=JSON.parse(payload.messages[1].content);expect(input.currentStep).toMatchObject({phase:"check_changes"});
+      return {tool_calls:[{name:"finish",arguments:{text:"Both module defects are repaired. The host must verify the existing suite."}}]};
+    },payload=>{const input=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:input.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Existing tests failed before the saved edits and passed after them."}))};}];
+    const {result,runId,approve}=await run(request,false,undefined,undefined,workspace);
+    expect(result.outcome,result.text).toBe("completed");expect(approve).toHaveBeenCalledTimes(4);
+    const ledger=getExecutionLedger(runId)!;
+    expect(ledger.agentProgress?.actions.map(action=>action.operation)).toEqual(["edit_file","edit_file","finish"]);
+    expect(ledger.agentProgress?.sourceResultIds).toHaveLength(4);
+    expect(ledger.agentProgress?.failure?.targets.filter(target=>target.role === "implementation").map(target=>target.path)).toEqual(["storage.cjs","filters.cjs"]);
+    expect(ledger.verification?.repairCount).toBe(0);expect(ledger.verification?.evidence.find(check=>check.criterionId === "acceptance:validate-written-code")?.status).toBe("passed");
+    expect(readFileSync(path.join(workspace,"storage.test.cjs"),"utf8")).toBe(storageTest);expect(readFileSync(path.join(workspace,"filters.test.cjs"),"utf8")).toBe(filtersTest);
+  });
   it("obtains read-only failure evidence without requiring a change category",async()=>{
     const workspace=path.join(root,"project");mkdirSync(workspace);
     const implementation='exports.readValue = () => { throw new Error("failure to inspect"); };\n';
@@ -280,8 +315,9 @@ describe("Agent v3 task host loop", () => {
       expect(state.selectedSources.pages).toContainEqual(expect.objectContaining({path:"value.cjs",content:implementation}));
       expect(state.currentRequirement.kind).toBe("execute");
       const read=payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.find((item:any)=>item.properties.name.enum[0] === "read_file");
-      expect(read.properties.arguments.properties.path.enum).not.toContain("value.cjs");
-      expect(state.readSelection.indexSource).toBe("saved verification manifest");
+      expect(read.properties.arguments.properties.path.enum).toBeUndefined();
+      expect(state.readSelection).toBeUndefined();
+      expect(state.currentStep.target.path).toBe("value.cjs");
       controller.abort();return {tool_calls:[{name:"finish",arguments:{text:"The baseline failure has saved source evidence."}}]};
     }];
     const {result,runId,approve}=await run(request,false,undefined,undefined,workspace);
@@ -299,9 +335,9 @@ describe("Agent v3 task host loop", () => {
     const original=ModelGateway.prototype.chatWithTools;let rejected=0;
     vi.spyOn(ModelGateway.prototype,"chatWithTools").mockImplementation(async function(this:ModelGateway,modelId,messages,tools,options){
       const state=JSON.parse(messages[1]?.content ?? "{}");
-      if(state.selectedSources?.pages.length){
+      if(state.selectedSources?.pages.some((page:any)=>page.path === "value.test.cjs")){
         const read=tools.find(tool=>tool.function.name === "read_file")!;
-        expect(read.function.parameters.properties.path.enum).not.toContain("value.cjs");
+        expect(read.function.parameters.properties.path.enum ?? []).not.toContain("value.test.cjs");
         rejected++;return {ok:false,error:{kind:"ai-error",code:"agent_context_limit",message:"Remove optional source pages",retryable:false}};
       }
       return original.call(this,modelId,messages,tools,options);
@@ -309,10 +345,11 @@ describe("Agent v3 task host loop", () => {
     const controller=new AbortController();runSignal=controller.signal;
     replies=[()=>interpretation("execute","Reproduce the existing failure"),payload=>{
       const state=JSON.parse(payload.messages[1].content);
-      expect(state.selectedSources).toMatchObject({pages:[],complete:false});
+      expect(state.selectedSources.complete).toBe(false);
+      expect(state.selectedSources.pages.map((page:any)=>page.path)).toEqual(["value.cjs"]);
       const read=payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.find((item:any)=>item.properties.name.enum[0] === "read_file");
-      expect(read.properties.arguments.properties.path.enum).toContain("value.cjs");
-      expect(state.suggestedReadPaths).toContain("value.cjs");
+      expect(read.properties.arguments.properties.path.enum).toContain("value.test.cjs");
+      expect(state.suggestedReadPaths).toContain("value.test.cjs");
       controller.abort();return {tool_calls:[{name:"read_file",arguments:{path:"value.cjs"}}]};
     }];
     const {result,runId,approve}=await run("Reproduce the existing failure",false,undefined,undefined,workspace);

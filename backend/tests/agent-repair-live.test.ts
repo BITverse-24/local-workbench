@@ -11,9 +11,11 @@ import { MutationPolicyGuard } from "../src/main/harness/policy-guard.js";
 import { closeDb, getDb, initDb } from "../src/main/persistence/db.js";
 import { createChat } from "../src/main/persistence/chats.js";
 import { addMessage } from "../src/main/persistence/messages.js";
-import { getCurrentAgentTask } from "../src/main/run/agent-task-store.js";
+import { parseTaskInterpretation } from "../src/main/agent/task-interpretation.js";
+import { persistRunContract } from "../src/main/run/contract.js";
+import { getCurrentAgentTask, bindAgentTaskRun } from "../src/main/run/agent-task-store.js";
 import { buildExecutionEnvelope } from "../src/main/run/envelope.js";
-import { getExecutionLedger } from "../src/main/run/execution-ledger.js";
+import { getExecutionLedger, initializeExecutionLedger, initializeAgentInterpretationBudget, bindAgentExecutionLedger, updateAgentProgress } from "../src/main/run/execution-ledger.js";
 import { dataRoot, setDataDir } from "../src/main/run/filesystem.js";
 import { RunResultStore } from "../src/main/run/result-store.js";
 import { withRuntimeScope } from "../src/main/run/runtime-scope.js";
@@ -54,6 +56,21 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses a local model
   const gateway = new ModelGateway(undefined, [{ id:"live-driver",runtime:"mlx-lm",baseUrl:`${endpoint.replace(/\/$/,"")}/v1`,model:providerModel,capabilities:["text"],requestTimeoutMs:60000,healthPath:"/models",enabled:true,contextLength:8192,toolCallingFormat:"json" }]);
   const chatId = createChat(), runId = createRun(chatId, request), messageId = addMessage({chat_id:chatId,role:"user",content:request}).id;
   getDb().prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,'agent','agent-v3',?)").run(runId, workspace);
+  const controlledRequirements=process.env.WORKBENCH_AGENT_REPAIR_CONTROLLED_REQUIREMENTS === "1";
+  // Isolate action-loop behavior from extraction faults. This variant is never a full-input trial.
+  if(controlledRequirements){
+    const requirements=[
+      {kind:"inspect",source_id:"s1",description:"Inspect the FieldOps web project",checks:[{description:"Inspect the existing app modules and their tests",kind:"inspection"}]},
+      {kind:"change",source_id:"s2",description:"Reproduce and repair both specified module defects",checks:[{description:"Record the existing failing baseline",kind:"execution"},{description:"Status filtering must combine with search",kind:"execution"},{description:"Malformed or invalid saved browser data must not prevent app loading",kind:"execution"}]},
+      {kind:"preserve",source_id:"s3",description:"Keep the current design and public behavior",checks:[{description:"Preserve startup, exports, and unrelated app behavior",kind:"review"}]},
+      {kind:"preserve",source_id:"s4",description:"Do not add dependencies",checks:[{description:"No dependencies are added",kind:"review"}]},
+      {kind:"execute",source_id:"s5",description:"Run the full suite and explain the cause and fix in each module",checks:[{description:"Existing full test suite passes on the saved changes",kind:"execution"},{description:"Explain both module causes and saved fixes",kind:"delivery"}]},
+    ].map(requirement=>({...requirement,checks:requirement.checks.map(check=>({...check,operation:"semantic",path:null}))}));
+    const interpreted=parseTaskInterpretation(JSON.stringify({disposition:"continue",requirements,updates:[],full_suite:true}),messageId,request);
+    const binding=bindAgentTaskRun({runId,chatId,messageId,workspace:{root:workspace,registeredAt:"repair-diagnostic"},disposition:"continue",updates:interpreted.updates});
+    const contract=persistRunContract({schemaVersion:1,runId,createdAt:new Date().toISOString(),objective:request,resolution:{status:"resolved"},routing:{intentType:"general_qa",taskType:"code",driverModel:"live-driver",actionable:true},response:{required:true,chatOnly:false},workspace:{requested:false,operations:[]},deliverables:[],constraints:{protectedPaths:[],restrictMutationsToTargets:false,userConstraints:[]},acceptance:{validateWrittenCode:false,validatedPythonDeliverables:[],artifactChecks:[]}});
+    initializeExecutionLedger(contract);initializeAgentInterpretationBudget(runId);bindAgentExecutionLedger(binding);updateAgentProgress(runId,progress=>{progress.fullSuite=true;});
+  }
   const guard = new MutationPolicyGuard(); guard.setProtectedPaths(runId,Object.keys(original).filter(file => !mutable.has(file)));
   const diagnosticDeadlineMs = 900000;
   const store = new RunResultStore(runId), controller = new AbortController(), timer = setTimeout(()=>controller.abort(),diagnosticDeadlineMs);
@@ -81,7 +98,7 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses a local model
       return {record,content};
     });
     const current = workspaceFiles(workspace), changed = [...new Set([...Object.keys(original),...Object.keys(current)])].filter(file=>original[file]!==current[file]);
-    const proof = {recordedAt:new Date().toISOString(),scope:"Source-runtime diagnostic; not packaged or release certification",diagnosticDeadlineMs,selectedRuntimeSourceDigests,model:providerModel,contextLimit:8192,result,original,current,changed,
+    const proof = {recordedAt:new Date().toISOString(),scope:controlledRequirements ? "Controlled-checklist action-loop diagnostic; requirement extraction bypassed. Not a full-input, packaged, or release trial." : "Source-runtime diagnostic; not packaged or release certification",controlledRequirements,diagnosticDeadlineMs,selectedRuntimeSourceDigests,model:providerModel,contextLimit:8192,result,original,current,changed,
       protectedFilesUnchanged:changed.every(file=>mutable.has(file)),approvals,preparedRequests,task:getCurrentAgentTask(chatId),ledger:getExecutionLedger(runId),results,
       independentTests:{status:independent.status,signal:independent.signal,stdout:independent.stdout,stderr:independent.stderr,error:independent.error?.message},
       finalSources:Object.fromEntries([...mutable].map(file=>[file,readFileSync(path.join(workspace,file),"utf8")]))};

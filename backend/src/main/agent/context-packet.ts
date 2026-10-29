@@ -3,7 +3,7 @@ import type { ToolExecutionContext } from "../tools/types.js";
 import { getExecutionLedger } from "../run/execution-ledger.js";
 import { z } from "zod";
 import { CAPABILITY_GROUPS } from "../tools/capabilities.js";
-import { loadAgentSourcePage, selectAgentSourcePages, sliceAgentSourcePage, sourcePageIsCurrent, sourcePageReceipt, type AgentSourcePage } from "./source-evidence.js";
+import { loadAgentSourcePage, selectAgentSourcePages, sliceAgentSourcePage, sourcePageIsCurrent, sourcePageReceipt, selectAgentFailureStep, type AgentSourcePage } from "./source-evidence.js";
 import { canonicalSourcePath } from "./workspace-actions.js";
 import { fileDigest, observedRange, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 
@@ -65,7 +65,18 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
       observedSource = sourcePageReceipt(page);
     } else result = agentEvidenceSlice(context,record.resultId,latestSourceBytes);
   }
-  const selectedSources = selectAgentSourcePages(context, requirement, latestPage, `${progress?.feedback ?? ""}\n${progress?.baseline?.detail ?? ""}\n${JSON.stringify(result)}`, additionalSourceChars);
+  const currentStep = selectAgentFailureStep(context);
+  const selectedSources = selectAgentSourcePages(context, requirement, latestPage, `${progress?.feedback ?? ""}\n${progress?.baseline?.detail ?? ""}\n${JSON.stringify(result)}`, additionalSourceChars, currentStep?.relatedPaths);
+  // The current failure source is essential step evidence. Optional-page packing
+  // cannot replace it with a recent unrelated read or a broad directory agenda.
+  const focus = currentStep?.target?.resultId ? loadAgentSourcePage(context,currentStep.target.resultId) : undefined;
+  if (focus && sourcePageIsCurrent(context,focus)) {
+    const page=sliceAgentSourcePage(focus,Math.min(2000,latestSourceBytes));
+    if(!observedRange([...(latestPage ? [latestPage] : []),...selectedSources.pages],page.path,page.digest,page.startByte,page.endByte)) {
+      selectedSources.pages=[page,...selectedSources.pages];
+      selectedSources.complete=selectedSources.pages.length >= selectedSources.totalEligiblePages;
+    }
+  }
   const observedSources = [...(observedSource ? [observedSource] : []),...selectedSources.pages.map(sourcePageReceipt)];
   const source = task.snapshot.messages.find(message => message.id === requirement.source.messageId);
   const directory = [...(progress?.actions ?? [])].reverse().find(action=>action.operation === "list_dir" && action.status === "completed" && action.resultId);
@@ -103,16 +114,18 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
       } catch {remaining.add(canonical);}
     }
     // An incomplete/empty index never removes the registered general reader.
-    remainingReadCount=remaining.size;
+    remainingReadCount=currentStep?.phase === "address_failure" ? [...remaining].filter(filename=>currentStep.relatedPaths?.includes(filename)).length : remaining.size;
     if (remaining.size) {
       readPaths=[];let characters=0;
       for (const filename of remaining) {
+        if(currentStep?.phase === "address_failure" && !currentStep.relatedPaths?.includes(filename))continue;
         if (readPaths.length >= 8 || (readPaths.length > 0 && characters+filename.length > 2048)) break;
         readPaths.push(filename);characters+=filename.length;
       }
+      if(!readPaths.length)readPaths=undefined;
     }
   }
-  const state = { taskId: task.taskId, taskRevision: task.snapshot.revision, currentRequirement: requirement,
+  const state = { taskId: task.taskId, taskRevision: task.snapshot.revision, currentStep, currentRequirement: requirement,
     constraints, unresolvedRequirementIds: task.snapshot.requirements.filter(item => item.state === "active").map(item => item.id),
     obligations: task.snapshot.requirements.filter(item => item.state === "active").map(item => ({ id: item.id, kind: item.kind, description: item.description, acceptance: item.acceptance })),
     appliedOperations: ledger?.completedOperations.slice(-5).map(item => ({ tool: item.tool, summary: item.summary, resultIds: item.resultIds })),
