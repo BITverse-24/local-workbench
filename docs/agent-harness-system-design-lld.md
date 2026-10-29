@@ -110,7 +110,7 @@ ResultStore remains run-scoped. Earlier evidence is accessed through a task-auth
 
 ### Admission and task update
 
-Implementation diagnostic: the 7B Flow D probe changed the case of a quoted source word and failed exact provenance before actions. Preserve the exact quotation requirement. Supply host-created source spans for the model to select, then construct the stored quotations from the selected original bytes. Span selection still requires separate scope review; it does not prove understanding. The complete request remains durable.
+Implementation diagnostic: the 7B Flow D probe changed the case of a quoted source word and failed exact provenance before actions. The host now partitions the complete message into lossless source spans. The model selects `source_id`; the host constructs the stored quotation and offsets from the original message. `request` selects the complete message when an obligation spans several parts. Unknown or blank references and model-written quotations or offsets are rejected. Separate requirements may cite one span and receive distinct IDs. Historical task quotations remain readable. Span selection still requires separate scope review; it does not prove understanding. The complete request remains durable.
 
 1. Save the user message first. Accept Agent mode, the selected model, current workspace identity, and `agentTaskIntent` of `continue` or `new`. Default to continue for Agent callers that omit this field.
 2. Resolve the current task in the chat. New task clears the current pointer and creates a new task. A different workspace identity requires a new binding; no prior side-effect authority transfers.

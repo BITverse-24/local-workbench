@@ -102,6 +102,14 @@ The next implementation step is host-owned source spans. The model should select
 
 The offline schema and host-loop check passed 30 tests across two files, with one live inspection skipped. Full type checking passed. Live repair certification remains closed.
 
+## Host-owned source spans
+
+Requirement interpretation now selects a host-supplied source reference. The host partitions the complete original message without dropping or normalizing text. It constructs exact stored quotations and offsets from the selected original span. The model can select the complete request when an obligation spans several parts. Unknown or blank references, model-written quotations, and model-supplied offsets are rejected. Historical task records keep their existing quotation format; no migration is needed. Two repairs can cite one span with distinct IDs that remain stable once saved. Span selection establishes provenance only. Correct interpretation and full requirement coverage still require separate checks.
+
+The focused check passed 46 tests across four files, with one live inspection skipped. Tests cover Unicode, BOM, CRLF, repeated source text, several repairs from one span, unknown references, forged offsets/quotations, and waiver provenance. Full type checking and the Electron source build passed.
+
+Live validation of this change has not run. Two elevated SDK test requests expired in automatic approval review before process creation. Normal execution then reached the SDK setup boundary but received EPERM for both `127.0.0.1:1234` and `192.168.0.140:1234`. There were zero admitted model calls and zero workspace changes. This is a tool-permission limit, not evidence that LM Studio is down or that the source-span protocol works with the real model. Evidence: `docs/evidence/agent-source-spans-setup-2026-10-29.json`. Production promotion remains closed.
+
 ## Current proof and limits
 
 The focused offline check passed 237 tests in 12 files; two opt-in live tests were skipped. This includes task storage, gateway admission, revision-bound edits, host-loop control, verification, storage isolation, and Chat/Work boundaries. Full type checking passed. The Electron source build passed. These results do not establish packaged behavior or live repair quality.
@@ -110,7 +118,7 @@ Live inspection evidence is saved in `docs/evidence/agent-host-inspection-probes
 
 ## Work still required
 
-1. Move requirement provenance to host-created source spans. Live Flow D interpretation now stops on model-copied quotations. Then extend current evidence and bounded assessment to general repair and document requirements. The typed literal inspection case is checked live. Complete host-owned progress after edits and bounded per-requirement evidence checks. Do not weaken acceptance or replace existing tests.
+1. Verify host-created source spans with the live model once SDK access is available. Then extend current evidence and bounded assessment to general repair and document requirements. Audit retention of the original request after interpretation failure. The typed literal inspection case is checked live. Complete host-owned progress after edits and bounded per-requirement evidence checks. Do not weaken acceptance or replace existing tests.
 2. Add the separate task progress facts to the UI. Complete task-authorized cross-run evidence retrieval in the active loop. Retain all original obligations on follow-ups and regressions.
 3. Finish structured constraints and protected-path extraction. Keep policy checks at the tool boundary.
 4. Complete test-environment probing in the actual launch environment. Cache unchanged missing-command failures. Finish baseline, full-suite, post-edit test scheduling, and repair-cycle integration.

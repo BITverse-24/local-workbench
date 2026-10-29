@@ -32,7 +32,7 @@ beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); pre
   vi.spyOn(server, "countLMStudioPreparedRequest").mockImplementation(async options => { const local = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload: options.payload }); return { inputTokens: local.inputTokens, renderedDigest: local.renderedDigest, instanceReference: "loaded", modelPath: "local", contextLimit: 8192, counterIdentity: "lmstudio-sdk-1.5.0" }; });
 });
 afterEach(() => { vi.restoreAllMocks(); closeDb(); setDataDir(previousRoot); rmSync(root, { recursive: true, force: true }); });
-function interpretation(kind: string, text: string) { return { disposition: "continue", requirements: [{ kind, description: text, quote: text, checks: [{ description: text, kind: "inspection", operation: "semantic", path: null }] }], updates: [], full_suite: false }; }
+function interpretation(kind: string, text: string) { return { disposition: "continue", requirements: [{ kind, description: text, source_id: "request", checks: [{ description: text, kind: "inspection", operation: "semantic", path: null }] }], updates: [], full_suite: false }; }
 async function run(text: string, managerPath = false, onApprove: (preview: string) => Promise<boolean> = async () => true) {
   let runId = managerPath ? "" : createRun(chatId, text);
   const messageId = addMessage({ chat_id: chatId, role: "user", content: text }).id;
@@ -202,7 +202,7 @@ describe("Agent v3 task host loop", () => {
   });
   it("corrects literal delivery from saved evidence without another read and audits scope separately", async () => {
     const text = "Read note.txt and report its exact content.";
-    replies = [() => ({ disposition: "continue", requirements: [{ kind: "inspect", description: text, quote: text, checks: [{ description: text, kind: "inspection", operation: "verbatim_source", path: "note.txt" }] }], updates: [], full_suite: false }),
+    replies = [() => ({ disposition: "continue", requirements: [{ kind: "inspect", description: text, source_id: "request", checks: [{ description: text, kind: "inspection", operation: "verbatim_source", path: "note.txt" }] }], updates: [], full_suite: false }),
       () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "saved source", () => "```\nsaved source\n```", payload => {
         const input = JSON.parse(payload.messages[1].content);
         expect(input.hostVerifiedChecks).toContainEqual(expect.objectContaining({ passed: true, path: "note.txt" }));
@@ -216,7 +216,7 @@ describe("Agent v3 task host loop", () => {
   });
   it("stops a repeated literal delivery proposal without repeatedly reading unchanged source", async () => {
     const text = "Read note.txt and report its exact content.";
-    replies = [() => ({ disposition: "continue", requirements: [{ kind: "inspect", description: text, quote: text, checks: [{ description: text, kind: "inspection", operation: "verbatim_source", path: "note.txt" }] }], updates: [], full_suite: false }),
+    replies = [() => ({ disposition: "continue", requirements: [{ kind: "inspect", description: text, source_id: "request", checks: [{ description: text, kind: "inspection", operation: "verbatim_source", path: "note.txt" }] }], updates: [], full_suite: false }),
       () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "wrong content", () => "wrong content"];
     const { result, runId } = await run(text);
     expect(result.outcome).toBe("partial"); expect(result.stopReason).toBe("repeated_delivery");
@@ -225,7 +225,7 @@ describe("Agent v3 task host loop", () => {
   it("keeps an approved observed edit and returns Partial when mandatory project tests are unavailable", async () => {
     const text = "Read note.txt, replace source with content, and run existing tests.";
     const digest = createHash("sha256").update("saved source\n").digest("hex");
-    replies = [() => ({ disposition: "continue", requirements: ["inspect", "change", "execute"].map(kind => ({ kind, description: kind, quote: text, checks: [{ description: kind, kind: kind === "execute" ? "execution" : "inspection", operation: "semantic", path: null }] })), updates: [], full_suite: false }),
+    replies = [() => ({ disposition: "continue", requirements: ["inspect", "change", "execute"].map(kind => ({ kind, description: kind, source_id: "request", checks: [{ description: kind, kind: kind === "execute" ? "execution" : "inspection", operation: "semantic", path: null }] })), updates: [], full_suite: false }),
       () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }),
       () => ({ tool_calls: [{ name: "edit_file", arguments: { path: "note.txt", expected_digest: digest, replacements: [{ old: "source", new: "content" }] } }] }),
       () => ({ tool_calls: [{ name: "finish", arguments: { text: "The edit is saved. Tests are still required." } }] })];
@@ -248,7 +248,7 @@ describe("Agent v3 task host loop", () => {
       expect(state.unresolvedRequirementIds).toHaveLength(3);
       return answer;
     };
-    replies = [() => ({ disposition: "continue", requirements: ["inspect","change","execute"].map(kind => ({kind,description:kind,quote:text,checks:[{description:kind,kind:kind === "execute" ? "execution" : "inspection",operation:"semantic",path:null}]})),updates:[],full_suite:false }),
+    replies = [() => ({ disposition: "continue", requirements: ["inspect","change","execute"].map(kind => ({kind,description:kind,source_id:"request",checks:[{description:kind,kind:kind === "execute" ? "execution" : "inspection",operation:"semantic",path:null}]})),updates:[],full_suite:false }),
       () => ({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
       repairTurn(edit("note.txt","saved source\n")),
       repairTurn({tool_calls:[{name:"read_file",arguments:{path:"other.txt"}}]}),
@@ -274,7 +274,7 @@ describe("Agent v3 task host loop", () => {
       expect(state.obligations).toHaveLength(2);
       return answer;
     };
-    replies = [() => ({disposition:"continue",requirements:["Repair note.txt.","Repair other.txt."].map(quote => ({kind:"change",description:quote,quote,checks:[{description:quote,kind:"review",operation:"semantic",path:null}]})),updates:[],full_suite:false}),
+    replies = [() => ({disposition:"continue",requirements:["Repair note.txt.","Repair other.txt."].map(quote => ({kind:"change",description:quote,source_id:"request",checks:[{description:quote,kind:"review",operation:"semantic",path:null}]})),updates:[],full_suite:false}),
       () => action("read_file",{path:"note.txt"}), () => edit("note.txt","saved source\n"), () => action("finish",{text:"First repair saved."}),
       payload => {
         const state = JSON.parse(payload.messages[1].content); remainingId = state.requirements[1].id;
@@ -293,10 +293,11 @@ describe("Agent v3 task host loop", () => {
     const { result, emit } = await run(text);
     expect(result.stopReason).toBe("malformed_action"); expect(emit.mock.calls.some(([event]) => event.type === "tool_call")).toBe(false);
   });
-  it("retains mixed requirement kinds and rejects fabricated source quotes", () => {
+  it("retains mixed requirement kinds and rejects unknown source references", () => {
     const text = "Inspect, reproduce, repair both bugs, preserve behavior, and run the full suite.";
-    const parsed = parseTaskInterpretation(JSON.stringify({ disposition: "continue", requirements: ["inspect", "execute", "change", "preserve", "deliver"].map(kind => ({ kind, description: kind, quote: text, checks: [{ description: kind, kind: "review", operation: "semantic", path: null }] })), updates: [], full_suite: true }), "11111111-1111-4111-8111-111111111111", text);
+    const parsed = parseTaskInterpretation(JSON.stringify({ disposition: "continue", requirements: ["inspect", "execute", "change", "preserve", "deliver"].map(kind => ({ kind, description: kind, source_id: "request", checks: [{ description: kind, kind: "review", operation: "semantic", path: null }] })), updates: [], full_suite: true }), "11111111-1111-4111-8111-111111111111", text);
     expect(parsed.updates).toHaveLength(5); expect(parsed.fullSuite).toBe(true);
-    expect(() => parseTaskInterpretation(JSON.stringify(interpretation("change", "Invented instruction")), "11111111-1111-4111-8111-111111111111", text)).toThrow("exact span");
+    const forged = interpretation("change", "Invented instruction"); forged.requirements[0].source_id = "s999999";
+    expect(() => parseTaskInterpretation(JSON.stringify(forged), "11111111-1111-4111-8111-111111111111", text)).toThrow("source reference is unknown");
   });
 });

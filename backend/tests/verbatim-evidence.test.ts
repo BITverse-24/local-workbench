@@ -73,7 +73,7 @@ describe("Host literal source evidence", () => {
   });
   it("does not turn a behavioral repair into a literal-word acceptance check", () => {
     const text = "Repair sample.txt and preserve its interface.";
-    const response = { disposition: "continue", requirements: [{ kind: "change", description: text, quote: text, checks: [{ description: "Repair behavior", kind: "inspection", operation: "verbatim_source", path: "sample.txt" }] }], updates: [], full_suite: false };
+    const response = { disposition: "continue", requirements: [{ kind: "change", description: text, source_id: "request", checks: [{ description: "Repair behavior", kind: "inspection", operation: "verbatim_source", path: "sample.txt" }] }], updates: [], full_suite: false };
     expect(() => parseTaskInterpretation(JSON.stringify(response), "00000000-0000-4000-8000-000000000001", text)).toThrow("direct request for exact file content");
   });
   it.each([
@@ -82,7 +82,7 @@ describe("Host literal source evidence", () => {
     ["verbatim_source","execution","sample.txt",false], ["verbatim_source","inspection",null,false],
   ])("agrees at the model and host boundaries for %s/%s with path %s", (operation,kind,path,valid) => {
     const text = "Read sample.txt and report its exact content.";
-    const response = {disposition:"continue",requirements:[{kind:"inspect",description:text,quote:text,checks:[{description:text,kind,operation,path}]}],updates:[],full_suite:false};
+    const response = {disposition:"continue",requirements:[{kind:"inspect",description:text,source_id:"request",checks:[{description:text,kind,operation,path}]}],updates:[],full_suite:false};
     expect(new Validator().validate(response,agentInterpretationResponseSchema.schema).valid).toBe(valid);
     const parse = () => parseTaskInterpretation(JSON.stringify(response),"00000000-0000-4000-8000-000000000001",text);
     if(valid)expect(parse).not.toThrow(); else expect(parse).toThrow();
