@@ -78,7 +78,7 @@ export interface CodeDraftResult { filename: "task.py"; source: string; expected
 export interface PythonInputEvidence { filename: string; originalFilename: string; beforeSha256: string | null; afterSha256: string | null; originalAfterSha256: string | null; }
 export interface PythonExecutionResult { exitCode: number; stdout: string; stderr: string; timedOut: boolean; outputFiles: string[]; durationMs: number; capturedOutput?: { stdout: string; stderr: string; truncated: boolean }; inputEvidence?: PythonInputEvidence[]; }
 export interface CodeSummaryResult { summary: string; verified: boolean; }
-export type AIErrorCode = "model_unavailable" | "model_timeout" | "model_rejected_request" | "agent_admission_failed" | "empty_model_response" | "invalid_model_response" | "unsupported_task" | "missing_required_content" | "unsafe_generated_code";
+export type AIErrorCode = "model_unavailable" | "model_timeout" | "model_rejected_request" | "agent_context_limit" | "agent_admission_failed" | "empty_model_response" | "invalid_model_response" | "unsupported_task" | "missing_required_content" | "unsafe_generated_code";
 export interface AIError { kind: "ai-error"; code: AIErrorCode; message: string; retryable: boolean; requestId?: string; runId?: string; taskType?: TaskType; modelId?: ModelId; }
 export interface ValidationFailure { kind: "validation-failure"; code: "wrong-type" | "missing-field" | "invalid-value" | "extra-field"; message: string; path: string; expected: string; received?: string; requestId?: string; }
 export type AIWorkflowError = AIError | ValidationFailure;

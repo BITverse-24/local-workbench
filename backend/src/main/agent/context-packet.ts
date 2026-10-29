@@ -3,6 +3,7 @@ import type { ToolExecutionContext } from "../tools/types.js";
 import { getExecutionLedger } from "../run/execution-ledger.js";
 import { z } from "zod";
 import { CAPABILITY_GROUPS } from "../tools/capabilities.js";
+import { loadAgentSourcePage, selectAgentSourcePages, sourcePageIsCurrent, sourcePageReceipt, type AgentSourcePage } from "./source-evidence.js";
 import { canonicalSourcePath } from "./workspace-actions.js";
 import { fileDigest, observedRange, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 
@@ -24,6 +25,7 @@ export function selectAgentRequirement(task: AgentTask, context: ToolExecutionCo
 export interface AgentContextPacket {
   messages: Array<{ role: string; content: string }>;
   observedSource?: Omit<SourceReadReceipt, "requestId">;
+  observedSources: Array<Omit<SourceReadReceipt, "requestId">>;
   requirement: AgentRequirement;
   readPaths?: string[];
 }
@@ -45,24 +47,24 @@ export function agentEvidenceSlice(context: ToolExecutionContext, resultId: stri
 }
 
 /** Fresh state and selected immutable evidence only. No growing chat transcript or head/tail compaction. */
-export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionContext, selected?: AgentRequirement): AgentContextPacket {
+export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionContext, selected?: AgentRequirement, additionalSourceChars = 6000): AgentContextPacket {
   const ledger = getExecutionLedger(context.runId), progress = ledger?.agentProgress;
   const requirement = selected ?? task.snapshot.requirements.find(item => item.state === "active");
   if (!requirement) throw new Error("No interpreted requirement is available. Preserve the request and ask for scope clarification.");
   const constraints = task.snapshot.requirements.filter(item => item.state === "active" && item.kind === "preserve");
   let result: unknown;
   let observedSource: AgentContextPacket["observedSource"];
+  let latestPage: AgentSourcePage | undefined;
   if (progress?.latestResultId && context.resultStore) {
     const record = context.resultStore.getResult(progress.latestResultId);
-    const first = context.resultStore.retrieveResultSlice(record.resultId, { mode: "text", maxChars: 3000 });
-    if (record.producer.tool === "read_file" && first.totalChars <= 12000) {
-      let text = first.content, offset = first.nextOffset;
-      while (offset !== undefined) { const next = context.resultStore.retrieveResultSlice(record.resultId, { mode: "text", offset, maxChars: 3000 }); text += next.content; offset = next.nextOffset; }
-      const page = z.object({ sourcePage: z.literal(true), path: z.string(), digest: z.string(), startByte: z.number(), endByte: z.number(), sizeBytes: z.number() }).passthrough().parse(JSON.parse(text));
-      result = page;
-      observedSource = { path: page.path, digest: page.digest, startByte: page.startByte, endByte: page.endByte, sizeBytes: page.sizeBytes, resultId: record.resultId };
+    const page = latestPage = loadAgentSourcePage(context, record.resultId);
+    if (page) {
+      result = { ...page, currentAtAssembly: sourcePageIsCurrent(context, page) };
+      observedSource = sourcePageReceipt(page);
     } else result = agentEvidenceSlice(context,record.resultId,4000);
   }
+  const selectedSources = selectAgentSourcePages(context, requirement, latestPage, `${progress?.feedback ?? ""}\n${JSON.stringify(result)}`, additionalSourceChars);
+  const observedSources = [...(observedSource ? [observedSource] : []),...selectedSources.pages.map(sourcePageReceipt)];
   const source = task.snapshot.messages.find(message => message.id === requirement.source.messageId);
   const directory = [...(progress?.actions ?? [])].reverse().find(action=>action.operation === "list_dir" && action.status === "completed" && action.resultId);
   let directoryEvidence: unknown;
@@ -116,10 +118,10 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
     activeCapabilities:[...(context.activeCapabilities ?? [])],
     availableCapabilities:context.envelope?.permittedCapabilities.filter(capability=>!context.activeCapabilities?.has(capability)).map(capability=>({name:capability,description:CAPABILITY_GROUPS[capability].description,tools:CAPABILITY_GROUPS[capability].tools})),
     recentActions: progress?.actions.slice(-8).map(action=>({operation:action.operation,status:action.status,resultId:action.resultId})),
-    latestResult: result, feedback: {text:progress?.feedback.slice(0,1000) ?? "",complete:(progress?.feedback.length ?? 0)<=1000},
+    selectedSources, latestResult: result, feedback: {text:progress?.feedback.slice(0,1000) ?? "",complete:(progress?.feedback.length ?? 0)<=1000},
     checkEvidence: ledger?.verification?.evidence.map(check=>({criterionId:check.criterionId,status:check.status,reason:check.reason,resultIds:check.evidence.filter(ref=>ref.kind === "result").map(ref=>ref.id)})), inputSources: context.inputSources,
     originalRequest: source?.content };
-  return { messages: [{ role: "system", content: AGENT_COMMON_INSTRUCTIONS }, { role: "user", content: JSON.stringify(state) }], observedSource, requirement, readPaths };
+  return { messages: [{ role: "system", content: AGENT_COMMON_INSTRUCTIONS }, { role: "user", content: JSON.stringify(state) }], observedSource, observedSources, requirement, readPaths };
 }
 
 export const FINISH_TOOL: AgentToolDefinition = { type: "function", function: { name: "finish", description: "Propose the final answer. The host checks every requirement before completion.", parameters: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false } } };

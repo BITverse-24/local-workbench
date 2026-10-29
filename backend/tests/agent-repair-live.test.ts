@@ -32,7 +32,7 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses an actual 7B 
   const source = process.env.WORKBENCH_AGENT_REPAIR_WORKSPACE, report = process.env.WORKBENCH_AGENT_REPAIR_REPORT;
   if (!source || !report) throw new Error("Set the prepared workspace and diagnostic report paths.");
   const selectedRuntimeSourceDigests = Object.fromEntries([
-    "agent/agent-task-runner.ts","agent/task-interpretation.ts","agent/context-packet.ts","agent/requirement-review.ts",
+    "agent/agent-task-runner.ts","agent/task-interpretation.ts","agent/context-packet.ts","agent/source-evidence.ts","agent/requirement-review.ts",
     "run/agent-task-store.ts","run/execution-ledger.ts","gateway/model-gateway.ts","harness/tools/run-command.ts","harness/tools/list-dir.ts",
   ].map(file=>[file,createHash("sha256").update(readFileSync(path.join(process.cwd(),"backend/src/main",file))).digest("hex")]));
   const temporary = mkdtempSync(path.join(tmpdir(), "agent-repair-live-")), previous = dataRoot();
@@ -54,7 +54,8 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses an actual 7B 
   const chatId = createChat(), runId = createRun(chatId, request), messageId = addMessage({chat_id:chatId,role:"user",content:request}).id;
   getDb().prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,'agent','agent-v3',?)").run(runId, workspace);
   const guard = new MutationPolicyGuard(); guard.setProtectedPaths(runId,Object.keys(original).filter(file => !mutable.has(file)));
-  const store = new RunResultStore(runId), controller = new AbortController(), timer = setTimeout(()=>controller.abort(),240000);
+  const diagnosticDeadlineMs = 900000;
+  const store = new RunResultStore(runId), controller = new AbortController(), timer = setTimeout(()=>controller.abort(),diagnosticDeadlineMs);
   const approvals: Array<{preview:unknown;approved:boolean}> = [];
   // Opt-in local evidence only. Preserve the native transport and its deadlines.
   const preparedRequests: unknown[] = [], fetchNative = globalThis.fetch;
@@ -79,7 +80,7 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses an actual 7B 
       return {record,content};
     });
     const current = workspaceFiles(workspace), changed = [...new Set([...Object.keys(original),...Object.keys(current)])].filter(file=>original[file]!==current[file]);
-    const proof = {recordedAt:new Date().toISOString(),scope:"Source-runtime diagnostic; not packaged or release certification",selectedRuntimeSourceDigests,model:"qwen2.5-coder-7b-instruct-mlx",contextLimit:8192,result,original,current,changed,
+    const proof = {recordedAt:new Date().toISOString(),scope:"Source-runtime diagnostic; not packaged or release certification",diagnosticDeadlineMs,selectedRuntimeSourceDigests,model:"qwen2.5-coder-7b-instruct-mlx",contextLimit:8192,result,original,current,changed,
       protectedFilesUnchanged:changed.every(file=>mutable.has(file)),approvals,preparedRequests,task:getCurrentAgentTask(chatId),ledger:getExecutionLedger(runId),results,
       independentTests:{status:independent.status,signal:independent.signal,stdout:independent.stdout,stderr:independent.stderr,error:independent.error?.message},
       finalSources:Object.fromEntries([...mutable].map(file=>[file,readFileSync(path.join(workspace,file),"utf8")]))};
@@ -89,4 +90,4 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses an actual 7B 
     expect(independent.status,independent.stdout+independent.stderr).toBe(0);
     expect(proof.ledger?.agentAdmissions.every(item=>item.status==="usage_verified")).toBe(true);
   } finally {capture.mockRestore();clearTimeout(timer);closeDb();setDataDir(previous);rmSync(temporary,{recursive:true,force:true});}
-},260000);
+},920000);

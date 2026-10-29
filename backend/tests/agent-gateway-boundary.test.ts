@@ -192,11 +192,14 @@ describe("Agent v3 gateway dispatch boundary", () => {
   });
 
   it("blocks oversized packets without invalidating valid setup", async () => {
-    const gateway = new ModelGateway(transport(), [model]);
-    const result = await withRuntimeScope(scope, () => gateway.chatWithTools(model.id, [{ role: "user", content: "word ".repeat(7000) }], tools, { runId, maxTokens: 2048 }));
-    expect(result).toMatchObject({ ok: false, error: { code: "agent_admission_failed" } });
+    for (const toolCallingFormat of ["native", "json"] as const) {
+      const gateway = new ModelGateway(transport(), [{...model,toolCallingFormat}]);
+      const result = await withRuntimeScope(scope, () => gateway.chatWithTools(model.id, [{ role: "user", content: "word ".repeat(7000) }], tools, { runId, maxTokens: 2048 }));
+      expect(result).toMatchObject({ ok: false, error: { code: "agent_context_limit" } });
+    }
     expect(dispatched).toHaveLength(0);
-    expect(loadAgentCountingVerification(scope.agentCountingProfiles![0].verification.binding)).toBeDefined();
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(0);
+    for (const profile of scope.agentCountingProfiles!) expect(loadAgentCountingVerification(profile.verification.binding)).toBeDefined();
   });
 
   it("keeps the 40-call limit at the transport boundary", async () => {

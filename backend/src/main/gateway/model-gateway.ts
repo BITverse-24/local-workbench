@@ -721,7 +721,8 @@ export class ModelGateway implements ModelClient {
               assertRuntimeActive();
               assertAgentAdmissionReceipt(receipt, payload, binding);
             } catch (error) {
-              if (!(error instanceof AgentRequestTooLargeError)) invalidateAgentCountingVerification(profile.verification.binding);
+              if (error instanceof AgentRequestTooLargeError) throw error;
+              invalidateAgentCountingVerification(profile.verification.binding);
               throw new AgentAdmissionError(error instanceof Error ? error.message : String(error), { cause: error });
             }
           }
@@ -1805,7 +1806,7 @@ export class ModelGateway implements ModelClient {
           };
         }
       } catch (err: any) {
-        if (err instanceof AgentAdmissionError) return { ok: false, error: { kind: "ai-error", code: "agent_admission_failed", message: err.message, retryable: false, modelId, requestId, runId } };
+        if (err instanceof AgentAdmissionError) return { ok: false, error: { kind: "ai-error", code: err instanceof AgentRequestTooLargeError ? "agent_context_limit" : "agent_admission_failed", message: err.message, retryable: false, modelId, requestId, runId } };
         if (!/tools/i.test(err?.message ?? "")) {
           return {
             ok: false,
@@ -1995,7 +1996,7 @@ export class ModelGateway implements ModelClient {
         ok: false,
         error: {
           kind: "ai-error",
-          code: err instanceof AgentAdmissionError ? "agent_admission_failed" : "model_unavailable",
+          code: err instanceof AgentRequestTooLargeError ? "agent_context_limit" : err instanceof AgentAdmissionError ? "agent_admission_failed" : "model_unavailable",
           message: err instanceof Error ? err.message : String(err),
           retryable: false,
           modelId,

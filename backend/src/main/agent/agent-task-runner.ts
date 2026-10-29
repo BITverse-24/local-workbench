@@ -138,7 +138,7 @@ export class AgentTaskRunner {
         const progress = getExecutionLedger(runId)?.agentProgress;
         const pending = task.snapshot.requirements.filter(item => item.state === "active");
         const selected = selectAgentRequirement(task, context);
-        const packet = buildAgentContextPacket(task, context, selected);
+        let packet = buildAgentContextPacket(task, context, selected);
         // Assess obtained evidence before asking the model to repeat an inspection step.
         // This changes the host phase, not requirement status or registered capabilities.
         const evidenceDigest = progress?.latestResultId ? context.resultStore.getResult(progress.latestResultId).storage.sha256 : undefined;
@@ -153,7 +153,7 @@ export class AgentTaskRunner {
           if (progress?.deliveryAttempts.some(attempt => attempt.evidenceDigest === evidenceDigest && attempt.answerDigest === answerDigest)) return stop("repeated_delivery", "The same answer was proposed for unchanged source evidence. Remaining requirements stay saved.");
           updateAgentProgress(runId, state => { state.deliveryAttempts.push({ evidenceDigest, answerDigest }); });
           const admitted = getExecutionLedger(runId)?.agentAdmissions.at(-1);
-          if (admitted?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push({ ...packet.observedSource!, requestId: admitted.requestId }); });
+          if (admitted?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push(...packet.observedSources.map(source=>({...source,requestId:admitted.requestId}))); });
           context.resultStore.registerResult({ type: "text", status: "complete", origin: "model_derived", producer: { tool: "agent_delivery_proposal", callId: randomUUID() }, summary: "Proposed answer from observed evidence", payload: answer.value.content, sources: [] });
           const reviewed = await reviewAgentTaskCoverage(task, context, modelId, [], answer.value.content);
           assertRuntimeActive();
@@ -168,11 +168,21 @@ export class AgentTaskRunner {
           ...(tool.name === "read_file" && packet.readPaths ? {path:{type:"string",enum:packet.readPaths}} : {}),
           requirement_id: { type: "string" } } } } }));
         const deliveryGap = agentDeliveryGap(task,context,changedPaths());
-        const response = await context.gateway.chatWithTools(modelId, packet.messages, deliveryGap ? definitions : [...definitions, FINISH_TOOL], { runId, maxTokens: 2048, toolChoice:"required", signal: scope.signal });
+        const actionTools = deliveryGap ? definitions : [...definitions, FINISH_TOOL];
+        const generate = () => context.gateway.chatWithTools(modelId, packet.messages, actionTools, { runId, maxTokens: 2048, toolChoice:"required", signal: scope.signal });
+        let response = await generate();
+        // Admission rejects before dispatch and call consumption. Remove whole optional pages,
+        // retaining requirements, constraints, and the latest result in every exact recount.
+        for (const budget of [3000, 0]) {
+          assertRuntimeActive();
+          if (response.ok || response.error.code !== "agent_context_limit") break;
+          packet = buildAgentContextPacket(task, context, selected, budget);
+          response = await generate();
+        }
         assertRuntimeActive();
         if (!response.ok) return stop("model_generation_unavailable", response.error.message);
         const admission = getExecutionLedger(runId)?.agentAdmissions.at(-1);
-        if (packet.observedSource && admission?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push({ ...packet.observedSource!, requestId: admission.requestId }); });
+        if (admission?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push(...packet.observedSources.map(source=>({...source,requestId:admission.requestId}))); });
         let call: AgentToolCall;
         try {
           if (response.value.finishReason === "length") throw new Error("The action was truncated. Return a complete smaller action.");

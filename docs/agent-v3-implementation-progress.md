@@ -140,6 +140,16 @@ The next live probes still failed. Typed actions produced seven usage-verified c
 
 Cancellation is now checked immediately after each model return, before binding interpretation, proposals, or completion. An admitted dispatch that fails before provider usage records `provider_error`; its call stays consumed. The focused check passed 198 tests across five files with one live test skipped. Full type checking passed. The next source-packing work must retain relevant earlier source bodies, with complete ranges and revision labels. Current packets retain only the last source body; an index alone is not enough for a small model to repair a multi-file project.
 
+## Bounded current source pages
+
+Fresh action requests now retain up to three useful earlier source pages, as well as the latest result. Selection uses requirement paths, references in the latest source, failure text, and recency. These are relevance hints only. Each page keeps its full content, digest, byte and line ranges, and continuation. Stale earlier pages are omitted from active source selection; their saved evidence remains available. The latest page records its currency at packet assembly. Receipts cover exactly the pages sent in a usage-verified request.
+
+The gateway now returns a distinct context-limit error before generation. The host can remove whole optional earlier pages and recount the complete prepared request. It keeps requirements, constraints, and the latest result. This consumes no model call and does not invalidate valid tokenizer setup. A request that still cannot fit stops before dispatch. Checks cover both native and JSON transport.
+
+Full type checking and the Electron source build passed. The focused check passed 205 tests across five files with one live inspection skipped. The live repair still failed: four calls passed exact counting, but the model repeated a directory listing before reading source. No edits occurred. Evidence is in `docs/evidence/agent-source-packing-live-2026-10-30.json`. This probe used a 900-second diagnostic deadline; it stopped after about 59 seconds. A larger deadline is no repair fix. Source selection did not get exercised by this failure.
+
+The next structural gap is source acquisition. The host records a baseline failure but leaves the transition to inspected code to a general model action. Add bounded host reads from contained failure locations and reported test paths. Those locations are evidence-selection hints, not instructions, acceptance, or mutation authority. Record these reads through the existing dispatcher and ResultStore; include only actually supplied pages in observation receipts.
+
 ## Current proof and limits
 
 The focused offline check passed 237 tests in 12 files; two opt-in live tests were skipped. This includes task storage, gateway admission, revision-bound edits, host-loop control, verification, storage isolation, and Chat/Work boundaries. Full type checking passed. The Electron source build passed. These results do not establish packaged behavior or live repair quality.

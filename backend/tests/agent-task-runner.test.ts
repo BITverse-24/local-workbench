@@ -369,6 +369,62 @@ describe("Agent v3 task host loop", () => {
     const {result}=await run(text);
     expect(result.outcome,result.text).toBe("completed");expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe(source.replace("head","fixed"));
   });
+  it("retains earlier source bytes across another read and removes stale pages after an edit",async()=>{
+    const first="saved source\n", second="café 🛠️\nsecond source\n";
+    writeFileSync(path.join(root,"other.txt"),second);
+    const digest=createHash("sha256").update(first).digest("hex");
+    replies=[()=>interpretation("change","Repair note.txt and preserve other.txt"),
+      ()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
+      ()=>({tool_calls:[{name:"read_file",arguments:{path:"other.txt"}}]}),payload=>{
+        const state=JSON.parse(payload.messages[1].content);
+        expect(state.latestResult.content).toBe(second);
+        expect(state.selectedSources.pages).toContainEqual(expect.objectContaining({path:"note.txt",content:first,digest,complete:true,startByte:0,endByte:Buffer.byteLength(first)}));
+        return {tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:digest,replacements:[{old:"source",new:"content"}]}}]};
+      },payload=>{
+        const state=JSON.parse(payload.messages[1].content);
+        expect(state.selectedSources.pages.map((page:any)=>page.path)).not.toContain("note.txt");
+        expect(state.selectedSources.pages).toContainEqual(expect.objectContaining({path:"other.txt",content:second}));
+        expect(JSON.parse(state.latestResult.content).afterDigest).not.toBe(digest);
+        return {tool_calls:[{name:"finish",arguments:{text:"The text edit is saved; other.txt is preserved."}}]};
+      },payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The inspected text edit is saved."}))};}];
+    const {result,runId}=await run("Repair note.txt and preserve other.txt");
+    expect(result.outcome,result.text).toBe("completed");
+    expect(getExecutionLedger(runId)?.agentProgress?.reads.filter(read=>read.path === "note.txt")).toHaveLength(2);
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved content\n");
+    expect(readFileSync(path.join(root,"other.txt"),"utf8")).toBe(second);
+  });
+  it("removes whole optional source pages after context rejection without consuming a model call or losing requirements",async()=>{
+    writeFileSync(path.join(root,"other.txt"),"other source\n");
+    const original=ModelGateway.prototype.chatWithTools;
+    const rejected:any[]=[],dispatched:any[]=[];
+    vi.spyOn(ModelGateway.prototype,"chatWithTools").mockImplementation(async function(this:ModelGateway,modelId,messages,tools,options){
+      const state=JSON.parse(messages[1]?.content ?? "{}");
+      if (state.selectedSources?.totalEligiblePages) {
+        if (state.selectedSources.pages.length) {
+          rejected.push(state);
+          return {ok:false,error:{kind:"ai-error",code:"agent_context_limit",message:"Exact prepared request exceeds context",retryable:false}};
+        }
+        dispatched.push(state);
+      }
+      return original.call(this,modelId,messages,tools,options);
+    });
+    replies=[()=>interpretation("change","Repair note.txt and preserve other.txt"),
+      ()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
+      ()=>({tool_calls:[{name:"read_file",arguments:{path:"other.txt"}}]}),
+      ()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"Edit saved."}}]}),
+      payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Text edit saved."}))};}];
+    const {result,runId}=await run("Repair note.txt and preserve other.txt");
+    expect(result.outcome,result.text).toBe("completed");
+    expect(rejected).toHaveLength(4);expect(dispatched).toHaveLength(2);
+    expect(dispatched[0].latestResult).toEqual(rejected[0].latestResult);
+    expect(dispatched[0].obligations).toEqual(rejected[0].obligations);
+    expect(dispatched[0].originalRequest).toEqual(rejected[0].originalRequest);
+    expect(dispatched[0].selectedSources).toMatchObject({pages:[],complete:false,totalEligiblePages:1});
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(6);
+    // The omitted old page was supplied on its own earlier request, never forged by packing.
+    expect(getExecutionLedger(runId)?.agentProgress?.reads.filter(read=>read.path === "note.txt")).toHaveLength(1);
+  });
   it("rejects repeated capability activation without executing it and permits the one protocol correction",async()=>{
     const text="Inspect note.txt";
     const cap=()=>({tool_calls:[{name:"request_capability",arguments:{capability:"document_processing"}}]});
