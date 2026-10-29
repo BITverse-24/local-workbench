@@ -60,7 +60,8 @@ describe("Agent existing-test verification", () => {
     save("case.test.cjs", "const {test}=require('node:test');const assert=require('node:assert/strict');test('existing case',()=>assert.equal(1,1));");
     save("reporter.cjs", NODE_EXISTING_TEST_REPORTER);
     const output = path.join(root, "report.json");
-    execFileSync(process.execPath, ["--test", path.join(root, "case.test.cjs")], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", WORKBENCH_TEST_REPORT: output, NODE_OPTIONS: `--test-reporter=${JSON.stringify(path.join(root, "reporter.cjs"))}` } });
+    // Electron can disable NODE_OPTIONS in a child. Test the reporter through Node's CLI.
+    execFileSync(process.execPath, ["--test", `--test-reporter=${path.join(root, "reporter.cjs")}`, path.join(root, "case.test.cjs")], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", WORKBENCH_TEST_REPORT: output } });
     expect(JSON.parse(readFileSync(output, "utf8"))).toMatchObject({ executed: 1, failed: 0, testFiles: [path.join(root, "case.test.cjs")] });
   });
   it("discovers every changed package and selects changed test files", () => {
@@ -69,6 +70,17 @@ describe("Agent existing-test verification", () => {
     expect(result.ok).toBe(true); if (!result.ok) return;
     expect(result.plans).toHaveLength(2); expect(result.plans.every(item => item.relatedCommand?.includes("--findRelatedTests"))).toBe(true);
     expect(result.plans[1].changedTestPaths).toEqual(["two/src/index.test.ts"]);
+  });
+  it("discovers every existing suite for a baseline or full-suite request with no changed files", () => {
+    for (const dir of ["one", "two"]) { save(`${dir}/package.json`, JSON.stringify({ scripts: { test: "vitest run" } })); save(`${dir}/value.test.ts`, "test('existing',()=>{})"); }
+    const result = discoverAgentTestPlans({ workspaceRoot: root, changedPaths: [] });
+    expect(result.ok).toBe(true); if (!result.ok) return;
+    expect(result.plans.map(item => item.suiteRoot)).toEqual(["one", "two"]);
+    expect(result.plans.every(item => item.initialPhase === "full" && !item.relatedCommand)).toBe(true);
+    expect(result.plans.every(item => item.testFiles.length > 0)).toBe(true);
+  });
+  it("does not report an empty project as a usable full suite", () => {
+    expect(discoverAgentTestPlans({ workspaceRoot: root, changedPaths: [] })).toMatchObject({ ok: false, reason: "no_usable_test_setup" });
   });
   it("does not replace a missing or unsupported existing test setup", () => {
     save("index.py", "value=1");

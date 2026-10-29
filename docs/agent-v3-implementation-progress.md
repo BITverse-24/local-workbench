@@ -52,6 +52,14 @@ V3 now reuses the persisted run contract on explicit resume. A manager test conf
 
 The final desktop interface check passed with a fixture bridge and real draft storage. It checked default continuation, per-chat New task choice, failure retention, one-shot reset, the disabled control during execution, and the Work boundary. Evidence: `docs/evidence/agent-task-controls-2026-10-29.json`. This is not a packaged-backend check.
 
+## Baseline and full-suite discovery
+
+An empty changed-file list previously produced zero test plans. The verification stage could report a pass without a test execution. Baseline and explicit full-suite requests now discover the roots of existing tests and select full suites. A project with no usable tests returns an unavailable check. The stage also rejects success without saved execution evidence.
+
+A failed baseline is historical evidence, not a mandatory completion failure after a repair. It does not spend the two test repair cycles. The final repaired revision still needs mandatory passing tests or a direct user waiver.
+
+Type checking passed. The focused run passed 43 tests across four files, with one opt-in live inspection skipped. This covers full-suite discovery, empty projects, actual baseline failures, repair allowance, existing real test execution, and the v3 host boundary. The reporter test now selects its reporter through Node's CLI because Electron can disable NODE_OPTIONS in a child; it still executes the existing test and reopens the generated report.
+
 ## Current proof and limits
 
 The focused offline check passed 237 tests in 12 files; two opt-in live tests were skipped. This includes task storage, gateway admission, revision-bound edits, host-loop control, verification, storage isolation, and Chat/Work boundaries. Full type checking passed. The Electron source build passed. These results do not establish packaged behavior or live repair quality.
@@ -75,4 +83,5 @@ The damaged Flow D workspace was not restored or edited by this work. Production
 - `4ce72cb`: durable tasks, schema backup, local/server counter foundations, pinned dependencies, and initial counting evidence.
 - `ef35bfc`: final gateway admission and saved usage receipts.
 - `b008c3b`: integrated v3 host loop, revision-bound edits, strict action transport, and failed live-inspection evidence.
-- This milestone adds tested task controls and same-session resume. Earlier Flow D assets and AGENTS.md edits remain separate.
+- `a258005`: tested task controls and same-session resume.
+- This milestone closes empty-suite false passes and separates baseline history from final acceptance. Earlier Flow D assets and AGENTS.md edits remain separate.

@@ -62,6 +62,22 @@ describe("Agent verification stage", () => {
     expect((await run(tools, ["first/module.js", "second/module.js"])).action).toBe("passed");
     expect(tools.dispatchConcurrent).toHaveBeenCalledTimes(2);
   });
+  it("executes baseline suites and keeps an initial failure separate from mandatory repair acceptance", async () => {
+    setupProject(); const tools = dispatcher(true);
+    const baseline = await runAgentVerificationStage({ context, dispatcher: tools, changedPaths: [], baseline: true, authorize: async () => true });
+    expect(baseline.action).toBe("repair"); expect(tools.dispatchConcurrent).toHaveBeenCalledTimes(1);
+    expect(getRunVerificationState(runId)?.evidence.find(item => item.criterionId === "baseline:project-tests")).toMatchObject({ status: "failed", mandatory: false });
+    expect(getRunVerificationState(runId)?.repairCount).toBe(0);
+    writeFileSync(path.join(workspace, "module.js"), "export const value = 2;\n");
+    expect((await run(dispatcher())).action).toBe("passed");
+    expect(verifyRunEvidence(runId)?.checks.find(item => item.criterionId === "acceptance:validate-written-code")?.status).toBe("passed");
+  });
+  it("does not pass a requested full suite when no tests exist", async () => {
+    const tools = dispatcher();
+    expect((await run(tools, [])).action).toBe("stop");
+    expect(tools.dispatchConcurrent).not.toHaveBeenCalled();
+    expect(getRunVerificationState(runId)?.evidence.find(item => item.criterionId === "acceptance:validate-written-code")?.status).toBe("unverified");
+  });
 
   it("stops without inventing tests when no existing setup is usable", async () => {
     writeFileSync(path.join(workspace, "module.js"), "export const value = 1;\n");

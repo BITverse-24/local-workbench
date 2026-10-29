@@ -34,7 +34,7 @@ export async function runAgentVerificationStage(input: {
   const criterion = input.baseline ? "baseline:project-tests" : CRITERION;
   const evidence = (status: VerificationCheck["status"], reason: string, extra: Partial<VerificationCheck> = {}) => {
     recordVerificationEvidence(runId, [{ criterionId: criterion, requirement: "Run tests against the latest saved code", status,
-      method: "execution_record", evidence: [], reason: reason.slice(0, 500), verifiedAt: new Date().toISOString(), mandatory: true, ...extra }]);
+      method: "execution_record", evidence: [], reason: reason.slice(0, 500), verifiedAt: new Date().toISOString(), mandatory: !input.baseline, ...extra }]);
   };
   const stop = (reason: string, detail: string): AgentVerificationStageResult => {
     evidence("unverified", detail);
@@ -151,6 +151,7 @@ export async function runAgentVerificationStage(input: {
         break;
       }
     }
+    if (!resultIds.length) return stop("execution_evidence_unavailable", "No existing test suite produced saved execution evidence. A test pass cannot be claimed.");
     const detail = "The selected existing tests passed against the latest saved code.";
     evidence("passed", detail, { revision: manifest.sha256,
       planId: planIds[0], sourceManifest: manifest.files,

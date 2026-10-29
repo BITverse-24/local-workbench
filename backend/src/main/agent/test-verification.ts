@@ -140,12 +140,21 @@ export function discoverAgentTestPlans(input: { workspaceRoot: string; changedPa
     const paths = [...new Set(input.changedPaths.map(file => slash(path.relative(root, resolveSafe(root, file)))) )].sort();
     const groups = new Map<string, string[]>();
     for (const file of paths) { const dir = closestRoot(root, file); groups.set(dir, [...(groups.get(dir) ?? []), file]); }
+    if (!paths.length) {
+      // Baseline and explicit full-suite requests have no changed-file mapping.
+      // Discover existing suite roots; an empty plan is never test evidence.
+      for (const file of Object.keys(manifest.files)) {
+        if (/(?:^|\/)(?:node_modules|\.git|\.venv|venv|vendor)\//.test(file) || !isTestPath(file)) continue;
+        groups.set(closestRoot(root, file), []);
+      }
+      if (!groups.size) groups.set(".", []);
+    }
     const plans: AgentTestPlan[] = [];
     for (const [dir, changedPaths] of groups) {
       const testFiles = Object.keys(manifest.files).filter(file => (dir === "." || file.startsWith(`${dir}/`)) && !/(?:^|\/)(?:node_modules|\.git|\.venv|venv|vendor)\//.test(file) && isTestPath(file));
       const changedTestPaths = changedPaths.filter(file => isTestPath(file) && manifest.files[file]);
       const relativeChanged = changedPaths.map(file => slash(path.posix.relative(dir, file)));
-      const configOrShared = changedPaths.some(file => !/\.(?:[cm]?[jt]sx?|py|vue|svelte)$/i.test(file) || /(?:^|\/)(?:shared|common)\/|(?:config|setup)\.[^/]+$/i.test(file));
+      const configOrShared = !changedPaths.length || changedPaths.some(file => !/\.(?:[cm]?[jt]sx?|py|vue|svelte)$/i.test(file) || /(?:^|\/)(?:shared|common)\/|(?:config|setup)\.[^/]+$/i.test(file));
       let runner: AgentTestRunner | undefined, full = "", related: string | undefined, configuredExplicit = false, format: AgentTestPlan["reportFormat"] = "json";
       const packageText = readSmall(root, path.posix.join(dir, "package.json"));
       if (packageText) {
