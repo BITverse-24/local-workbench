@@ -300,6 +300,34 @@ describe("Agent v3 task host loop", () => {
     expect(getExecutionLedger(runId)?.completedOperations.some(item => item.tool === "edit_file")).toBe(true);
     expect(getCurrentAgentTask(chatId)?.snapshot.requirements).toHaveLength(3);
   });
+  it("requires action while a repair is pending and checks delivery before spending another test attempt", async () => {
+    const text = "Repair note.txt and run existing tests.";
+    replies = [()=>({disposition:"continue",requirements:["change","execute"].map(kind=>({kind,description:kind,source_id:"request",checks:[{description:kind,kind:kind === "execute"?"execution":"review",operation:"semantic",path:null}]})),updates:[],full_suite:false}),
+      payload=>{
+        const schema = payload.response_format.json_schema.schema.properties.tool_calls;
+        expect(schema.minItems).toBe(1);expect(schema.items.properties.name.enum).not.toContain("finish");
+        return "I will repair the file and run tests.";
+      },()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
+      ()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),
+      payload=>{expect(payload.response_format.json_schema.schema.properties.tool_calls.items.properties.name.enum).toContain("finish");return {tool_calls:[{name:"finish",arguments:{text:"The edit is saved; testing remains unavailable."}}]};}];
+    const {result,runId,approve} = await run(text);
+    expect(result.stopReason,result.text).toBe("checks_unavailable");expect(approve).toHaveBeenCalledTimes(1);
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved content\n");
+    expect(getExecutionLedger(runId)?.verification?.repairCount).toBe(0);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(5);
+  });
+  it("provides complete structured directory observations without nested JSON text", async () => {
+    const text = "Inspect note.txt";
+    replies = [()=>interpretation("inspect",text),()=>({tool_calls:[{name:"list_dir",arguments:{path:"."}}]}),payload=>{
+      const input = JSON.parse(payload.messages[1].content);
+      expect(input.latestResult.completeResult).toBe(true);
+      expect(input.latestResult.value.entries).toContainEqual(expect.objectContaining({name:"note.txt"}));
+      expect(input.latestResult.content).toBeUndefined();
+      return {tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]};
+    },()=>"The source was inspected.",payload=>{const input=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:input.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source evidence saved."}))};}];
+    const {result} = await run(text);
+    expect(result.outcome,result.text).toBe("completed");
+  });
   it("retains a repair focus across reads and several edits without consuming its test repair cycles", async () => {
     const text = "Inspect the sources, repair both notes, and run existing tests.";
     writeFileSync(path.join(root,"other.txt"),"other source\n");
@@ -310,6 +338,7 @@ describe("Agent v3 task host loop", () => {
       expect(state.currentRequirement.kind).toBe("change");
       expect(state.obligations.map((item: any) => item.kind)).toEqual(["inspect","change","execute"]);
       expect(state.unresolvedRequirementIds).toHaveLength(3);
+      expect(state.sourceObservations.items).toContainEqual(expect.objectContaining({path:"note.txt",startByte:0,endByte:13,sizeBytes:13}));
       return answer;
     };
     replies = [() => ({ disposition: "continue", requirements: ["inspect","change","execute"].map(kind => ({kind,description:kind,source_id:"request",checks:[{description:kind,kind:kind === "execute" ? "execution" : "inspection",operation:"semantic",path:null}]})),updates:[],full_suite:false }),

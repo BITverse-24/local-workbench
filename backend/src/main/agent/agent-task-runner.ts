@@ -13,12 +13,12 @@ import { getAllAvailableTools, filterToolsForTurn } from "../router/tool-composi
 import { agentWorkspaceActions, canonicalSourcePath, validateAgentFileProposal } from "./workspace-actions.js";
 import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 import { resolveSafe } from "../harness/path-guard.js";
-import { buildAgentContextPacket, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
+import { buildAgentContextPacket, conciseAgentTool, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
 import { agentInterpretationResponseSchema, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
 import { runAgentVerificationStage } from "./verification-stage.js";
 import { isCodeVerificationPath } from "./test-verification.js";
 import { extractVerificationSkipBasis, recordVerificationTermination, recordVerificationUserSkip } from "../run/verification-controller.js";
-import { reviewAgentTaskCoverage } from "./requirement-review.js";
+import { agentDeliveryGap, reviewAgentTaskCoverage } from "./requirement-review.js";
 import { captureCommandWorkspaceDigest, commandApprovalDigest, COMMAND_FALLBACK_DISCLOSURE } from "../harness/tools/run-command.js";
 import { normalizeRunCommandArgs } from "../tools/workspace-tools.js";
 
@@ -120,6 +120,10 @@ export class AgentTaskRunner {
       const environmentKey = hash([process.platform, process.execPath, process.env.PATH]);
       const hasCodeProject = ["package.json", "pyproject.toml", "pytest.ini", "Cargo.toml", "pom.xml"].some(file => existsSync(resolveSafe(context.workspaceRoot, file)));
       const needsTests = task.snapshot.requirements.some(item => item.state === "active" && (item.kind === "execute" || item.acceptance.some(check => check.kind === "execution") || (item.kind === "change" && hasCodeProject)));
+      const changedPaths = () => {
+        const ledger = getExecutionLedger(runId)!;
+        return ledger.completedOperations.filter(item=>fileMutations.has(item.tool)).flatMap(item=>ledger.operationAttempts.find(attempt=>attempt.callId === item.callId)?.targetPath ?? []);
+      };
       if (needsTests && !getExecutionLedger(runId)?.agentProgress?.baseline) {
         const baseline = await runAgentVerificationStage({ context, dispatcher, changedPaths: [], authorize, baseline: true });
         clearApprovals();
@@ -154,8 +158,9 @@ export class AgentTaskRunner {
           continue;
         }
         const visible = filterToolsForTurn(registered, context.envelope, context.activeCapabilities!, { hasRetrievableResults: true });
-        const definitions: AgentToolDefinition[] = visible.map(tool => ({ ...tool.definition, function: { ...tool.definition.function, description: tool.definition.function.description.split(".")[0].slice(0, 220), parameters: { ...tool.definition.function.parameters, properties: { ...tool.definition.function.parameters.properties, requirement_id: { type: "string", description: "Optional active requirement ID; defaults to the current requirement" } } } } }));
-        const response = await context.gateway.chatWithTools(modelId, packet.messages, [...definitions, FINISH_TOOL], { runId, maxTokens: 2048, signal: scope.signal });
+        const definitions: AgentToolDefinition[] = visible.map(tool => conciseAgentTool({ ...tool.definition, function: { ...tool.definition.function, parameters: { ...tool.definition.function.parameters, properties: { ...tool.definition.function.parameters.properties, requirement_id: { type: "string" } } } } }));
+        const deliveryGap = agentDeliveryGap(task,context,changedPaths());
+        const response = await context.gateway.chatWithTools(modelId, packet.messages, deliveryGap ? definitions : [...definitions, FINISH_TOOL], { runId, maxTokens: 2048, toolChoice:"required", signal: scope.signal });
         if (!response.ok) return stop("model_generation_unavailable", response.error.message);
         const admission = getExecutionLedger(runId)?.agentAdmissions.at(-1);
         if (packet.observedSource && admission?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push({ ...packet.observedSource!, requestId: admission.requestId }); });
@@ -190,7 +195,8 @@ export class AgentTaskRunner {
         context.resultStore!.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_proposal", callId: call.id }, summary: context.agentChangeReason, payload: { taskId: task.taskId, taskRevision: bound.taskRevision, requirementId: context.agentRequirementId, reason: context.agentChangeReason, operation: call.name, arguments: call.arguments }, sources: [] });
         updateAgentProgress(runId, state => { state.actions.push({ id: call.id, hash: repeated, requirementId: context.agentRequirementId!, operation: call.name, status: "proposed" }); });
         if (call.name === "finish") {
-          const changed = getExecutionLedger(runId)?.completedOperations.filter(item => fileMutations.has(item.tool)).flatMap(item => getExecutionLedger(runId)!.operationAttempts.find(attempt => attempt.callId === item.callId)?.targetPath ?? []) ?? [];
+          const changed = changedPaths(), gap = agentDeliveryGap(task,context,changed);
+          if (gap) {updateAgentProgress(runId,state=>{state.feedback=gap;});continue;}
           if (needsTests || changed.some(isCodeVerificationPath)) {
             const baseline = getExecutionLedger(runId)?.agentProgress?.baseline;
             if (baseline?.status === "stop" && baseline.environmentKey === environmentKey) return stop("checks_unavailable", baseline.detail);

@@ -65,7 +65,8 @@ export function listDir(
 ): DirEntry[] {
   if (maxDepth < 1) return [];
 
-  const cacheKey = `${workspaceRoot}:${relativePath}:${maxDepth}`;
+  const root = resolveSafe(workspaceRoot, ".");
+  const cacheKey = `${root}:${relativePath}:${maxDepth}`;
   const cached = listDirCache.get(cacheKey);
   const now = Date.now();
 
@@ -77,7 +78,7 @@ export function listDir(
     return [...cached.entries];
   }
 
-  const target = resolveSafe(workspaceRoot, relativePath);
+  const target = resolveSafe(root, relativePath);
   const entries: DirEntry[] = [];
 
   function walk(dir: string, currentDepth: number): void {
@@ -107,12 +108,13 @@ export function listDir(
       const fullPath = path.join(dir, name);
       let stat;
       try {
+        resolveSafe(root, path.relative(root, fullPath));
         stat = statSync(fullPath);
       } catch {
         continue; // Broken symlink or unreadable file — skip
       }
 
-      const rel = path.relative(workspaceRoot, fullPath);
+      const rel = path.relative(root, fullPath);
 
       if (stat.isDirectory()) {
         entries.push({ name: rel, type: "directory", size: 0 });

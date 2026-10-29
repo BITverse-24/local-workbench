@@ -33,7 +33,7 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses an actual 7B 
   if (!source || !report) throw new Error("Set the prepared workspace and diagnostic report paths.");
   const selectedRuntimeSourceDigests = Object.fromEntries([
     "agent/agent-task-runner.ts","agent/task-interpretation.ts","agent/context-packet.ts","agent/requirement-review.ts",
-    "run/agent-task-store.ts","run/execution-ledger.ts","gateway/model-gateway.ts","harness/tools/run-command.ts",
+    "run/agent-task-store.ts","run/execution-ledger.ts","gateway/model-gateway.ts","harness/tools/run-command.ts","harness/tools/list-dir.ts",
   ].map(file=>[file,createHash("sha256").update(readFileSync(path.join(process.cwd(),"backend/src/main",file))).digest("hex")]));
   const temporary = mkdtempSync(path.join(tmpdir(), "agent-repair-live-")), previous = dataRoot();
   const workspace = path.join(temporary, "workspace"); mkdirSync(workspace);
@@ -42,6 +42,11 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses an actual 7B 
   const discovery = discoverAgentTestPlans({workspaceRoot:workspace,changedPaths:[]});
   if (!discovery.ok) throw new Error(discovery.detail);
   const testCommands = new Set(discovery.plans.map(plan => plan.fullCommand));
+  const project = JSON.parse(readFileSync(path.join(workspace,"package.json"),"utf8"));
+  // Exact aliases for this fixture's one immutable test script. No command prefix grants.
+  if (project.scripts?.test === "node --test" && Object.keys(project.scripts).length === 1) {
+    testCommands.add("npm test");testCommands.add("node --test");
+  }
   const request = "Inspect the FieldOps work-order web app in this workspace. Reproduce its failing tests, then repair both defects: the status filter must work with search, and invalid saved browser data must not stop the app from loading. Keep the current design and public behavior. Do not add dependencies. Run the full test suite and explain the cause and fix in each module.";
   setDataDir(temporary); initDb(path.join(temporary, "db.sqlite"));
   const endpoint = process.env.WORKBENCH_LMSTUDIO_PROBE_ENDPOINT ?? "http://127.0.0.1:1234";

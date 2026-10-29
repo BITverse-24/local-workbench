@@ -290,17 +290,17 @@ export function formatMessagesForFallback(
  
 export function formatJSONToolMessages(messages: Parameters<typeof formatMessagesForFallback>[0], tools: AgentToolDefinition[], required = false, strict = false) {
   const schema = (field: any): any => field.format === "multiline"
-    ? { type: "array", items: { type: "string" }, description: `${field.description} One raw string per line; retain indentation. Blank lines are empty strings.` }
+    ? { type: "array", items: { type: "string" }, description: `${field.description ? field.description + " " : ""}One raw string per line; retain indentation. Blank lines are empty strings.` }
     : { ...field, ...(field.properties ? { properties: Object.fromEntries(Object.entries(field.properties).map(([key, value]) => [key, schema(value)])) } : {}), ...(field.items ? { items: schema(field.items) } : {}) };
   const descriptions = tools.map(tool => `- ${tool.function.name}: ${tool.function.description}\n  Arguments schema: ${JSON.stringify(schema(tool.function.parameters))}`).join("\n\n");
   return formatMessagesForFallback(messages, `\n\nAVAILABLE TOOLS:\n${descriptions}\n\nReturn JSON: {"tool_calls":[{"name": <available tool name>, "arguments": <schema fields>}], "content":""}. ${strict ? "Return ONE bare JSON object. Do not wrap it in Markdown fences or prose. Fenced examples never execute. Select at most one tool call. " : ""}Emit each operation once. Multiline arguments are arrays of raw lines; preserve indentation, use empty strings for blank lines, and do not add newline escapes. ${required ? "A required operation remains incomplete. Call its tool now." : "If no operation is needed, tool_calls is [] and content is your final response."}`);
 }
 
 /** Constrain the JSON envelope where supported. Host schemas and policy still validate each action. */
-export function agentJSONResponseFormat(tools: AgentToolDefinition[]) {
+export function agentJSONResponseFormat(tools: AgentToolDefinition[], required = false) {
   return { type: "json_schema", json_schema: { name: "agent_action", strict: true, schema: {
     type: "object", properties: {
-      tool_calls: { type: "array", maxItems: 1, items: { type: "object", properties: {
+      tool_calls: { type: "array", minItems: required ? 1 : 0, maxItems: 1, items: { type: "object", properties: {
         name: { type: "string", enum: tools.map(tool => tool.function.name) }, arguments: { type: "object" },
       }, required: ["name", "arguments"], additionalProperties: false } },
       content: { type: "string" },
@@ -1830,7 +1830,7 @@ export class ModelGateway implements ModelClient {
         messages: fallbackMessages,
         temperature: effectiveTemperature,
         max_tokens: effectiveMaxTokens,
-        response_format: agentV3Scope() && tools.length ? agentJSONResponseFormat(tools) : isLocal ? { type: "text" } : undefined,
+        response_format: agentV3Scope() && tools.length ? agentJSONResponseFormat(tools,options?.toolChoice === "required") : isLocal ? { type: "text" } : undefined,
         ...resolveReasoningControl().params,
       });
 

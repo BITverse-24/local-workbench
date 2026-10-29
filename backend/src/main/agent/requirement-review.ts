@@ -9,10 +9,17 @@ import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js"
 import { verifyVerbatimChecks } from "./verbatim-evidence.js";
 import { captureAgentVerificationManifest } from "./test-verification.js";
 
+/** Necessary delivery conditions, not proof that the requested repair is correct. */
+export function agentDeliveryGap(task: AgentTask, context: ToolExecutionContext, changed: string[]): string | undefined {
+  if (task.snapshot.messages.some(message => message.disposition === "pending")) return "An original request is still pending requirement interpretation. It cannot be omitted from completion.";
+  const required = task.snapshot.requirements.filter(item=>item.state === "active");
+  if (required.some(item=>item.kind === "change") && !changed.length && !getExecutionLedger(context.runId)?.completedOperations.some(item=>item.artifactRefs.length)) return "A repair or change remains pending. No change has been saved. Inspect the relevant source and propose its concrete edit; advice or a promise cannot complete this task.";
+}
+
 export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExecutionContext, modelId: string, changed: string[], proposedAnswer: string): Promise<{ ok: boolean; detail: string; next?: "delivery" | "source" }> {
-  if (task.snapshot.messages.some(message => message.disposition === "pending")) return {ok:false,detail:"An original request is still pending requirement interpretation. It cannot be omitted from completion."};
+  const gap = agentDeliveryGap(task,context,changed);
+  if (gap) return {ok:false,detail:gap};
   const ledger = getExecutionLedger(context.runId)!, required = task.snapshot.requirements.filter(item => item.state === "active");
-  if (required.some(item => item.kind === "change") && !changed.length && !ledger.completedOperations.some(item => item.artifactRefs.length)) return { ok: false, detail: "The task requires a repair or change. Advice alone cannot complete it." };
   // Model proposals and earlier reviews cannot become source or execution proof.
   const records = context.resultStore!.listResults({ limit: 50 });
   for (let offset = 50; records.length === offset; offset += 50) records.push(...context.resultStore!.listResults({ limit: 50, offset }));

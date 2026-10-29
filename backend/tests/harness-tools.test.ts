@@ -11,6 +11,7 @@ import {
   existsSync,
   readFileSync,
   realpathSync,
+  symlinkSync,
 } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -49,6 +50,21 @@ describe("Harness Tools", () => {
 
   // ── list_dir ─────────────────────────────────────────────────
   describe("listDir", () => {
+    it("returns workspace-relative names when the selected root is an alias", () => {
+      const alias=root+"-alias";symlinkSync(root,alias,"junction");
+      try {
+        const entries=listDir(alias);
+        expect(entries.map(entry=>entry.name)).toContain(path.join("src","index.ts"));
+        expect(entries.every(entry=>!path.isAbsolute(entry.name) && !entry.name.startsWith(".."))).toBe(true);
+        expect(readFile(alias,entries.find(entry=>entry.name===path.join("src","index.ts"))!.name)).toContain("FIX_ME_NOW");
+      } finally {rmSync(alias,{force:true});}
+    });
+    it("does not traverse a child link outside the authorized workspace", () => {
+      const external=root+"-external";mkdirSync(external);writeFileSync(path.join(external,"private.txt"),"outside");
+      symlinkSync(external,path.join(root,"escape"),"junction");
+      try {expect(listDir(root).some(entry=>entry.name.startsWith("escape"))).toBe(false);}
+      finally {rmSync(external,{recursive:true,force:true});}
+    });
     it("returns files and directories", () => {
       const entries = listDir(root);
       const names = entries.map((e) => e.name);

@@ -120,6 +120,18 @@ The user approved the isolated local test after the tool review timeouts. The re
 
 The focused check passed 220 tests across six files, with one live inspection skipped. Full type checking and the Electron source build passed. The next host-loop work is to assess delivery prerequisites before running post-repair tests, present a smaller task-relevant action surface, and supply bounded useful baseline evidence. The saved trace still shows the agentic execution fault; do not treat extraction or baseline success as a completed repair.
 
+## Action phase, observation state, and canonical listings
+
+The host now checks necessary delivery conditions before post-repair testing. A future-tense reply without a saved change cannot spend another test attempt or stop approved edits merely because tests are unavailable. The model action request uses required tool choice. JSON transport requires one call when requested. Finish is presented after the necessary change condition is met; a provider that ignores that presentation still cannot bypass host completion checks. Registered capabilities and approval rules remain authoritative.
+
+Tool presentation removes schema guidance while preserving named fields, validation constraints, and literal data. Complete structured directory and search results are passed as structured values. Feedback is bounded and explicitly marked incomplete when shortened; complete test evidence remains in ResultStore with references in the packet. A bounded source-observation index and recent action records now carry operational state between fresh requests. Historical source digests do not establish current applicability or requirement acceptance.
+
+A regression check found that directory listing mixed a canonical target path with a noncanonical workspace root. The earlier live trace contains long parent-relative names under `/private/var/...`. The helper now uses one canonical root, and checks each child before inspection. Alias tests confirm returned names can be used for reads; an outside-workspace link is not traversed. Chat and Work boundary checks still pass.
+
+The focused check passed 242 tests across seven files, with one live inspection skipped. Full type checking and the Electron source build passed. Live checks remain failures, saved in `docs/evidence/agent-action-phase-live-2026-10-29.json`. With the first action-phase changes, the model read the README but repeated it. With observation state, it requested `npm test`; the evaluation originally allowed only the exact discovered `npm test --` command. The evaluation now also accepts the exact `npm test` and `node --test` aliases only for this fixture's one unchanged test script. This does not widen app command scopes. The next probe instead repeated a document-capability request and stopped Partial. No source edit or repair pass occurred.
+
+The remaining contract fault is visible in the prepared requests: JSON transport constrains the tool name but leaves its arguments as a generic object. Capability state is also absent from the fresh request. Bind argument schemas to their selected tool, expose active presentation state, and prevent repeat activation of an already visible group. Keep task-relevant registered tools reachable. The live repair target is still unproved.
+
 ## Current proof and limits
 
 The focused offline check passed 237 tests in 12 files; two opt-in live tests were skipped. This includes task storage, gateway admission, revision-bound edits, host-loop control, verification, storage isolation, and Chat/Work boundaries. Full type checking passed. The Electron source build passed. These results do not establish packaged behavior or live repair quality.
@@ -128,7 +140,7 @@ Live inspection evidence is saved in `docs/evidence/agent-host-inspection-probes
 
 ## Work still required
 
-1. Fix the remaining live action-loop fault: the model still returns future-tense replies and repeats directory listings. Assess delivery prerequisites before post-repair tests, present task-relevant compact tools, and provide bounded baseline evidence. Then extend current evidence and bounded assessment to general repair and document requirements. Source-span extraction now has live evidence; pending-original retention has host tests. Complete bounded per-requirement evidence checks. Do not weaken acceptance or replace existing tests.
+1. Complete the action contract: bind JSON argument schemas to tool names, include active capability state in fresh requests, and stop repeated presentation-group activation. Retain useful directory evidence between steps. The live model still has no successful repair. Then complete bounded per-requirement evidence checks and task-authorized cross-run applicability. Audit explicit full-suite scope independently of an omitted model Boolean. Do not weaken acceptance or replace existing tests.
 2. Add the separate task progress facts to the UI. Complete task-authorized cross-run evidence retrieval in the active loop. Retain all original obligations on follow-ups and regressions.
 3. Finish structured constraints and protected-path extraction. Keep policy checks at the tool boundary.
 4. Complete test-environment probing in the actual launch environment. Cache unchanged missing-command failures. Finish baseline, full-suite, post-edit test scheduling, and repair-cycle integration.

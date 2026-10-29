@@ -57,16 +57,39 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
       const page = z.object({ sourcePage: z.literal(true), path: z.string(), digest: z.string(), startByte: z.number(), endByte: z.number(), sizeBytes: z.number() }).passthrough().parse(JSON.parse(text));
       result = page;
       observedSource = { path: page.path, digest: page.digest, startByte: page.startByte, endByte: page.endByte, sizeBytes: page.sizeBytes, resultId: record.resultId };
-    } else result = { resultId: record.resultId, summary: record.summary, content: first.content, complete: !first.truncated, nextOffset: first.nextOffset };
+    } else result = agentEvidenceSlice(context,record.resultId,4000);
   }
   const source = task.snapshot.messages.find(message => message.id === requirement.source.messageId);
+  const observations = [...new Map([...(progress?.reads ?? []),...(observedSource ? [observedSource] : [])].map(read=>[
+    `${read.path}:${read.digest}:${read.startByte}:${read.endByte}`,
+    {path:read.path,observedDigest:read.digest,startByte:read.startByte,endByte:read.endByte,sizeBytes:read.sizeBytes,resultId:read.resultId},
+  ])).values()];
   const state = { taskId: task.taskId, taskRevision: task.snapshot.revision, currentRequirement: requirement,
     constraints, unresolvedRequirementIds: task.snapshot.requirements.filter(item => item.state === "active").map(item => item.id),
     obligations: task.snapshot.requirements.filter(item => item.state === "active").map(item => ({ id: item.id, kind: item.kind, description: item.description, acceptance: item.acceptance })),
     appliedOperations: ledger?.completedOperations.slice(-5).map(item => ({ tool: item.tool, summary: item.summary, resultIds: item.resultIds })),
-    latestResult: result, feedback: progress?.feedback, inputSources: context.inputSources,
+    sourceObservations: {items:observations.slice(-8),total:observations.length,complete:observations.length<=8,earlierEvidenceVia:{tool:"retrieve_result",action:"list"}},
+    recentActions: progress?.actions.slice(-8).map(action=>({operation:action.operation,status:action.status,resultId:action.resultId})),
+    latestResult: result, feedback: {text:progress?.feedback.slice(0,1000) ?? "",complete:(progress?.feedback.length ?? 0)<=1000},
+    checkEvidence: ledger?.verification?.evidence.map(check=>({criterionId:check.criterionId,status:check.status,reason:check.reason,resultIds:check.evidence.filter(ref=>ref.kind === "result").map(ref=>ref.id)})), inputSources: context.inputSources,
     originalRequest: source?.content };
   return { messages: [{ role: "system", content: AGENT_COMMON_INSTRUCTIONS }, { role: "user", content: JSON.stringify(state) }], observedSource, requirement };
 }
 
 export const FINISH_TOOL: AgentToolDefinition = { type: "function", function: { name: "finish", description: "Propose the final answer. The host checks every requirement before completion.", parameters: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false } } };
+
+/** Presentation only. Dispatcher schemas and registered capabilities remain authoritative. */
+export function conciseAgentTool(tool: AgentToolDefinition): AgentToolDefinition {
+  const concise = (value: unknown): unknown => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+    const {description:_description,...schema} = value as Record<string,unknown>;
+    for (const key of ["properties","patternProperties","definitions","$defs"]) {
+      const entries = schema[key];
+      if (entries && typeof entries === "object" && !Array.isArray(entries)) schema[key]=Object.fromEntries(Object.entries(entries).map(([name,child])=>[name,concise(child)]));
+    }
+    for (const key of ["items","additionalProperties","not","if","then","else","contains","propertyNames"]) if (schema[key] && typeof schema[key] === "object") schema[key]=concise(schema[key]);
+    for (const key of ["allOf","anyOf","oneOf","prefixItems"]) if (Array.isArray(schema[key])) schema[key]=(schema[key] as unknown[]).map(concise);
+    return schema;
+  };
+  return {...tool,function:{...tool.function,description:tool.function.description.split(".")[0].slice(0,220),parameters:concise(tool.function.parameters) as AgentToolDefinition["function"]["parameters"]}};
+}

@@ -127,7 +127,7 @@ Implementation diagnostic: the 7B Flow D probe changed the case of a quoted sour
 4. Validate the requirement ID, tool schema, workspace binding, source receipt, and budget. Apply the existing approval gate to side effects. Tool registration does not grant permission.
 5. Persist an action attempt before execution. Recheck authority and source digest under the lock. Save the result, side effects, and evidence before starting dependent work.
 6. After edits, invalidate acceptance tied to older revisions. Run required checks or record why execution is unavailable. A real test failure can enter one of the two existing repair cycles.
-7. A finish proposal invokes host completion assessment. If requirements remain and budget is available, return the specific gap to the next turn. Otherwise deliver Partial with retained work and a stop reason.
+7. A finish proposal invokes host completion assessment. Check necessary delivery conditions before scheduling post-repair tests. A promise without a saved change cannot trigger another repair test attempt. While a required repair has no saved change, present action tools and require one action in native or JSON transport; retain the registered tool surface and host checks. Structured observations remain structured in the next request. Include a bounded source-observation index, recent action records, and references to complete execution evidence. Mark shortened feedback incomplete. If requirements remain and budget is available, return the specific gap to the next turn. Otherwise deliver Partial with retained work and a stop reason.
 
 ### Budgets and terminal behavior
 
