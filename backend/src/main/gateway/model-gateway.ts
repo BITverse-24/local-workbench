@@ -1828,8 +1828,12 @@ export class ModelGateway implements ModelClient {
     // A line array avoids deeply escaped code/document strings on small local
     // models. Decode it losslessly back to the canonical tool string at ingress.
     const fallbackTransport = this.inferenceTransport({ runId, modelId, purpose: options?.purpose ?? "working_turn" }, true);
-    const fallbackMessages = agentV3Scope() && !tools.length
-      ? formatMessagesForFallback(messages, "")
+    // With one required operation, its identity is already host-bound. Ask the
+    // JSON model for arguments only; native calling keeps its normal envelope.
+    const argumentTool = agentV3Scope() && tools.length === 1 && options?.toolChoice === "required" ? tools[0] : undefined;
+    const fallbackMessages = argumentTool
+      ? formatMessagesForFallback(messages, `\n\nReturn ONE bare JSON object containing the arguments for ${argumentTool.function.name}. The host selected the operation. Match the supplied JSON schema. No tool-name envelope, Markdown, or prose.`)
+      : agentV3Scope() && !tools.length ? formatMessagesForFallback(messages, "")
       : formatJSONToolMessages(messages, tools, options?.toolChoice === "required", !!agentV3Scope());
 
     try {
@@ -1838,7 +1842,7 @@ export class ModelGateway implements ModelClient {
         messages: fallbackMessages,
         temperature: effectiveTemperature,
         max_tokens: effectiveMaxTokens,
-        response_format: agentV3Scope() && tools.length ? agentJSONResponseFormat(tools,options?.toolChoice === "required") : isLocal ? { type: "text" } : undefined,
+        response_format: argumentTool ? {type:"json_schema",json_schema:{name:"agent_tool_arguments",strict:true,schema:jsonToolParameterSchema(argumentTool.function.parameters)}} : agentV3Scope() && tools.length ? agentJSONResponseFormat(tools,options?.toolChoice === "required") : isLocal ? { type: "text" } : undefined,
         ...resolveReasoningControl().params,
       });
 
@@ -1894,18 +1898,22 @@ export class ModelGateway implements ModelClient {
         const choice = envelope.choices?.[0];
         const rawContent = typeof choice?.message?.content === "string" ? withoutInlineReasoning(choice.message.content) : choice?.message?.content;
         let parsedJson: any = null;
+        let parsedArguments = false;
 
         if (typeof rawContent === "string") {
           try {
             const stripped = agentV3Scope() ? rawContent.trim() : rawContent.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
             parsedJson = parseStructuredData(stripped);
+            parsedArguments = parsedJson !== null && typeof parsedJson === "object" && !Array.isArray(parsedJson);
           } catch {
             parsedJson = { content: rawContent, tool_calls: null };
           }
         }
 
         const toolCalls: AgentToolCall[] = [];
-        if (Array.isArray(parsedJson?.tool_calls)) {
+        if(argumentTool && parsedArguments) {
+          toolCalls.push({id:randomUUID(),name:argumentTool.function.name,arguments:parseToolCallArguments(parsedJson)});
+        } else if (!argumentTool && Array.isArray(parsedJson?.tool_calls)) {
           for (const tc of parsedJson.tool_calls) {
             if (!tc || typeof tc !== "object") continue;
             const callName = tc.name || tc.function?.name;

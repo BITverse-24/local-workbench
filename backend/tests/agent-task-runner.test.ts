@@ -38,6 +38,13 @@ beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); pre
 });
 afterEach(() => { vi.restoreAllMocks(); closeDb(); setDataDir(previousRoot); rmSync(root, { recursive: true, force: true }); });
 function interpretation(kind: string, text: string) { return { disposition: "continue", requirements: [{ kind, description: text, source_id: "request", checks: [{ description: text, kind: "inspection", operation: "semantic", path: null }] }], updates: [], full_suite: false }; }
+function packetState(content:string):any { return JSON.parse(content.split("\n\nOBSERVED SOURCE ")[0]); }
+function observedSource(payload:any,filename:string,content:string) {
+  const state=packetState(payload.messages[1].content);
+  expect(state.selectedSources.pages).toContainEqual(expect.objectContaining({path:filename}));
+  expect(state.selectedSources.pages.find((page:any)=>page.path === filename).content).toBeUndefined();
+  expect(payload.messages[1].content).toContain(`<source>\n${content}\n</source>`);
+}
 async function run(text: string, managerPath = false, onApprove: (preview: string) => Promise<boolean> = async () => true, setupError?: string, workspaceRoot = root) {
   let runId = managerPath ? "" : createRun(chatId, text);
   const messageId = addMessage({ chat_id: chatId, role: "user", content: text }).id;
@@ -52,7 +59,19 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
     const answer = fileScope ? fileScopeReplies.shift() ?? (()=>({withinScope:true,reason:"The quoted user request includes this file change."})) : refinement ? refinementReplies.shift() : title ? () => "Inspect saved source" : scopeReview ? scopeReplies.shift() ?? (()=>({covered:true,missing:[],full_suite:false})) : replies.shift();
     if (!answer) throw new Error("Unexpected model generation");
     const input = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload });
-    const content = answer(payload);
+    let content = answer(payload);
+    const shapes=payload.response_format?.json_schema?.schema?.properties?.tool_calls?.items?.anyOf;
+    const directProposal=payload.response_format?.json_schema?.name === "agent_tool_arguments";
+    if((directProposal || shapes?.length === 1 && shapes[0].properties.name.enum[0] === "propose_repair") && typeof content === "object" && content !== null){
+      const calls=(content as any).tool_calls;
+      if(calls?.length === 1 && calls[0].name !== "propose_repair") {
+        const {name,arguments:args}=calls[0];
+        const proposal=name === "edit_file" ? {kind:"edit",replacements:args.replacements.map((item:any)=>({old:item.old.split("\n"),new:item.new.split("\n")}))} :
+          name === "read_file" ? {kind:"source",...args,reason:"Obtain missing source"} : name === "request_capability" ? {kind:"tools",...args,reason:args.reason ?? "Show needed tools"} : name === "finish" ? {kind:"blocked",reason:args.text} : undefined;
+        if(proposal)content={tool_calls:[{name:"propose_repair",arguments:proposal}]};
+      }
+      if(directProposal && (content as any).tool_calls?.length === 1 && (content as any).tool_calls[0].name === "propose_repair")content=(content as any).tool_calls[0].arguments;
+    }
     return { status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: typeof content === "string" ? content : JSON.stringify(content) }, finish_reason: "stop" }], usage: { prompt_tokens: input.inputTokens, completion_tokens: 30 } }) };
   } }, [{ id: "driver", runtime: "mlx-lm", baseUrl: "http://127.0.0.1:1234/v1", model: "driver", capabilities: ["text"], toolCallingFormat: "json", requestTimeoutMs: 1000, healthPath: "/models", enabled: true, contextLength: 8192 }]);
   vi.spyOn(gateway, "prepareAgentCountingProfiles").mockImplementation(async()=>{if(setupError)throw new Error(setupError);return [{assetsDir:root,activeTemplate:template,verification}];});
@@ -70,6 +89,14 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
   transition(runId, result.outcome === "completed" ? "completed" : result.outcome === "cancelled" ? "cancelled" : "partial");
   return { result, runId, approve, emit, manager: undefined };
 }
+function failingWorkspace() {
+  const workspace=path.join(root,"project");mkdirSync(workspace);
+  const implementation='exports.readValue = () => { throw new Error("baseline failure"); };\n';
+  writeFileSync(path.join(workspace,"package.json"),JSON.stringify({scripts:{test:"node --test"}}));
+  writeFileSync(path.join(workspace,"value.cjs"),implementation);
+  writeFileSync(path.join(workspace,"value.test.cjs"),'const {test}=require("node:test");const {readValue}=require("./value.cjs");test("existing failure",()=>readValue());\n');
+  return {workspace,implementation};
+}
 describe("Agent v3 task host loop", () => {
   it("honors cancellation at generation return before binding an execution attempt",async()=>{
     const controller=new AbortController();runSignal=controller.signal;
@@ -84,18 +111,18 @@ describe("Agent v3 task host loop", () => {
   it("revises omitted repair obligations after a separate pre-action scope review",async()=>{
     const request="Inspect note.txt, repair its source wording, run the full test suite, and explain the fix.";
     scopeReplies=[payload=>{
-      const input=JSON.parse(payload.messages[1].content);
+      const input=packetState(payload.messages[1].content);
       expect(input.source.text).toBe(request);
       expect(input.requirements.map((item:any)=>item.kind)).toEqual(["execute"]);
       expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved source\n");
       return {covered:false,missing:["Inspection, file repair, and explanation must be separate requirements."],full_suite:true};
     },payload=>{
-      const input=JSON.parse(payload.messages[1].content);
+      const input=packetState(payload.messages[1].content);
       expect(input.requirements.map((item:any)=>item.kind)).toEqual(["execute","inspect","change","execute","deliver"]);
       return {covered:true,missing:[],full_suite:true};
     }];
     refinementReplies=[payload=>{
-      const input=JSON.parse(payload.messages[1].content);
+      const input=packetState(payload.messages[1].content);
       expect(input.source.text).toBe(request);expect(input.source.sourceId).toBe("s1");
       expect(input.missing).toContain("separate requirements");
       return {requirements:["inspect","change","execute","deliver"].map(kind=>({kind,description:kind,check:{operation:"semantic",path:null}})),full_suite:true};
@@ -139,17 +166,17 @@ describe("Agent v3 task host loop", () => {
   it("binds a missing explanation to its exact source while preserving the earlier repair obligation",async()=>{
     const request="Repair note.txt. Explain the change.";
     scopeReplies=[()=>({covered:true,missing:[],full_suite:false}),payload=>{
-      const input=JSON.parse(payload.messages[1].content);
+      const input=packetState(payload.messages[1].content);
       expect(input.source).toMatchObject({sourceId:"s2",text:" Explain the change."});
       expect(input.originalMessages).toBeUndefined();expect(input.proposedUpdates).toBeUndefined();
       return {covered:false,missing:["A delivery requirement for the explanation is missing."],full_suite:false};
     },()=>({covered:true,missing:[],full_suite:false}),payload=>{
-      const input=JSON.parse(payload.messages[1].content);
+      const input=packetState(payload.messages[1].content);
       expect(input.requirements.map((item:any)=>item.kind)).toEqual(["change","deliver"]);
       return {covered:true,missing:[],full_suite:false};
     }];
     refinementReplies=[payload=>{
-      const input=JSON.parse(payload.messages[1].content);
+      const input=packetState(payload.messages[1].content);
       expect(input.source).toMatchObject({sourceId:"s2",text:" Explain the change."});
       expect(input.contextBefore).toBeUndefined();
       expect(input.missing).toContain("delivery requirement");
@@ -158,7 +185,7 @@ describe("Agent v3 task host loop", () => {
     replies=[()=>interpretation("change",request),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
       ()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),
       ()=>({tool_calls:[{name:"finish",arguments:{text:"The wording is corrected by the saved source-to-content replacement."}}]}),
-      ...Array.from({length:2},()=>(payload:any)=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The saved text edit and explanation meet the request."}))};})];
+      ...Array.from({length:2},()=>(payload:any)=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The saved text edit and explanation meet the request."}))};})];
     const {result,runId,approve}=await run(request);
     expect(result.outcome,result.text).toBe("completed");expect(approve).toHaveBeenCalledTimes(1);
     const requirements=getCurrentAgentTask(chatId)!.snapshot.requirements;
@@ -186,13 +213,13 @@ describe("Agent v3 task host loop", () => {
     expect(saved.snapshot.messages[0]).toMatchObject({content:original,disposition:"pending"});
     expect(getExecutionLedger(first.runId)?.agentTask?.preparation).toMatchObject({taskId:saved.taskId,taskRevision:1,messageId:saved.snapshot.messages[0].id});
     replies = [payload=>{
-      const input = JSON.parse(payload.messages[1].content);
+      const input = packetState(payload.messages[1].content);
       expect(input.pendingRequests[0].sources.map((item:any)=>item.text).join("")).toBe(original);
       return {disposition:"continue",requirements:[{kind:"change",description:original,source_id:"p1:request",checks:[{description:"Save the requested text edit",kind:"review",operation:"semantic",path:null}]}],updates:[],full_suite:false};
     },()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
     ()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),
     ()=>({tool_calls:[{name:"finish",arguments:{text:"The requested text edit is saved."}}]}),payload=>{
-      const input = JSON.parse(payload.messages[1].content);
+      const input = packetState(payload.messages[1].content);
       expect(input.originalRequests.some((message:any)=>message.content===original)).toBe(true);
       return {covered:true,missing:[],requirements:input.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The observed text edit is saved."}))};
     }];
@@ -218,7 +245,7 @@ describe("Agent v3 task host loop", () => {
     await run("Repair note.txt",false,undefined,"Counting setup unavailable");
     const task = getCurrentAgentTask(chatId)!;
     replies = [()=>({disposition:"status",requirements:[],updates:[],full_suite:false}),payload=>{
-      const input = JSON.parse(payload.messages[1].content);
+      const input = packetState(payload.messages[1].content);
       expect(input.pendingRequests[0].content).toBe("Repair note.txt");
       return "The original repair request still needs requirement interpretation.";
     }];
@@ -248,13 +275,13 @@ describe("Agent v3 task host loop", () => {
     writeFileSync(path.join(workspace,"value.cjs"),implementation);writeFileSync(path.join(workspace,"value.test.cjs"),test);
     const request="Inspect the source, reproduce the failure, repair value.cjs, and run the existing tests.";
     replies=[()=>({disposition:"continue",requirements:["inspect","change","execute"].map(kind=>({kind,description:request,source_id:"request",checks:[{description:request,kind:kind === "execute"?"execution":"review",operation:"semantic",path:null}]})),updates:[],full_suite:true}),payload=>{
-      const state=JSON.parse(payload.messages[1].content);
+      const state=packetState(payload.messages[1].content);
       expect(state.currentRequirement.kind).toBe("change");
-      expect(state.selectedSources.pages).toContainEqual(expect.objectContaining({path:"value.cjs",content:implementation,complete:true}));
-      expect(state.selectedSources.pages).toContainEqual(expect.objectContaining({path:"value.test.cjs",content:test,complete:true}));
+      observedSource(payload,"value.cjs",implementation);
+      observedSource(payload,"value.test.cjs",test);
       expect(state.feedback.text).toContain("wrong value");
       return {tool_calls:[{name:"edit_file",arguments:{path:"value.cjs",expected_digest:createHash("sha256").update(implementation).digest("hex"),replacements:[{old:'throw new Error("wrong value");',new:'return "ready";'}]}}]};
-    },()=>({tool_calls:[{name:"finish",arguments:{text:"The existing test now passes after the value repair."}}]}),...Array.from({length:3},()=>(payload:any)=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source was inspected; the baseline failed and the existing test passed after repair."}))};})];
+    },()=>({tool_calls:[{name:"finish",arguments:{text:"The existing test now passes after the value repair."}}]}),...Array.from({length:3},()=>(payload:any)=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source was inspected; the baseline failed and the existing test passed after repair."}))};})];
     const {result,runId,approve,emit}=await run(request,false,undefined,undefined,workspace);
     expect(result.outcome,result.text+JSON.stringify(emit.mock.calls.filter(([event])=>event.type === "tool_result"))).toBe("completed");
     const ledger=getExecutionLedger(runId)!;
@@ -277,22 +304,22 @@ describe("Agent v3 task host loop", () => {
     const request="Inspect, reproduce, and repair both existing module failures. Run the full suite.";
     const edit=(file:string,source:string,old:string,replacement:string)=>({tool_calls:[{name:"edit_file",arguments:{path:file,expected_digest:createHash("sha256").update(source).digest("hex"),replacements:[{old,new:replacement}]}}]});
     replies=[()=>interpretation("execute",request),payload=>{
-      const input=JSON.parse(payload.messages[1].content);
+      const input=packetState(payload.messages[1].content);
       expect(input.currentStep).toMatchObject({phase:"address_failure",target:{path:"storage.cjs",role:"implementation",digest:createHash("sha256").update(storage).digest("hex")}});
       expect(input.currentStep.executionResultIds).toHaveLength(1);
-      expect(input.selectedSources.pages).toContainEqual(expect.objectContaining({path:"storage.cjs",content:storage}));
+      observedSource(payload,"storage.cjs",storage);
       expect(input.suggestedReadPaths).toBeUndefined();
       return edit("storage.cjs",storage,'throw new Error("bad data");','return [];');
     },payload=>{
-      const input=JSON.parse(payload.messages[1].content);
+      const input=packetState(payload.messages[1].content);
       expect(input.currentStep).toMatchObject({phase:"address_failure",target:{path:"filters.cjs",role:"implementation"},relatedPaths:["filters.cjs","filters.test.cjs"]});
-      expect(input.selectedSources.pages[0]).toMatchObject({path:"filters.cjs",content:filters});
+      observedSource(payload,"filters.cjs",filters);
       expect(input.selectedSources.pages.some((page:any)=>page.path === "storage.cjs")).toBe(false);
       return edit("filters.cjs",filters,"=> items;","=> items.filter(item => item.status === status);");
     },payload=>{
-      const input=JSON.parse(payload.messages[1].content);expect(input.currentStep).toMatchObject({phase:"check_changes"});
+      const input=packetState(payload.messages[1].content);expect(input.currentStep).toMatchObject({phase:"check_changes"});
       return {tool_calls:[{name:"finish",arguments:{text:"Both module defects are repaired. The host must verify the existing suite."}}]};
-    },payload=>{const input=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:input.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Existing tests failed before the saved edits and passed after them."}))};}];
+    },payload=>{const input=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:input.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Existing tests failed before the saved edits and passed after them."}))};}];
     const {result,runId,approve}=await run(request,false,undefined,undefined,workspace);
     expect(result.outcome,result.text).toBe("completed");expect(approve).toHaveBeenCalledTimes(4);
     const ledger=getExecutionLedger(runId)!;
@@ -301,6 +328,39 @@ describe("Agent v3 task host loop", () => {
     expect(ledger.agentProgress?.failure?.targets.filter(target=>target.role === "implementation").map(target=>target.path)).toEqual(["storage.cjs","filters.cjs"]);
     expect(ledger.verification?.repairCount).toBe(0);expect(ledger.verification?.evidence.find(check=>check.criterionId === "acceptance:validate-written-code")?.status).toBe("passed");
     expect(readFileSync(path.join(workspace,"storage.test.cjs"),"utf8")).toBe(storageTest);expect(readFileSync(path.join(workspace,"filters.test.cjs"),"utf8")).toBe(filtersTest);
+  });
+  it("can show all registered tools for one repair action without granting mutation authority",async()=>{
+    const {workspace,implementation}=failingWorkspace();writeFileSync(path.join(workspace,"extra.txt"),"needed context\n");
+    const toolNames=(payload:any)=>payload.response_format.json_schema.name === "agent_tool_arguments" ? ["propose_repair"] : payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.flatMap((tool:any)=>tool.properties.name.enum);
+    replies=[()=>interpretation("execute","Reproduce and repair value.cjs"),payload=>{
+      expect(toolNames(payload)).toEqual(["propose_repair"]);
+      return {tool_calls:[{name:"propose_repair",arguments:{kind:"tools",capability:"source_access",reason:"Find additional source for this repair"}}]};
+    },payload=>{
+      expect(toolNames(payload)).toEqual(expect.arrayContaining(["read_file","search","list_dir","write_file","edit_file","delete_file","run_command"]));
+      expect(packetState(payload.messages[1].content).toolView).toContain("one action");
+      return {tool_calls:[{name:"read_file",arguments:{path:"extra.txt"}}]};
+    },payload=>{
+      expect(toolNames(payload)).toEqual(["propose_repair"]);
+      expect(payload.messages[1].content).toContain("<source>\nneeded context\n\n</source>");
+      return {tool_calls:[{name:"propose_repair",arguments:{kind:"blocked",reason:"No further repair is justified by this evidence"}}]};
+    }];
+    const {result,runId,approve}=await run("Reproduce and repair value.cjs",false,undefined,undefined,workspace);
+    expect(result.stopReason,result.text).toBe("repair_blocked");expect(approve).toHaveBeenCalledTimes(1);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["request_capability","read_file"]);
+    expect(getExecutionLedger(runId)?.agentProgress?.expandedToolFocus).toBeUndefined();
+    expect(getExecutionLedger(runId)?.agentProgress?.reads.some(read=>read.path === "extra.txt")).toBe(true);
+    expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
+    expect(getCurrentAgentTask(chatId)?.snapshot.requirements.every(item=>item.state === "active")).toBe(true);
+  });
+  it("rejects a repair proposal that tries to replace its host-bound target",async()=>{
+    const {workspace,implementation}=failingWorkspace();
+    const override=()=>({tool_calls:[{name:"propose_repair",arguments:{kind:"edit",path:"value.test.cjs",replacements:[{old:[implementation],new:["exports.readValue = () => 1;"]}]}}]});
+    replies=[()=>interpretation("execute","Reproduce and repair value.cjs"),override,override];
+    const {result,runId,approve}=await run("Reproduce and repair value.cjs",false,undefined,undefined,workspace);
+    expect(result.stopReason,result.text).toBe("malformed_action");expect(approve).toHaveBeenCalledTimes(1);
+    expect(getExecutionLedger(runId)?.agentTask?.protocolCorrections).toBe(1);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions).toEqual([]);
+    expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
   });
   it("obtains read-only failure evidence without requiring a change category",async()=>{
     const workspace=path.join(root,"project");mkdirSync(workspace);
@@ -311,11 +371,10 @@ describe("Agent v3 task host loop", () => {
     const controller=new AbortController();runSignal=controller.signal;
     const request="Inspect source and reproduce the existing test failure.";
     replies=[()=>({disposition:"continue",requirements:["inspect","execute"].map(kind=>({kind,description:request,source_id:"request",checks:[{description:request,kind:kind === "execute"?"execution":"inspection",operation:"semantic",path:null}]})),updates:[],full_suite:true}),payload=>{
-      const state=JSON.parse(payload.messages[1].content);
-      expect(state.selectedSources.pages).toContainEqual(expect.objectContaining({path:"value.cjs",content:implementation}));
+      const state=packetState(payload.messages[1].content);
+      observedSource(payload,"value.cjs",implementation);
       expect(state.currentRequirement.kind).toBe("execute");
-      const read=payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.find((item:any)=>item.properties.name.enum[0] === "read_file");
-      expect(read.properties.arguments.properties.path.enum).toBeUndefined();
+      expect(payload.response_format.json_schema.name).toBe("agent_tool_arguments");
       expect(state.readSelection).toBeUndefined();
       expect(state.currentStep.target.path).toBe("value.cjs");
       controller.abort();return {tool_calls:[{name:"finish",arguments:{text:"The baseline failure has saved source evidence."}}]};
@@ -334,21 +393,19 @@ describe("Agent v3 task host loop", () => {
     writeFileSync(path.join(workspace,"value.test.cjs"),'const {test}=require("node:test");const {value}=require("./value.cjs");test("existing failure",()=>value());\n');
     const original=ModelGateway.prototype.chatWithTools;let rejected=0;
     vi.spyOn(ModelGateway.prototype,"chatWithTools").mockImplementation(async function(this:ModelGateway,modelId,messages,tools,options){
-      const state=JSON.parse(messages[1]?.content ?? "{}");
+      const state=packetState(messages[1]?.content ?? "{}");
       if(state.selectedSources?.pages.some((page:any)=>page.path === "value.test.cjs")){
-        const read=tools.find(tool=>tool.function.name === "read_file")!;
-        expect(read.function.parameters.properties.path.enum ?? []).not.toContain("value.test.cjs");
+        expect(tools.map(tool=>tool.function.name)).toEqual(["propose_repair"]);
         rejected++;return {ok:false,error:{kind:"ai-error",code:"agent_context_limit",message:"Remove optional source pages",retryable:false}};
       }
       return original.call(this,modelId,messages,tools,options);
     });
     const controller=new AbortController();runSignal=controller.signal;
     replies=[()=>interpretation("execute","Reproduce the existing failure"),payload=>{
-      const state=JSON.parse(payload.messages[1].content);
+      const state=packetState(payload.messages[1].content);
       expect(state.selectedSources.complete).toBe(false);
       expect(state.selectedSources.pages.map((page:any)=>page.path)).toEqual(["value.cjs"]);
-      const read=payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.find((item:any)=>item.properties.name.enum[0] === "read_file");
-      expect(read.properties.arguments.properties.path.enum).toContain("value.test.cjs");
+      expect(payload.response_format.json_schema.name).toBe("agent_tool_arguments");
       expect(state.suggestedReadPaths).toContain("value.test.cjs");
       controller.abort();return {tool_calls:[{name:"read_file",arguments:{path:"value.cjs"}}]};
     }];
@@ -361,7 +418,7 @@ describe("Agent v3 task host loop", () => {
   it("explicitly resumes the saved v3 contract, task, and call budget without repeating interpretation", async () => {
     const text = "Inspect note.txt";
     const covered = (payload: any) => {
-      const state = JSON.parse(payload.messages[1].content);
+      const state = packetState(payload.messages[1].content);
       return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Inspected source" })) };
     };
     replies = [() => interpretation("inspect", text), () => "Advice without an inspection.", covered, () => "More advice."];
@@ -408,7 +465,7 @@ describe("Agent v3 task host loop", () => {
   it("routes an opted-in preview through RunManager and exposes the durable task snapshot", async () => {
     const text = "Inspect note.txt";
     replies = [() => interpretation("inspect", text), () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "Inspected the saved source.", payload => {
-      const state = JSON.parse(payload.messages[1].content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Source evidence saved" })) };
+      const state = packetState(payload.messages[1].content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Source evidence saved" })) };
     }];
     const { result, runId, snapshot } = await run(text, true);
     expect(result.outcome, result.text).toBe("completed");
@@ -419,7 +476,7 @@ describe("Agent v3 task host loop", () => {
   it("keeps task continuity visible after a Chat run and does not enable v3 from historical engine data", async () => {
     const text = "Inspect note.txt";
     replies = [() => interpretation("inspect", text), () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "saved source", payload => {
-      const state = JSON.parse(payload.messages[1].content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Source read" })) };
+      const state = packetState(payload.messages[1].content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Source read" })) };
     }];
     const first = await run(text, true), taskId = getCurrentAgentTask(chatId)!.taskId;
     const question = "Give a short explanation.", messageId = addMessage({ chat_id: chatId, role: "user", content: question }).id;
@@ -433,7 +490,7 @@ describe("Agent v3 task host loop", () => {
   it("counts interpretation, reads once, performs a separate review, and completes an evidenced inspection", async () => {
     const text = "Inspect note.txt";
     replies = [() => interpretation("inspect", text), () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "The source was inspected.", payload => {
-      const state = JSON.parse(payload.messages[1].content);
+      const state = packetState(payload.messages[1].content);
       expect(state.evidenceSlices).toContainEqual(expect.objectContaining({ sourceText: "saved source\n", completeFile: true }));
       expect(state.sourceComparisons).toContainEqual(expect.objectContaining({ completeFile: true, current: true, exactTextIncluded: false }));
       expect(state.results.items.every((item: any) => ["source_extracted", "execution"].includes(item.origin))).toBe(true);
@@ -458,7 +515,7 @@ describe("Agent v3 task host loop", () => {
     const text = "Inspect note.txt";
     replies = [() => interpretation("inspect", text), () => '```json\n{"tool_calls":[{"name":"write_file","arguments":{"path":"note.txt","content":"bad"}}]}\n```',
       () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "saved source", payload => {
-        const state = JSON.parse(payload.messages[1].content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Saved source was read" })) };
+        const state = packetState(payload.messages[1].content); return { covered: true, missing: [], requirements: state.requirements.map((item: any) => ({ id: item.id, satisfied: true, reason: "Saved source was read" })) };
       }];
     const { result, approve, runId } = await run(text);
     expect(result.outcome).toBe("completed"); expect(approve).not.toHaveBeenCalled();
@@ -479,7 +536,7 @@ describe("Agent v3 task host loop", () => {
   });
   it("keeps inspection read-only even when a valid observed edit is proposed", async () => {
     const text = "Inspect note.txt and reproduce the failure without edits";
-    fileScopeReplies=[payload=>{const input=JSON.parse(payload.messages[1].content);expect(input.userInstruction.quote).toBe(text);return {withinScope:false,reason:"The user requested inspection only."};}];
+    fileScopeReplies=[payload=>{const input=packetState(payload.messages[1].content);expect(input.userInstruction.quote).toBe(text);return {withinScope:false,reason:"The user requested inspection only."};}];
     replies = [() => interpretation("execute", text), () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }),()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"broken"}]}}]})];
     const { result, approve } = await run(text);
     expect(result.outcome).toBe("partial");expect(result.stopReason).toBe("action_outside_task");expect(approve).not.toHaveBeenCalled();
@@ -488,7 +545,7 @@ describe("Agent v3 task host loop", () => {
   it.each([true,false])("assesses a mixed execute repair against its source and requires concrete approval=%s",async approved=>{
     const request="Reproduce the failure, then repair note.txt by replacing source with content.";
     fileScopeReplies=[payload=>{
-      const input=JSON.parse(payload.messages[1].content);
+      const input=packetState(payload.messages[1].content);
       expect(input.userInstruction.quote).toBe(request);expect(input.operation.name).toBe("edit_file");
       expect(input.operation.arguments.replacements).toEqual([{old:"source",new:"content"}]);
       return {withinScope:true,reason:"The quoted instruction requests the concrete repair."};
@@ -532,7 +589,7 @@ describe("Agent v3 task host loop", () => {
     const text = "Read note.txt and report its exact content.";
     replies = [() => ({ disposition: "continue", requirements: [{ kind: "inspect", description: text, source_id: "request", checks: [{ description: text, kind: "inspection", operation: "verbatim_source", path: "note.txt" }] }], updates: [], full_suite: false }),
       () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "saved source", () => "```\nsaved source\n```", payload => {
-        const input = JSON.parse(payload.messages[1].content);
+        const input = packetState(payload.messages[1].content);
         expect(input.hostVerifiedChecks).toContainEqual(expect.objectContaining({ passed: true, path: "note.txt" }));
         return { covered: true, missing: [] };
       }];
@@ -583,26 +640,26 @@ describe("Agent v3 task host loop", () => {
   it("provides complete structured directory observations without nested JSON text", async () => {
     const text = "Inspect note.txt";
     replies = [()=>interpretation("inspect",text),()=>({tool_calls:[{name:"list_dir",arguments:{path:"."}}]}),payload=>{
-      const input = JSON.parse(payload.messages[1].content);
+      const input = packetState(payload.messages[1].content);
       expect(input.latestResult.completeResult).toBe(true);
       expect(input.latestResult.value.entries).toContainEqual(expect.objectContaining({name:"note.txt"}));
       expect(input.latestResult.content).toBeUndefined();
       return {tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]};
-    },()=>"The source was inspected.",payload=>{const input=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:input.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source evidence saved."}))};}];
+    },()=>"The source was inspected.",payload=>{const input=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:input.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source evidence saved."}))};}];
     const {result} = await run(text);
     expect(result.outcome,result.text).toBe("completed");
   });
   it("carries active capability state and directory evidence across a later fresh request", async()=>{
     const text="Inspect note.txt";
     replies=[()=>interpretation("inspect",text),()=>({tool_calls:[{name:"list_dir",arguments:{path:"."}}]}),()=>({tool_calls:[{name:"request_capability",arguments:{capability:"document_processing"}}]}),payload=>{
-      const input=JSON.parse(payload.messages[1].content);
+      const input=packetState(payload.messages[1].content);
       expect(input.activeCapabilities).toContain("document_processing");
       expect(input.availableCapabilities.some((item:any)=>item.name === "document_processing")).toBe(false);
       expect(input.directoryEvidence.entries).toContainEqual(expect.objectContaining({name:"note.txt",type:"file"}));
       const choice=payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.find((item:any)=>item.properties.name.enum[0] === "request_capability");
       expect(choice.properties.arguments.properties.capability.enum).not.toContain("document_processing");
       return {tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]};
-    },()=>"Source inspected.",payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source read"}))};}];
+    },()=>"Source inspected.",payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source read"}))};}];
     const {result,approve}=await run(text);
     expect(result.outcome,result.text).toBe("completed");expect(approve).not.toHaveBeenCalled();
   });
@@ -612,13 +669,13 @@ describe("Agent v3 task host loop", () => {
     const readChoice=(payload:any)=>payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.find((tool:any)=>tool.properties.name.enum[0] === "read_file").properties.arguments.properties.path.enum;
     replies=[()=>interpretation("change",text),()=>({tool_calls:[{name:"list_dir",arguments:{path:"."}}]}),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt",max_bytes:64}}]}),payload=>{
       expect(readChoice(payload)).toContain("note.txt");
-      const state=JSON.parse(payload.messages[1].content);
+      const state=packetState(payload.messages[1].content);
       return {tool_calls:[{name:"read_file",arguments:{path:"note.txt",cursor:state.latestResult.nextCursor}}]};
     },payload=>{
       expect(readChoice(payload)).not.toContain("note.txt");
       return {tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update(source).digest("hex"),replacements:[{old:"head",new:"fixed"}]}}]};
     },payload=>{expect(readChoice(payload)).toContain("note.txt");return {tool_calls:[{name:"finish",arguments:{text:"The requested head edit is saved."}}]};},
-    payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The inspected head edit is saved."}))};}];
+    payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The inspected head edit is saved."}))};}];
     const {result}=await run(text);
     expect(result.outcome,result.text).toBe("completed");expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe(source.replace("head","fixed"));
   });
@@ -629,17 +686,17 @@ describe("Agent v3 task host loop", () => {
     replies=[()=>interpretation("change","Repair note.txt and preserve other.txt"),
       ()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
       ()=>({tool_calls:[{name:"read_file",arguments:{path:"other.txt"}}]}),payload=>{
-        const state=JSON.parse(payload.messages[1].content);
+        const state=packetState(payload.messages[1].content);
         expect(state.latestResult.content).toBe(second);
         expect(state.selectedSources.pages).toContainEqual(expect.objectContaining({path:"note.txt",content:first,digest,complete:true,startByte:0,endByte:Buffer.byteLength(first)}));
         return {tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:digest,replacements:[{old:"source",new:"content"}]}}]};
       },payload=>{
-        const state=JSON.parse(payload.messages[1].content);
+        const state=packetState(payload.messages[1].content);
         expect(state.selectedSources.pages.map((page:any)=>page.path)).not.toContain("note.txt");
         expect(state.selectedSources.pages).toContainEqual(expect.objectContaining({path:"other.txt",content:second}));
         expect(state.latestResult.value.afterDigest).not.toBe(digest);
         return {tool_calls:[{name:"finish",arguments:{text:"The text edit is saved; other.txt is preserved."}}]};
-      },payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The inspected text edit is saved."}))};}];
+      },payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The inspected text edit is saved."}))};}];
     const {result,runId}=await run("Repair note.txt and preserve other.txt");
     expect(result.outcome,result.text).toBe("completed");
     expect(getExecutionLedger(runId)?.agentProgress?.reads.filter(read=>read.path === "note.txt")).toHaveLength(2);
@@ -651,7 +708,7 @@ describe("Agent v3 task host loop", () => {
     const original=ModelGateway.prototype.chatWithTools;
     const rejected:any[]=[],dispatched:any[]=[];
     vi.spyOn(ModelGateway.prototype,"chatWithTools").mockImplementation(async function(this:ModelGateway,modelId,messages,tools,options){
-      const state=JSON.parse(messages[1]?.content ?? "{}");
+      const state=packetState(messages[1]?.content ?? "{}");
       if (state.selectedSources?.totalEligiblePages) {
         if (state.selectedSources.pages.length) {
           rejected.push(state);
@@ -666,7 +723,7 @@ describe("Agent v3 task host loop", () => {
       ()=>({tool_calls:[{name:"read_file",arguments:{path:"other.txt"}}]}),
       ()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),
       ()=>({tool_calls:[{name:"finish",arguments:{text:"Edit saved."}}]}),
-      payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Text edit saved."}))};}];
+      payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Text edit saved."}))};}];
     const {result,runId}=await run("Repair note.txt and preserve other.txt");
     expect(result.outcome,result.text).toBe("completed");
     expect(rejected).toHaveLength(4);expect(dispatched).toHaveLength(2);
@@ -684,25 +741,25 @@ describe("Agent v3 task host loop", () => {
     const digest=createHash("sha256").update(source).digest("hex"),original=ModelGateway.prototype.chatWithTools;
     let rejected=0;
     vi.spyOn(ModelGateway.prototype,"chatWithTools").mockImplementation(async function(this:ModelGateway,modelId,messages,tools,options){
-      const state=JSON.parse(messages[1]?.content ?? "{}");
+      const state=packetState(messages[1]?.content ?? "{}");
       if(state.latestResult?.sourcePage && state.latestResult.endByte-state.latestResult.startByte>2000){rejected++;return {ok:false,error:{kind:"ai-error",code:"agent_context_limit",message:"Prepared source page exceeds the input budget",retryable:false}};}
       return original.call(this,modelId,messages,tools,options);
     });
     const edit=()=>({tool_calls:[{name:"edit_file",arguments:{path:"large.txt",expected_digest:digest,replacements:[{old:"TAIL_ANCHOR",new:"REPAIRED"}]}}]});
     replies=[()=>interpretation("change","Repair the tail anchor in large.txt"),()=>({tool_calls:[{name:"read_file",arguments:{path:"large.txt",max_bytes:4000}}]}),payload=>{
-      const state=JSON.parse(payload.messages[1].content);
+      const state=packetState(payload.messages[1].content);
       expect(state.latestResult).toMatchObject({startByte:0,endByte:2000,complete:false,digest});
       expect(state.latestResult.content).not.toContain("TAIL_ANCHOR");
       return edit();
     },payload=>{
-      const state=JSON.parse(payload.messages[1].content);
+      const state=packetState(payload.messages[1].content);
       expect(state.feedback.text).toContain("outside the source ranges");expect(readFileSync(path.join(root,"large.txt"),"utf8")).toBe(source);
       return {tool_calls:[{name:"read_file",arguments:{path:"large.txt",cursor:state.latestResult.nextCursor,max_bytes:4000}}]};
     },payload=>{
-      const state=JSON.parse(payload.messages[1].content);
+      const state=packetState(payload.messages[1].content);
       expect(state.latestResult).toMatchObject({startByte:2000,endByte:4000,complete:false,digest});
       expect(state.latestResult.content).toContain("TAIL_ANCHOR");return edit();
-    },()=>({tool_calls:[{name:"finish",arguments:{text:"The exact tail replacement is saved."}}]}),payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The observed tail anchor was replaced."}))};}];
+    },()=>({tool_calls:[{name:"finish",arguments:{text:"The exact tail replacement is saved."}}]}),payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The observed tail anchor was replaced."}))};}];
     const {result,runId,approve}=await run("Repair the tail anchor in large.txt");
     expect(result.outcome,result.text).toBe("completed");expect(rejected).toBe(9);expect(approve).toHaveBeenCalledTimes(1);
     expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(10);
@@ -716,7 +773,7 @@ describe("Agent v3 task host loop", () => {
     let attemptedUnseen=false,sawReduced=false,reviewCalls=0;const finalFeedback:string[]=[];
     const edit=()=>({tool_calls:[{name:"edit_file",arguments:{path:"large.txt",expected_digest:digest,replacements:[{old:"TAIL_ANCHOR",new:"REPAIRED"}]}}]});
     const next:Reply=payload=>{
-      const state=JSON.parse(payload.messages[1].content);
+      const state=packetState(payload.messages[1].content);
       if(state.proposedAnswer !== undefined){reviewCalls++;return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The observed text edit is saved."}))};}
       if(state.latestResult?.tool === "edit_file"){finalFeedback.push(state.feedback.text);return {tool_calls:[{name:"finish",arguments:{text:"The observed tail replacement is saved."}}]};}
       const page=state.latestResult;
@@ -750,7 +807,7 @@ describe("Agent v3 task host loop", () => {
   it("rejects repeated capability activation without executing it and permits the one protocol correction",async()=>{
     const text="Inspect note.txt";
     const cap=()=>({tool_calls:[{name:"request_capability",arguments:{capability:"document_processing"}}]});
-    replies=[()=>interpretation("inspect",text),cap,cap,()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),()=>"Source inspected.",payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source read"}))};}];
+    replies=[()=>interpretation("inspect",text),cap,cap,()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),()=>"Source inspected.",payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Source read"}))};}];
     const {result,runId,emit}=await run(text);
     expect(result.outcome,result.text).toBe("completed");
     expect(emit.mock.calls.filter(([event])=>event.type === "capability_expanded")).toHaveLength(1);
@@ -763,7 +820,7 @@ describe("Agent v3 task host loop", () => {
     const edit = (filename: string, source: string) => ({ tool_calls: [{ name: "edit_file", arguments: { path: filename,
       expected_digest: createHash("sha256").update(source).digest("hex"), replacements: [{ old: "source", new: "content" }] } }] });
     const repairTurn = (answer: unknown) => (payload: any) => {
-      const state = JSON.parse(payload.messages[1].content);
+      const state = packetState(payload.messages[1].content);
       expect(state.currentRequirement.kind).toBe("change");
       expect(state.obligations.map((item: any) => item.kind)).toEqual(["inspect","change","execute"]);
       expect(state.unresolvedRequirementIds).toHaveLength(3);
@@ -791,19 +848,19 @@ describe("Agent v3 task host loop", () => {
     const action = (name: string, args: object) => ({tool_calls:[{name,arguments:args}]});
     const edit = (filename: string, source: string) => action("edit_file",{path:filename,expected_digest:createHash("sha256").update(source).digest("hex"),replacements:[{old:"source",new:"content"}]});
     const remainingTurn = (answer: unknown) => (payload: any) => {
-      const state = JSON.parse(payload.messages[1].content);
+      const state = packetState(payload.messages[1].content);
       expect(state.currentRequirement.id).toBe(remainingId);
       expect(state.obligations).toHaveLength(2);
       return answer;
     };
     replies = [() => ({disposition:"continue",requirements:["Repair note.txt.","Repair other.txt."].map(quote => ({kind:"change",description:quote,source_id:"request",checks:[{description:quote,kind:"review",operation:"semantic",path:null}]})),updates:[],full_suite:false}),
       () => action("read_file",{path:"note.txt"}), () => edit("note.txt","saved source\n"), () => action("finish",{text:"First repair saved."}),
-      payload => { const state = JSON.parse(payload.messages[1].content); expect(state.requirements).toHaveLength(1); return {covered:true,missing:[],requirements:[{id:state.requirements[0].id,satisfied:true,reason:"First edit saved."}]}; },
+      payload => { const state = packetState(payload.messages[1].content); expect(state.requirements).toHaveLength(1); return {covered:true,missing:[],requirements:[{id:state.requirements[0].id,satisfied:true,reason:"First edit saved."}]}; },
       payload => {
-        const state = JSON.parse(payload.messages[1].content); expect(state.requirements).toHaveLength(1); remainingId = state.requirements[0].id;
+        const state = packetState(payload.messages[1].content); expect(state.requirements).toHaveLength(1); remainingId = state.requirements[0].id;
         return {covered:false,missing:["Second repair remains."],requirements:[{id:remainingId,satisfied:false,reason:"Inspect and edit the second file."}]};
       }, remainingTurn(action("read_file",{path:"other.txt"})), remainingTurn(edit("other.txt","other source\n")), remainingTurn(action("finish",{text:"Both text repairs are saved."})),
-      ...Array.from({length:2},()=> (payload:any) => { const state = JSON.parse(payload.messages[1].content); expect(state.requirements).toHaveLength(1); return {covered:true,missing:[],requirements:state.requirements.map((item: any)=>({id:item.id,satisfied:true,reason:"Observed direct edit is saved."}))}; })];
+      ...Array.from({length:2},()=> (payload:any) => { const state = packetState(payload.messages[1].content); expect(state.requirements).toHaveLength(1); return {covered:true,missing:[],requirements:state.requirements.map((item: any)=>({id:item.id,satisfied:true,reason:"Observed direct edit is saved."}))}; })];
     const {result,runId} = await run(text);
     expect(result.outcome,result.text).toBe("completed");
     expect(getExecutionLedger(runId)?.agentProgress?.remainingRequirementIds).toEqual([]);
@@ -816,7 +873,7 @@ describe("Agent v3 task host loop", () => {
     if(operation === "delete_file")calls.push(()=>({tool_calls:[{name:"read_file",arguments:{path:target}}]}));
     calls.push(()=>({tool_calls:[{name:operation,arguments:operation === "write_file" ? {path:target,content:"new content\n"} : {path:target,expected_digest:createHash("sha256").update("saved source\n").digest("hex")}}]}));
     calls.push(()=>({tool_calls:[{name:"finish",arguments:{text:"The requested change is saved."}}]}));
-    calls.push(payload=>{const state=JSON.parse(payload.messages[1].content);return {covered:true,missing:[],requirements:[{id:state.requirements[0].id,satisfied:true,reason:"The requested file change is saved."}]};});
+    calls.push(payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:[{id:state.requirements[0].id,satisfied:true,reason:"The requested file change is saved."}]};});
     replies=[()=>interpretation("change",`${operation} ${target}`),...calls];
     const {result,runId,approve}=await run(`${operation} ${target}`);
     expect(result.outcome,result.text).toBe("completed");expect(approve).toHaveBeenCalledTimes(1);
@@ -827,10 +884,10 @@ describe("Agent v3 task host loop", () => {
   it("rejects text changed after the approved edit even when the reviewer says satisfied", async()=>{
     const action=(name:string,args:object)=>({tool_calls:[{name,arguments:args}]});
     replies=[()=>interpretation("change","Repair note.txt"),()=>action("read_file",{path:"note.txt"}),()=>action("edit_file",{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}),()=>action("finish",{text:"The edit is saved."}),payload=>{
-      const state=JSON.parse(payload.messages[1].content); expect(state.requirements).toHaveLength(1);
+      const state=packetState(payload.messages[1].content); expect(state.requirements).toHaveLength(1);
       writeFileSync(path.join(root,"note.txt"),"external update\n");
       return {covered:true,missing:[],requirements:[{id:state.requirements[0].id,satisfied:true,reason:"Edit is saved."}]};
-    },payload=>{const state=JSON.parse(payload.messages[1].content);expect(state.feedback.text).toContain("changed during review");return action("finish",{text:"The edit is saved."});}];
+    },payload=>{const state=packetState(payload.messages[1].content);expect(state.feedback.text).toContain("changed during review");return action("finish",{text:"The edit is saved."});}];
     const {result,approve}=await run("Repair note.txt");
     expect(result.outcome).toBe("partial"); expect(result.stopReason).toBe("repeated_action"); expect(approve).toHaveBeenCalledTimes(1);
     expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("external update\n");
@@ -838,7 +895,7 @@ describe("Agent v3 task host loop", () => {
   it("does not review a text edit whose saved post-edit digest is already stale",async()=>{
     const action=(name:string,args:object)=>({tool_calls:[{name,arguments:args}]});
     replies=[()=>interpretation("change","Repair note.txt"),()=>action("read_file",{path:"note.txt"}),()=>action("edit_file",{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}),()=>{writeFileSync(path.join(root,"note.txt"),"external update\n");return action("finish",{text:"The edit is saved."});},payload=>{
-      const state=JSON.parse(payload.messages[1].content);expect(state.feedback.text).toContain("no longer current");return action("finish",{text:"The edit is saved."});
+      const state=packetState(payload.messages[1].content);expect(state.feedback.text).toContain("no longer current");return action("finish",{text:"The edit is saved."});
     }];
     const {result,runId}=await run("Repair note.txt");
     expect(result.outcome).toBe("partial");expect(result.stopReason).toBe("repeated_action");
@@ -849,7 +906,7 @@ describe("Agent v3 task host loop", () => {
     writeFileSync(path.join(root,"large.txt"),source);
     const original=ModelGateway.prototype.chatWithTools;let rejections=0;
     vi.spyOn(ModelGateway.prototype,"chatWithTools").mockImplementation(async function(this:ModelGateway,modelId,messages,tools,options){
-      const input=JSON.parse(messages[1]?.content ?? "{}");
+      const input=packetState(messages[1]?.content ?? "{}");
       if(input.proposedAnswer !== undefined && input.evidenceSlices.some((slice:any)=>slice.sourceText?.length>1000)){
         expect(input.requirements).toHaveLength(1);expect(input.originalRequests[0].content).toBe("Repair large.txt");rejections++;
         return {ok:false,error:{kind:"ai-error",code:"agent_context_limit",message:"Prepared review exceeds context",retryable:false}};
@@ -857,7 +914,7 @@ describe("Agent v3 task host loop", () => {
       return original.call(this,modelId,messages,tools,options);
     });
     replies=[()=>interpretation("change","Repair large.txt"),()=>({tool_calls:[{name:"read_file",arguments:{path:"large.txt",max_bytes:4000}}]}),()=>({tool_calls:[{name:"edit_file",arguments:{path:"large.txt",expected_digest:digest,replacements:[{old:"ANCHOR",new:"REPAIRED"}]}}]}),()=>({tool_calls:[{name:"finish",arguments:{text:"Edit saved."}}]}),payload=>{
-      const input=JSON.parse(payload.messages[1].content);expect(input.requirements).toHaveLength(1);
+      const input=packetState(payload.messages[1].content);expect(input.requirements).toHaveLength(1);
       expect(input.evidenceSlices).toContainEqual(expect.objectContaining({kind:"source",completeFile:false,byteRange:[0,1000]}));
       return {covered:true,missing:[],requirements:[{id:input.requirements[0].id,satisfied:true,reason:"Observed edit saved."}]};
     }];

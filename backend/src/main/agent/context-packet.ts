@@ -4,6 +4,7 @@ import { getExecutionLedger } from "../run/execution-ledger.js";
 import { z } from "zod";
 import { CAPABILITY_GROUPS } from "../tools/capabilities.js";
 import { loadAgentSourcePage, selectAgentSourcePages, sliceAgentSourcePage, sourcePageIsCurrent, sourcePageReceipt, selectAgentFailureStep, type AgentSourcePage } from "./source-evidence.js";
+import { AGENT_REPAIR_INSTRUCTIONS, type AgentRepairSource } from "./repair-proposal.js";
 import { canonicalSourcePath } from "./workspace-actions.js";
 import { fileDigest, observedRange, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 
@@ -28,6 +29,7 @@ export interface AgentContextPacket {
   observedSources: Array<Omit<SourceReadReceipt, "requestId">>;
   requirement: AgentRequirement;
   readPaths?: string[];
+  repair?: AgentRepairSource;
 }
 
 /** Unwrap complete structured evidence once. Avoid nested JSON strings in small-model requests. */
@@ -66,6 +68,8 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
     } else result = agentEvidenceSlice(context,record.resultId,latestSourceBytes);
   }
   const currentStep = selectAgentFailureStep(context);
+  const repair = currentStep?.phase === "address_failure" && currentStep.target?.role === "implementation" ? {path:currentStep.target.path,digest:currentStep.target.digest,focusKey:fileDigest(JSON.stringify([currentStep.target.path,currentStep.target.digest])),expanded:false} : undefined;
+  if(repair)repair.expanded=progress?.expandedToolFocus === repair.focusKey;
   const selectedSources = selectAgentSourcePages(context, requirement, latestPage, `${progress?.feedback ?? ""}\n${progress?.baseline?.detail ?? ""}\n${JSON.stringify(result)}`, additionalSourceChars, currentStep?.relatedPaths);
   // The current failure source is essential step evidence. Optional-page packing
   // cannot replace it with a recent unrelated read or a broad directory agenda.
@@ -77,7 +81,12 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
       selectedSources.complete=selectedSources.pages.length >= selectedSources.totalEligiblePages;
     }
   }
-  const observedSources = [...(observedSource ? [observedSource] : []),...selectedSources.pages.map(sourcePageReceipt)];
+  if(repair) {
+    selectedSources.pages=selectedSources.pages.filter(page=>currentStep?.relatedPaths?.includes(page.path));
+    selectedSources.complete=selectedSources.pages.length >= selectedSources.totalEligiblePages;
+  }
+  const providedPages=[...new Map([...(latestPage ? [latestPage] : []),...selectedSources.pages].map(page=>[`${page.path}:${page.digest}:${page.startByte}:${page.endByte}`,page])).values()];
+  const observedSources=providedPages.map(sourcePageReceipt);
   const source = task.snapshot.messages.find(message => message.id === requirement.source.messageId);
   const directory = [...(progress?.actions ?? [])].reverse().find(action=>action.operation === "list_dir" && action.status === "completed" && action.resultId);
   let directoryEvidence: unknown;
@@ -114,11 +123,11 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
       } catch {remaining.add(canonical);}
     }
     // An incomplete/empty index never removes the registered general reader.
-    remainingReadCount=currentStep?.phase === "address_failure" ? [...remaining].filter(filename=>currentStep.relatedPaths?.includes(filename)).length : remaining.size;
+    remainingReadCount=currentStep?.phase === "address_failure" && !repair?.expanded ? [...remaining].filter(filename=>currentStep.relatedPaths?.includes(filename)).length : remaining.size;
     if (remaining.size) {
       readPaths=[];let characters=0;
       for (const filename of remaining) {
-        if(currentStep?.phase === "address_failure" && !currentStep.relatedPaths?.includes(filename))continue;
+        if(currentStep?.phase === "address_failure" && !repair?.expanded && !currentStep.relatedPaths?.includes(filename))continue;
         if (readPaths.length >= 8 || (readPaths.length > 0 && characters+filename.length > 2048)) break;
         readPaths.push(filename);characters+=filename.length;
       }
@@ -140,7 +149,19 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
     selectedSources, latestResult: result, feedback: {text:progress?.feedback.slice(0,1000) ?? "",complete:(progress?.feedback.length ?? 0)<=1000},
     checkEvidence: ledger?.verification?.evidence.map(check=>({criterionId:check.criterionId,status:check.status,reason:check.reason,resultIds:check.evidence.filter(ref=>ref.kind === "result").map(ref=>ref.id)})), inputSources: context.inputSources,
     originalRequest: source?.content };
-  return { messages: [{ role: "system", content: AGENT_COMMON_INSTRUCTIONS }, { role: "user", content: JSON.stringify(state) }], observedSource, observedSources, requirement, readPaths };
+  let messages=[{role:"system",content:AGENT_COMMON_INSTRUCTIONS},{role:"user",content:JSON.stringify(state)}];
+  if(repair) {
+    const metadata=(page:AgentSourcePage)=>{const {content:_content,...fields}=page;return fields;};
+    const focused={...state,obligations:state.obligations.map(({acceptance:_acceptance,...item})=>item),
+      selectedSources:{...selectedSources,pages:selectedSources.pages.map(metadata)},
+      latestResult:latestPage ? {...metadata(latestPage),currentAtAssembly:sourcePageIsCurrent(context,latestPage)} : result,
+      availableCapabilities:context.envelope?.permittedCapabilities.map(capability=>({name:capability,tools:CAPABILITY_GROUPS[capability].tools})),
+      toolView:repair.expanded ? "Full registered tools for one action; normal approvals still apply." : "Use propose_repair tools to show the full registered tool view for one action.",
+    };
+    const literal=providedPages.map(page=>`\n\nOBSERVED SOURCE ${page.path}\nDigest: ${page.digest}; bytes ${page.startByte}-${page.endByte} of ${page.sizeBytes}; complete file: ${page.complete}; result: ${page.resultId}\n<source>\n${page.content}\n</source>`).join("");
+    messages=[{role:"system",content:repair.expanded ? AGENT_COMMON_INSTRUCTIONS : AGENT_REPAIR_INSTRUCTIONS},{role:"user",content:JSON.stringify(focused)+literal}];
+  }
+  return {messages,observedSource,observedSources,requirement,readPaths,repair};
 }
 
 export const FINISH_TOOL: AgentToolDefinition = { type: "function", function: { name: "finish", description: "Propose the final answer. The host checks every requirement before completion.", parameters: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false } } };

@@ -83,8 +83,9 @@ describe("Agent v3 gateway dispatch boundary", () => {
       const raw=transport(async payload=>{
         const count=(await countLocalAgentRequest({assetsDir:root,activeTemplate:template,payload})).inputTokens;
         if(format === "native")return {status:200,body:JSON.stringify({choices:[{message:{content:null,tool_calls:[{id:"native-edit",type:"function",function:{name:"edit_file",arguments:JSON.stringify(args)}}]},finish_reason:"stop"}],usage:{prompt_tokens:count,completion_tokens:10}})};
-        expect(payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf[0].properties.arguments.properties.replacements.items.properties.old.type).toBe("array");
-        return {status:200,body:response(JSON.stringify({tool_calls:[{name:"edit_file",arguments:{path:args.path,replacements:[{old:[old],new:lines}]}}],content:""}),count)};
+        expect(payload.response_format.json_schema.name).toBe("agent_tool_arguments");
+        expect(payload.response_format.json_schema.schema.properties.replacements.items.properties.old.type).toBe("array");
+        return {status:200,body:response(JSON.stringify({path:args.path,replacements:[{old:[old],new:lines}]}),count)};
       });
       const gateway=new ModelGateway(raw,[{...model,toolCallingFormat:format}]);
       const result=await withRuntimeScope(scope,()=>gateway.chatWithTools(model.id,[{role:"user",content:"Edit source"}],[definition],{runId,maxTokens:2048,toolChoice:"required"}));
@@ -94,6 +95,24 @@ describe("Agent v3 gateway dispatch boundary", () => {
     expect(actions).toEqual([{name:"edit_file",arguments:args},{name:"edit_file",arguments:args}]);
     expect(prepared).toEqual(dispatched);
     expect(getExecutionLedger(runId)?.agentAdmissions.map(item=>item.status)).toEqual(["usage_verified","usage_verified"]);
+  });
+  it("binds a sole required JSON operation instead of accepting a nested tool-name override",async()=>{
+    const wrapped={tool_calls:[{name:"write_file",arguments:{path:"outside.js",content:"unexpected"}}],content:""};
+    const gateway=new ModelGateway(transport(async payload=>({status:200,body:response(JSON.stringify(wrapped),(await countLocalAgentRequest({assetsDir:root,activeTemplate:template,payload})).inputTokens)})),[{...model,toolCallingFormat:"json"}]);
+    const result=await call(gateway,{toolChoice:"required"});
+    expect(result.ok).toBe(true);if(!result.ok)throw new Error(result.error.message);
+    expect(result.value.tool_calls).toHaveLength(1);
+    expect(result.value.tool_calls![0]).toMatchObject({name:tools[0].function.name,arguments:wrapped});
+    expect(result.value.tool_calls![0].name).not.toBe("write_file");
+    expect(getExecutionLedger(runId)?.operationAttempts).toEqual([]);
+  });
+  it("does not convert a Markdown example into sole-operation arguments",async()=>{
+    const fenced='```json\n{"path":"outside.js","content":"unexpected"}\n```';
+    const gateway=new ModelGateway(transport(async payload=>({status:200,body:response(fenced,(await countLocalAgentRequest({assetsDir:root,activeTemplate:template,payload})).inputTokens)})),[{...model,toolCallingFormat:"json"}]);
+    const result=await call(gateway,{toolChoice:"required"});
+    expect(result.ok).toBe(true);if(!result.ok)throw new Error(result.error.message);
+    expect(result.value.tool_calls).toBeNull();expect(result.value.content).toBe(fenced);
+    expect(getExecutionLedger(runId)?.operationAttempts).toEqual([]);
   });
   it("keeps no-tool phases free of action-envelope instructions", async () => {
     const gateway = new ModelGateway(transport(), [{ ...model, toolCallingFormat: "json" }]);

@@ -58,6 +58,7 @@ const agentProgressSchema = z.object({
   failure: z.object({ revision:z.string().regex(/^[a-f0-9]{64}$/), resultIds:z.array(z.string().uuid()).max(16),
     targets:z.array(z.object({path:z.string(),digest:z.string().regex(/^[a-f0-9]{64}$/),role:z.enum(["implementation","test","dependency"]),line:z.number().int().positive(),testPaths:z.array(z.string()).max(16),resultId:z.string().uuid().optional()})).max(16),
   }).strict().optional(),
+  expandedToolFocus: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   scopeCorrectionUsed: z.boolean().default(false),
   baseline: z.object({ status: z.string(), detail: z.string(), environmentKey: z.string() }).optional(),
   stopReason: z.string().optional(), fullSuite: z.boolean().default(false),

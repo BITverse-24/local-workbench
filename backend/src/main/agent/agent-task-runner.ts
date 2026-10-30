@@ -14,6 +14,7 @@ import { agentWorkspaceActions, canonicalSourcePath, validateAgentFileProposal }
 import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 import { resolveSafe } from "../harness/path-guard.js";
 import { buildAgentContextPacket, conciseAgentTool, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
+import { bindAgentRepairProposal, REPAIR_PROPOSAL_TOOL } from "./repair-proposal.js";
 import { obtainAgentFailureSources } from "./source-evidence.js";
 import { assessAgentFileScope, refineAgentInterpretation, reviewAgentInterpretation } from "./requirement-scope.js";
 import { agentInterpretationFormat, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
@@ -192,7 +193,7 @@ export class AgentTaskRunner {
           ...(tool.name === "read_file" && packet.readPaths ? {path:{type:"string",enum:packet.readPaths}} : {}),
           requirement_id: { type: "string" } } } } }));
         const deliveryGap = agentDeliveryGap(task,context,changedPaths());
-        const generate = () => context.gateway.chatWithTools(modelId, packet.messages, deliveryGap ? definitions() : [...definitions(), FINISH_TOOL], { runId, maxTokens: 2048, toolChoice:"required", signal: scope.signal });
+        const generate = () => context.gateway.chatWithTools(modelId, packet.messages, packet.repair && !packet.repair.expanded ? [REPAIR_PROPOSAL_TOOL] : deliveryGap ? definitions() : [...definitions(), FINISH_TOOL], { runId, maxTokens: 2048, toolChoice:"required", temperature:packet.repair && !packet.repair.expanded ? 0 : undefined, signal: scope.signal });
         let response = await generate();
         // Admission rejects before dispatch and call consumption. Remove whole optional pages,
         // retaining requirements, constraints, and the latest result in every exact recount.
@@ -215,15 +216,23 @@ export class AgentTaskRunner {
           if (calls.length > 1) throw new Error("Return exactly one action per turn.");
           if (!calls.length && /^\s*```(?:json)?\s*\{[\s\S]*"tool_calls"\s*:/i.test(response.value.content ?? "")) throw new Error('A Markdown example is text and cannot execute. Return one bare JSON object: {"tool_calls":[{"name":"available tool","arguments":{}}],"content":""}. No fences or prose.');
           call = calls[0] ?? { id: randomUUID(), name: "finish", arguments: { text: response.value.content ?? "" } };
-          if (call.name !== "finish" && !dispatcher.getTool(call.name)) throw new Error("The proposed tool is not registered.");
           const requirementId = call.arguments.requirement_id;
           context.agentRequirementId = typeof requirementId === "string" ? requirementId : packet.requirement.id;
           if (!pending.some(item => item.id === context.agentRequirementId)) throw new Error("Select an active requirement ID.");
+          if(packet.repair && !packet.repair.expanded && calls.length) {
+            const proposal=bindAgentRepairProposal(call,packet.repair);
+            if("blocked" in proposal) {
+              context.resultStore.registerResult({type:"structured",status:"complete",origin:"model_derived",producer:{tool:"agent_repair_blocker",callId:randomUUID()},summary:"Repair proposal reported a blocker; no operation executed",payload:{taskId:task.taskId,taskRevision:bound.taskRevision,source:packet.repair,reason:proposal.blocked},sources:[]});
+              return stop("repair_blocked",proposal.blocked);
+            }
+            call=proposal.call;
+          }
+          if (call.name !== "finish" && !dispatcher.getTool(call.name)) throw new Error("The proposed tool is not registered.");
           const { requirement_id: _requirementId, ...args } = call.arguments; call = { ...call, id: randomUUID(), arguments: args };
           const schema = JSON.parse(JSON.stringify(call.name === "finish" ? FINISH_TOOL.function.parameters : dispatcher.getTool(call.name)!.definition.function.parameters));
           const validation = new Validator().validate(args, schema);
           if (!validation.valid || "raw" in args) throw new Error(validation.errors.map(item => item.stack).join("; ") || "Malformed action arguments.");
-          if (call.name === "request_capability" && context.activeCapabilities!.has(args.capability as CapabilityGroup)) throw new Error("This capability is already active. Select one of its available tools instead of activating it again.");
+          if (call.name === "request_capability" && context.activeCapabilities!.has(args.capability as CapabilityGroup) && !(packet.repair && !packet.repair.expanded)) throw new Error("This capability is already active. Select one of its available tools instead of activating it again.");
           // Approve the complete executable command, including host-built Python checks.
           if (call.name === "run_command") {
             call.arguments = normalizeRunCommandArgs(args);
@@ -274,6 +283,8 @@ export class AgentTaskRunner {
         updateAgentProgress(runId, state => {
           const action = state.actions.find(item => item.id === call.id)!; action.status = uncertain ? "uncertain" : output.result.ok ? "completed" : "failed"; action.resultId = output.result.resultRef?.resultId;
           if (action.resultId) state.latestResultId = action.resultId;
+          if(output.result.ok && call.name === "request_capability" && packet.repair && !packet.repair.expanded)state.expandedToolFocus=packet.repair.focusKey;
+          else if(packet.repair?.expanded)delete state.expandedToolFocus;
           state.feedback = `${output.result.summary}\n${output.result.ok ? "" : output.result.output}`.slice(0, 10000);
         });
         clearApprovals();
