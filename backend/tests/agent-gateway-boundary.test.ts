@@ -114,6 +114,14 @@ describe("Agent v3 gateway dispatch boundary", () => {
     expect(result.value.tool_calls).toBeNull();expect(result.value.content).toBe(fenced);
     expect(getExecutionLedger(runId)?.operationAttempts).toEqual([]);
   });
+  it("keeps an argument named content inside the sole operation instead of delivering it as assistant text",async()=>{
+    const args={content:"export const value = 1;\n"};
+    const gateway=new ModelGateway(transport(async payload=>({status:200,body:response(JSON.stringify(args),(await countLocalAgentRequest({assetsDir:root,activeTemplate:template,payload})).inputTokens)})),[{...model,toolCallingFormat:"json"}]);
+    const result=await call(gateway,{toolChoice:"required"});
+    expect(result.ok).toBe(true);if(!result.ok)throw new Error(result.error.message);
+    expect(result.value.content).toBeNull();expect(result.value.tool_calls?.[0].arguments).toEqual(args);
+    expect(getExecutionLedger(runId)?.operationAttempts).toEqual([]);
+  });
   it("keeps no-tool phases free of action-envelope instructions", async () => {
     const gateway = new ModelGateway(transport(), [{ ...model, toolCallingFormat: "json" }]);
     const messages = [{ role: "system", content: "Review coverage. Return coverage JSON." }, { role: "user", content: "Saved task and evidence" }];

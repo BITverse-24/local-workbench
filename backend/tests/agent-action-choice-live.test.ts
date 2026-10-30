@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { parse } from "@babel/parser";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -63,10 +64,18 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_ACTION_CHOICE_PROBE)("diagnoses action
   const proposalSchema={anyOf:[{type:"object",properties:{kind:{type:"string",enum:["edit"]},replacements:{type:"array",minItems:1,items:{type:"object",properties:{old:{type:"string",minLength:1},new:{type:"string"}},required:["old","new"],additionalProperties:false}}},required:["kind","replacements"],additionalProperties:false},{type:"object",properties:{kind:{type:"string",enum:["source"]},path:{type:"string"},reason:{type:"string"}},required:["kind","path","reason"],additionalProperties:false},{type:"object",properties:{kind:{type:"string",enum:["blocked"]},reason:{type:"string"}},required:["kind","reason"],additionalProperties:false}]};
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),180000),scope:RuntimeScope={runId,mode:"agent",agentPhase:"actions",signal:controller.signal};
   try {
-    const diagnosisMode=process.env.WORKBENCH_AGENT_REPAIR_DIAGNOSIS === "1";
+    const diagnosisMode=process.env.WORKBENCH_AGENT_REPAIR_DIAGNOSIS === "1", rawReplacement=process.env.WORKBENCH_AGENT_REPAIR_RAW_REPLACEMENT === "1", jsonModule=process.env.WORKBENCH_AGENT_REPAIR_JSON_MODULE === "1";
     let diagnosis:unknown;
     const result=await withRuntimeScope(scope,async()=>{
       scope.agentCountingProfiles=await gateway.prepareAgentCountingProfiles("live-driver",{signal:controller.signal});
+      if(rawReplacement){
+        messages=[{role:"system",content:"Return the complete corrected source of ONLY the current target module. Use its existing tests as the behavior specification. Preserve its exports and all unrelated behavior. Return raw source only, with no Markdown, explanation, JSON, or tool call. Other task obligations remain saved and are handled separately. This is a read-only code-draft diagnostic; no output executes or changes a workspace."},messages[1]];
+        if(jsonModule) {
+          messages[0]={role:"system",content:"Use propose_module to return the complete corrected source of ONLY the current target module in its content field. Use the existing tests as the behavior specification. Preserve exports and unrelated behavior. The content field contains source only, without Markdown or explanation. Other task obligations remain saved. This is a read-only proposal; no output executes or changes a workspace."};
+          return gateway.chatWithTools("live-driver",messages,[{type:"function",function:{name:"propose_module",description:"Return a complete source draft for the observed target module. No file operation executes.",parameters:{type:"object",properties:{content:{type:"string",description:"Complete revised module source, without Markdown"}},required:["content"],additionalProperties:false}}}],{runId,maxTokens:1024,temperature:0,signal:controller.signal,toolChoice:"required"});
+        }
+        return gateway.chatWithTools("live-driver",messages,[],{runId,maxTokens:1024,temperature:0,signal:controller.signal});
+      }
       if(diagnosisMode){
         const fields=["expected_behavior","observed_behavior","cause","change_intent"];
         const diagnosisSchema={type:"object",properties:Object.fromEntries(fields.map(field=>[field,{type:"string",minLength:1,maxLength:240}])),required:fields,additionalProperties:false};
@@ -79,11 +88,16 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_ACTION_CHOICE_PROBE)("diagnoses action
       }
       return gateway.chatWithTools("live-driver",messages,[],{runId,maxTokens:repairProposal ? 1024 : 128,temperature:0,signal:controller.signal,responseSchema:{name:repairProposal ? "agent_repair_proposal" : "agent_action_choice",schema:repairProposal ? proposalSchema : choiceSchema}});
     });
-    const proof={recordedAt:new Date().toISOString(),scope:repairProposal ? "Read-only bounded repair-proposal replay. Replacement anchors are checked against supplied source only. No proposal is written, executed, or proved correct." : "Read-only decision replay of controlled checklist and saved failure evidence. No arguments are generated, no tools are dispatched, no repair is proved.",replayPath,focused,repairProposal,diagnosisMode,diagnosis,messages,result,admissions:getExecutionLedger(runId)?.agentAdmissions,operations:getExecutionLedger(runId)?.operationAttempts,sourceUnchanged:readFileSync(path.join(workspace,"unchanged.txt"),"utf8") === "diagnostic only"};
+    const proof={recordedAt:new Date().toISOString(),scope:rawReplacement ? "Read-only complete-module source draft. No draft executes, no source changes, and no software behavior is proved." : repairProposal ? "Read-only bounded repair-proposal replay. Replacement anchors are checked against supplied source only. No proposal is written, executed, or proved correct." : "Read-only decision replay of controlled checklist and saved failure evidence. No arguments are generated, no tools are dispatched, no repair is proved.",replayPath,focused,repairProposal,diagnosisMode,rawReplacement,jsonModule,diagnosis,messages,result,admissions:getExecutionLedger(runId)?.agentAdmissions,operations:getExecutionLedger(runId)?.operationAttempts,sourceUnchanged:readFileSync(path.join(workspace,"unchanged.txt"),"utf8") === "diagnostic only"};
     if(process.env.WORKBENCH_AGENT_ACTION_CHOICE_REPORT)writeFileSync(process.env.WORKBENCH_AGENT_ACTION_CHOICE_REPORT,JSON.stringify(proof,null,2));
     expect(proof.sourceUnchanged).toBe(true);expect(proof.operations).toEqual([]);expect(result.ok,JSON.stringify(result)).toBe(true);
     if(result.ok){
       expect(result.value.finishReason).not.toBe("length");
+      if(rawReplacement){
+        const source=jsonModule ? result.value.tool_calls?.[0]?.arguments.content : result.value.content;
+        expect(typeof source).toBe("string");expect(source).not.toMatch(/^\s*```/);expect(String(source).trim()).not.toBe("");expect(result.value.tool_calls ?? []).toHaveLength(jsonModule ? 1 : 0);
+        expect(()=>parse(String(source),{sourceType:"module"})).not.toThrow();return;
+      }
       let proposed=diagnosisMode ? {} : JSON.parse(result.value.content ?? "{}");
       if(diagnosisMode){
         const calls=result.value.tool_calls ?? [];expect(calls).toHaveLength(1);

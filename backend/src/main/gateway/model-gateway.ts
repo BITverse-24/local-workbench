@@ -1927,7 +1927,7 @@ export class ModelGateway implements ModelClient {
           }
         }
 
-        let finalContent = typeof parsedJson?.content === "string" ? parsedJson.content : toolCalls.length ? null : (typeof rawContent === "string" ? rawContent : null);
+        let finalContent = argumentTool && parsedArguments ? null : typeof parsedJson?.content === "string" ? parsedJson.content : toolCalls.length ? null : (typeof rawContent === "string" ? rawContent : null);
         if (!agentV3Scope() && toolCalls.length === 0 && finalContent && tools.length > 0) {
           const embedded = extractEmbeddedToolCalls(finalContent, true);
           if (embedded.toolCalls.length > 0) {
