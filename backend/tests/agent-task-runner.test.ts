@@ -61,6 +61,11 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
     if (!answer) throw new Error("Unexpected model generation");
     const input = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload });
     let content = answer(payload);
+    if (scopeReview && typeof content === "object" && content !== null && "covered" in content) {
+      const input=packetState(payload.messages[1].content),review=content as any;
+      const refs=[...input.requirements.flatMap((item:any)=>item.checks.map((check:any)=>check.ref)),...input.scopeUpdates.map((item:any)=>item.ref)];
+      content={obligations:review.covered && !review.missing.length ? refs.length ? [{description:input.source.text.slice(0,1000),check_refs:refs}] : [] : (review.missing.length ? review.missing : ["Uncovered obligation"]).map((description:string)=>({description,check_refs:[]})),full_suite:review.full_suite};
+    }
     if (String(payload.messages?.[0]?.content).startsWith("The host has verified the saved repair") && typeof content === "object" && content !== null && (content as any).tool_calls?.[0]?.name === "finish") content = (content as any).tool_calls[0].arguments.text;
     const shapes=payload.response_format?.json_schema?.schema?.properties?.tool_calls?.items?.anyOf;
     const directProposal=payload.response_format?.json_schema?.name === "agent_tool_arguments";

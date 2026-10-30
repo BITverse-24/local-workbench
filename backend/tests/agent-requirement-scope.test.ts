@@ -1,7 +1,10 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { Validator } from "jsonschema";
 import type { AgentTask } from "../src/shared/contracts.js";
-import { agentInterpretationFormat, agentScopeSources, agentSourceRequirementFormat, parseAgentSourceRequirements } from "../src/main/agent/task-interpretation.js";
+import { agentInterpretationFormat, agentScopeSources, agentSourceRequirementFormat, parseAgentSourceRequirements, parseTaskInterpretation } from "../src/main/agent/task-interpretation.js";
+
+import { reviewAgentInterpretation } from "../src/main/agent/requirement-scope.js";
+import type { ToolExecutionContext } from "../src/main/tools/types.js";
 
 const messageId="11111111-1111-4111-8111-111111111111",priorId="22222222-2222-4222-8222-222222222222",taskId="33333333-3333-4333-8333-333333333333";
 function task(text:string,prior?:string):AgentTask {
@@ -52,4 +55,38 @@ it("uses the earlier pending source for a literal request on continuation",()=>{
   expect(validator.validate({...input,source_id:"p2:s1"},agentSourceRequirementFormat(prior).schema).valid).toBe(false);
   const broad={disposition:"continue",requirements:[{kind:"inspect",description:"Read parser.ts",source_id:"p1:s1",checks:[{description:"Copy parser.ts",kind:"inspection",operation:"verbatim_source",path:"parser.ts"}]}],updates:[],full_suite:false};
   expect(validator.validate(broad,agentInterpretationFormat(current,saved,messageId).schema).valid).toBe(true);
+});
+
+function scopeCandidate() {
+  const text="Reproduce failing tests and repair filtering and invalid storage";
+  const saved=task(text);
+  const candidate=parseTaskInterpretation(JSON.stringify({disposition:"continue",requirements:[{kind:"execute",description:text,source_id:"request",checks:["Reproduce failing tests","Repair filtering","Repair invalid storage"].map(description=>({description,kind:"execution",operation:"semantic",path:null}))}],updates:[],full_suite:false}),messageId,text,saved);
+  return {saved,candidate};
+}
+it("binds separate coverage obligations to real acceptance refs instead of a free pass Boolean",async()=>{
+  const {saved,candidate}=scopeCandidate(),registerResult=vi.fn();
+  const gateway={chatWithTools:vi.fn(async(_model,messages,_tools,options)=>{
+    const input=JSON.parse(messages[1].content),checks=input.requirements[0].checks;
+    const output={obligations:checks.map((check:{description:string;ref:string})=>({description:check.description,check_refs:[check.ref]})),full_suite:true};
+    expect(new Validator().validate(output,options.responseSchema.schema).valid).toBe(true);
+    return {ok:true,value:{content:JSON.stringify(output)}};
+  })};
+  const reviewed=await reviewAgentInterpretation(saved,candidate,{gateway,resultStore:{registerResult}} as unknown as ToolExecutionContext,"driver",messageId);
+  expect(reviewed).toMatchObject({covered:true,gaps:[],fullSuite:true});
+  const payload=registerResult.mock.calls[0][0].payload;
+  expect(payload.mapping.obligations).toHaveLength(3);
+  expect(payload.mapping.obligations.every((item:{check_refs:string[]})=>item.check_refs.length === 1)).toBe(true);
+});
+it.each(["unknown","empty","boolean"])("rejects %s coverage instead of authorizing a task",async kind=>{
+  const {saved,candidate}=scopeCandidate();
+  const output=kind === "unknown" ? {obligations:[{description:"Repair filtering",check_refs:["invented/check"]}],full_suite:false} : kind === "empty" ? {obligations:[],full_suite:false} : {covered:true,missing:[],full_suite:false};
+  const context={gateway:{chatWithTools:async()=>({ok:true,value:{content:JSON.stringify(output)}})},resultStore:{registerResult:vi.fn()}} as unknown as ToolExecutionContext;
+  await expect(reviewAgentInterpretation(saved,candidate,context,"driver",messageId)).rejects.toThrow();
+  expect(context.resultStore!.registerResult).not.toHaveBeenCalled();
+});
+it("retains an unmapped obligation as a source-bound gap for bounded extraction",async()=>{
+  const {saved,candidate}=scopeCandidate();
+  const context={gateway:{chatWithTools:async()=>({ok:true,value:{content:JSON.stringify({obligations:[{description:"Repair saved-data shape checks",check_refs:[]}],full_suite:false})}})},resultStore:{registerResult:vi.fn()}} as unknown as ToolExecutionContext;
+  const review=await reviewAgentInterpretation(saved,candidate,context,"driver",messageId);
+  expect(review.covered).toBe(false);expect(review.gaps).toEqual([{source:agentScopeSources(saved,messageId)[0],detail:"Repair saved-data shape checks"}]);
 });
