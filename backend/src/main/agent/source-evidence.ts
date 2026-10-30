@@ -1,3 +1,4 @@
+import { agentEvidenceStore, agentEvidenceRecords } from "./task-evidence.js";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -100,7 +101,7 @@ export function sliceAgentSourcePage(page: AgentSourcePage, maxBytes: number): A
 
 /** Read complete stored pages only. Partial JSON is never source authority. */
 export function loadAgentSourcePage(context: ToolExecutionContext, resultId: string): AgentSourcePage | undefined {
-  const store = context.resultStore!, record = store.getResult(resultId);
+  const store = agentEvidenceStore(context,resultId), record = store.getResult(resultId);
   if (record.producer.tool !== "read_file" || record.origin !== "source_extracted" || record.storage.encoding !== "json") return;
   const first = store.retrieveResultSlice(resultId, { mode: "text", maxChars: 3000 });
   if (first.totalChars > 12000) return;
@@ -130,6 +131,7 @@ export function sourcePageIsCurrent(context: ToolExecutionContext, page: AgentSo
 export function selectAgentSourcePages(context: ToolExecutionContext, requirement: AgentRequirement, latest: AgentSourcePage | undefined, focus: string, maxChars: number, preferredPaths: string[] = []) {
   const progress = getExecutionLedger(context.runId)?.agentProgress;
   const ids = [...new Set([
+    ...agentEvidenceRecords(context,"source_extracted").filter(record=>record.producer.tool === "read_file").map(record=>record.resultId),
     ...(progress?.sourceResultIds ?? []),
     ...(progress?.reads.map(read => read.resultId) ?? []),
     ...(progress?.actions.filter(action => action.operation === "read_file" && action.status === "completed").flatMap(action => action.resultId ?? []) ?? []),
@@ -161,6 +163,6 @@ export function selectAgentSourcePages(context: ToolExecutionContext, requiremen
     pages.push(page); usedChars += size;
   }
   return { pages, totalEligiblePages: ranges.size, complete: pages.length === ranges.size,
-    omittedPagesVia: { tool: "retrieve_result", action: "list", origin:"source_extracted" },
+    omittedPagesVia: { tool: "retrieve_result", action: "list", scope:"task", origin:"source_extracted" },
     rule: "These are complete observed pages of currently matching source revisions. Page coverage is explicit. Selection does not prove requirement coverage; retrieve omitted pages when needed." };
 }

@@ -9,7 +9,9 @@ import { closeDb, getDb, initDb } from "../src/main/persistence/db.js";
 import { createChat, deleteChat } from "../src/main/persistence/chats.js";
 import { addMessage, editMessage } from "../src/main/persistence/messages.js";
 import { createRun, transition } from "../src/main/run/store.js";
-import { bindAgentTaskRun, getAgentTask, getAgentTaskBinding, getCurrentAgentTask, ingestAgentTaskMessage, retrieveTaskEvidence } from "../src/main/run/agent-task-store.js";
+import { bindAgentTaskRun, getAgentTask, getAgentTaskBinding, getCurrentAgentTask, ingestAgentTaskMessage, retrieveTaskEvidence, listTaskEvidence, taskEvidenceStore } from "../src/main/run/agent-task-store.js";
+import { retrieveResultTool } from "../src/main/tools/result-retrieval.js";
+import type { ToolExecutionContext } from "../src/main/tools/types.js";
 import { dataRoot, setDataDir } from "../src/main/run/filesystem.js";
 import { RunResultStore } from "../src/main/run/result-store.js";
 import { normalizeRunContract, persistRunContract } from "../src/main/run/contract.js";
@@ -183,6 +185,29 @@ describe("Agent task continuity and authority", () => {
     const regression = attempt("Startup now fails");
     bindAgentTaskRun({ ...regression, expectedRevision: 2, disposition: "regression" });
     expect(getCurrentAgentTask(chatId)?.status).toBe("open");
+  });
+
+  it("pages task evidence without granting run access or inventing requirement associations", async () => {
+    const {input}=firstTask(), store=new RunResultStore(input.runId);
+    const original=store.registerResult({type:"text",status:"complete",origin:"execution",producer:{tool:"test",callId:"baseline"},summary:"Earlier baseline",payload:"old test output",sources:[]});
+    const next=attempt("Continue");bindAgentTaskRun({...next,expectedRevision:1});transition(next.runId,"partial");
+    const local=new RunResultStore(next.runId);
+    const second=local.registerResult({type:"text",status:"complete",origin:"source_extracted",producer:{tool:"read_file",callId:"read"},summary:"Current read",payload:"current source",sources:[]});
+    expect(listTaskEvidence(next.runId,{limit:1}).map(row=>row.resultId)).toEqual([original.resultId]);
+    expect(listTaskEvidence(next.runId,{limit:1,offset:1}).map(row=>row.resultId)).toEqual([second.resultId]);
+    expect(listTaskEvidence(next.runId,{origin:"execution"}).map(row=>row.resultId)).toEqual([original.resultId]);
+    const context={runId:next.runId,resultStore:local} as ToolExecutionContext;
+    const listed=await retrieveResultTool.execute({action:"list",scope:"task",count:1},context);
+    expect(listed.data).toMatchObject({scope:"task",nextOffset:1,results:[{resultId:original.resultId,originRunId:input.runId,historical:true}]});
+    const read=await retrieveResultTool.execute({scope:"task",result_id:original.resultId},context);
+    expect(read.data).toMatchObject({content:"old test output",originRunId:input.runId,historical:true});
+    await expect(retrieveResultTool.execute({result_id:original.resultId},context)).rejects.toThrow("authorized run");
+    expect(()=>taskEvidenceStore(input.runId,second.resultId)).toThrow("current authorized task revision");
+    const other=attempt("Separate task");bindAgentTaskRun({...other,intent:"new"});
+    expect(()=>listTaskEvidence(next.runId)).toThrow("current authorized task revision");
+    expect(()=>taskEvidenceStore(other.runId,original.resultId)).toThrow("authorized task");
+    getDb().prepare("UPDATE run_mode_details SET mode='work' WHERE run_id=?").run(other.runId);
+    expect(()=>listTaskEvidence(other.runId)).toThrow("authorized task revision");
   });
 
   it("limits earlier-result retrieval to the same task and verifies bytes and digests", () => {

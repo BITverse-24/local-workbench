@@ -325,3 +325,11 @@ The damaged Flow D workspace was not restored or edited by this work. Production
 - `487d6df`: bounded obligation passes, retained draft scope, request-specific check presentation, and failed scope diagnostics.
 - `e7bd104`: durable source-bound failure steps, contained import hints, focused evidence, and separate full-input/controlled diagnostics.
 - Earlier Flow D assets and AGENTS.md edits remain separate.
+
+## Task evidence across attempts
+
+Task-owned evidence listing and retrieval now cover earlier bound attempts. The task store checks the current revision, Agent v3 mode, chat, workspace, and origin revision. ResultStore remains run-scoped. Tool callers opt into `scope=task`; the default remains run-only. Returned records expose their origin run and historical status. No requirement association is invented for task-wide observations.
+
+Fresh context packets and completion reviews can read earlier task source and execution records. Applied changes come from their original completed operations, without copying operations or approvals into a new ledger. Completion checks immutable mutation outcomes against current target digests and rechecks them after review. Final tests still need current-run evidence bound to the current implementation, test, and configuration manifest. Earlier test passes do not transfer acceptance.
+
+The four-file focused check passed 88 tests, with one live check skipped. Two added follow-up regressions passed separately: an earlier edit does not force a second edit, and a source change during a follow-up review blocks completion. Full type checking, Electron build, and diff checks passed. Cross-run command publication and generated-artifact proof still need separate treatment; this milestone covers direct file operations and source evidence.

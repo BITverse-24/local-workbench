@@ -1,3 +1,4 @@
+import { agentEvidenceStore, agentAppliedChanges } from "./task-evidence.js";
 import type { AgentRequirement, AgentTask, AgentToolDefinition, SourceReadReceipt } from "../../shared/contracts.js";
 import type { ToolExecutionContext } from "../tools/types.js";
 import { getExecutionLedger } from "../run/execution-ledger.js";
@@ -34,7 +35,7 @@ export interface AgentContextPacket {
 
 /** Unwrap complete structured evidence once. Avoid nested JSON strings in small-model requests. */
 export function agentEvidenceSlice(context: ToolExecutionContext, resultId: string, maxChars = 1800): unknown {
-  const store = context.resultStore!, record = store.getResult(resultId);
+  const store = agentEvidenceStore(context,resultId), record = store.getResult(resultId);
   const first = store.retrieveResultSlice(resultId, { mode: "text", maxChars: Math.min(3000, maxChars) });
   let content = first.content, offset = first.nextOffset;
   if (first.totalChars <= maxChars) {
@@ -42,10 +43,10 @@ export function agentEvidenceSlice(context: ToolExecutionContext, resultId: stri
     if (record.storage.encoding === "json") {
       const value = JSON.parse(content);
       if (record.producer.tool === "read_file" && value.sourcePage === true) return { resultId, kind: "source", path: value.path, sourceText: value.content, completeFile: value.complete, digest: value.digest, byteRange: [value.startByte, value.endByte] };
-      return { resultId, tool: record.producer.tool, completeResult: true, value };
+      return { resultId, originRunId:record.runId, historical:record.runId !== context.runId, tool: record.producer.tool, completeResult: true, value };
     }
   }
-  return { resultId, tool: record.producer.tool, content, completeResult: offset === undefined, nextOffset: offset };
+  return { resultId, originRunId:record.runId, historical:record.runId !== context.runId, tool: record.producer.tool, content, completeResult: offset === undefined, nextOffset: offset };
 }
 
 /** Fresh state and selected immutable evidence only. No growing chat transcript or head/tail compaction. */
@@ -138,8 +139,8 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
   const state = { taskId: task.taskId, taskRevision: task.snapshot.revision, currentStep, currentRequirement: requirement,
     constraints, unresolvedRequirementIds: task.snapshot.requirements.filter(item => item.state === "active").map(item => item.id),
     obligations: task.snapshot.requirements.filter(item => item.state === "active").map(item => ({ id: item.id, kind: item.kind, description: item.description, acceptance: item.acceptance })),
-    appliedOperations: ledger?.completedOperations.slice(-5).map(item => ({ tool: item.tool, summary: item.summary, resultIds: item.resultIds })),
-    sourceObservations: {items:observations.slice(-4),total:observations.length,complete:observations.length<=4,earlierEvidenceVia:{tool:"retrieve_result",action:"list",origin:"source_extracted"}},
+    appliedOperations: agentAppliedChanges(context).slice(-5).map(item=>({path:item.path,tool:item.tool,summary:item.summary,originRunId:item.originRunId,historical:item.originRunId !== context.runId})),
+    sourceObservations: {items:observations.slice(-4),total:observations.length,complete:observations.length<=4,earlierEvidenceVia:{tool:"retrieve_result",action:"list",scope:"task",origin:"source_extracted"}},
     directoryEvidence,
     suggestedReadPaths:readPaths,
     readSelection:readPaths ? {indexSource:listedFiles ? "directory page" : "saved verification manifest",totalKnownRemaining:remainingReadCount,complete:remainingReadCount === readPaths.length,otherPathsVia:{tool:"list_dir",purpose:"Narrow the directory or use its continuation page"}} : undefined,

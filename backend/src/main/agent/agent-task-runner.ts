@@ -1,3 +1,4 @@
+import { agentAppliedChanges } from "./task-evidence.js";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { Validator } from "jsonschema";
@@ -48,7 +49,9 @@ export class AgentTaskRunner {
       updateAgentProgress(runId, progress => { progress.stopReason = reason; progress.feedback = detail.slice(0, 10000); });
       if (outcome === "partial") setAgentTaskStatus(runId, "partial");
       if (outcome === "partial") recordVerificationTermination(runId, { reason, criterionIds: [], detail: detail.slice(0, 2000) });
-      const ledger = getExecutionLedger(runId), applied = ledger?.completedOperations.filter(item => fileMutations.has(item.tool)).map(item => item.summary) ?? [];
+      const ledger = getExecutionLedger(runId);
+      let applied: string[] = [];
+      try {applied=agentAppliedChanges(context).map(item=>`${item.summary}${item.originRunId === runId ? "" : " (earlier attempt)"}`);} catch {applied=ledger?.completedOperations.filter(item=>fileMutations.has(item.tool)).map(item=>item.summary) ?? [];}
       const checks = ledger?.verification?.evidence ?? [];
       return { outcome, stopReason: reason, text: `Changes applied: ${applied.join("; ") || "none"}\nChecks passed: ${checks.filter(item => item.status === "passed").map(item => item.reason).join("; ") || "none"}\nChecks unavailable: ${checks.filter(item => item.status === "unverified").map(item => item.reason).join("; ") || "none recorded"}\nRemaining requirements: ${outcome === "completed" ? "none" : detail}` };
     };
@@ -149,10 +152,7 @@ export class AgentTaskRunner {
       const environmentKey = hash([process.platform, process.execPath, process.env.PATH]);
       const hasCodeProject = ["package.json", "pyproject.toml", "pytest.ini", "Cargo.toml", "pom.xml"].some(file => existsSync(resolveSafe(context.workspaceRoot, file)));
       const needsTests = task.snapshot.requirements.some(item => item.state === "active" && (item.kind === "execute" || item.acceptance.some(check => check.kind === "execution") || (item.kind === "change" && hasCodeProject)));
-      const changedPaths = () => {
-        const ledger = getExecutionLedger(runId)!;
-        return ledger.completedOperations.filter(item=>fileMutations.has(item.tool)).flatMap(item=>ledger.operationAttempts.find(attempt=>attempt.callId === item.callId)?.targetPath ?? []);
-      };
+      const changedPaths = () => agentAppliedChanges(context).map(item=>item.path);
       const verifyChanges = async () => {
         const progress = getExecutionLedger(runId)?.agentProgress;
         if (progress?.baseline?.status === "stop" && progress.baseline.environmentKey === environmentKey) return { action: "stop" as const, detail: progress.baseline.detail };

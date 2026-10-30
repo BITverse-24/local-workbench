@@ -733,6 +733,43 @@ describe("Agent v3 task host loop", () => {
     expect(getExecutionLedger(runId)?.completedOperations.some(item => item.tool === "edit_file")).toBe(true);
     expect(getCurrentAgentTask(chatId)?.snapshot.requirements).toHaveLength(3);
   });
+  it("carries applied changes into a follow-up without forcing another edit or importing old tests", async () => {
+    const text="Read note.txt, replace source with content, and run existing tests.";
+    replies=[()=>({disposition:"continue",requirements:["change","execute"].map(kind=>({kind,description:kind,source_id:"request",checks:[{description:kind,kind:kind === "execute"?"execution":"review",operation:"semantic",path:null}]})),updates:[],full_suite:false}),
+      ()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
+      ()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"Saved; tests unavailable."}}]})];
+    const first=await run(text);expect(first.result.stopReason).toBe("checks_unavailable");
+    replies=[()=>({disposition:"evidence",requirements:[],updates:[],full_suite:false}),payload=>{
+      const state=packetState(payload.messages[1].content);
+      expect(state.appliedOperations).toContainEqual(expect.objectContaining({path:"note.txt",originRunId:first.runId,historical:true}));
+      expect(payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.flatMap((tool:any)=>tool.properties.name.enum)).toContain("finish");
+      return {tool_calls:[{name:"finish",arguments:{text:"The earlier edit is saved. Required tests remain unavailable."}}]};
+    }];
+    const next=await run("The tests are still unavailable.");
+    expect(next.result.stopReason,next.result.text).toBe("checks_unavailable");expect(next.approve).not.toHaveBeenCalled();
+    expect(next.result.text).toContain("earlier attempt");
+    expect(getExecutionLedger(next.runId)?.completedOperations).toEqual([]);
+    expect(getExecutionLedger(next.runId)?.verification?.evidence.some(check=>check.status === "passed")).toBe(false);
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved content\n");
+  });
+  it("reviews a prior task change against current bytes and rejects changes during review", async () => {
+    const request="Repair note.txt";
+    replies=[()=>interpretation("change",request),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),
+      ()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"Saved the edit."}}]}),payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Saved change"}))};}];
+    const first=await run(request);expect(first.result.outcome,first.result.text).toBe("completed");
+    replies=[()=>({disposition:"evidence",requirements:[],updates:[],full_suite:false}),()=>({tool_calls:[{name:"finish",arguments:{text:"The edit remains saved."}}]}),payload=>{
+      const state=packetState(payload.messages[1].content);
+      expect(state.results.items).toContainEqual(expect.objectContaining({tool:"edit_file",originRunId:first.runId,historical:true}));
+      writeFileSync(path.join(root,"note.txt"),"external change\n");
+      return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Saved change"}))};
+    },payload=>{expect(packetState(payload.messages[1].content).feedback.text).toContain("changed during review");return {tool_calls:[{name:"finish",arguments:{text:"The edit remains saved."}}]};}];
+    const next=await run("Continue");
+    expect(next.result.outcome).toBe("partial");expect(next.approve).not.toHaveBeenCalled();
+    expect(next.result.stopReason).toBe("repeated_action");
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("external change\n");
+  });
   it("requires action while a repair is pending and checks delivery before spending another test attempt", async () => {
     const text = "Repair note.txt and run existing tests.";
     replies = [()=>({disposition:"continue",requirements:["change","execute"].map(kind=>({kind,description:kind,source_id:"request",checks:[{description:kind,kind:kind === "execute"?"execution":"review",operation:"semantic",path:null}]})),updates:[],full_suite:false}),

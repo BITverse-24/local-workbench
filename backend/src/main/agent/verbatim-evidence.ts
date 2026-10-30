@@ -1,3 +1,4 @@
+import { agentEvidenceStore } from "./task-evidence.js";
 import { z } from "zod";
 import type { AgentRequirement, IntermediateResultRecord } from "../../shared/contracts.js";
 import type { ToolExecutionContext } from "../tools/types.js";
@@ -16,7 +17,7 @@ export function verifyVerbatimChecks(requirement: AgentRequirement, context: Too
       for (const record of records) {
         if (record.producer.tool !== "read_file" || record.origin !== "source_extracted" || record.status !== "complete" || record.storage.sizeBytes > 32768) continue;
         let text = "", offset: number | undefined = 0;
-        while (offset !== undefined) { const page = context.resultStore!.retrieveResultSlice(record.resultId, { mode: "text", offset, maxChars: 3000 }); text += page.content; offset = page.nextOffset; }
+        while (offset !== undefined) { const page = agentEvidenceStore(context,record.resultId).retrieveResultSlice(record.resultId, { mode: "text", offset, maxChars: 3000 }); text += page.content; offset = page.nextOffset; }
         let value: unknown;
         try { value = JSON.parse(text); } catch { continue; }
         const parsed = pageSchema.safeParse(value);

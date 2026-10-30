@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { AgentMessageDisposition, AgentRequirementUpdate, AgentSourceQuote, AgentTask, AgentTaskBinding, AgentTaskRevision, TaskEvidenceRef, ResultSliceRequest } from "../../shared/contracts.js";
+import type { AgentMessageDisposition, AgentRequirementUpdate, AgentSourceQuote, AgentTask, AgentTaskBinding, AgentTaskRevision, TaskEvidenceRef, ResultSliceRequest, ResultOrigin } from "../../shared/contracts.js";
 import { getDb } from "../persistence/db.js";
 import { RunResultStore } from "./result-store.js";
 
@@ -188,6 +188,44 @@ export function bindAgentTaskRun(input: {
 }
 
 /** Cross-run access is allowed only through verified task membership. ResultStore stays run-scoped. */
+function evidenceTask(requestingRunId: string) {
+  const requester = binding(id.parse(requestingRunId)), task = requester && getAgentTask(requester.taskId);
+  const run = getDb().prepare("SELECT r.chat_id,m.mode,m.engine_version,m.workspace_root FROM runs r JOIN run_mode_details m ON m.run_id=r.id WHERE r.id=?").get(requestingRunId) as {chat_id:string;mode:string;engine_version:string;workspace_root:string} | undefined;
+  if (!requester || !task?.current || task.snapshot.revision !== requester.taskRevision || run?.mode !== "agent" || run.engine_version !== "agent-v3" || run.chat_id !== task.chatId || run.workspace_root !== task.workspace.root) throw new Error("Evidence is outside the current authorized task revision.");
+  return {requester,task};
+}
+
+/** This access path carries evidence only. It transfers no approvals or mutation scopes. */
+export function taskEvidenceStore(requestingRunId: string, resultId: string): RunResultStore {
+  const {requester,task} = evidenceTask(requestingRunId);
+  const row = getDb().prepare(`SELECT i.run_id FROM intermediate_results i
+    JOIN agent_task_runs a ON a.run_id=i.run_id JOIN runs r ON r.id=a.run_id JOIN run_mode_details m ON m.run_id=r.id
+    WHERE i.result_id=? AND a.task_id=? AND a.task_revision<=? AND r.chat_id=? AND m.mode='agent' AND m.workspace_root=?`)
+    .get(id.parse(resultId),requester.taskId,requester.taskRevision,task.chatId,task.workspace.root) as {run_id:string} | undefined;
+  if (!row) throw new Error("Evidence is outside the authorized task.");
+  return new RunResultStore(row.run_id);
+}
+
+export function listTaskEvidence(requestingRunId: string, options: {limit?:number;offset?:number;origin?:ResultOrigin} = {}) {
+  const {requester,task} = evidenceTask(requestingRunId);
+  const limit=z.number().int().min(1).max(50).parse(options.limit ?? 10), offset=z.number().int().nonnegative().parse(options.offset ?? 0);
+  const origin=z.enum(["source_extracted","execution","model_derived"]).optional().parse(options.origin);
+  const rows=getDb().prepare(`SELECT i.result_id,i.run_id FROM intermediate_results i
+    JOIN agent_task_runs a ON a.run_id=i.run_id JOIN runs r ON r.id=a.run_id JOIN run_mode_details m ON m.run_id=r.id
+    WHERE a.task_id=? AND a.task_revision<=? AND r.chat_id=? AND m.mode='agent' AND m.workspace_root=?${origin ? " AND i.origin=?" : ""}
+    ORDER BY a.task_revision,i.created_at,i.result_id LIMIT ? OFFSET ?`)
+    .all(requester.taskId,requester.taskRevision,task.chatId,task.workspace.root,...(origin ? [origin] : []),limit,offset) as Array<{result_id:string;run_id:string}>;
+  return rows.map(row=>new RunResultStore(row.run_id).getResult(row.result_id));
+}
+
+export function listAgentTaskRuns(requestingRunId: string): string[] {
+  const {requester,task} = evidenceTask(requestingRunId);
+  const rows=getDb().prepare(`SELECT a.run_id FROM agent_task_runs a JOIN runs r ON r.id=a.run_id JOIN run_mode_details m ON m.run_id=r.id
+    WHERE a.task_id=? AND a.task_revision<=? AND r.chat_id=? AND m.mode='agent' AND m.workspace_root=? ORDER BY a.task_revision`)
+    .all(requester.taskId,requester.taskRevision,task.chatId,task.workspace.root) as Array<{run_id:string}>;
+  return rows.map(row=>row.run_id);
+}
+
 export function retrieveTaskEvidence(requestingRunId: string, reference: TaskEvidenceRef, slice: ResultSliceRequest) {
   const parsed = z.object({ taskId: id, originRunId: id, resultId: id, sha256: z.string().regex(/^[a-f0-9]{64}$/), requirementIds: z.array(key).min(1), sourceRevision: z.string().min(1) }).strict().parse(reference);
   const requester = binding(id.parse(requestingRunId)), origin = binding(parsed.originRunId);
@@ -195,7 +233,8 @@ export function retrieveTaskEvidence(requestingRunId: string, reference: TaskEvi
   const saved = getDb().prepare("SELECT snapshot_json FROM agent_task_revisions WHERE task_id=? AND revision=?").get(requester.taskId, requester.taskRevision) as { snapshot_json: string };
   const snapshot = revision.parse(JSON.parse(saved.snapshot_json));
   if (parsed.requirementIds.some(requirementId => !snapshot.requirements.some(item => item.id === requirementId))) throw new Error("Evidence refers to an unknown requirement.");
-  const store = new RunResultStore(parsed.originRunId);
+  const store = taskEvidenceStore(requestingRunId,parsed.resultId);
+  if (store.runId !== parsed.originRunId) throw new Error("Evidence origin does not match the saved result.");
   if (store.getResult(parsed.resultId).storage.sha256 !== parsed.sha256) throw new Error("Evidence digest does not match the saved result.");
   // A sourceRevision labels historical evidence; it does not establish current applicability.
   return store.retrieveResultSlice(parsed.resultId, slice);
