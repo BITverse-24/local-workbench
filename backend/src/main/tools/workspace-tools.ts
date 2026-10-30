@@ -16,6 +16,8 @@ import { resolveRunPath } from "../run/filesystem.js";
 import { isTextExtractableDocument, readDocumentContent } from "./document-reader.js";
 import { assessAgentTestExecution } from "../agent/test-verification.js";
 import { validateAgentDependencyChange } from "../agent/dependency-constraint.js";
+import { assertAgentFileScope } from "../agent/file-scope.js";
+import { currentRuntimeScope } from "../run/runtime-scope.js";
 
 export function extractPathArg(args: Record<string, unknown>): string {
   if (!args) return "";
@@ -628,7 +630,10 @@ export const runCommandTool: AgentTool = {
     const res = context.policyGuard
       ? await context.policyGuard.withMutationLock("workspace:run_command", () =>
           runCommand(context.workspaceRoot, command, 60000, { guard: context.policyGuard!, runId: context.runId, assertAuthority: context.assertAuthority, approval: context.agentCommandApproval,
-            validateChange: (name, before, after) => validateAgentDependencyChange(context.agentDependencyConstraints, name, before, after) }, context.agentVerification),
+            validateChange: (name, before, after) => {
+              if (currentRuntimeScope()?.agentPhase === "actions") assertAgentFileScope(context.agentFileScope, after ? before ? "edit_file" : "write_file" : "delete_file", name);
+              validateAgentDependencyChange(context.agentDependencyConstraints, name, before, after);
+            } }, context.agentVerification),
         )
       : await runCommand(context.workspaceRoot, command, 60000, context.policyGuard ? { guard: context.policyGuard, runId: context.runId, assertAuthority: context.assertAuthority } : undefined, context.agentVerification);
 

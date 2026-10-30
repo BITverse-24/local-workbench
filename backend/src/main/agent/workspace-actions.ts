@@ -12,6 +12,8 @@ import { editFile, fileDigest, observedRange, prepareFileEdit, readAgentSourceBy
 import { getExecutionLedger } from "../run/execution-ledger.js";
 import { captureAgentVerificationManifest } from "./test-verification.js";
 import { validateAgentDependencyChange } from "./dependency-constraint.js";
+import { assertAgentFileScope } from "./file-scope.js";
+import { currentRuntimeScope } from "../run/runtime-scope.js";
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/), relative = z.string().min(1).max(1024);
 export function canonicalSourcePath(context: ToolExecutionContext, requested: string): string {
@@ -90,6 +92,7 @@ export const agentWorkspaceActions: AgentTool[] = [
     const canonical = canonicalSourcePath(context, input.path); authorize(context, "edit_file", { ...args, path: canonical });
     return context.policyGuard!.withMutationLock(`file:${canonical}`, () => {
       context.assertAuthority?.(); context.signal?.throwIfAborted();
+      if (currentRuntimeScope()?.agentPhase === "actions") assertAgentFileScope(context.agentFileScope, "edit_file", canonical);
       validateAgentFileProposal("edit_file", args, context);
       const result = editFile(context.workspaceRoot, { path: canonical, expectedDigest: input.expected_digest, replacements: input.replacements, requirementId: context.agentRequirementId ?? "", reason: context.agentChangeReason ?? "" }, getExecutionLedger(context.runId)?.agentProgress?.reads ?? []);
       context.harness?.notifyWorkspaceTreeUpdated();
@@ -102,6 +105,7 @@ export const agentWorkspaceActions: AgentTool[] = [
     const canonical = canonicalSourcePath(context, input.path); authorize(context, operation, { ...args, path: canonical });
     return context.policyGuard!.withMutationLock(`file:${canonical}`, () => {
       context.assertAuthority?.(); context.signal?.throwIfAborted();
+      if (currentRuntimeScope()?.agentPhase === "actions") assertAgentFileScope(context.agentFileScope, operation, canonical);
       validateAgentFileProposal(operation, args, context);
       const target = resolveSafe(context.workspaceRoot, canonical);
       let beforeDigest: string | null = null;

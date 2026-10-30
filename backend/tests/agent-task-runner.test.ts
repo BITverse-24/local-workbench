@@ -56,11 +56,15 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
     const payload = JSON.parse(init.body!), title = String(payload.messages?.[0]?.content).includes("short chat topic title");
     const scopeReview = String(payload.messages?.[0]?.content).startsWith("Audit proposed requirement coverage");
     const refinement = String(payload.messages?.[0]?.content).startsWith("Extract every requested obligation");
-    const fileScope = String(payload.messages?.[0]?.content).startsWith("Assess whether this exact file operation");
+    const fileScope = payload.response_format?.json_schema?.name === "agent_file_scope";
     const answer = fileScope ? fileScopeReplies.shift() ?? (()=>({withinScope:true,reason:"The quoted user request includes this file change."})) : refinement ? refinementReplies.shift() : title ? () => "Inspect saved source" : scopeReview ? scopeReplies.shift() ?? (()=>({covered:true,missing:[],full_suite:false})) : replies.shift();
     if (!answer) throw new Error("Unexpected model generation");
     const input = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload });
     let content = answer(payload);
+    if(fileScope && typeof content === "object" && content !== null && "withinScope" in content) {
+      const answer=content as {withinScope:boolean;reason:string};
+      content=answer.withinScope ? {scope:"workspace",operations:["edit_file","write_file","delete_file"],protected_paths:[],reason:answer.reason} : {scope:"none",reason:answer.reason};
+    }
     if (scopeReview && typeof content === "object" && content !== null && "covered" in content) {
       const input=packetState(payload.messages[1].content),review=content as any;
       const refs=[...input.requirements.flatMap((item:any)=>item.checks.map((check:any)=>check.ref)),...input.scopeUpdates.map((item:any)=>item.ref)];
@@ -593,8 +597,7 @@ describe("Agent v3 task host loop", () => {
     const request="Reproduce the failure, then repair note.txt by replacing source with content.";
     fileScopeReplies=[payload=>{
       const input=packetState(payload.messages[1].content);
-      expect(input.userInstruction.quote).toBe(request);expect(input.operation.name).toBe("edit_file");
-      expect(input.operation.targetPath).toBe("note.txt");expect(input.operation).not.toHaveProperty("arguments");
+      expect(input.userInstruction.quote).toBe(request);expect(input).not.toHaveProperty("operation");
       return {withinScope:true,reason:"The quoted instruction requests the concrete repair."};
     }];
     replies=[()=>interpretation("execute",request),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),()=>({tool_calls:[{name:"finish",arguments:{text:"The repair is saved; tests are unavailable."}}]})];
@@ -611,6 +614,26 @@ describe("Agent v3 task host loop", () => {
     fileScopeReplies=[()=>{controller.abort();return {withinScope:true,reason:"The requested edit is related."};}];
     replies=[()=>interpretation("change","Repair note.txt"),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]})];
     const {result,approve}=await run("Repair note.txt");expect(result.outcome).toBe("cancelled");expect(approve).not.toHaveBeenCalled();
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved source\n");
+  });
+  it("reuses source-bound scope and rejects a later protected target before approval",async()=>{
+    writeFileSync(path.join(root,"protected.txt"),"keep source\n");
+    const request="Repair note.txt only. Do not edit protected.txt.";let scopeCalls=0;
+    fileScopeReplies=[payload=>{scopeCalls++;expect(packetState(payload.messages[1].content)).not.toHaveProperty("operation");return {scope:"paths",operations:["edit_file"],paths:["note.txt"],protected_paths:["protected.txt"],reason:"The source limits edits to note.txt"};}];
+    const read=(file:string)=>()=>({tool_calls:[{name:"read_file",arguments:{path:file}}]});
+    const edit=(file:string,source:string)=>()=>({tool_calls:[{name:"edit_file",arguments:{path:file,expected_digest:createHash("sha256").update(source).digest("hex"),replacements:[{old:"source",new:"content"}]}}]});
+    replies=[()=>interpretation("change",request),read("note.txt"),edit("note.txt","saved source\n"),read("protected.txt"),edit("protected.txt","keep source\n")];
+    const {result,runId,approve}=await run(request);
+    expect(result.stopReason,result.text).toBe("action_outside_task");expect(scopeCalls).toBe(1);expect(approve).toHaveBeenCalledTimes(1);
+    expect(getExecutionLedger(runId)?.agentProgress?.fileScopes).toHaveLength(1);
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved content\n");expect(readFileSync(path.join(root,"protected.txt"),"utf8")).toBe("keep source\n");
+  });
+  it("rejects fabricated scope paths before concrete approval",async()=>{
+    const request="Repair note.txt";
+    fileScopeReplies=[()=>({scope:"paths",operations:["edit_file"],paths:["invented.txt"],protected_paths:[],reason:"Unsupported path claim"})];
+    replies=[()=>interpretation("change",request),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]})];
+    const {result,runId,approve}=await run(request);
+    expect(result.stopReason,result.text).toBe("action_scope_unverified");expect(approve).not.toHaveBeenCalled();expect(getExecutionLedger(runId)?.agentProgress?.fileScopes).toHaveLength(0);
     expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved source\n");
   });
   it("rejects new external dependencies before semantic scope assessment or approval",async()=>{

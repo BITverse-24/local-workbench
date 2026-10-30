@@ -34,7 +34,7 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses a local model
   const source = process.env.WORKBENCH_AGENT_REPAIR_WORKSPACE, report = process.env.WORKBENCH_AGENT_REPAIR_REPORT;
   if (!source || !report) throw new Error("Set the prepared workspace and diagnostic report paths.");
   const selectedRuntimeSourceDigests = Object.fromEntries([
-    "agent/agent-task-runner.ts","agent/task-interpretation.ts","agent/requirement-scope.ts","agent/context-packet.ts","agent/source-evidence.ts","agent/repair-proposal.ts","agent/dependency-constraint.ts","agent/requirement-review.ts",
+    "agent/agent-task-runner.ts","agent/task-interpretation.ts","agent/requirement-scope.ts","agent/context-packet.ts","agent/source-evidence.ts","agent/repair-proposal.ts","agent/dependency-constraint.ts","agent/file-scope.ts","agent/requirement-review.ts",
     "agent/test-verification.ts","agent/verification-stage.ts","agent/workspace-actions.ts","run/agent-task-store.ts","run/execution-ledger.ts","run/result-store.ts","tools/result-retrieval.ts","gateway/model-gateway.ts","harness/policy-guard.ts","harness/tools/edit-file.ts","harness/tools/run-command.ts","harness/tools/list-dir.ts",
   ].map(file=>[file,createHash("sha256").update(readFileSync(path.join(process.cwd(),"backend/src/main",file))).digest("hex")]));
   const temporary = mkdtempSync(path.join(tmpdir(), "agent-repair-live-")), previous = dataRoot();

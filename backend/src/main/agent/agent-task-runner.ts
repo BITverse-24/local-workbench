@@ -129,6 +129,7 @@ export class AgentTaskRunner {
           const commandApproval = call.name === "run_command" ? { workspaceDigest: captureCommandWorkspaceDigest(context.workspaceRoot) } : undefined;
           const previewData = { taskId: bound!.taskId, taskRevision: bound!.taskRevision, requirementId: context.agentRequirementId ?? null,
             constraints: task.snapshot.requirements.filter(item => item.state === "active" && item.kind === "preserve"),
+            fileScope: context.agentFileScope ?? null,
             operation: call.name, arguments: call.arguments, ...(commandApproval ? { sourceRevision: commandApproval.workspaceDigest } : {}) };
           const preview = JSON.stringify(previewData, null, 2) + (call.name === "run_command" ? `\n\n${COMMAND_FALLBACK_DISCLOSURE}` : "");
           const before = fileMutations.has(call.name) ? this.sourceVersion(context, call.arguments) : undefined;
@@ -284,8 +285,9 @@ export class AgentTaskRunner {
           const completed = stop("requirements_satisfied", "", "completed");
           return { ...completed, text: `${String(call.arguments.text)}\n\n${completed.text}` };
         }
-        if (fileMutations.has(call.name)) {
-          try { validateAgentFileProposal(call.name, call.arguments, context); }
+        context.agentFileScope = undefined;
+        if (fileMutations.has(call.name) || call.name === "run_command") {
+          try { if (fileMutations.has(call.name)) validateAgentFileProposal(call.name, call.arguments, context); }
           catch (error) { updateAgentProgress(runId, state => { state.actions.find(item => item.id === call.id)!.status = "failed"; state.feedback = String(error).slice(0, 1000); }); continue; }
           const assessed = await assessAgentFileScope(task,context.agentRequirementId!,call,context,modelId);
           if (!assessed.verified || !assessed.withinScope) {
@@ -293,7 +295,7 @@ export class AgentTaskRunner {
             return assessed.verified ? stop("action_outside_task",assessed.reason) : generationFailure("action_scope_unverified",assessed.reason);
           }
           // Scope assessment can await inference. Recheck before showing a concrete preview.
-          try { validateAgentFileProposal(call.name,call.arguments,context); }
+          try { if (fileMutations.has(call.name)) validateAgentFileProposal(call.name,call.arguments,context); }
           catch (error) { updateAgentProgress(runId,state=>{state.actions.find(item=>item.id === call.id)!.status="failed";state.feedback=String(error).slice(0,1000);});continue; }
         }
         if (mutations.has(call.name) && !await authorize([call])) return stop("approval_denied", "The proposed action was declined.", "cancelled");

@@ -61,6 +61,12 @@ describe('Command publication and approval scopes', () => {
     expect(readFileSync(path.join(work,'target.txt'),'utf8')).toBe('ORIGINAL');expect(existsSync(path.join(work,'added.js'))).toBe(false);
     expect(existsSync(path.join(work,'.harness_backups'))).toBe(false);
   });
+  it.each(['none','protected'])('cannot publish command edits beyond interpreted task scope: %s',async kind=>{
+    const policy=boundApproval();apply=cwd=>writeFileSync(path.join(cwd,'target.txt'),'NEW');
+    const scope=kind === 'none' ? {scope:'none' as const,reason:'Inspection only'} : {scope:'workspace' as const,operations:['edit_file' as const],protected_paths:['target.txt'],reason:'Keep the target unchanged'};
+    await expect(withRuntimeScope({runId:'run',mode:'agent',agentPhase:'actions',signal:new AbortController().signal},()=>runCommandTool.execute({command:'fixture command'},{runId:'run',workspaceRoot:work,gateway:{} as any,policyGuard:policy.guard,agentCommandApproval:policy.approval,agentFileScope:scope}))).rejects.toThrow(/Inspection only|outside the saved task scope/);
+    expect(readFileSync(path.join(work,'target.txt'),'utf8')).toBe('ORIGINAL');expect(existsSync(path.join(work,'.harness_backups'))).toBe(false);
+  });
   it.each(['modify', 'create', 'delete'])('rejects publication if an unchanged command input changes externally: %s', async operation => {
     const other = path.join(work,'other.txt'); writeFileSync(other,'OTHER');
     const policy = boundApproval();
