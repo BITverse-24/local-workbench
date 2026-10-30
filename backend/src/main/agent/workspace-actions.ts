@@ -50,6 +50,7 @@ export function validateAgentFileProposal(operation: string, args: Record<string
   } else if (existsSync(target)) {
     const bytes = readAgentSourceBytes(context.workspaceRoot, canonical), actual = fileDigest(bytes);
     if (actual !== args.expected_digest || (operation === "write_file" && args.replace_existing !== true) || !observedRange(receipts, canonical, actual, 0, bytes.length)) throw new PermissionError("This proposal needs the complete current source and matching digest. Use read_file or bounded edits first.");
+    if (operation === "write_file" && bytes.equals(Buffer.from(z.string().parse(args.content)))) throw new Error("The proposed replacement does not change the current file. No write or backup was created.");
   } else if (operation === "delete_file" || args.expected_digest) throw new PermissionError("The target is missing or changed.");
   if (operation !== "edit_file") validateAgentDependencyChange(context.agentDependencyConstraints, canonical, existsSync(target) ? readAgentSourceBytes(context.workspaceRoot, canonical) : undefined, operation === "delete_file" ? undefined : Buffer.from(z.string().parse(args.content)));
 }

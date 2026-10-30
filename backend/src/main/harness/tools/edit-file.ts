@@ -55,6 +55,7 @@ export function prepareFileEdit(root: string, input: { path: string; expectedDig
   for (const edit of edits) { parts.push(before.subarray(offset, edit.offset), edit.next); offset = edit.end; }
   parts.push(before.subarray(offset));
   const after = Buffer.concat(parts);
+  if (after.equals(before)) throw new Error("The proposal does not change the current file. No edit or backup was created.");
   return { after, beforeDigest: digest, afterDigest: fileDigest(after), requirementId: input.requirementId, reason: input.reason };
 }
 

@@ -89,6 +89,12 @@ describe("Revision-bound exact edits", () => {
     expect(() => editFile(root, { ...proposal(), replacements: [...proposal().replacements, { old: "missing", new: "x" }] }, [r])).toThrow("exactly once");
     expect(readFileSync(path.join(root, "app.js"), "utf8")).toBe(original);
   });
+  it("rejects a no-op edit before any backup or write",()=>{
+    const original=readFileSync(path.join(root,"app.js"),"utf8");
+    expect(()=>editFile(root,{...proposal(),replacements:[{old:"limit = 2",new:"limit = 2"}]},[receipt()])).toThrow(/does not change/);
+    expect(readFileSync(path.join(root,"app.js"),"utf8")).toBe(original);
+    expect(readdirSync(root)).toEqual(["app.js"]);
+  });
   it("binds scoped permission to the concrete operation while retaining protected paths", () => {
     const guard = new MutationPolicyGuard(), runId = randomUUID(); guard.setEnforceExplicit(runId, true);
     const scope = guard.grantScope({ runId, operation: "edit_file", targetPath: "app.js", operationDigest: "approved-operation" });

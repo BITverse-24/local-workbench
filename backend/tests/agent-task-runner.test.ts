@@ -668,6 +668,16 @@ describe("Agent v3 task host loop", () => {
     expect(records.some(record=>record.producer.tool === "agent_file_scope_input")).toBe(false);
     expect(getExecutionLedger(runId)?.agentProgress?.actions.every(action=>action.status === "failed")).toBe(true);
   });
+  it("does not approve or count an unchanged existing-file replacement as a saved change",async()=>{
+    const request="Replace note.txt with the required saved source";
+    const proposal=()=>({tool_calls:[{name:"write_file",arguments:{path:"note.txt",content:"saved source\n",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replace_existing:true}}]});
+    replies=[()=>interpretation("change",request),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),proposal,proposal];
+    const {result,runId,approve}=await run(request);
+    expect(result.stopReason,result.text).toBe("repeated_action");expect(approve).not.toHaveBeenCalled();
+    expect(getExecutionLedger(runId)?.completedOperations.some(operation=>operation.tool === "write_file")).toBe(false);
+    expect(existsSync(path.join(root,".harness_backups"))).toBe(false);
+    expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved source\n");
+  });
   it("blocks a malformed file scope assessment before requesting approval",async()=>{
     fileScopeReplies=[()=>"invalid scope response"];
     replies=[()=>interpretation("change","Repair note.txt"),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]})];
