@@ -24,6 +24,7 @@ import { extractVerificationSkipBasis, recordVerificationTermination, recordVeri
 import { agentDeliveryGap, reviewAgentTaskCoverage } from "./requirement-review.js";
 import { captureCommandWorkspaceDigest, commandApprovalDigest, COMMAND_FALLBACK_DISCLOSURE } from "../harness/tools/run-command.js";
 import { normalizeRunCommandArgs } from "../tools/workspace-tools.js";
+import { agentDependencyConstraints } from "./dependency-constraint.js";
 
 type RunnerInput = { context: ToolExecutionContext; modelId: string; chatId: string; messageId: string; workspace: AgentTask["workspace"]; intent?: "continue" | "new"; predecessorRunId?: string;
   state: (state: "classifying" | "planning" | "acting") => void; approve: (preview: string) => Promise<boolean> };
@@ -119,6 +120,7 @@ export class AgentTaskRunner {
       context.activeCapabilities = new Set(context.envelope.activeCapabilities);
       for (const capability of ["source_access", "workspace_mutation", "system_execution", "result_retrieval"] as const) context.activeCapabilities.add(capability);
       context.policyGuard.setEnforceExplicit(runId, true);
+      context.agentDependencyConstraints = agentDependencyConstraints(task);
       const granted: string[] = [];
       const clearApprovals = () => { context.policyGuard!.revokeScopes(granted.splice(0)); context.agentOperationDigest = undefined; context.agentCommandApproval = undefined; };
       const authorize = async (calls: AgentToolCall[]) => {

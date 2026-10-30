@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -594,7 +594,7 @@ describe("Agent v3 task host loop", () => {
     fileScopeReplies=[payload=>{
       const input=packetState(payload.messages[1].content);
       expect(input.userInstruction.quote).toBe(request);expect(input.operation.name).toBe("edit_file");
-      expect(input.operation.arguments.replacements).toEqual([{old:"source",new:"content"}]);
+      expect(input.operation.targetPath).toBe("note.txt");expect(input.operation).not.toHaveProperty("arguments");
       return {withinScope:true,reason:"The quoted instruction requests the concrete repair."};
     }];
     replies=[()=>interpretation("execute",request),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]}),()=>({tool_calls:[{name:"finish",arguments:{text:"The repair is saved; tests are unavailable."}}]})];
@@ -612,6 +612,16 @@ describe("Agent v3 task host loop", () => {
     replies=[()=>interpretation("change","Repair note.txt"),()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),()=>({tool_calls:[{name:"edit_file",arguments:{path:"note.txt",expected_digest:createHash("sha256").update("saved source\n").digest("hex"),replacements:[{old:"source",new:"content"}]}}]})];
     const {result,approve}=await run("Repair note.txt");expect(result.outcome).toBe("cancelled");expect(approve).not.toHaveBeenCalled();
     expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved source\n");
+  });
+  it("rejects new external dependencies before semantic scope assessment or approval",async()=>{
+    const request="Create app.js. Do not add dependencies.";
+    const proposal=()=>({tool_calls:[{name:"write_file",arguments:{path:"app.js",content:'import dependency from "new-package";\n'}}]});
+    replies=[()=>({disposition:"continue",requirements:[{kind:"change",description:"Create app.js",source_id:"s1",checks:[{description:"Create app.js",kind:"review",operation:"semantic",path:null}]},{kind:"preserve",description:"Do not add dependencies",source_id:"s2",checks:[{description:"No added dependencies",kind:"review",operation:"semantic",path:null}]}],updates:[],full_suite:false}),proposal,proposal];
+    const {result,runId,approve}=await run(request);
+    expect(result.outcome).toBe("partial");expect(approve).not.toHaveBeenCalled();expect(existsSync(path.join(root,"app.js"))).toBe(false);
+    const records=new RunResultStore(runId).listResults({limit:50});
+    expect(records.some(record=>record.producer.tool === "agent_file_scope_input")).toBe(false);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions.every(action=>action.status === "failed")).toBe(true);
   });
   it("blocks a malformed file scope assessment before requesting approval",async()=>{
     fileScopeReplies=[()=>"invalid scope response"];

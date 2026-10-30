@@ -11,6 +11,7 @@ import { deleteFile } from "../harness/tools/delete-file.js";
 import { editFile, fileDigest, observedRange, prepareFileEdit, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 import { getExecutionLedger } from "../run/execution-ledger.js";
 import { captureAgentVerificationManifest } from "./test-verification.js";
+import { validateAgentDependencyChange } from "./dependency-constraint.js";
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/), relative = z.string().min(1).max(1024);
 export function canonicalSourcePath(context: ToolExecutionContext, requested: string): string {
@@ -42,11 +43,13 @@ export function validateAgentFileProposal(operation: string, args: Record<string
   const receipts = getExecutionLedger(context.runId)?.agentProgress?.reads ?? [];
   if (operation === "edit_file") {
     const replacements = z.array(z.object({ old: z.string().min(1), new: z.string() }).strict()).min(1).parse(args.replacements);
-    prepareFileEdit(context.workspaceRoot, { path: canonical, expectedDigest: digest.parse(args.expected_digest), replacements, requirementId: context.agentRequirementId ?? "", reason: context.agentChangeReason ?? "" }, receipts);
+    const prepared = prepareFileEdit(context.workspaceRoot, { path: canonical, expectedDigest: digest.parse(args.expected_digest), replacements, requirementId: context.agentRequirementId ?? "", reason: context.agentChangeReason ?? "" }, receipts);
+    validateAgentDependencyChange(context.agentDependencyConstraints, canonical, readAgentSourceBytes(context.workspaceRoot, canonical), prepared.after);
   } else if (existsSync(target)) {
     const bytes = readAgentSourceBytes(context.workspaceRoot, canonical), actual = fileDigest(bytes);
     if (actual !== args.expected_digest || (operation === "write_file" && args.replace_existing !== true) || !observedRange(receipts, canonical, actual, 0, bytes.length)) throw new PermissionError("This proposal needs the complete current source and matching digest. Use read_file or bounded edits first.");
   } else if (operation === "delete_file" || args.expected_digest) throw new PermissionError("The target is missing or changed.");
+  if (operation !== "edit_file") validateAgentDependencyChange(context.agentDependencyConstraints, canonical, existsSync(target) ? readAgentSourceBytes(context.workspaceRoot, canonical) : undefined, operation === "delete_file" ? undefined : Buffer.from(z.string().parse(args.content)));
 }
 
 export const agentWorkspaceActions: AgentTool[] = [
@@ -87,6 +90,7 @@ export const agentWorkspaceActions: AgentTool[] = [
     const canonical = canonicalSourcePath(context, input.path); authorize(context, "edit_file", { ...args, path: canonical });
     return context.policyGuard!.withMutationLock(`file:${canonical}`, () => {
       context.assertAuthority?.(); context.signal?.throwIfAborted();
+      validateAgentFileProposal("edit_file", args, context);
       const result = editFile(context.workspaceRoot, { path: canonical, expectedDigest: input.expected_digest, replacements: input.replacements, requirementId: context.agentRequirementId ?? "", reason: context.agentChangeReason ?? "" }, getExecutionLedger(context.runId)?.agentProgress?.reads ?? []);
       context.harness?.notifyWorkspaceTreeUpdated();
       return { output: JSON.stringify(result), summary: `Edited ${canonical}`, data: result, intermediate: { type: "structured", status: "complete", origin: "execution", payload: result, sources: [{ filename: canonical, relation: "source" }] }, sideEffects: [`modified:${canonical}`] };
@@ -98,6 +102,7 @@ export const agentWorkspaceActions: AgentTool[] = [
     const canonical = canonicalSourcePath(context, input.path); authorize(context, operation, { ...args, path: canonical });
     return context.policyGuard!.withMutationLock(`file:${canonical}`, () => {
       context.assertAuthority?.(); context.signal?.throwIfAborted();
+      validateAgentFileProposal(operation, args, context);
       const target = resolveSafe(context.workspaceRoot, canonical);
       let beforeDigest: string | null = null;
       if (existsSync(target)) {

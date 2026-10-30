@@ -101,6 +101,7 @@ export interface ToolExecutionContext {
   agentChangeReason?: string;
   agentOperationDigest?: string;
   agentCommandApproval?: import("../harness/tools/run-command.js").CommandApproval;
+  agentDependencyConstraints?: import("../agent/dependency-constraint.js").AgentDependencyConstraint[];
 }
 
 export interface ToolExecutionResult {

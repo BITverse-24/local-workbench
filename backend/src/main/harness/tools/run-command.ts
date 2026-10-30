@@ -215,7 +215,7 @@ export async function getCommandCapability(): Promise<ExecutionCapability> {
  * guarded writers with backups. Failed/cancelled commands publish no changes.
  */
 export async function runCommand(workspaceRoot: string, command: string, timeoutMs = 60000,
-  policy?: { guard: MutationPolicyGuard; runId?: string; assertAuthority?: () => void; approval?: CommandApproval }, verification?: AgentTestExecutionRequest): Promise<CommandResult> {
+  policy?: { guard: MutationPolicyGuard; runId?: string; assertAuthority?: () => void; approval?: CommandApproval; validateChange?: (path: string, before: Buffer | undefined, after: Buffer | undefined) => void }, verification?: AgentTestExecutionRequest): Promise<CommandResult> {
   assertRuntimeActive();
   if (currentRuntimeScope() && currentRuntimeScope()!.mode !== "agent") throw new PermissionError("Only Agent may execute workspace commands.");
   policy?.assertAuthority?.();
@@ -330,6 +330,7 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
     if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", authorization) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before publication.");
     if (policy?.approval && captureCommandWorkspaceDigest(root) !== policy.approval.workspaceDigest) throw new PermissionError("Workspace changed during command execution. No changes were published.");
     for (const name of changes) {
+      policy?.validateChange?.(name.split(path.sep).join("/"), before.get(name)?.bytes, after.get(name)?.bytes);
       if (policy && (policy.guard.isPathProtected(policy.runId, name) || policy.guard.isPathTargetRestricted(policy.runId, name))) throw new PermissionError(`Command attempted an out-of-scope change: ${name}. No changes were published.`);
       if (existsSync(path.join(root, name)) && lstatSync(path.join(root, name)).isSymbolicLink()) throw new PermissionError(`Command changed a symlink input: ${name}. No changes were published.`);
       const target = resolveSafe(root, name);

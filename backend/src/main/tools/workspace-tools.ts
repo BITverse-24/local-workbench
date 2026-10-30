@@ -15,6 +15,7 @@ import { PermissionError, resolveSafe } from "../harness/path-guard.js";
 import { resolveRunPath } from "../run/filesystem.js";
 import { isTextExtractableDocument, readDocumentContent } from "./document-reader.js";
 import { assessAgentTestExecution } from "../agent/test-verification.js";
+import { validateAgentDependencyChange } from "../agent/dependency-constraint.js";
 
 export function extractPathArg(args: Record<string, unknown>): string {
   if (!args) return "";
@@ -626,7 +627,8 @@ export const runCommandTool: AgentTool = {
 
     const res = context.policyGuard
       ? await context.policyGuard.withMutationLock("workspace:run_command", () =>
-          runCommand(context.workspaceRoot, command, 60000, { guard: context.policyGuard!, runId: context.runId, assertAuthority: context.assertAuthority, approval: context.agentCommandApproval }, context.agentVerification),
+          runCommand(context.workspaceRoot, command, 60000, { guard: context.policyGuard!, runId: context.runId, assertAuthority: context.assertAuthority, approval: context.agentCommandApproval,
+            validateChange: (name, before, after) => validateAgentDependencyChange(context.agentDependencyConstraints, name, before, after) }, context.agentVerification),
         )
       : await runCommand(context.workspaceRoot, command, 60000, context.policyGuard ? { guard: context.policyGuard, runId: context.runId, assertAuthority: context.assertAuthority } : undefined, context.agentVerification);
 

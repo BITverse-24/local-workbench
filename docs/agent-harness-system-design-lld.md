@@ -186,6 +186,8 @@ Operation scope implementation: file mutation proposals are now assessed against
 
 A host-selected failing implementation module now has a bounded proposal phase: exact replacement lines, missing source, one full-tool action, or a blocker. The host supplies the file identity and source digest. Both transports bind the same registered internal action. JSON fallback for one required tool accepts arguments only. No private proposal can skip source checks or concrete approval. Source tests pass; a controlled 7B trial reached an edit but stopped on a false scope rejection. Scope interpretation and executable constraint enforcement still need separate ownership. No successful full repair is claimed.
 
+A supported dependency-preservation rule now checks unchanged dependency manifests and standard JavaScript/TypeScript loading syntax at direct-write and command-publication boundaries. The rule uses exact active user source. It is conservative and is not a proof of arbitrary runtime behavior. Babel Parser 7.29.8 is pinned as a production dependency; it was already installed for development. The edit scope assessment receives the operation class and target without replacement code. A live trial still rejected an unnamed implementation target in a workspace repair, so source-bound target-scope interpretation remains unfinished.
+
 ### Gateway and tokenizer contract
 
 The gateway prepares a request before sending it. Preparation produces the final payload, selected transport, model identity, template identity, and output reservation. Admission returns exact input tokens, reserved output tokens, context limit, safety reserve, counter identity, and a digest of the prepared request. Dispatch requires a matching admission receipt.

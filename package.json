@@ -35,6 +35,7 @@
     "postinstall": "electron-builder install-app-deps && node scripts/patch-vectra.cjs"
   },
   "dependencies": {
+    "@babel/parser": "7.29.8",
     "@huggingface/jinja": "0.5.11",
     "@huggingface/tokenizers": "0.2.0",
     "@lmstudio/sdk": "1.5.0",

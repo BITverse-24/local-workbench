@@ -10,6 +10,7 @@ import { withRuntimeScope } from '../src/main/run/runtime-scope.js';
 import { executeProcess } from '../src/main/tools/child-process.js';
 import { writeFile } from '../src/main/harness/tools/write-file.js';
 import { deleteFile } from '../src/main/harness/tools/delete-file.js';
+import { validateAgentDependencyChange } from '../src/main/agent/dependency-constraint.js';
 
 vi.mock('../src/main/tools/child-process.js', () => ({executeProcess: vi.fn()}));
 
@@ -50,6 +51,14 @@ describe('Command publication and approval scopes', () => {
     writeFileSync(path.join(work,'new-input.txt'),'LATER');
     await expect(runCommand(work,'fixture command',5000,policy)).rejects.toThrow(/approval is stale/);
     expect(vi.mocked(executeProcess).mock.calls.every(call => call[1].at(-1)==='printf WORKBENCH_ISOLATED')).toBe(true);
+    expect(existsSync(path.join(work,'.harness_backups'))).toBe(false);
+  });
+  it('checks all command changes against dependency constraints before publishing any file',async()=>{
+    const policy=boundApproval();
+    const constraints=[{kind:'no_new_dependencies' as const,requirementId:'preserve-deps',source:{messageId:'message',start:0,end:24,quote:'Do not add dependencies.'}}];
+    apply=cwd=>{writeFileSync(path.join(cwd,'target.txt'),'NEW');writeFileSync(path.join(cwd,'added.js'),'import x from "new-package";');};
+    await expect(runCommandTool.execute({command:'fixture command'},{runId:'run',workspaceRoot:work,gateway:{} as any,policyGuard:policy.guard,agentCommandApproval:policy.approval,agentDependencyConstraints:constraints})).rejects.toThrow(/new external module/);
+    expect(readFileSync(path.join(work,'target.txt'),'utf8')).toBe('ORIGINAL');expect(existsSync(path.join(work,'added.js'))).toBe(false);
     expect(existsSync(path.join(work,'.harness_backups'))).toBe(false);
   });
   it.each(['modify', 'create', 'delete'])('rejects publication if an unchanged command input changes externally: %s', async operation => {
