@@ -90,6 +90,10 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses a local model
         approvals.push({preview:operation,approved}); return approved;
       },context:{runId,workspaceRoot:workspace,gateway,resultStore:store,policyGuard:guard,signal:controller.signal,envelope:buildExecutionEnvelope({runId,mode:"agent",modelId:"live-driver",hasWorkspace:true,workspaceRoot:workspace})}}));
     const independent = spawnSync(process.execPath,["--test"],{cwd:workspace,encoding:"utf8",timeout:15000,env:{...process.env,ELECTRON_RUN_AS_NODE:"1"}});
+    const browserEnvironment = {...process.env}; delete browserEnvironment.ELECTRON_RUN_AS_NODE;
+    const browser = spawnSync(process.execPath,[path.join(process.cwd(),"scripts/evaluate-flow-d.cjs"),workspace,source],{encoding:"utf8",timeout:60000,env:browserEnvironment});
+    let browserReport:unknown;
+    try {browserReport=JSON.parse(browser.stdout);} catch {browserReport=undefined;}
     const records = store.listResults({limit:50});
     for(let offset=50;records.length===offset;offset+=50)records.push(...store.listResults({limit:50,offset}));
     const results = records.map(record=>{
@@ -101,11 +105,14 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_REPAIR_PROBE)("diagnoses a local model
     const proof = {recordedAt:new Date().toISOString(),scope:controlledRequirements ? "Controlled-checklist action-loop diagnostic; requirement extraction bypassed. Not a full-input, packaged, or release trial." : "Source-runtime diagnostic; not packaged or release certification",controlledRequirements,diagnosticDeadlineMs,selectedRuntimeSourceDigests,model:providerModel,contextLimit:8192,result,original,current,changed,
       protectedFilesUnchanged:changed.every(file=>mutable.has(file)),approvals,preparedRequests,task:getCurrentAgentTask(chatId),ledger:getExecutionLedger(runId),results,
       independentTests:{status:independent.status,signal:independent.signal,stdout:independent.stdout,stderr:independent.stderr,error:independent.error?.message},
+      independentBrowser:{status:browser.status,signal:browser.signal,report:browserReport,stderr:browser.stderr,error:browser.error?.message,
+        evaluatorSha256:createHash("sha256").update(readFileSync(path.join(process.cwd(),"scripts/evaluate-flow-d.cjs"))).digest("hex")},
       finalSources:Object.fromEntries([...mutable].map(file=>[file,readFileSync(path.join(workspace,file),"utf8")]))};
     writeFileSync(report,JSON.stringify(proof,null,2));
     expect(proof.protectedFilesUnchanged).toBe(true);
     expect(result.outcome,result.text).toBe("completed");
     expect(independent.status,independent.stdout+independent.stderr).toBe(0);
+    expect(browser.status,browser.stdout+browser.stderr).toBe(0);
     expect(proof.ledger?.agentAdmissions.every(item=>item.status==="usage_verified")).toBe(true);
   } finally {capture.mockRestore();clearTimeout(timer);closeDb();setDataDir(previous);rmSync(temporary,{recursive:true,force:true});}
 },920000);
