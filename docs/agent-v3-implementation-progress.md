@@ -270,6 +270,12 @@ This supports evaluating a complete-source proposal for small, fully observed mo
 
 The diagnostic also exposed a transport bug: an argument named content was echoed as assistant text. Sole-operation arguments now stay opaque, including content. The 18 gateway checks, full type checking, and Electron build passed; the two module diagnostics separately used the live model. Chat and Work do not use this v3-only argument path.
 
+## Complete-source repair proposals
+
+Small JavaScript/TypeScript failure modules can now use an explicit complete-source proposal when the current request contains every original byte. The host binds the entire observed source as one old anchor and validates replacement syntax before ordinary file scope, approval, lock, backup, digest, and test checks. Markdown fences are rejected rather than extracted. A partial request cannot activate this path; exact-context repacking can restore bounded-edit presentation instead. Missing-source, full-tool, and blocker outcomes remain available. No requirement or capability is removed.
+
+The five-file check passed 244 tests with one opt-in live test skipped. Full type checking and the Electron build passed. Tests include complete-byte binding, target/digest override rejection, syntax errors, Markdown source rejection, escape/line-ending preservation, partial-context repacking, full-tool access, and Chat/Work boundaries. Live repair with this contract remains unproved.
+
 ## Current implementation scope
 
 The user has deferred release certification and will test 14B manually. Current work is implementation and harness quality for the 7B–14B range, with local 7B and 9B models available for development checks. The machine has Qwen2.5 Coder 7B and Qwen3.5 9B assets; no 14B model is installed. Do not download weights or treat release trial counts as a current completion requirement. Keep the release controls documented and keep production promotion separate. Packaged-environment implementation checks remain useful because the original failure occurred in a production build.

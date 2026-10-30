@@ -4,7 +4,7 @@ import { getExecutionLedger } from "../run/execution-ledger.js";
 import { z } from "zod";
 import { CAPABILITY_GROUPS } from "../tools/capabilities.js";
 import { loadAgentSourcePage, selectAgentSourcePages, sliceAgentSourcePage, sourcePageIsCurrent, sourcePageReceipt, selectAgentFailureStep, type AgentSourcePage } from "./source-evidence.js";
-import { AGENT_REPAIR_INSTRUCTIONS, type AgentRepairSource } from "./repair-proposal.js";
+import { AGENT_MODULE_REPAIR_INSTRUCTIONS, AGENT_REPAIR_INSTRUCTIONS, type AgentRepairSource } from "./repair-proposal.js";
 import { canonicalSourcePath } from "./workspace-actions.js";
 import { fileDigest, observedRange, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 
@@ -68,7 +68,7 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
     } else result = agentEvidenceSlice(context,record.resultId,latestSourceBytes);
   }
   const currentStep = selectAgentFailureStep(context);
-  const repair = currentStep?.phase === "address_failure" && currentStep.target?.role === "implementation" ? {path:currentStep.target.path,digest:currentStep.target.digest,focusKey:fileDigest(JSON.stringify([currentStep.target.path,currentStep.target.digest])),expanded:false} : undefined;
+  const repair: AgentRepairSource | undefined = currentStep?.phase === "address_failure" && currentStep.target?.role === "implementation" ? {path:currentStep.target.path,digest:currentStep.target.digest,focusKey:fileDigest(JSON.stringify([currentStep.target.path,currentStep.target.digest])),expanded:false} : undefined;
   if(repair)repair.expanded=progress?.expandedToolFocus === repair.focusKey;
   const selectedSources = selectAgentSourcePages(context, requirement, latestPage, `${progress?.feedback ?? ""}\n${progress?.baseline?.detail ?? ""}\n${JSON.stringify(result)}`, additionalSourceChars, currentStep?.relatedPaths);
   // The current failure source is essential step evidence. Optional-page packing
@@ -86,6 +86,7 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
     selectedSources.complete=selectedSources.pages.length >= selectedSources.totalEligiblePages;
   }
   const providedPages=[...new Map([...(latestPage ? [latestPage] : []),...selectedSources.pages].map(page=>[`${page.path}:${page.digest}:${page.startByte}:${page.endByte}`,page])).values()];
+  if(repair && focus?.complete && focus.sizeBytes > 0 && focus.sizeBytes <= 2000 && /\.[cm]?[jt]sx?$/i.test(repair.path) && sourcePageIsCurrent(context,focus) && observedRange(providedPages,repair.path,repair.digest,0,focus.sizeBytes))repair.completeSource=focus.content;
   const observedSources=providedPages.map(sourcePageReceipt);
   const source = task.snapshot.messages.find(message => message.id === requirement.source.messageId);
   const directory = [...(progress?.actions ?? [])].reverse().find(action=>action.operation === "list_dir" && action.status === "completed" && action.resultId);
@@ -156,10 +157,10 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
       selectedSources:{...selectedSources,pages:selectedSources.pages.map(metadata)},
       latestResult:latestPage ? {...metadata(latestPage),currentAtAssembly:sourcePageIsCurrent(context,latestPage)} : result,
       availableCapabilities:context.envelope?.permittedCapabilities.map(capability=>({name:capability,tools:CAPABILITY_GROUPS[capability].tools})),
-      toolView:repair.expanded ? "Full registered tools for one action; normal approvals still apply." : "Use propose_repair tools to show the full registered tool view for one action.",
+      toolView:repair.expanded ? "Full registered tools for one action; normal approvals still apply." : `Use ${repair.completeSource !== undefined ? "propose_module_repair" : "propose_repair"} tools to show the full registered tool view for one action.`,
     };
     const literal=providedPages.map(page=>`\n\nOBSERVED SOURCE ${page.path}\nDigest: ${page.digest}; bytes ${page.startByte}-${page.endByte} of ${page.sizeBytes}; complete file: ${page.complete}; result: ${page.resultId}\n<source>\n${page.content}\n</source>`).join("");
-    messages=[{role:"system",content:repair.expanded ? AGENT_COMMON_INSTRUCTIONS : AGENT_REPAIR_INSTRUCTIONS},{role:"user",content:JSON.stringify(focused)+literal}];
+    messages=[{role:"system",content:repair.expanded ? AGENT_COMMON_INSTRUCTIONS : repair.completeSource !== undefined ? AGENT_MODULE_REPAIR_INSTRUCTIONS : AGENT_REPAIR_INSTRUCTIONS},{role:"user",content:JSON.stringify(focused)+literal}];
   }
   return {messages,observedSource,observedSources,requirement,readPaths,repair};
 }

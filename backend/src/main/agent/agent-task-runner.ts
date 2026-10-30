@@ -14,7 +14,7 @@ import { agentWorkspaceActions, canonicalSourcePath, validateAgentFileProposal }
 import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 import { resolveSafe } from "../harness/path-guard.js";
 import { buildAgentContextPacket, conciseAgentTool, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
-import { bindAgentRepairProposal, REPAIR_PROPOSAL_TOOL } from "./repair-proposal.js";
+import { bindAgentRepairProposal, MODULE_REPAIR_PROPOSAL_TOOL, REPAIR_PROPOSAL_TOOL } from "./repair-proposal.js";
 import { obtainAgentFailureSources, selectAgentFailureStep } from "./source-evidence.js";
 import { assessAgentFileScope, refineAgentInterpretation, reviewAgentInterpretation } from "./requirement-scope.js";
 import { agentInterpretationFormat, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
@@ -216,7 +216,7 @@ export class AgentTaskRunner {
           ...(tool.name === "read_file" && packet.readPaths ? {path:{type:"string",enum:packet.readPaths}} : {}),
           requirement_id: { type: "string" } } } } }));
         const deliveryGap = agentDeliveryGap(task,context,changedPaths());
-        const generate = () => context.gateway.chatWithTools(modelId, packet.messages, packet.repair && !packet.repair.expanded ? [REPAIR_PROPOSAL_TOOL] : deliveryGap ? definitions() : [...definitions(), FINISH_TOOL], { runId, maxTokens: 2048, toolChoice:"required", temperature:packet.repair && !packet.repair.expanded ? 0 : undefined, signal: scope.signal });
+        const generate = () => context.gateway.chatWithTools(modelId, packet.messages, packet.repair && !packet.repair.expanded ? [packet.repair.completeSource !== undefined ? MODULE_REPAIR_PROPOSAL_TOOL : REPAIR_PROPOSAL_TOOL] : deliveryGap ? definitions() : [...definitions(), FINISH_TOOL], { runId, maxTokens: 2048, toolChoice:"required", temperature:packet.repair && !packet.repair.expanded ? 0 : undefined, signal: scope.signal });
         let response = await generate();
         // Admission rejects before dispatch and call consumption. Remove whole optional pages,
         // retaining requirements, constraints, and the latest result in every exact recount.

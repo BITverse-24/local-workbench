@@ -73,15 +73,18 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
     if (String(payload.messages?.[0]?.content).startsWith("The host has verified the saved repair") && typeof content === "object" && content !== null && (content as any).tool_calls?.[0]?.name === "finish") content = (content as any).tool_calls[0].arguments.text;
     const shapes=payload.response_format?.json_schema?.schema?.properties?.tool_calls?.items?.anyOf;
     const directProposal=payload.response_format?.json_schema?.name === "agent_tool_arguments";
+    const moduleProposal=payload.response_format?.json_schema?.schema?.anyOf?.some((branch:any)=>branch.properties?.kind?.const === "replacement" || branch.properties?.kind?.enum?.includes("replacement"));
+    const proposalName=moduleProposal ? "propose_module_repair" : "propose_repair";
     if((directProposal || shapes?.length === 1 && shapes[0].properties.name.enum[0] === "propose_repair") && typeof content === "object" && content !== null){
       const calls=(content as any).tool_calls;
       if(calls?.length === 1 && calls[0].name !== "propose_repair") {
         const {name,arguments:args}=calls[0];
-        const proposal=name === "edit_file" ? {kind:"edit",replacements:args.replacements.map((item:any)=>({old:item.old.split("\n"),new:item.new.split("\n")}))} :
+        const current=moduleProposal ? readFileSync(path.join(workspaceRoot,packetState(payload.messages[1].content).currentStep.target.path),"utf8") : "";
+        const proposal=name === "edit_file" ? moduleProposal ? {kind:"replacement",content:args.replacements.reduce((text:string,item:any)=>text.replace(item.old,item.new),current)} : {kind:"edit",replacements:args.replacements.map((item:any)=>({old:item.old.split("\n"),new:item.new.split("\n")}))} :
           name === "read_file" ? {kind:"source",...args,reason:"Obtain missing source"} : name === "request_capability" ? {kind:"tools",...args,reason:args.reason ?? "Show needed tools"} : name === "finish" ? {kind:"blocked",reason:args.text} : undefined;
-        if(proposal)content={tool_calls:[{name:"propose_repair",arguments:proposal}]};
+        if(proposal)content={tool_calls:[{name:proposalName,arguments:proposal}]};
       }
-      if(directProposal && (content as any).tool_calls?.length === 1 && (content as any).tool_calls[0].name === "propose_repair")content=(content as any).tool_calls[0].arguments;
+      if(directProposal && (content as any).tool_calls?.length === 1 && ["propose_repair","propose_module_repair"].includes((content as any).tool_calls[0].name))content=(content as any).tool_calls[0].arguments;
     }
     return { status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: typeof content === "string" ? content : JSON.stringify(content) }, finish_reason: "stop" }], usage: { prompt_tokens: input.inputTokens, completion_tokens: 30 } }) };
   } }, [{ id: "driver", runtime: "mlx-lm", baseUrl: "http://127.0.0.1:1234/v1", model: "driver", capabilities: ["text"], toolCallingFormat: "json", requestTimeoutMs: 1000, healthPath: "/models", enabled: true, contextLength: 8192 }]);
@@ -382,16 +385,16 @@ describe("Agent v3 task host loop", () => {
   });
   it("can show all registered tools for one repair action without granting mutation authority",async()=>{
     const {workspace,implementation}=failingWorkspace();writeFileSync(path.join(workspace,"extra.txt"),"needed context\n");
-    const toolNames=(payload:any)=>payload.response_format.json_schema.name === "agent_tool_arguments" ? ["propose_repair"] : payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.flatMap((tool:any)=>tool.properties.name.enum);
+    const toolNames=(payload:any)=>payload.response_format.json_schema.name === "agent_tool_arguments" ? [payload.response_format.json_schema.schema.anyOf?.some((branch:any)=>branch.properties?.kind?.const === "replacement" || branch.properties?.kind?.enum?.includes("replacement")) ? "propose_module_repair" : "propose_repair"] : payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.flatMap((tool:any)=>tool.properties.name.enum);
     replies=[()=>interpretation("execute","Reproduce and repair value.cjs"),payload=>{
-      expect(toolNames(payload)).toEqual(["propose_repair"]);
+      expect(toolNames(payload)).toEqual(["propose_module_repair"]);
       return {tool_calls:[{name:"propose_repair",arguments:{kind:"tools",capability:"source_access",reason:"Find additional source for this repair"}}]};
     },payload=>{
       expect(toolNames(payload)).toEqual(expect.arrayContaining(["read_file","search","list_dir","write_file","edit_file","delete_file","run_command"]));
       expect(packetState(payload.messages[1].content).toolView).toContain("one action");
       return {tool_calls:[{name:"read_file",arguments:{path:"extra.txt"}}]};
     },payload=>{
-      expect(toolNames(payload)).toEqual(["propose_repair"]);
+      expect(toolNames(payload)).toEqual(["propose_module_repair"]);
       expect(payload.messages[1].content).toContain("<source>\nneeded context\n\n</source>");
       return {tool_calls:[{name:"propose_repair",arguments:{kind:"blocked",reason:"No further repair is justified by this evidence"}}]};
     }];
@@ -446,7 +449,7 @@ describe("Agent v3 task host loop", () => {
     vi.spyOn(ModelGateway.prototype,"chatWithTools").mockImplementation(async function(this:ModelGateway,modelId,messages,tools,options){
       const state=packetState(messages[1]?.content ?? "{}");
       if(state.selectedSources?.pages.some((page:any)=>page.path === "value.test.cjs")){
-        expect(tools.map(tool=>tool.function.name)).toEqual(["propose_repair"]);
+        expect(tools.map(tool=>tool.function.name)).toEqual(["propose_module_repair"]);
         rejected++;return {ok:false,error:{kind:"ai-error",code:"agent_context_limit",message:"Remove optional source pages",retryable:false}};
       }
       return original.call(this,modelId,messages,tools,options);
