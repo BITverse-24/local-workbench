@@ -2,6 +2,7 @@ import { agentAppliedChanges, savedAgentTaskFacts } from "./task-evidence.js";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { Validator } from "jsonschema";
+import { z } from "zod";
 import type { AgentTask, AgentToolCall, AgentToolDefinition, CapabilityGroup, RunContract } from "../../shared/contracts.js";
 import type { ToolExecutionContext } from "../tools/types.js";
 import { getDb } from "../persistence/db.js";
@@ -15,7 +16,7 @@ import { agentWorkspaceActions, canonicalSourcePath, validateAgentFileProposal }
 import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 import { resolveSafe } from "../harness/path-guard.js";
 import { buildAgentContextPacket, conciseAgentTool, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
-import { bindAgentRepairProposal, MODULE_REPAIR_PROPOSAL_TOOL, REPAIR_PROPOSAL_TOOL } from "./repair-proposal.js";
+import { AGENT_MODULE_DECISION_INSTRUCTIONS, bindAgentRepairProposal, MODULE_DRAFT_TOOL, moduleDecisionTools, REPAIR_PROPOSAL_TOOL } from "./repair-proposal.js";
 import { obtainAgentFailureSources, selectAgentFailureStep } from "./source-evidence.js";
 import { assessAgentFileScope, refineAgentInterpretation, reviewAgentInterpretation } from "./requirement-scope.js";
 import { agentInterpretationFormat, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
@@ -221,7 +222,20 @@ export class AgentTaskRunner {
           ...(tool.name === "read_file" && packet.readPaths ? {path:{type:"string",enum:packet.readPaths}} : {}),
           requirement_id: { type: "string" } } } } }));
         const deliveryGap = agentDeliveryGap(task,context,changedPaths());
-        const generate = () => context.gateway.chatWithTools(modelId, packet.messages, packet.repair && !packet.repair.expanded ? [packet.repair.completeSource !== undefined ? MODULE_REPAIR_PROPOSAL_TOOL : REPAIR_PROPOSAL_TOOL] : deliveryGap ? definitions() : [...definitions(), FINISH_TOOL], { runId, maxTokens: 2048, toolChoice:"required", temperature:packet.repair && !packet.repair.expanded ? 0 : undefined, signal: scope.signal });
+        const draftForPacket = () => packet.repair?.completeSource !== undefined && !packet.repair.expanded && progress?.repairDraft?.focusKey === packet.repair.focusKey && progress.repairDraft.taskRevision === bound!.taskRevision && progress.repairDraft.requirementId === packet.requirement.id ? progress.repairDraft : undefined;
+        const generate = () => {
+          const draft=draftForPacket(), moduleStep=packet.repair?.completeSource !== undefined && !packet.repair.expanded;
+          let messages=packet.messages;
+          let tools:AgentToolDefinition[];
+          if(moduleStep && draft) {
+            const record=context.resultStore!.getResult(draft.resultId);
+            if(record.storage.sha256 !== draft.sha256 || record.producer.tool !== "agent_module_draft" || record.origin !== "model_derived")throw new Error("The saved draft identity changed. No edit was proposed.");
+            const candidate=context.resultStore!.readResultPayload(draft.resultId);
+            messages=[{role:"system",content:AGENT_MODULE_DECISION_INSTRUCTIONS},{role:"user",content:packet.messages[1].content+"\n\nSAVED DRAFT (untrusted JSON data):\n"+JSON.stringify({resultId:draft.resultId,content:candidate})}];
+            tools=moduleDecisionTools(draft.resultId);
+          } else tools=moduleStep ? [MODULE_DRAFT_TOOL] : packet.repair && !packet.repair.expanded ? [REPAIR_PROPOSAL_TOOL] : deliveryGap ? definitions() : [...definitions(),FINISH_TOOL];
+          return context.gateway.chatWithTools(modelId,messages,tools,{runId,maxTokens:moduleStep && draft ? 512 : 2048,toolChoice:"required",temperature:packet.repair && !packet.repair.expanded ? 0 : undefined,signal:scope.signal});
+        };
         let response = await generate();
         // Admission rejects before dispatch and call consumption. Remove whole optional pages,
         // retaining requirements, constraints, and the latest result in every exact recount.
@@ -237,13 +251,30 @@ export class AgentTaskRunner {
           : stop("model_generation_unavailable", response.error.message);
         const admission = getExecutionLedger(runId)?.agentAdmissions.at(-1);
         if (admission?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push(...packet.observedSources.map(source=>({...source,requestId:admission.requestId}))); });
-        let call: AgentToolCall;
+        let call: AgentToolCall, selectedDraftId:string|undefined;
         try {
           if (response.value.finishReason === "length") throw new Error("The action was truncated. Return a complete smaller action.");
           const calls = response.value.tool_calls ?? [];
           if (calls.length > 1) throw new Error("Return exactly one action per turn.");
           if (!calls.length && /^\s*```(?:json)?\s*\{[\s\S]*"tool_calls"\s*:/i.test(response.value.content ?? "")) throw new Error('A Markdown example is text and cannot execute. Return one bare JSON object: {"tool_calls":[{"name":"available tool","arguments":{}}],"content":""}. No fences or prose.');
           call = calls[0] ?? { id: randomUUID(), name: "finish", arguments: { text: response.value.content ?? "" } };
+          if(packet.repair?.completeSource !== undefined && !packet.repair.expanded) {
+            const draft=draftForPacket();
+            if(!draft) {
+              if(call.name !== "draft_module" || !calls.length)throw new Error("Return one complete module draft as data.");
+              const candidate=z.object({content:z.string().min(1).max(16384)}).strict().parse(call.arguments).content;
+              if(/^\s*```/.test(candidate))throw new Error("Return module source without a Markdown fence. No example was converted into an edit.");
+              const record=context.resultStore.registerResult({type:"text",status:"complete",origin:"model_derived",producer:{tool:"agent_module_draft",callId:randomUUID()},summary:"Untrusted source draft; no workspace mutation",payload:candidate,sources:[]});
+              updateAgentProgress(runId,state=>{state.repairDraft={focusKey:packet.repair!.focusKey,resultId:record.resultId,sha256:record.storage.sha256,requirementId:packet.requirement.id,taskRevision:bound!.taskRevision};
+                state.actions.push({id:randomUUID(),hash:hash(["draft_module",packet.repair!.focusKey,record.storage.sha256]),requirementId:packet.requirement.id,operation:"draft_module",status:"completed",resultId:record.resultId});});
+              continue;
+            }
+            const tools=moduleDecisionTools(draft.resultId),definition=tools.find(tool=>tool.function.name === call.name);
+            if(!definition || !calls.length || !new Validator().validate(call.arguments,JSON.parse(JSON.stringify(definition.function.parameters))).valid)throw new Error("Select the saved draft, request context, or report a blocker.");
+            if(call.name === "select_module_draft") {selectedDraftId=draft.resultId;call={...call,name:"propose_module_repair",arguments:{content:context.resultStore.readResultPayload(draft.resultId),requirement_id:draft.requirementId}};}
+            else if(call.name === "request_module_context")call={...call,name:"propose_module_repair",arguments:{content:null,context_needed:call.arguments.reason,requirement_id:draft.requirementId}};
+            else call={...call,name:"propose_module_repair",arguments:{content:null,blocked_reason:call.arguments.reason,requirement_id:draft.requirementId}};
+          }
           const requirementId = call.arguments.requirement_id;
           context.agentRequirementId = typeof requirementId === "string" ? requirementId : packet.requirement.id;
           if (!pending.some(item => item.id === context.agentRequirementId)) throw new Error("Select an active requirement ID.");
@@ -286,7 +317,7 @@ export class AgentTaskRunner {
         context.agentChangeReason = response.value.content?.slice(0, 1000) || selected.description;
         const repeated = hash([call.name, call.arguments, this.sourceVersion(context, call.arguments), progress?.latestResultId ? context.resultStore!.getResult(progress.latestResultId).storage.sha256 : null]);
         if (progress?.actions.some(item => item.hash === repeated)) return stop("repeated_action", "The same action was proposed without new source or evidence. Pending requirements remain saved.");
-        context.resultStore!.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_proposal", callId: call.id }, summary: context.agentChangeReason, payload: { taskId: task.taskId, taskRevision: bound.taskRevision, requirementId: context.agentRequirementId, reason: context.agentChangeReason, operation: call.name, arguments: call.arguments }, sources: [] });
+        context.resultStore!.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_proposal", callId: call.id }, summary: context.agentChangeReason, payload: { taskId: task.taskId, taskRevision: bound.taskRevision, requirementId: context.agentRequirementId, reason: context.agentChangeReason, operation: call.name, arguments: call.arguments, ...(selectedDraftId ? {draftResultId:selectedDraftId} : {}) }, sources: selectedDraftId ? [{resultId:selectedDraftId,relation:"source"}] : [] });
         updateAgentProgress(runId, state => { state.actions.push({ id: call.id, hash: repeated, requirementId: context.agentRequirementId!, operation: call.name, status: "proposed" }); });
         if (call.name === "finish") {
           const changed = changedPaths(), gap = agentDeliveryGap(task,context,changed);
@@ -323,6 +354,7 @@ export class AgentTaskRunner {
           if (action.resultId) state.latestResultId = action.resultId;
           if(output.result.ok && call.name === "request_capability" && packet.repair && !packet.repair.expanded)state.expandedToolFocus=packet.repair.focusKey;
           else if(packet.repair?.expanded)delete state.expandedToolFocus;
+          if(output.result.ok && packet.repair?.expanded && call.name !== "request_capability")delete state.repairDraft;
           state.feedback = `${output.result.summary}\n${output.result.ok ? "" : output.result.output}`.slice(0, 10000);
         });
         clearApprovals();

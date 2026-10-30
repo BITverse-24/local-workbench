@@ -37,7 +37,8 @@ let refinementReplies: Reply[];
 let fileScopeReplies: Reply[];
 let runSignal:AbortSignal|undefined;
 let runContextLimit=8192;
-beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); previousRoot = dataRoot(); setDataDir(root); initDb(path.join(root, "db.sqlite")); chatId = createChat(); replies = [];scopeReplies=[];refinementReplies=[];fileScopeReplies=[];runSignal=undefined;runContextLimit=8192;
+let explicitModuleDecisions=false;
+beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); previousRoot = dataRoot(); setDataDir(root); initDb(path.join(root, "db.sqlite")); chatId = createChat(); replies = [];scopeReplies=[];refinementReplies=[];fileScopeReplies=[];runSignal=undefined;runContextLimit=8192;explicitModuleDecisions=false;
   writeFileSync(path.join(root, "tokenizer.json"), JSON.stringify({ version: "1.0", added_tokens: [], normalizer: null, decoder: null, post_processor: null, pre_tokenizer: { type: "WhitespaceSplit" }, model: { type: "WordPiece", unk_token: "UNK", vocab: { UNK: 0, user: 1, EOS: 2, assistant: 3, Setup: 4 }, continuing_subword_prefix: "##", max_input_chars_per_word: 200000 } }));
   writeFileSync(path.join(root, "tokenizer_config.json"), JSON.stringify({ chat_template: template })); writeFileSync(path.join(root, "note.txt"), "saved source\n");
   vi.spyOn(server, "countLMStudioPreparedRequest").mockImplementation(async options => { const local = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload: options.payload }); return { inputTokens: local.inputTokens, renderedDigest: local.renderedDigest, instanceReference: "loaded", modelPath: "local", contextLimit: runContextLimit, counterIdentity: "lmstudio-sdk-1.5.0" }; });
@@ -57,12 +58,17 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
   if (!managerPath) getDb().prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,'agent','agent-v3',?)").run(runId, workspaceRoot);
   const verification = await verifyLocalAgentCounter({ binding: { endpoint: "http://127.0.0.1:1234/v1", modelIdentity: "loaded", providerModel: "driver", transport: "json", templateDigest: createHash("sha256").update(template).digest("hex"), contextLimit: runContextLimit }, assetsDir: root, activeTemplate: template, probes: (["plain", "tools", "tool_result", "unicode"] as const).map(name => ({ name, payload: { model: "driver", messages: [{ role: "user", content: "Setup" }] } })), providerProbe: async () => ({ inputTokens: 4 }) });
   saveAgentCountingVerification(verification);
+  let pendingModuleChoice: {name:string;reason?:string} | undefined;
   const gateway = new ModelGateway({ async request(_url, init) {
     const payload = JSON.parse(init.body!), title = String(payload.messages?.[0]?.content).includes("short chat topic title");
     const scopeReview = String(payload.messages?.[0]?.content).startsWith("Audit proposed requirement coverage");
     const refinement = String(payload.messages?.[0]?.content).startsWith("Extract every requested obligation");
     const fileScope = payload.response_format?.json_schema?.name === "agent_file_scope";
-    const answer = fileScope ? fileScopeReplies.shift() ?? (()=>({withinScope:true,reason:"The quoted user request includes this file change."})) : refinement ? refinementReplies.shift() : title ? () => "Inspect saved source" : scopeReview ? scopeReplies.shift() ?? (()=>({covered:true,missing:[],full_suite:false})) : replies.shift();
+    const actionShapes=payload.response_format?.json_schema?.schema?.properties?.tool_calls?.items?.anyOf;
+    const decision=actionShapes?.some((shape:any)=>shape.properties.name.enum.includes("select_module_draft"));
+    const queued=decision && pendingModuleChoice ? pendingModuleChoice : undefined;
+    if(queued)pendingModuleChoice=undefined;
+    const answer = queued ? (()=>({tool_calls:[{name:queued.name,arguments:queued.name === "select_module_draft" ? {result_id:JSON.parse(payload.messages[1].content.split("\n\nSAVED DRAFT (untrusted JSON data):\n")[1]).resultId} : {reason:queued.reason}}]})) : fileScope ? fileScopeReplies.shift() ?? (()=>({withinScope:true,reason:"The quoted user request includes this file change."})) : refinement ? refinementReplies.shift() : title ? () => "Inspect saved source" : scopeReview ? scopeReplies.shift() ?? (()=>({covered:true,missing:[],full_suite:false})) : replies.shift();
     if (!answer) throw new Error("Unexpected model generation");
     const input = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload });
     let content = answer(payload);
@@ -78,7 +84,7 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
     if (String(payload.messages?.[0]?.content).startsWith("The host has verified the saved repair") && typeof content === "object" && content !== null && (content as any).tool_calls?.[0]?.name === "finish") content = (content as any).tool_calls[0].arguments.text;
     const shapes=payload.response_format?.json_schema?.schema?.properties?.tool_calls?.items?.anyOf;
     const directProposal=payload.response_format?.json_schema?.name === "agent_tool_arguments";
-    const moduleProposal=Boolean(payload.response_format?.json_schema?.schema?.properties?.context_needed);
+    const moduleProposal=Boolean(directProposal && payload.response_format?.json_schema?.schema?.properties?.content);
     const proposalName=moduleProposal ? "propose_module_repair" : "propose_repair";
     if((directProposal || shapes?.length === 1 && shapes[0].properties.name.enum[0] === "propose_repair") && typeof content === "object" && content !== null){
       const calls=(content as any).tool_calls;
@@ -93,6 +99,18 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
         const args=(content as any).tool_calls[0].arguments;
         content=moduleProposal && ["source","tools","blocked"].includes(args.kind) ? args.kind === "blocked" ? {content:null,blocked_reason:args.reason} : {content:null,context_needed:args.reason} : args;
       }
+    }
+    if(moduleProposal && typeof content === "object" && content !== null && (content as any).tool_calls?.[0]?.name === "draft_module")content=(content as any).tool_calls[0].arguments;
+    if(moduleProposal && typeof content === "object" && content !== null && "content" in content) {
+      const draft=content as {content:string|null;context_needed?:string;blocked_reason?:string};
+      if(draft.content === null && (draft.context_needed || draft.blocked_reason)) {
+        pendingModuleChoice={name:draft.context_needed ? "request_module_context" : "block_module_repair",reason:draft.context_needed ?? draft.blocked_reason};
+        content={content:readFileSync(path.join(workspaceRoot,packetState(payload.messages[1].content).currentStep.target.path),"utf8")};
+      } else if(typeof draft.content === "string" && !explicitModuleDecisions) pendingModuleChoice={name:"select_module_draft"};
+    }
+    if(decision && typeof content === "object" && content !== null && (content as any).tool_calls?.[0]?.name === "propose_module_repair") {
+      const args=(content as any).tool_calls[0].arguments;
+      if(args.context_needed || args.blocked_reason)content={tool_calls:[{name:args.context_needed ? "request_module_context" : "block_module_repair",arguments:{reason:args.context_needed ?? args.blocked_reason}}]};
     }
     return { status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: typeof content === "string" ? content : JSON.stringify(content) }, finish_reason: "stop" }], usage: { prompt_tokens: input.inputTokens, completion_tokens: 30 } }) };
   } }, [{ id: "driver", runtime: "mlx-lm", baseUrl: "http://127.0.0.1:1234/v1", model: "driver", capabilities: ["text"], toolCallingFormat: "json", requestTimeoutMs: 1000, healthPath: "/models", enabled: true, contextLength: 8192 }]);
@@ -307,7 +325,7 @@ describe("Agent v3 task host loop", () => {
     const {result,runId,approve,emit}=await run(request,false,undefined,undefined,workspace);
     expect(result.outcome,result.text+JSON.stringify(emit.mock.calls.filter(([event])=>event.type === "tool_result"))).toBe("completed");
     const ledger=getExecutionLedger(runId)!;
-    expect(ledger.agentProgress?.actions.map(action=>action.operation)).toEqual(["edit_file"]);
+    expect(ledger.agentProgress?.actions.map(action=>action.operation)).toEqual(["draft_module","edit_file"]);
     expect(ledger.agentProgress?.sourceResultIds).toHaveLength(2);
     expect(ledger.agentProgress?.reads.map(read=>read.path)).toContain("value.cjs");
     expect(ledger.verification?.evidence).toContainEqual(expect.objectContaining({criterionId:"baseline:project-tests",status:"failed"}));
@@ -352,7 +370,7 @@ describe("Agent v3 task host loop", () => {
     const {result,runId,approve}=await run(request,false,undefined,undefined,workspace);
     expect(result.outcome,result.text).toBe("completed");expect(approve).toHaveBeenCalledTimes(4);
     const ledger=getExecutionLedger(runId)!;
-    expect(ledger.agentProgress?.actions.map(action=>action.operation)).toEqual(["edit_file","edit_file"]);
+    expect(ledger.agentProgress?.actions.map(action=>action.operation)).toEqual(["draft_module","edit_file","draft_module","edit_file"]);
     expect(ledger.agentProgress?.sourceResultIds).toHaveLength(4);
     expect(ledger.agentProgress?.failure?.targets.filter(target=>target.role === "implementation").map(target=>target.path)).toEqual(["storage.cjs","filters.cjs"]);
     expect(ledger.verification?.repairCount).toBe(0);expect(ledger.verification?.evidence.find(check=>check.criterionId === "acceptance:validate-written-code")?.status).toBe("passed");
@@ -372,7 +390,7 @@ describe("Agent v3 task host loop", () => {
     const {result,runId,approve}=await run("Reproduce and repair value.cjs",false,undefined,undefined,workspace);
     expect(result.outcome).toBe("partial");expect(result.text).toContain("two repair cycles");
     const ledger=getExecutionLedger(runId)!;
-    expect(ledger.agentProgress?.actions.map(action=>action.operation)).toEqual(["edit_file","edit_file","edit_file"]);
+    expect(ledger.agentProgress?.actions.map(action=>action.operation)).toEqual(["draft_module","edit_file","draft_module","edit_file","draft_module","edit_file"]);
     expect(ledger.verification?.repairCount).toBe(2);
     expect(ledger.verification?.attempts).toHaveLength(4);
     expect(approve).toHaveBeenCalledTimes(7);
@@ -391,24 +409,68 @@ describe("Agent v3 task host loop", () => {
     expect(getExecutionLedger(runId)?.agentProgress?.deliveryAttempts).toHaveLength(0);
     expect(replies).toHaveLength(0);
   });
+  it("saves a non-executable draft and waits for a separate model choice before approval",async()=>{
+    explicitModuleDecisions=true;
+    const {workspace,implementation}=failingWorkspace(),request="Reproduce and repair value.cjs";
+    const candidate='exports.readValue = () => 42;\n';
+    replies=[()=>interpretation("execute",request),()=>({tool_calls:[{name:"draft_module",arguments:{content:candidate}}]}),payload=>{
+      expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
+      const saved=JSON.parse(payload.messages[1].content.split("\n\nSAVED DRAFT (untrusted JSON data):\n")[1]);
+      const row=getDb().prepare("SELECT run_id FROM intermediate_results WHERE result_id=? AND producer_tool='agent_module_draft'").get(saved.resultId) as {run_id:string};
+      expect(new RunResultStore(row.run_id).readResultPayload(saved.resultId)).toBe(candidate);
+      return {tool_calls:[{name:"select_module_draft",arguments:{result_id:saved.resultId}}]};
+    },()=>"The saved code now passes the existing test.",payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Existing test passed."}))};}];
+    const result=await run(request,false,undefined,undefined,workspace);
+    expect(result.result.outcome,result.result.text).toBe("completed");
+    expect(result.approve).toHaveBeenCalledTimes(3);
+    expect(getExecutionLedger(result.runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["draft_module","edit_file"]);
+    const store=new RunResultStore(result.runId),draft=getExecutionLedger(result.runId)!.agentProgress!.repairDraft!;
+    const proposal=store.listResults({limit:50}).find(record=>record.producer.tool === "agent_proposal" && record.sources.some(source=>source.resultId === draft.resultId));
+    expect(proposal).toBeDefined();expect(JSON.parse(store.readResultPayload(proposal!.resultId)).draftResultId).toBe(draft.resultId);
+    expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(candidate);
+  });
+  it("rejects a forged draft selection without approving or editing files",async()=>{
+    explicitModuleDecisions=true;
+    const {workspace,implementation}=failingWorkspace(),request="Reproduce and repair value.cjs";
+    const forged=()=>({tool_calls:[{name:"select_module_draft",arguments:{result_id:"00000000-0000-4000-8000-000000000000"}}]});
+    replies=[()=>interpretation("execute",request),()=>({tool_calls:[{name:"draft_module",arguments:{content:'exports.readValue = () => 42;\n'}}]}),forged,forged];
+    const result=await run(request,false,undefined,undefined,workspace);
+    expect(result.result.stopReason).toBe("malformed_action");expect(result.approve).toHaveBeenCalledTimes(1);
+    expect(getExecutionLedger(result.runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["draft_module"]);
+    expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
+  });
+  it("can request context after saving a draft without applying it",async()=>{
+    explicitModuleDecisions=true;
+    const {workspace,implementation}=failingWorkspace(),request="Reproduce and repair value.cjs",controller=new AbortController();runSignal=controller.signal;
+    replies=[()=>interpretation("execute",request),()=>({tool_calls:[{name:"draft_module",arguments:{content:'exports.readValue = () => 42;\n'}}]}),
+      ()=>({tool_calls:[{name:"request_module_context",arguments:{reason:"Read another source before deciding."}}]}),payload=>{
+        expect(packetState(payload.messages[1].content).toolView).toContain("one action");
+        expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
+        controller.abort();return {tool_calls:[{name:"read_file",arguments:{path:"value.test.cjs"}}]};
+      }];
+    const result=await run(request,false,undefined,undefined,workspace);
+    expect(result.result.outcome).toBe("cancelled");expect(result.approve).toHaveBeenCalledTimes(1);
+    expect(getExecutionLedger(result.runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["draft_module","request_context"]);
+    expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
+  });
   it("can show all registered tools for one repair action without granting mutation authority",async()=>{
     const {workspace,implementation}=failingWorkspace();writeFileSync(path.join(workspace,"extra.txt"),"needed context\n");
-    const toolNames=(payload:any)=>payload.response_format.json_schema.name === "agent_tool_arguments" ? [Boolean(payload.response_format.json_schema.schema.properties?.context_needed) ? "propose_module_repair" : "propose_repair"] : payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.flatMap((tool:any)=>tool.properties.name.enum);
+    const toolNames=(payload:any)=>payload.response_format.json_schema.name === "agent_tool_arguments" ? [Boolean(payload.response_format.json_schema.schema.properties?.content) ? "draft_module" : "propose_repair"] : payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.flatMap((tool:any)=>tool.properties.name.enum);
     replies=[()=>interpretation("execute","Reproduce and repair value.cjs"),payload=>{
-      expect(toolNames(payload)).toEqual(["propose_module_repair"]);
+      expect(toolNames(payload)).toEqual(["draft_module"]);
       return {tool_calls:[{name:"propose_repair",arguments:{kind:"tools",capability:"source_access",reason:"Find additional source for this repair"}}]};
     },payload=>{
       expect(toolNames(payload)).toEqual(expect.arrayContaining(["read_file","search","list_dir","write_file","edit_file","delete_file","run_command"]));
       expect(packetState(payload.messages[1].content).toolView).toContain("one action");
       return {tool_calls:[{name:"read_file",arguments:{path:"extra.txt"}}]};
     },payload=>{
-      expect(toolNames(payload)).toEqual(["propose_module_repair"]);
+      expect(toolNames(payload)).toEqual(["draft_module"]);
       expect(payload.messages[1].content).toContain("<source>\nneeded context\n\n</source>");
       return {tool_calls:[{name:"propose_repair",arguments:{kind:"blocked",reason:"No further repair is justified by this evidence"}}]};
     }];
     const {result,runId,approve}=await run("Reproduce and repair value.cjs",false,undefined,undefined,workspace);
     expect(result.stopReason,result.text).toBe("repair_blocked");expect(approve).toHaveBeenCalledTimes(1);
-    expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["request_context","read_file"]);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["draft_module","request_context","read_file","draft_module"]);
     expect(getExecutionLedger(runId)?.agentProgress?.expandedToolFocus).toBeUndefined();
     expect(getExecutionLedger(runId)?.agentProgress?.reads.some(read=>read.path === "extra.txt")).toBe(true);
     expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
@@ -430,7 +492,7 @@ describe("Agent v3 task host loop", () => {
     replies=[()=>interpretation("execute",request),()=>({tool_calls:[{name:"propose_module_repair",arguments:{content:null,context_needed:"Need other tools"}}]}),()=>({tool_calls:[{name:"request_capability",arguments:{capability:"document_processing",reason:"Show another tool"}}]}),()=>({tool_calls:[{name:"propose_module_repair",arguments:{content:null,context_needed:"Need more tools again"}}]})];
     const {result,runId,approve}=await run(request,false,undefined,undefined,workspace);
     expect(result.stopReason,result.text).toBe("repeated_context_request");expect(approve).toHaveBeenCalledTimes(1);
-    expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["request_context","request_capability"]);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["draft_module","request_context","request_capability"]);
     expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
   });
   it("obtains read-only failure evidence without requiring a change category",async()=>{
@@ -466,7 +528,8 @@ describe("Agent v3 task host loop", () => {
     vi.spyOn(ModelGateway.prototype,"chatWithTools").mockImplementation(async function(this:ModelGateway,modelId,messages,tools,options){
       const state=packetState(messages[1]?.content ?? "{}");
       if(state.selectedSources?.pages.some((page:any)=>page.path === "value.test.cjs")){
-        expect(tools.map(tool=>tool.function.name)).toContain(state.toolView ? "read_file" : "propose_module_repair");
+        const names=tools.map(tool=>tool.function.name);
+        expect(names).toContain(names.includes("select_module_draft") ? "select_module_draft" : state.toolView ? "read_file" : "draft_module");
         rejected++;return {ok:false,error:{kind:"ai-error",code:"agent_context_limit",message:"Remove optional source pages",retryable:false}};
       }
       return original.call(this,modelId,messages,tools,options);
@@ -477,7 +540,7 @@ describe("Agent v3 task host loop", () => {
       expect(state.selectedSources.complete).toBe(false);
       expect(state.selectedSources.pages.map((page:any)=>page.path)).toEqual(["value.cjs"]);
       expect(payload.response_format.json_schema.name).toBe("agent_tool_arguments");
-      expect(state.contextRule).toContain("registered tool view");
+      expect(state.contextRule).toContain("registered tools");
       return {tool_calls:[{name:"propose_module_repair",arguments:{content:null,context_needed:"Read the omitted test source"}}]};
     },payload=>{
       const state=packetState(payload.messages[1].content);
@@ -487,10 +550,10 @@ describe("Agent v3 task host loop", () => {
       controller.abort();return {tool_calls:[{name:"read_file",arguments:{path:"value.test.cjs"}}]};
     }];
     const {result,runId,approve}=await run("Reproduce the existing failure",false,undefined,undefined,workspace);
-    expect(result.outcome,result.text).toBe("cancelled");expect(rejected).toBe(4);expect(approve).toHaveBeenCalledTimes(1);
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(4);
+    expect(result.outcome,result.text).toBe("cancelled");expect(rejected).toBe(6);expect(approve).toHaveBeenCalledTimes(1);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(5);
     expect(getExecutionLedger(runId)?.agentProgress?.reads.every(read=>read.path === "value.cjs")).toBe(true);
-    expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["request_context"]);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["draft_module","request_context"]);
     expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
   });
   it("explicitly resumes the saved v3 contract, task, and call budget without repeating interpretation", async () => {
