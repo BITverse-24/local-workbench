@@ -175,6 +175,7 @@ export interface RunSnapshot {
   agentV3Available?: boolean;
   agentTask?: import("./agent-task.js").AgentTask;
   agentTaskBinding?: import("./agent-task.js").AgentTaskBinding;
+  agentTaskFacts?: import("./agent-task.js").AgentTaskFacts;
   state: RunState;
   queued: boolean;
   progress: TaskProgressEvent[];
@@ -187,6 +188,7 @@ export interface RunSnapshot {
   draft?: { messageId:string; modelId:string; text:string };
   recovery?: {
     canResume: boolean;
+    approvalsExpired?: boolean;
     largerGenerationAllowance: boolean;
     reason: string;
     sourceMessageId?: string;

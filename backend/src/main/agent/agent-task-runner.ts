@@ -1,4 +1,4 @@
-import { agentAppliedChanges } from "./task-evidence.js";
+import { agentAppliedChanges, savedAgentTaskFacts } from "./task-evidence.js";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { Validator } from "jsonschema";
@@ -111,7 +111,7 @@ export class AgentTaskRunner {
       const task = getAgentTask(bound.taskId)!;
       if (task.snapshot.revision !== bound.taskRevision || task.workspace.root !== input.workspace.root || task.workspace.registeredAt !== input.workspace.registeredAt) return stop("stale_task_binding", "The task or workspace binding changed. Start a fresh bound attempt.");
       if (bound.disposition === "status" || isAgentStatusQuestion(source.content)) {
-        const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: "Answer the status question from saved task facts only. Do not propose or perform workspace actions. State remaining requirements and unavailable checks." }, { role: "user", content: JSON.stringify({ question: source.content, requirements: task.snapshot.requirements, pendingRequests: task.snapshot.messages.filter(message=>message.disposition === "pending"), taskStatus: task.status }) }], [], { runId, maxTokens: 512, signal: scope.signal });
+        const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: "Answer the status question from saved task facts only. Do not propose or perform workspace actions. State remaining requirements and unavailable checks." }, { role: "user", content: JSON.stringify({ question: source.content, requirements: task.snapshot.requirements, pendingRequests: task.snapshot.messages.filter(message=>message.disposition === "pending"), taskStatus: task.status, savedFacts:savedAgentTaskFacts(task) }) }], [], { runId, maxTokens: 512, signal: scope.signal });
         assertRuntimeActive();
         return answer.ok && answer.value.finishReason !== "length" ? { outcome: "completed", text: answer.value.content ?? "The saved task remains available.", stopReason: "status_reply" } : stop("status_reply_unavailable", answer.ok ? "The status answer was truncated." : answer.error.message);
       }

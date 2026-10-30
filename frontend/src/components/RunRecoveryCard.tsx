@@ -15,6 +15,7 @@ export default function RunRecoveryCard({ recovery, artifacts, busy, onResume, o
     {recovery.completed.length > 0 && <details className="mt-2"><summary>Completed work ({recovery.completed.length})</summary><ul className="mt-1 list-disc pl-5">{recovery.completed.map((label, i) => <li key={i}>{label}</li>)}</ul></details>}
     {recovery.remaining.length > 0 && <details className="mt-2" open><summary>Still to do ({recovery.remaining.length})</summary><ul className="mt-1 list-disc pl-5">{recovery.remaining.map((label, i) => <li key={i}>{label}</li>)}</ul></details>}
     {recovery.workspaceRoot && <p className="mt-2 break-all text-xs">Project folder: {recovery.workspaceRoot}</p>}
+    {recovery.approvalsExpired && <p className="mt-2 text-xs">Earlier approvals expired when the app stopped. Resume requires new approval for each action.</p>}
     <p className="mt-2 text-xs">Saved work stays available. Resume checks the current inputs and requests any required approval.</p>
     <div className="mt-3 flex flex-wrap gap-3">
       {recovery.canResume && <button disabled={busy} onClick={onResume} className="neu-button-primary rounded px-3 py-2">{busy ? "Resuming…" : recovery.largerGenerationAllowance ? "Resume with larger allowance" : "Resume task"}</button>}

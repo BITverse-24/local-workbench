@@ -1,3 +1,4 @@
+import { savedAgentTaskFacts } from "../agent/task-evidence.js";
 import { inspectionGaps, loadSourceInspections, visualSourceExtension } from "./source-inspection.js";
 import { pendingSourcePages } from "./source-page-selection.js";
 import { taskProgressKey } from '../../shared/task-progress.js';
@@ -204,6 +205,8 @@ export interface StartRunInput {
   selectedModel?: string;
   mode?: ExecutionMode;
   agentTaskIntent?: "continue" | "new";
+  /** Host-only link for an explicit legacy continuation. IPC does not accept this field. */
+  agentPredecessorRunId?: string;
   workspaceIdentity?: WorkspaceInfo;
   workspaceReferences?: WorkspaceReference[];
 }
@@ -311,7 +314,8 @@ export class RunManager {
     const saved = currentLedger?.executionContext;
     if (!saved) throw new Error("Run has no persisted execution context and cannot resume safely.");
     const engine = getDb().prepare("SELECT engine_version FROM run_mode_details WHERE run_id=?").get(runId) as { engine_version: string };
-    if (saved.mode === "agent" && this.engineOptions.agentV3Preview && engine.engine_version !== "agent-v3") throw new Error("Legacy Agent evidence remains readable. Continue it through a linked v3 attempt with fresh approvals; the old engine will not resume in this preview.");
+    const legacyAgent=saved.mode === "agent" && engine.engine_version !== "agent-v3";
+    if(legacyAgent && !this.engineOptions.agentV3Preview)throw new Error("Enable Agent v3 to continue this historical Agent run. The old engine cannot resume.");
     const selection = resolveModelSelection({ explicitSelection: saved.modelId, gateway: this.gateway });
     if (!selection.ok || selection.modelId !== contract.routing.driverModel || selection.modelId !== saved.modelId) {
       throw new Error("The original model is unavailable. Resumption cannot change model selection.");
@@ -340,6 +344,17 @@ export class RunManager {
       if (!alias.relativePath.startsWith(prefix)) throw new Error("Saved input is outside this run.");
       const file = resolveRunPath(runId, alias.relativePath.slice(prefix.length), "input");
       if (!existsSync(file) || (alias.sha256 && sha256File(file) !== alias.sha256)) throw new Error("Saved input changed or is missing. Select the input again in a new attempt.");
+    }
+    if(legacyAgent) {
+      const text=typeof metrics.originalRequest === "string" ? metrics.originalRequest : contract.objective;
+      // New run and task, original bytes, current workspace, no imported scopes.
+      return this.start({chatId:row.chatId,userText:text,mode:"agent",selectedModel:saved.modelId,groundingEnabled:saved.groundingEnabled,
+        attachmentTokens:attachments.map(item=>item.attachmentId),workspaceReferences:[],agentTaskIntent:"new",agentPredecessorRunId:runId});
+    }
+    if(engine.engine_version === "agent-v3") {
+      const taskBinding=getAgentTaskBinding(runId),task=taskBinding && getAgentTask(taskBinding.taskId),active=this.harness!.requireActiveWorkspace();
+      if(!taskBinding || !task?.current || task.snapshot.revision !== taskBinding.taskRevision || task.workspace.root !== active.root || task.workspace.registeredAt !== active.registeredAt)throw new Error("Task or project binding changed. Use New task to continue with fresh authority.");
+      if((currentLedger?.agentTask?.modelCalls ?? 0)>=40)throw new Error("This attempt used its 40 model calls. Continue the task in a new attempt.");
     }
     const { ledger, useLargerAllowance } = prepareExecutionResume(runId, largerGenerationAllowance);
     this.publishVerificationReport(runId);
@@ -468,6 +483,10 @@ export class RunManager {
     if(this.activeChats.has(chatId)||db.prepare("SELECT r.id FROM runs r JOIN run_mode_details m ON m.run_id=r.id WHERE r.chat_id=? AND r.state NOT IN ('completed','partial','failed','cancelled','limit_exceeded')").get(chatId))throw new Error("This chat already has an active run.");
     const stagedId=input.runId??requested[0]?.runId;
     if(stagedId && this.chatIdForRunIfPresent(stagedId) && (getState(stagedId)!=="created"||db.prepare("SELECT run_id FROM run_mode_details WHERE run_id=?").get(stagedId)))throw new Error("An executing or finished run cannot be started again or change mode.");
+    if(input.agentPredecessorRunId) {
+      const predecessor=db.prepare("SELECT r.chat_id,r.state,m.mode,m.workspace_root FROM runs r JOIN run_mode_details m ON m.run_id=r.id WHERE r.id=?").get(input.agentPredecessorRunId) as {chat_id:string;state:string;mode:string;workspace_root:string} | undefined;
+      if(mode !== "agent" || !this.engineOptions.agentV3Preview || !predecessor || predecessor.chat_id !== chatId || predecessor.mode !== "agent" || predecessor.workspace_root !== root || !["partial","cancelled","failed","limit_exceeded","completed"].includes(predecessor.state))throw new Error("Invalid historical Agent attempt link.");
+    }
     const runId=createRun(chatId,text,requested[0]?.attachmentId,stagedId);
     createRunDirectories(runId);
     const engineVersion = mode === "chat" ? "chat-v1" : mode === "work" ? "work-v4" : this.engineOptions.agentV3Preview ? "agent-v3" : "agent-v2";
@@ -478,7 +497,7 @@ export class RunManager {
     if(engineVersion==="agent-v3") {
       const active=this.harness!.requireActiveWorkspace();
       const userMessageId=input.userMessageId??addMessage({chat_id:chatId,role:"user",content:text||" ",run_id:runId}).id;
-      Object.assign(this.runMetrics.get(runId)!,{userMessageId,agentTaskIntent:input.agentTaskIntent??"continue",workspaceIdentity:{root:active.root,registeredAt:active.registeredAt}});
+      Object.assign(this.runMetrics.get(runId)!,{userMessageId,agentTaskIntent:input.agentTaskIntent??"continue",...(input.agentPredecessorRunId ? {agentPredecessorRunId:input.agentPredecessorRunId} : {}),workspaceIdentity:{root:active.root,registeredAt:active.registeredAt}});
       db.prepare("UPDATE run_mode_details SET metrics_json=? WHERE run_id=?").run(JSON.stringify(this.runMetrics.get(runId)),runId);
     }
     const attemptContext = chatMetadata(getChat(chatId)!).attemptSourceContext;
@@ -486,7 +505,7 @@ export class RunManager {
     if(input.temperature!==undefined)this.runTemperatures.set(runId,input.temperature);
     this.runGroundingEnabled.set(runId,input.groundingEnabled===true);
     if(input.selectedModel??input.preferredRoute)this.runSelectedModels.set(runId,(input.selectedModel??input.preferredRoute)!);
-    const originals=requested.length?[...requested]:references.length?[]:this.latestAttachments(chatId);
+    const originals=requested.length?[...requested]:(references.length || input.agentPredecessorRunId)?[]:this.latestAttachments(chatId);
     if (references.length) {
       try {
         if (originals.some(file => file.sizeBytes > 10 * 1024 * 1024)) throw new Error("Selected sources exceed the 10 MB per-file limit.");
@@ -531,7 +550,7 @@ export class RunManager {
     const recovery = ["partial", "limit_exceeded", "failed", "cancelled"].includes(state) ? this.recoveryForRun(row.runId, row.chatId, state, metrics) : undefined;
     const agentTaskBinding = row.engineVersion === "agent-v3" ? getAgentTaskBinding(row.runId) : undefined;
     const agentTask = agentTaskBinding ? getAgentTask(agentTaskBinding.taskId) : this.engineOptions.agentV3Preview ? getCurrentAgentTask(row.chatId) : undefined;
-    return {runId:row.runId,chatId:row.chatId,mode:row.mode??null,engineVersion:row.engineVersion??null,agentV3Available:this.engineOptions.agentV3Preview===true,agentTaskBinding,agentTask,state,queued:metrics.queued===true,progress:[...(this.taskCheckpoints.get(row.runId)?.values()??(Array.isArray(metrics.progress)?metrics.progress:[]))],pendingAction:this.pendingActions.get(row.runId),pendingPageSelection:pendingSourcePages(row.runId),sourceInspections:loadSourceInspections(row.runId),artifacts,verification:getVerificationReport(row.runId),metrics,draft,recovery};
+    return {runId:row.runId,chatId:row.chatId,mode:row.mode??null,engineVersion:row.engineVersion??null,agentV3Available:this.engineOptions.agentV3Preview===true,agentTaskBinding,agentTask,agentTaskFacts:agentTask ? savedAgentTaskFacts(agentTask) : undefined,state,queued:metrics.queued===true,progress:[...(this.taskCheckpoints.get(row.runId)?.values()??(Array.isArray(metrics.progress)?metrics.progress:[]))],pendingAction:this.pendingActions.get(row.runId),pendingPageSelection:pendingSourcePages(row.runId),sourceInspections:loadSourceInspections(row.runId),artifacts,verification:getVerificationReport(row.runId),metrics,draft,recovery};
   }
 
   private recoveryForRun(runId: string, chatId: string, state: RunState, metrics: Record<string, unknown>): NonNullable<RunSnapshot["recovery"]> {
@@ -543,7 +562,7 @@ export class RunManager {
       AND seq<(SELECT MIN(seq) FROM messages WHERE chat_id=? AND role='assistant' AND run_id=?) ORDER BY seq DESC LIMIT 1`).get(chatId, chatId, runId) as { id: string } | undefined;
     const largerGenerationAllowance = state === "limit_exceeded" && ledger?.tokenLimitRecoveryAvailable === true;
     const result: NonNullable<RunSnapshot["recovery"]> = {
-      canResume: false, largerGenerationAllowance, sourceMessageId: message?.id ?? legacy?.id ?? preceding?.id,
+      canResume: false, largerGenerationAllowance, approvalsExpired:metrics.interrupted === true, sourceMessageId: message?.id ?? legacy?.id ?? preceding?.id,
       reason: "Saved work is available. Create a new attempt to continue.",
       completed: ledger?.knownWork.filter(item => item.status === "completed").map(item => item.label) ?? [],
       remaining: ledger?.knownWork.filter(item => item.status === "pending").map(item => item.label) ?? [],
@@ -560,8 +579,17 @@ export class RunManager {
       const root = saved.mode === "agent" && this.harness?.isWorkspaceActive() ? this.harness.requireActiveWorkspace().root : undefined;
       if ((saved.workspaceRoot ?? undefined) !== root) throw new Error("Open the original project folder, then retry Resume.");
       if (saved.mode === "work" && (Number(metrics.modelCallCount ?? 0) >= 24 || Number(metrics.recoveryCount ?? 0) >= 2)) throw new Error("This task has used its work budget. Create a new attempt to continue.");
+      if(saved.mode === "agent") {
+        const engine=getDb().prepare("SELECT engine_version FROM run_mode_details WHERE run_id=?").get(runId) as {engine_version:string};
+        if(engine.engine_version !== "agent-v3" && !this.engineOptions.agentV3Preview)throw new Error("Enable Agent v3 to continue this historical Agent run. The old engine cannot resume.");
+        if(engine.engine_version === "agent-v3") {
+          const bound=getAgentTaskBinding(runId),task=bound && getAgentTask(bound.taskId),active=this.harness!.requireActiveWorkspace();
+          if(!bound || !task?.current || task.snapshot.revision !== bound.taskRevision || task.workspace.registeredAt !== active.registeredAt)throw new Error("Task or project binding changed. Use New task to continue with fresh authority.");
+          if((ledger.agentTask?.modelCalls ?? 0)>=40)throw new Error("This attempt used its 40 model calls. Continue the task in a new attempt.");
+        }
+      }
       result.canResume = true;
-      result.reason = getVerificationReport(runId)?.termination?.detail ?? "Continue from saved work. Required checks and approvals will run again.";
+      result.reason = saved.mode === "agent" && this.engineOptions.agentV3Preview && !getAgentTaskBinding(runId) ? "Continue the saved request in a linked Agent v3 attempt. Required checks and approvals will run again." : getVerificationReport(runId)?.termination?.detail ?? "Continue from saved work. Required checks and approvals will run again.";
     } catch (error) { result.reason = error instanceof Error ? error.message : String(error); }
     return result;
   }
@@ -987,7 +1015,7 @@ export class RunManager {
     const envelope=buildExecutionEnvelope({runId,mode:"agent",modelId,hasWorkspace:true,workspaceRoot:root,attachments,hasKnowledgeBaseDocs:!!grounding,userPrompt:text,mutationRequested:true,commandExecutionRequested:true});
     const context={runId,workspaceRoot:root,gateway:this.gateway,harness:this.harness,policyGuard:this.policyGuard,envelope,resultStore:new RunResultStore(runId),signal:scope.signal,assertAuthority:()=>this.assertRunAuthority(runId),originalUserRequest:text,grounding:grounding as any,
       inputSources:metrics.sourceAliases as Array<{id:string;filename:string;relativePath:string;sha256:string}>,isCancelled:()=>scope.signal.aborted,refreshVerificationReport:()=>this.publishVerificationReport(runId),emitRunEvent:(event:RunEvent)=>{if(event.type==="artifact_ready")this.persistArtifact(event.artifact);this.emit(event);}};
-    const result=await new AgentTaskRunner().run({context,modelId,chatId:this.chatIdForRun(runId),messageId:String(metrics.userMessageId),workspace:{root:identity.root,registeredAt:identity.registeredAt},intent:metrics.agentTaskIntent as "continue"|"new",state:state=>this.state(runId,state),approve:preview=>this.askAgentApproval(runId,preview)});
+    const result=await new AgentTaskRunner().run({context,modelId,chatId:this.chatIdForRun(runId),messageId:String(metrics.userMessageId),workspace:{root:identity.root,registeredAt:identity.registeredAt},intent:metrics.agentTaskIntent as "continue"|"new",predecessorRunId:metrics.agentPredecessorRunId as string|undefined,state:state=>this.state(runId,state),approve:preview=>this.askAgentApproval(runId,preview)});
     if(scope.signal.aborted)return;
     this.persistAssistant(runId,result.text,modelId);this.publishVerificationReport(runId);
     if(result.outcome==="completed")this.complete(runId);else if(result.outcome==="cancelled")this.cancel(runId);else this.partial(runId,[result.text]);

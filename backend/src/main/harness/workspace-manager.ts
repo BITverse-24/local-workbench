@@ -14,6 +14,7 @@ export interface WorkspaceInfo {
  */
 export class WorkspaceManager {
   private active: WorkspaceInfo | null = null;
+  private lastRegistrationMs = 0;
 
   register(dirPath: string): WorkspaceInfo {
     if (!dirPath || typeof dirPath !== "string") {
@@ -31,12 +32,16 @@ export class WorkspaceManager {
     }
 
     const canonical = realpathSync(resolved);
+    let savedRegistrationMs=0;
+    try {savedRegistrationMs=Date.parse(getSetting<WorkspaceInfo>("active_workspace_identity")?.registeredAt ?? "") || 0;} catch {}
+    this.lastRegistrationMs=Math.max(Date.now(),this.lastRegistrationMs+1,savedRegistrationMs+1);
     this.active = {
       root: canonical,
-      registeredAt: new Date().toISOString(),
+      registeredAt: new Date(this.lastRegistrationMs).toISOString(),
     };
     try {
       setSetting("active_workspace_root", canonical);
+      setSetting("active_workspace_identity", this.active);
     } catch {}
     return this.active;
   }
@@ -69,6 +74,7 @@ export class WorkspaceManager {
     this.active = null;
     try {
       setSetting("active_workspace_root", null);
+      setSetting("active_workspace_identity", null);
     } catch {}
   }
 
@@ -77,10 +83,14 @@ export class WorkspaceManager {
     try {
       const saved = getSetting<string>("active_workspace_root");
       if (saved && typeof saved === "string" && existsSync(saved) && statSync(saved).isDirectory()) {
-        this.active = {
-          root: realpathSync(saved),
-          registeredAt: new Date().toISOString(),
-        };
+        const canonical=realpathSync(saved);
+        const identity=getSetting<WorkspaceInfo>("active_workspace_identity");
+        // Restart restores identity, never approvals. Explicit registration
+        // creates a new identity even when the displayed path is unchanged.
+        this.active = identity && identity.root === canonical && typeof identity.registeredAt === "string" && Number.isFinite(Date.parse(identity.registeredAt))
+          ? {root:canonical,registeredAt:identity.registeredAt}
+          : {root:canonical,registeredAt:new Date().toISOString()};
+        this.lastRegistrationMs=Date.parse(this.active.registeredAt);
         return this.active;
       }
     } catch {}

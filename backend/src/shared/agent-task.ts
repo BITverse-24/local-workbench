@@ -61,3 +61,14 @@ export interface SourceReadReceipt {
   resultId: string;
   requestId: string;
 }
+
+export interface AgentTaskFacts {
+  changesApplied: Array<{path:string;summary:string;originRunId:string;historical:boolean}>;
+  checksPassed: AgentCheckFact[];
+  checksUnavailable: AgentCheckFact[];
+  checksFailed: AgentCheckFact[];
+  checksSkipped: AgentCheckFact[];
+  remainingRequirements: Array<{id:string;description:string}>;
+  stopReason?: string;
+}
+export interface AgentCheckFact {reason:string;originRunId:string;historical:boolean;revision?:string}

@@ -1,3 +1,4 @@
+import AgentTaskFacts from "./components/AgentTaskFacts";
 import RunRecoveryCard from "./components/RunRecoveryCard";
 import { useChatDraft } from "./lib/hooks/useChatDraft";
 import SourcePageDialog from "./components/SourcePageDialog";
@@ -1224,6 +1225,7 @@ export default function App() {
               const original = messages.find(message => message.id === recovery.sourceMessageId);
               if (original) void handleEditMessage(original.id, original.text).catch(() => undefined);
             } : undefined} />}
+          {executionMode === "agent" && agentSnapshot?.chatId === chatId && agentSnapshot.agentTaskFacts && <AgentTaskFacts facts={agentSnapshot.agentTaskFacts} />}
           <ChatArea
             messages={messages}
             onEditMessage={handleEditMessage}
