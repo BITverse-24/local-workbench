@@ -257,7 +257,7 @@ Keep full source, logs, and messages in local scoped storage. Default telemetry 
 
 Discover existing project tests and probe the actual interpreter and package manager. Run a requested baseline before edits when available. Record baseline failures as evidence. An unavailable runner is an environment blocker; approved edits may still proceed. Cache that blocker for the unchanged environment so the same command does not fail repeatedly without new information.
 
-After code changes, select related existing tests when mapping is reliable. Otherwise run the affected suite. Honor a full-suite request. Preserve the current revision-bound machine-report checks and two repair cycles. A program launch or a printed marker cannot substitute for project tests.
+After all implementation candidates in a failure step change, the host schedules verification before another model action. A current pass permits a bounded delivery proposal and separate requirement reviews. A failure refreshes source hints under the existing repair limit. Changed bytes alone establish no repair. After code changes, select related existing tests when mapping is reliable. Otherwise run the affected suite. Honor a full-suite request. Preserve the current revision-bound machine-report checks and two repair cycles. A program launch or a printed marker cannot substitute for project tests.
 
 Completion requires every mandatory task criterion to have current accepted evidence or a direct user waiver. A separate bounded semantic review compares the original request and requirement coverage with the evidence. It cannot turn failed tests into a pass. Unsupported semantic conclusions remain unverified. A saved final answer proves only delivery of text.
 

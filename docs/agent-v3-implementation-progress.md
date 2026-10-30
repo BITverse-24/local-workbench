@@ -234,6 +234,12 @@ The earlier controlled-checklist 7B trial reached an actual edit proposal in two
 
 The scope assessment currently mixes user intent with code constraint enforcement. That ownership fault remains open. A model cannot establish dependency, syntax, or runtime correctness. The host must retain source/approval checks and enforce supported structured constraints; deterministic checks and tests supply executable evidence.
 
+## Host verification after repair steps
+
+The arguments-only controlled 7B diagnostic made four exactly counted calls, applied one approved storage edit, then stopped at a rejected filter proposal. The filter proposal removed search trimming and did not repair the status condition. Independent tests still failed. Evidence: `docs/evidence/agent-repair-arguments-live-2026-10-30.json`. No full repair is established.
+
+The host now runs existing checks when its candidate implementation revisions change. It no longer waits for a model finish action at that transition. A current test pass starts a bounded delivery proposal, followed by separate requirement reviews. Failed checks refresh the failure source under the existing two-cycle limit. Rejected checks stop before delivery. A historical pass for another workspace revision cannot remove failure focus. Tests and final source currency still control acceptance. Full type checking and the Electron build passed. Four focused files passed 236 tests, with one opt-in live test skipped. This includes automatic verification without a finish action, two failed repair cycles, rejected test approval, stale test revisions, and Chat/Work boundaries.
+
 ## Current implementation scope
 
 The user has deferred release certification and will test 14B manually. Current work is implementation and harness quality for the 7B–14B range, with local 7B and 9B models available for development checks. The machine has Qwen2.5 Coder 7B and Qwen3.5 9B assets; no 14B model is installed. Do not download weights or treat release trial counts as a current completion requirement. Keep the release controls documented and keep production promotion separate. Packaged-environment implementation checks remain useful because the original failure occurred in a production build.

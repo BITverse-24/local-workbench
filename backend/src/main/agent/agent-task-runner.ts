@@ -15,11 +15,11 @@ import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js"
 import { resolveSafe } from "../harness/path-guard.js";
 import { buildAgentContextPacket, conciseAgentTool, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
 import { bindAgentRepairProposal, REPAIR_PROPOSAL_TOOL } from "./repair-proposal.js";
-import { obtainAgentFailureSources } from "./source-evidence.js";
+import { obtainAgentFailureSources, selectAgentFailureStep } from "./source-evidence.js";
 import { assessAgentFileScope, refineAgentInterpretation, reviewAgentInterpretation } from "./requirement-scope.js";
 import { agentInterpretationFormat, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
 import { runAgentVerificationStage } from "./verification-stage.js";
-import { isCodeVerificationPath } from "./test-verification.js";
+import { captureAgentVerificationManifest, isCodeVerificationPath } from "./test-verification.js";
 import { extractVerificationSkipBasis, recordVerificationTermination, recordVerificationUserSkip } from "../run/verification-controller.js";
 import { agentDeliveryGap, reviewAgentTaskCoverage } from "./requirement-review.js";
 import { captureCommandWorkspaceDigest, commandApprovalDigest, COMMAND_FALLBACK_DISCLOSURE } from "../harness/tools/run-command.js";
@@ -150,6 +150,15 @@ export class AgentTaskRunner {
         const ledger = getExecutionLedger(runId)!;
         return ledger.completedOperations.filter(item=>fileMutations.has(item.tool)).flatMap(item=>ledger.operationAttempts.find(attempt=>attempt.callId === item.callId)?.targetPath ?? []);
       };
+      const verifyChanges = async () => {
+        const progress = getExecutionLedger(runId)?.agentProgress;
+        if (progress?.baseline?.status === "stop" && progress.baseline.environmentKey === environmentKey) return { action: "stop" as const, detail: progress.baseline.detail };
+        const checked = await runAgentVerificationStage({ context, dispatcher, changedPaths: progress?.fullSuite ? [] : changedPaths(), authorize });
+        clearApprovals();
+        updateAgentProgress(runId, state => { state.feedback = checked.detail.slice(0, 10000); });
+        if (checked.action === "repair") await obtainAgentFailureSources(context, dispatcher, checked.sourceHints);
+        return checked;
+      };
       if (needsTests && !getExecutionLedger(runId)?.agentProgress?.baseline) {
         const baseline = await runAgentVerificationStage({ context, dispatcher, changedPaths: [], authorize, baseline: true });
         clearApprovals();
@@ -159,6 +168,15 @@ export class AgentTaskRunner {
       }
       for (;;) {
         assertRuntimeActive();
+        // A changed failure candidate advances to host verification. The model
+        // does not need to select finish or rediscover an already known test call.
+        const failureStep = selectAgentFailureStep(context);
+        const beforeCheck = getExecutionLedger(runId)!;
+        if (failureStep?.phase === "check_changes" && beforeCheck.agentProgress?.failure?.targets.some(target => target.role === "implementation") && !beforeCheck.verification?.userSkip) {
+          const checked = await verifyChanges();
+          if (checked.action === "repair") continue;
+          if (checked.action !== "passed") return stop("checks_unavailable", checked.detail, checked.action === "cancelled" ? "cancelled" : "partial");
+        }
         if ((getExecutionLedger(runId)?.agentTask?.modelCalls ?? 0) >= 40) return stop("model_call_limit", "The run used its 40 model calls. Pending requirements remain saved.");
         const progress = getExecutionLedger(runId)?.agentProgress;
         const pending = task.snapshot.requirements.filter(item => item.state === "active");
@@ -166,12 +184,14 @@ export class AgentTaskRunner {
         let packet = buildAgentContextPacket(task, context, selected);
         // Assess obtained evidence before asking the model to repeat an inspection step.
         // This changes the host phase, not requirement status or registered capabilities.
-        const evidenceDigest = progress?.latestResultId ? context.resultStore.getResult(progress.latestResultId).storage.sha256 : undefined;
+        const currentTests = getExecutionLedger(runId)?.verification?.evidence.find(check => check.criterionId === "acceptance:validate-written-code" && check.status === "passed");
+        const repairDelivery = !!progress?.failure && changedPaths().length > 0 && !agentDeliveryGap(task, context, changedPaths()) && currentTests?.revision === captureAgentVerificationManifest(context.workspaceRoot).sha256 && currentTests.evidence.length > 0 && currentTests.evidence.every(ref => ref.kind === "result" && context.resultStore!.verifyIntegrity(ref.id).valid);
+        const evidenceDigest = repairDelivery ? hash([currentTests!.revision, currentTests!.evidence]) : progress?.latestResultId ? context.resultStore.getResult(progress.latestResultId).storage.sha256 : undefined;
         const verbatimPageComplete = !pending.some(item => item.acceptance.some(check => check.operation === "verbatim_source")) || packet.observedSource?.endByte === packet.observedSource?.sizeBytes;
         const inspectionDelivery = verbatimPageComplete && packet.observedSource && evidenceDigest && progress?.deliveryEvidenceDigest !== evidenceDigest && pending.every(item => ["inspect", "deliver", "preserve"].includes(item.kind)) && !pending.some(item => item.acceptance.some(check => check.kind === "execution"));
-        if (inspectionDelivery) {
+        if (evidenceDigest && (inspectionDelivery || repairDelivery && progress?.deliveryEvidenceDigest !== evidenceDigest)) {
           updateAgentProgress(runId, state => { state.deliveryEvidenceDigest = evidenceDigest; });
-          const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: "The host has obtained source evidence. Propose the requested answer from the supplied requirements and observed content. Do not request or perform more tools in this delivery step. For verbatim_source checks, quote the complete observed source in a fenced block and preserve its whitespace and line endings. Do not claim complete coverage beyond the supplied evidence. The host will review every requirement separately." }, packet.messages[1]], [], { runId, maxTokens: 768, signal: scope.signal });
+          const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: repairDelivery ? "The host has verified the saved repair with the listed existing tests. Propose the requested explanation from the supplied requirements, changes, and evidence. Do not request tools in this delivery step. A test pass covers only its recorded scope. State unresolved obligations and unavailable checks. The host will review each requirement before completion." : "The host has obtained source evidence. Propose the requested answer from the supplied requirements and observed content. Do not request or perform more tools in this delivery step. For verbatim_source checks, quote the complete observed source in a fenced block and preserve its whitespace and line endings. Do not claim complete coverage beyond the supplied evidence. The host will review every requirement separately." }, packet.messages[1]], [], { runId, maxTokens: 768, signal: scope.signal });
           assertRuntimeActive();
           if (!answer.ok || answer.value.finishReason === "length" || answer.value.tool_calls?.length || !answer.value.content?.trim()) return stop("delivery_unavailable", answer.ok ? "The delivery proposal was incomplete or requested another action." : answer.error.message);
           const answerDigest = hash(answer.value.content);
@@ -180,7 +200,7 @@ export class AgentTaskRunner {
           const admitted = getExecutionLedger(runId)?.agentAdmissions.at(-1);
           if (admitted?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push(...packet.observedSources.map(source=>({...source,requestId:admitted.requestId}))); });
           context.resultStore.registerResult({ type: "text", status: "complete", origin: "model_derived", producer: { tool: "agent_delivery_proposal", callId: randomUUID() }, summary: "Proposed answer from observed evidence", payload: answer.value.content, sources: [] });
-          const reviewed = await reviewAgentTaskCoverage(task, context, modelId, [], answer.value.content);
+          const reviewed = await reviewAgentTaskCoverage(task, context, modelId, repairDelivery ? changedPaths() : [], answer.value.content);
           assertRuntimeActive();
           if (reviewed.ok) { const completed = stop("requirements_satisfied", "", "completed"); return { ...completed, text: `${answer.value.content}\n\n${completed.text}` }; }
           updateAgentProgress(runId, state => { state.feedback = reviewed.detail; if (reviewed.next === "delivery") state.deliveryEvidenceDigest = undefined; });
@@ -252,11 +272,8 @@ export class AgentTaskRunner {
           const changed = changedPaths(), gap = agentDeliveryGap(task,context,changed);
           if (gap) {updateAgentProgress(runId,state=>{state.feedback=gap;});continue;}
           if (needsTests || changed.some(isCodeVerificationPath)) {
-            const baseline = getExecutionLedger(runId)?.agentProgress?.baseline;
-            if (baseline?.status === "stop" && baseline.environmentKey === environmentKey) return stop("checks_unavailable", baseline.detail);
-            const checked = await runAgentVerificationStage({ context, dispatcher, changedPaths: progress?.fullSuite ? [] : changed, authorize });
-            clearApprovals();
-            if (checked.action === "repair") { updateAgentProgress(runId, state => { state.feedback = checked.detail.slice(0, 10000); }); await obtainAgentFailureSources(context,dispatcher,checked.sourceHints); continue; }
+            const checked = await verifyChanges();
+            if (checked.action === "repair") continue;
             if (!["passed", "skipped"].includes(checked.action)) return stop("checks_unavailable", checked.detail, checked.action === "cancelled" ? "cancelled" : "partial");
           }
           const complete = await reviewAgentTaskCoverage(task, context, modelId, changed, String(call.arguments.text));

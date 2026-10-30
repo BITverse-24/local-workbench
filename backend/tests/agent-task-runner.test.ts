@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentTaskRunner } from "../src/main/agent/agent-task-runner.js";
+import { selectAgentFailureStep } from "../src/main/agent/source-evidence.js";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { countLocalAgentRequest } from "../src/main/gateway/local-token-counter.js";
 import * as server from "../src/main/gateway/lmstudio-token-counter.js";
@@ -60,6 +61,7 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
     if (!answer) throw new Error("Unexpected model generation");
     const input = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload });
     let content = answer(payload);
+    if (String(payload.messages?.[0]?.content).startsWith("The host has verified the saved repair") && typeof content === "object" && content !== null && (content as any).tool_calls?.[0]?.name === "finish") content = (content as any).tool_calls[0].arguments.text;
     const shapes=payload.response_format?.json_schema?.schema?.properties?.tool_calls?.items?.anyOf;
     const directProposal=payload.response_format?.json_schema?.name === "agent_tool_arguments";
     if((directProposal || shapes?.length === 1 && shapes[0].properties.name.enum[0] === "propose_repair") && typeof content === "object" && content !== null){
@@ -285,7 +287,7 @@ describe("Agent v3 task host loop", () => {
     const {result,runId,approve,emit}=await run(request,false,undefined,undefined,workspace);
     expect(result.outcome,result.text+JSON.stringify(emit.mock.calls.filter(([event])=>event.type === "tool_result"))).toBe("completed");
     const ledger=getExecutionLedger(runId)!;
-    expect(ledger.agentProgress?.actions.map(action=>action.operation)).toEqual(["edit_file","finish"]);
+    expect(ledger.agentProgress?.actions.map(action=>action.operation)).toEqual(["edit_file"]);
     expect(ledger.agentProgress?.sourceResultIds).toHaveLength(2);
     expect(ledger.agentProgress?.reads.map(read=>read.path)).toContain("value.cjs");
     expect(ledger.verification?.evidence).toContainEqual(expect.objectContaining({criterionId:"baseline:project-tests",status:"failed"}));
@@ -293,6 +295,9 @@ describe("Agent v3 task host loop", () => {
     expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation.replace('throw new Error("wrong value");','return "ready";'));
     expect(readFileSync(path.join(workspace,"value.test.cjs"),"utf8")).toBe(test);
     expect(approve).toHaveBeenCalledTimes(3);
+    // A historical pass cannot retire failure context for a later source revision.
+    writeFileSync(path.join(workspace,"value.cjs"),implementation);
+    expect(selectAgentFailureStep({runId,workspaceRoot:workspace} as any)?.phase).toBe("address_failure");
   });
   it("keeps one failure module in focus, follows failed-test imports, then verifies both saved edits",async()=>{
     const workspace=path.join(root,"project");mkdirSync(workspace);
@@ -317,17 +322,54 @@ describe("Agent v3 task host loop", () => {
       expect(input.selectedSources.pages.some((page:any)=>page.path === "storage.cjs")).toBe(false);
       return edit("filters.cjs",filters,"=> items;","=> items.filter(item => item.status === status);");
     },payload=>{
-      const input=packetState(payload.messages[1].content);expect(input.currentStep).toMatchObject({phase:"check_changes"});
+      const input=packetState(payload.messages[1].content);
+      expect(input.currentStep).toBeUndefined();
+      expect(input.checkEvidence).toContainEqual(expect.objectContaining({criterionId:"acceptance:validate-written-code",status:"passed"}));
+      expect(payload.messages[0].content).toContain("The host has verified the saved repair");
+      expect(payload.response_format).toBeUndefined();
       return {tool_calls:[{name:"finish",arguments:{text:"Both module defects are repaired. The host must verify the existing suite."}}]};
     },payload=>{const input=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:input.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Existing tests failed before the saved edits and passed after them."}))};}];
     const {result,runId,approve}=await run(request,false,undefined,undefined,workspace);
     expect(result.outcome,result.text).toBe("completed");expect(approve).toHaveBeenCalledTimes(4);
     const ledger=getExecutionLedger(runId)!;
-    expect(ledger.agentProgress?.actions.map(action=>action.operation)).toEqual(["edit_file","edit_file","finish"]);
+    expect(ledger.agentProgress?.actions.map(action=>action.operation)).toEqual(["edit_file","edit_file"]);
     expect(ledger.agentProgress?.sourceResultIds).toHaveLength(4);
     expect(ledger.agentProgress?.failure?.targets.filter(target=>target.role === "implementation").map(target=>target.path)).toEqual(["storage.cjs","filters.cjs"]);
     expect(ledger.verification?.repairCount).toBe(0);expect(ledger.verification?.evidence.find(check=>check.criterionId === "acceptance:validate-written-code")?.status).toBe("passed");
     expect(readFileSync(path.join(workspace,"storage.test.cjs"),"utf8")).toBe(storageTest);expect(readFileSync(path.join(workspace,"filters.test.cjs"),"utf8")).toBe(filtersTest);
+  });
+  it("runs checks after each changed failure candidate and stops after two unsuccessful repair cycles",async()=>{
+    const {workspace,implementation}=failingWorkspace();
+    let current=implementation;
+    replies=[()=>interpretation("execute","Reproduce and repair value.cjs"),...[1,2,3].map(index=>(payload:any)=>{
+      const state=packetState(payload.messages[1].content);
+      expect(state.currentStep.phase).toBe("address_failure");
+      expect(state.feedback.text).toContain(index === 1 ? "Baseline failures" : "Correct the saved code");
+      const next=`exports.readValue = () => { throw new Error("failed repair ${index}"); };\n`;
+      const proposal={tool_calls:[{name:"edit_file",arguments:{path:"value.cjs",expected_digest:createHash("sha256").update(current).digest("hex"),replacements:[{old:current,new:next}]}}]};
+      current=next;return proposal;
+    })];
+    const {result,runId,approve}=await run("Reproduce and repair value.cjs",false,undefined,undefined,workspace);
+    expect(result.outcome).toBe("partial");expect(result.text).toContain("two repair cycles");
+    const ledger=getExecutionLedger(runId)!;
+    expect(ledger.agentProgress?.actions.map(action=>action.operation)).toEqual(["edit_file","edit_file","edit_file"]);
+    expect(ledger.verification?.repairCount).toBe(2);
+    expect(ledger.verification?.attempts).toHaveLength(4);
+    expect(approve).toHaveBeenCalledTimes(7);
+    expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(current);
+    expect(replies).toHaveLength(0);
+  });
+  it("honors rejected host-scheduled tests before requesting delivery",async()=>{
+    const {workspace,implementation}=failingWorkspace();let commandApprovals=0;
+    replies=[()=>interpretation("execute","Reproduce and repair value.cjs"),()=>({tool_calls:[{name:"edit_file",arguments:{path:"value.cjs",expected_digest:createHash("sha256").update(implementation).digest("hex"),replacements:[{old:implementation,new:'exports.readValue = () => "ready";\n'}]}}]})];
+    const {result,runId}=await run("Reproduce and repair value.cjs",false,async preview=>{
+      const operation=JSON.parse(preview.split("\n\n")[0]);
+      return operation.operation !== "run_command" || ++commandApprovals === 1;
+    },undefined,workspace);
+    expect(result.outcome).toBe("cancelled");expect(result.text).toContain("declined");
+    expect(commandApprovals).toBe(2);
+    expect(getExecutionLedger(runId)?.agentProgress?.deliveryAttempts).toHaveLength(0);
+    expect(replies).toHaveLength(0);
   });
   it("can show all registered tools for one repair action without granting mutation authority",async()=>{
     const {workspace,implementation}=failingWorkspace();writeFileSync(path.join(workspace,"extra.txt"),"needed context\n");

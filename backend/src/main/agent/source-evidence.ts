@@ -5,7 +5,7 @@ import type { AgentRequirement, SourceReadReceipt } from "../../shared/contracts
 import type { ToolExecutionContext } from "../tools/types.js";
 import { getExecutionLedger, updateAgentProgress } from "../run/execution-ledger.js";
 import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js";
-import { isAgentTestPath, type AgentFailureLocation } from "./test-verification.js";
+import { captureAgentVerificationManifest, isAgentTestPath, type AgentFailureLocation } from "./test-verification.js";
 import type { ToolDispatcher } from "./tool-dispatcher.js";
 import { assertRuntimeActive } from "../run/runtime-scope.js";
 import { sourcePageCursor } from "./workspace-actions.js";
@@ -66,7 +66,7 @@ export async function obtainAgentFailureSources(context: ToolExecutionContext, d
 export function selectAgentFailureStep(context:ToolExecutionContext){
   const ledger=getExecutionLedger(context.runId),failure=ledger?.agentProgress?.failure;
   if(!failure)return;
-  const accepted=ledger.verification?.evidence.find(check=>check.criterionId === "acceptance:validate-written-code" && check.status === "passed");
+  const accepted=ledger.verification?.evidence.find(check=>check.criterionId === "acceptance:validate-written-code" && check.status === "passed" && check.revision === captureAgentVerificationManifest(context.workspaceRoot).sha256);
   if(accepted)return;
   const unchanged=failure.targets.filter(target=>{
     try{return fileDigest(readAgentSourceBytes(context.workspaceRoot,target.path)) === target.digest;}catch{return false;}
