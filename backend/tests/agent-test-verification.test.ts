@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, chmodSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { agentFailureLocations, discoverAgentTestPlans, createAgentVerificationRequest, parseAgentTestReport, assessAgentTestExecution, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, type AgentTestExecutionRequest } from "../src/main/agent/test-verification.js";
-import { runCommand } from "../src/main/harness/tools/run-command.js";
+import { agentTestEnvironmentKey, captureCommandWorkspaceDigest, commandApprovalDigest, runCommand } from "../src/main/harness/tools/run-command.js";
+import { withRuntimeScope } from "../src/main/run/runtime-scope.js";
 import { MutationPolicyGuard } from "../src/main/harness/policy-guard.js";
 import { executeProcess } from "../src/main/tools/child-process.js";
 import { ToolDispatcher } from "../src/main/agent/tool-dispatcher.js";
@@ -126,6 +127,51 @@ describe("Agent existing-test verification", () => {
     expect(assessAgentTestExecution({ ...evidence, reason: "test_failure" })).toMatchObject({ status: "failed", fallbackAllowed: false });
     expect(assessAgentTestExecution({ ...evidence, phase: "full" }).fallbackAllowed).toBe(false);
     expect(assessAgentTestExecution({ ...evidence, executed: 1, failed: 1, reason: "tested_inputs_changed" })).toMatchObject({ status: "unverified", fallbackAllowed: false });
+  });
+  it("invalidates a missing executable when it appears on an unchanged PATH",()=>{
+    const bin=path.join(root,"tools");mkdirSync(bin);vi.stubEnv("PATH",bin);
+    try {
+      const before=agentTestEnvironmentKey(root);
+      save("tools/node","#!/bin/sh\necho v22.0.0\n");chmodSync(path.join(bin,"node"),0o700);
+      const installed=agentTestEnvironmentKey(root);expect(installed).not.toBe(before);
+      expect(agentTestEnvironmentKey(root)).toBe(installed);
+      chmodSync(path.join(bin,"node"),0o600);expect(agentTestEnvironmentKey(root)).not.toBe(installed);
+    } finally {vi.unstubAllEnvs();}
+  });
+  it.each([true,false])("probes runtimes in the chosen test launch and does not launch tests when a tool is missing: isolated=%s",async isolated=>{
+    fixture();const request=createAgentVerificationRequest(plan()),approval={workspaceDigest:captureCommandWorkspaceDigest(root)};
+    const guard=new MutationPolicyGuard({strict:true});
+    guard.grantScope({runId:"run",operation:"run_command",command:request.command,operationDigest:commandApprovalDigest(request.command,approval),allowUnisolated:true});
+    const calls:Array<{command:string;binary:string;env:NodeJS.ProcessEnv}>=[];
+    vi.mocked(executeProcess).mockImplementation(async(binary,args,options)=>{
+      const command=String(args.at(-1));calls.push({command,binary,env:options.env!});
+      if(command === "printf WORKBENCH_ISOLATED") {if(isolated)return {stdout:"WORKBENCH_ISOLATED",stderr:""};throw new Error("isolation unavailable");}
+      if(command === "node --version")return {stdout:"v22.0.0",stderr:""};
+      if(command === "npm --version")throw new Error("npm not found");
+      throw new Error("The test command must not run");
+    });
+    const result=await withRuntimeScope({runId:"run",mode:"agent",agentPhase:"actions",signal:new AbortController().signal},()=>runCommand(root,request.command,5000,{guard,runId:"run",approval},request));
+    expect(result.verification).toMatchObject({executed:0,failed:0,reason:"test_runtime_unavailable",runtimeProbes:[{tool:"node",available:true,version:"v22.0.0"},{tool:"npm",available:false}]});
+    expect(assessAgentTestExecution(result.verification)).toMatchObject({status:"unverified",reason:"test_runtime_unavailable"});
+    expect(calls.some(call=>call.command === request.command)).toBe(false);
+    const probes=calls.filter(call=>call.command.endsWith("--version"));
+    expect(probes).toHaveLength(2);expect(probes[0].binary).toBe(probes[1].binary);expect(probes[0].env).toEqual(probes[1].env);
+    expect(result.changes).toEqual([]);expect(result.backupPaths).toEqual([]);
+  });
+  it("rechecks command approval after runtime probes and before tests",async()=>{
+    fixture();const request=createAgentVerificationRequest(plan()),approval={workspaceDigest:captureCommandWorkspaceDigest(root)};
+    const guard=new MutationPolicyGuard({strict:true});
+    guard.grantScope({runId:"run",operation:"run_command",command:request.command,operationDigest:commandApprovalDigest(request.command,approval),allowUnisolated:true});
+    const commands:string[]=[];
+    vi.mocked(executeProcess).mockImplementation(async(_binary,args)=>{
+      const command=String(args.at(-1));commands.push(command);
+      if(command === "printf WORKBENCH_ISOLATED")return {stdout:"WORKBENCH_ISOLATED",stderr:""};
+      if(command === "node --version")return {stdout:"v22.0.0",stderr:""};
+      if(command === "npm --version") {guard.revokeRunScopes("run");return {stdout:"10.0.0",stderr:""};}
+      throw new Error("The test command must not run");
+    });
+    await expect(withRuntimeScope({runId:"run",mode:"agent",agentPhase:"actions",signal:new AbortController().signal},()=>runCommand(root,request.command,5000,{guard,runId:"run",approval},request))).rejects.toThrow("approval was revoked");
+    expect(commands).not.toContain(request.command);
   });
   it("captures reports before cleanup and discards test outputs without publication approval", async () => {
     fixture(); const request = createAgentVerificationRequest(plan(["src/value.test.ts"]));

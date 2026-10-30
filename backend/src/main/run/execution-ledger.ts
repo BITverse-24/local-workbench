@@ -62,7 +62,7 @@ const agentProgressSchema = z.object({
   }).strict().optional(),
   expandedToolFocus: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   scopeCorrectionUsed: z.boolean().default(false),
-  baseline: z.object({ status: z.string(), detail: z.string(), environmentKey: z.string() }).optional(),
+  baseline: z.object({ status: z.string(), detail: z.string(), environmentKey: z.string(), reason:z.string().optional() }).optional(),
   stopReason: z.string().optional(), fullSuite: z.boolean().default(false),
 });
 const ledgerSchema = z.object({

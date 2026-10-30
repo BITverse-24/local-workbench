@@ -3,7 +3,7 @@ import { findBubblewrap } from "../../tools/python-runtime.js";
 import { MACOS_TOOL_SELECTORS, macosReadRules } from "../../tools/macos-sandbox.js";
 import { executeProcess } from "../../tools/child-process.js";
 import { assertRuntimeActive, currentRuntimeScope } from "../../run/runtime-scope.js";
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, lstatSync, readFileSync, readlinkSync, writeFileSync, rmSync, realpathSync, chmodSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, lstatSync, statSync, readFileSync, readlinkSync, writeFileSync, rmSync, realpathSync, chmodSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,7 +11,7 @@ import { resolveSafe, PermissionError } from "../path-guard.js";
 import { writeFile } from "./write-file.js";
 import { deleteFile } from "./delete-file.js";
 import type { MutationPolicyGuard } from "../policy-guard.js";
-import { agentManifestDigest, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, parseAgentTestReport, type AgentTestExecutionEvidence, type AgentTestExecutionRequest } from "../../agent/test-verification.js";
+import { agentManifestDigest, agentRuntimeProbeCommand, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, parseAgentTestReport, type AgentTestExecutionEvidence, type AgentTestExecutionRequest } from "../../agent/test-verification.js";
 
 export interface CommandResult {
   stdout: string;
@@ -173,6 +173,29 @@ function directLaunch(scratch: string, command: string, extraEnv: NodeJS.Process
   return { binary: "/bin/sh", args: ["-c", command], env };
 }
 
+/** Observe executable identities, including absent candidates. Installing into the
+ * same PATH must invalidate an earlier missing-tool result. This is not a probe
+ * or a grant: execution still tests the selected launch environment below. */
+export function agentTestEnvironmentKey(workspaceRoot:string): string {
+  const launches=[directLaunch(tmpdir(),"")];
+  try {launches.push(sandboxLaunch(workspaceRoot,tmpdir(),""));} catch {}
+  const candidates=new Set<string>([process.execPath]);
+  if(process.env.PYTHON && path.isAbsolute(process.env.PYTHON))candidates.add(process.env.PYTHON);
+  for(const launch of launches) {
+    candidates.add(launch.binary);
+    for(const directory of (launch.env.PATH ?? "").split(path.delimiter).filter(Boolean)) {
+      for(const tool of ["node","npm","pnpm","yarn","python3","python","pytest"]) {
+        for(const extension of process.platform === "win32" ? (launch.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";") : [""])candidates.add(path.resolve(workspaceRoot,directory,tool+extension));
+      }
+    }
+  }
+  const files=[...candidates].sort().map(filename=>{
+    try {const target=realpathSync(filename),stat=statSync(target);return [filename,target,stat.dev,stat.ino,stat.mode,stat.size,stat.mtimeMs,stat.ctimeMs];}
+    catch {return [filename,null];}
+  });
+  return createHash("sha256").update(JSON.stringify([process.platform,process.execPath,process.env.PYTHON,process.env.WORKBENCH_USE_MAC_SANDBOX,launches.map(launch=>launch.env),files])).digest("hex");
+}
+
 /** Probe fixed code only. Select fallback before, never after, running user code. */
 async function selectCommandLaunch(workspace: string, scratch: string, command: string, extraEnv: NodeJS.ProcessEnv = {}) {
   try {
@@ -256,6 +279,30 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
     currentRuntimeScope()?.observe?.({ commandIsolationStatus: selected.status,
       isolationStatus: selected.status === "os_isolated" ? "os_isolated" : "approved_uncontained" });
     let stdout = "", stderr = "", exitCode = 0, timedOut = false;
+    const runtimeProbes:NonNullable<AgentTestExecutionEvidence["runtimeProbes"]>=[];
+    if(verification && currentRuntimeScope()?.agentPhase === "actions") {
+      for(const tool of verification.runtimeTools ?? []) {
+        assertRuntimeActive();policy?.assertAuthority?.();
+        const probeCommand=agentRuntimeProbeCommand(tool);
+        // Reuse the exact chosen isolation/fallback and environment. Do not
+        // switch launch modes because a runtime or package manager is missing.
+        const probe=selected.status === "os_isolated" ? sandboxLaunch(work,scratch,probeCommand) : directLaunch(scratch,probeCommand);
+        try {
+          const result=await executeProcess(probe.binary,probe.args,{cwd:work,env:probe.env,windowsVerbatimArguments:probe.windowsVerbatimArguments,timeout:5000,maxBuffer:4096});
+          const version=(result.stdout || result.stderr).trim();
+          if(!version || !/\d+\.\d+/.test(version))throw new Error("The runtime returned no valid version.");
+          runtimeProbes.push({tool,available:true,version:version.slice(0,500)});
+        } catch(error) {
+          assertRuntimeActive();policy?.assertAuthority?.();
+          const detail=`The test runtime ${tool} is unavailable in the app's command environment. ${String(error).slice(0,700)}`;
+          runtimeProbes.push({tool,available:false,detail});
+          return {stdout:"",stderr:detail,exitCode:1,timedOut:false,durationMs:Date.now()-started,changes:[],backupPaths:[],isolationStatus:selected.status,isolationMessage:selected.message,
+            verification:{planId:verification.planId,command,runner:verification.runner,phase:verification.phase,manifestSha256:verification.workspaceManifestSha256,sourceManifest:beforeFiles,exitCode:1,timedOut:false,executed:0,failed:0,skipped:0,testFiles:[],reason:"test_runtime_unavailable",detail,runtimeProbes}};
+        }
+      }
+    }
+    assertRuntimeActive();policy?.assertAuthority?.();
+    if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", authorization) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before execution.");
     try {
       ({stdout, stderr} = await executeProcess(launch.binary, launch.args, { cwd: work, env: launch.env, windowsVerbatimArguments: launch.windowsVerbatimArguments, timeout: timeoutMs, maxBuffer: 1024 * 1024 }));
     } catch (error: any) {
@@ -270,7 +317,7 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
       if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", authorization) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before verification completed.");
       const evidence: AgentTestExecutionEvidence = { planId: verification.planId, command, runner: verification.runner, phase: verification.phase,
         manifestSha256: verification.workspaceManifestSha256, sourceManifest: beforeFiles, exitCode, timedOut, executed: 0, failed: 0, skipped: 0,
-        testFiles: [], isolationStatus: selected.status,
+        testFiles: [], isolationStatus: selected.status, ...(runtimeProbes.length ? {runtimeProbes} : {}),
         ...(verification.successMarker ? { successMarker: verification.successMarker, successMarkerObserved: stdout.split(/\r?\n/).some(line => line.trim() === verification.successMarker) } : {}) };
       result.verification = evidence;
       try {

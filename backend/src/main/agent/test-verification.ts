@@ -33,13 +33,16 @@ export interface AgentTestPlan {
   changedPaths: string[]; changedTestPaths: string[]; sourceManifest: Record<string, string>;
   manifestSha256: string; initialPhase: AgentTestPhase; relatedCommand?: string; fullCommand: string;
   reportFormat: "json" | "junit" | "tap" | "unittest"; testFiles: string[];
+  runtimeTools?: AgentTestRuntimeTool[];
 }
+export type AgentTestRuntimeTool = "node" | "npm" | "pnpm" | "yarn" | "python3" | "pytest";
 /** Only the controller supplies this context. It is never a model tool argument. */
 export interface AgentTestExecutionRequest {
   planId: string; command: string; phase: AgentTestPhase; runner: AgentTestRunner; suiteRoot: string;
   workspaceManifestSha256: string; sourceManifest: Record<string, string>; changedTestPaths: string[];
   reportFormat: AgentTestPlan["reportFormat"]; testFiles: string[];
   successMarker?: string;
+  runtimeTools?: AgentTestRuntimeTool[];
 }
 export interface AgentTestExecutionEvidence {
   planId: string; command: string; phase: AgentTestPhase; runner: AgentTestRunner;
@@ -50,6 +53,7 @@ export interface AgentTestExecutionEvidence {
   failureLocations?: AgentFailureLocation[];
   failureLocationsComplete?: boolean;
   successMarker?: string; successMarkerObserved?: boolean;
+  runtimeProbes?: Array<{tool:AgentTestRuntimeTool;available:boolean;version?:string;detail?:string}>;
 }
 export interface AgentFailureLocation { path: string; line: number }
 export type AgentTestDiscovery = { ok: true; plans: AgentTestPlan[] } | { ok: false; reason: string; detail: string };
@@ -160,6 +164,7 @@ export function discoverAgentTestPlans(input: { workspaceRoot: string; changedPa
       const relativeChanged = changedPaths.map(file => slash(path.posix.relative(dir, file)));
       const configOrShared = !changedPaths.length || changedPaths.some(file => !/\.(?:[cm]?[jt]sx?|py|vue|svelte)$/i.test(file) || /(?:^|\/)(?:shared|common)\/|(?:config|setup)\.[^/]+$/i.test(file));
       let runner: AgentTestRunner | undefined, full = "", related: string | undefined, configuredExplicit = false, format: AgentTestPlan["reportFormat"] = "json";
+      let runtimeTools:AgentTestRuntimeTool[]=[];
       const packageText = readSmall(root, path.posix.join(dir, "package.json"));
       if (packageText) {
         const pkg = JSON.parse(packageText);
@@ -169,6 +174,7 @@ export function discoverAgentTestPlans(input: { workspaceRoot: string; changedPa
         runner = wrapperRunner(root, dir, script);
         const manager = explicitScript?.[1] ?? (String(pkg.packageManager ?? "").split("@")[0] || (existsSync(resolveSafe(root, path.posix.join(dir, "pnpm-lock.yaml"))) ? "pnpm" : existsSync(resolveSafe(root, path.posix.join(dir, "yarn.lock"))) ? "yarn" : "npm"));
         if (!["npm", "pnpm", "yarn"].includes(manager)) runner = undefined;
+        else runtimeTools=["node",manager as AgentTestRuntimeTool];
         configuredExplicit = Boolean(explicitScript && runner);
         const base = explicitScript ? `${input.userCommand}${manager === "yarn" || /\s--(?:\s|$)/.test(input.userCommand!) ? "" : " --"}` : `${manager} test${manager === "yarn" ? "" : " --"}`;
         const report = reportArgument();
@@ -191,22 +197,27 @@ export function discoverAgentTestPlans(input: { workspaceRoot: string; changedPa
         const config = ["pyproject.toml", "pytest.ini", "setup.cfg", "tox.ini"].map(name => readSmall(root, path.posix.join(dir, name)) ?? "").join("\n");
         if (/pytest|\[tool\.pytest|\[pytest\]/.test(config) && testFiles.some(file => file.endsWith(".py"))) {
           runner = "pytest"; format = "junit"; full = `${pythonCommand()} -B -m pytest --junitxml=${reportArgument()} -o junit_family=xunit1`;
+          runtimeTools=["python3"];
         } else {
           const existing = testFiles.filter(file => file.endsWith(".py") && /\bunittest\b/.test(readSmall(root, file) ?? ""));
           const directory = existing.length ? path.posix.dirname(path.posix.relative(dir, existing[0])) : undefined;
           if (directory && existing.every(file => path.posix.relative(dir, file).startsWith(directory === "." ? "" : `${directory}/`))) {
             runner = "unittest"; format = "unittest"; full = unittestCommand(directory);
+            runtimeTools=["python3"];
           }
         }
       }
       if (input.userCommand && runner === "pytest" && /^(?:python[0-9.]*\s+(?:-B\s+)?-m\s+pytest|pytest)(?:\s+[^;&|\r\n]*)?$/.test(input.userCommand)) {
         full = `${input.userCommand} --junitxml=${reportArgument()} -o junit_family=xunit1`; related = undefined; configuredExplicit = true;
+        runtimeTools=input.userCommand.startsWith("pytest") ? ["pytest"] : ["python3"];
       }
       if (input.userCommand && /^node\s+--test(?:\s+[^;&|\r\n]*)?$/.test(input.userCommand) && testFiles.some(file => /(?:require\(['"]node:test['"]\)|from\s+['"]node:test['"])/.test(readSmall(root, file) ?? ""))) {
         runner = "node"; format = "unittest"; full = input.userCommand; related = undefined; configuredExplicit = true;
+        runtimeTools=["node"];
       }
       if (input.userCommand && !configuredExplicit) {
         // Custom commands must already select a machine report. Do not infer success from their words.
+        runtimeTools=[];
         if (/--junitxml(?:=|\s)|--reporter[=\s]+junit/.test(input.userCommand) && input.userCommand.includes("WORKBENCH_TEST_REPORT")) { runner = "junit"; format = "junit"; full = input.userCommand; related = undefined; }
         else if (/--(?:test-)?reporter[=\s]+tap/.test(input.userCommand)) { runner = "tap"; format = "tap"; full = input.userCommand; related = undefined; }
         else return { ok: false, reason: "unsupported_test_setup", detail: "The specified test command has no supported machine report. Use the existing setup's JSON, JUnit, or TAP reporter." };
@@ -214,7 +225,7 @@ export function discoverAgentTestPlans(input: { workspaceRoot: string; changedPa
       if (!runner || !full || !testFiles.length) return { ok: false, reason: "no_usable_test_setup", detail: `No usable existing test setup was found in ${dir}. Tests were not created or substituted.` };
       plans.push({ id: hash(JSON.stringify({ suiteRoot: dir, runner, changedPaths, full, related })), workspaceRoot: root, suiteRoot: dir, runner, changedPaths, changedTestPaths, sourceManifest: manifest.files,
         manifestSha256: manifest.sha256, initialPhase: related ? "related" : "full", relatedCommand: related ? prefix(dir, related) : undefined,
-        fullCommand: prefix(dir, full), reportFormat: format, testFiles });
+        fullCommand: prefix(dir, full), reportFormat: format, testFiles, runtimeTools });
     }
     return { ok: true, plans };
   } catch (error) {
@@ -225,7 +236,13 @@ export function discoverAgentTestPlans(input: { workspaceRoot: string; changedPa
 export function createAgentVerificationRequest(plan: AgentTestPlan, phase: AgentTestPhase = plan.initialPhase): AgentTestExecutionRequest {
   return { planId: plan.id, command: phase === "related" && plan.relatedCommand ? plan.relatedCommand : plan.fullCommand, phase,
     runner: plan.runner, suiteRoot: plan.suiteRoot, workspaceManifestSha256: plan.manifestSha256, sourceManifest: plan.sourceManifest,
-    changedTestPaths: plan.changedTestPaths, reportFormat: plan.reportFormat, testFiles: plan.testFiles };
+    changedTestPaths: plan.changedTestPaths, reportFormat: plan.reportFormat, testFiles: plan.testFiles, runtimeTools:plan.runtimeTools };
+}
+/** Fixed host probes. User source and model arguments cannot supply probe commands. */
+export function agentRuntimeProbeCommand(tool:AgentTestRuntimeTool): string {
+  if(tool === "python3")return `${pythonCommand()} --version`;
+  if(!["node","npm","pnpm","yarn","pytest"].includes(tool))throw new Error("Unknown test runtime probe.");
+  return `${tool} --version`;
 }
 export function createAgentVerificationCall(request: AgentTestExecutionRequest, id = randomUUID()): AgentToolCall {
   return { id, name: "run_command", arguments: { command: request.command } };

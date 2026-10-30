@@ -23,7 +23,7 @@ import { runAgentVerificationStage } from "./verification-stage.js";
 import { captureAgentVerificationManifest, isCodeVerificationPath } from "./test-verification.js";
 import { extractVerificationSkipBasis, recordVerificationTermination, recordVerificationUserSkip } from "../run/verification-controller.js";
 import { agentDeliveryGap, reviewAgentTaskCoverage } from "./requirement-review.js";
-import { captureCommandWorkspaceDigest, commandApprovalDigest, COMMAND_FALLBACK_DISCLOSURE } from "../harness/tools/run-command.js";
+import { agentTestEnvironmentKey, captureCommandWorkspaceDigest, commandApprovalDigest, COMMAND_FALLBACK_DISCLOSURE } from "../harness/tools/run-command.js";
 import { normalizeRunCommandArgs } from "../tools/workspace-tools.js";
 import { agentDependencyConstraints } from "./dependency-constraint.js";
 
@@ -149,23 +149,28 @@ export class AgentTaskRunner {
         }
         return true;
       };
-      const environmentKey = hash([process.platform, process.execPath, process.env.PATH]);
+      const environmentKey = (reason?:string) => hash([agentTestEnvironmentKey(context.workspaceRoot),
+        reason === "test_runtime_unavailable" ? null : captureAgentVerificationManifest(context.workspaceRoot).sha256,
+        // An installed interpreter package can change outside PATH. A user-initiated
+        // resume permits a fresh check; the same run will not retry automatically.
+        reason === "test_dependency_unavailable" ? getExecutionLedger(runId)?.resumeCount ?? 0 : null]);
       const hasCodeProject = ["package.json", "pyproject.toml", "pytest.ini", "Cargo.toml", "pom.xml"].some(file => existsSync(resolveSafe(context.workspaceRoot, file)));
       const needsTests = task.snapshot.requirements.some(item => item.state === "active" && (item.kind === "execute" || item.acceptance.some(check => check.kind === "execution") || (item.kind === "change" && hasCodeProject)));
       const changedPaths = () => agentAppliedChanges(context).map(item=>item.path);
       const verifyChanges = async () => {
         const progress = getExecutionLedger(runId)?.agentProgress;
-        if (progress?.baseline?.status === "stop" && progress.baseline.environmentKey === environmentKey) return { action: "stop" as const, detail: progress.baseline.detail };
+        if (progress?.baseline?.status === "stop" && progress.baseline.environmentKey === environmentKey(progress.baseline.reason)) return { action: "stop" as const, detail: progress.baseline.detail };
         const checked = await runAgentVerificationStage({ context, dispatcher, changedPaths: progress?.fullSuite ? [] : changedPaths(), authorize });
         clearApprovals();
         updateAgentProgress(runId, state => { state.feedback = checked.detail.slice(0, 10000); });
         if (checked.action === "repair") await obtainAgentFailureSources(context, dispatcher, checked.sourceHints);
         return checked;
       };
-      if (needsTests && !getExecutionLedger(runId)?.agentProgress?.baseline) {
+      const savedBaseline=getExecutionLedger(runId)?.agentProgress?.baseline;
+      if (needsTests && (!savedBaseline || savedBaseline.status === "stop" && savedBaseline.environmentKey !== environmentKey(savedBaseline.reason))) {
         const baseline = await runAgentVerificationStage({ context, dispatcher, changedPaths: [], authorize, baseline: true });
         clearApprovals();
-        updateAgentProgress(runId, progress => { progress.baseline = { status: baseline.action, detail: baseline.detail, environmentKey }; progress.feedback = baseline.detail.slice(0, 10000); });
+        updateAgentProgress(runId, progress => { progress.baseline = { status: baseline.action, detail: baseline.detail, environmentKey:environmentKey(baseline.reason),...(baseline.reason ? {reason:baseline.reason} : {}) }; progress.feedback = baseline.detail.slice(0, 10000); });
         if (baseline.action === "cancelled") return stop("approval_denied", baseline.detail, "cancelled");
         if (baseline.action === "repair") await obtainAgentFailureSources(context,dispatcher,baseline.sourceHints);
       }

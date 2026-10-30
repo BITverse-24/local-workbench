@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as childProcesses from "../src/main/tools/child-process.js";
 import { AgentTaskRunner } from "../src/main/agent/agent-task-runner.js";
 import { selectAgentFailureStep } from "../src/main/agent/source-evidence.js";
 import { ModelGateway } from "../src/main/gateway/model-gateway.js";
@@ -782,6 +783,29 @@ describe("Agent v3 task host loop", () => {
     expect(readFileSync(path.join(root, "note.txt"), "utf8")).toBe("saved content\n");
     expect(getExecutionLedger(runId)?.completedOperations.some(item => item.tool === "edit_file")).toBe(true);
     expect(getCurrentAgentTask(chatId)?.snapshot.requirements).toHaveLength(3);
+  });
+  it("permits an approved edit when Node is missing and does not retry the unchanged unavailable test command",async()=>{
+    const {workspace}=failingWorkspace(),text="Repair value.cjs and run existing tests.";
+    const original=childProcesses.executeProcess;
+    const commands:string[]=[];
+    vi.spyOn(childProcesses,"executeProcess").mockImplementation(async(binary,args,options)=>{
+      const command=String(args.at(-1));commands.push(command);
+      if(command === "node --version")throw new Error("node not found");
+      return original(binary,args,options);
+    });
+    const source=readFileSync(path.join(workspace,"value.cjs"),"utf8");
+    replies=[()=>({disposition:"continue",requirements:["change","execute"].map(kind=>({kind,description:kind,source_id:"request",checks:[{description:kind,kind:kind === "execute"?"execution":"review",operation:"semantic",path:null}]})),updates:[],full_suite:false}),
+      ()=>({tool_calls:[{name:"read_file",arguments:{path:"value.cjs"}}]}),
+      ()=>({tool_calls:[{name:"edit_file",arguments:{path:"value.cjs",expected_digest:createHash("sha256").update(source).digest("hex"),replacements:[{old:source,new:"exports.readValue = () => 42;\n"}]}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"Applied the code edit; tests need Node."}}]})];
+    const saved=await run(text,false,async()=>true,undefined,workspace);
+    expect(saved.result.outcome,saved.result.text).toBe("partial");expect(saved.result.stopReason).toBe("checks_unavailable");
+    expect(commands.filter(command=>command === "node --version")).toHaveLength(1);
+    expect(commands.some(command=>command.startsWith("npm test"))).toBe(false);
+    expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe("exports.readValue = () => 42;\n");
+    expect(getExecutionLedger(saved.runId)?.agentProgress?.baseline).toMatchObject({status:"stop",reason:"test_runtime_unavailable"});
+    expect(getExecutionLedger(saved.runId)?.verification?.repairCount).toBe(0);
+    expect(saved.approve).toHaveBeenCalledTimes(2);
   });
   it("carries applied changes into a follow-up without forcing another edit or importing old tests", async () => {
     const text="Read note.txt, replace source with content, and run existing tests.";

@@ -18,6 +18,7 @@ const CRITERION = "acceptance:validate-written-code";
 export interface AgentVerificationStageResult {
   action: "passed" | "skipped" | "repair" | "stop" | "cancelled";
   detail: string;
+  reason?: string;
   sourceHints?: AgentFailureLocation[];
 }
 
@@ -42,7 +43,7 @@ export async function runAgentVerificationStage(input: {
     evidence("unverified", detail);
     recordVerificationTermination(runId, { reason, criterionIds: [CRITERION], detail });
     context.refreshVerificationReport?.();
-    return { action: "stop", detail };
+    return { action: "stop", detail, reason };
   };
   const state = getRunVerificationState(runId);
   if (state?.userSkip) {
