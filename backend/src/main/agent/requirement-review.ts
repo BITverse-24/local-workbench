@@ -135,7 +135,11 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
     if (page && reviewSources.has(page.path) && !changedDigests.has(page.path) && reviewSources.get(page.path) !== page.digest && !results.some(other => { const current = loadAgentSourcePage(context, other.resultId); return current?.path === page.path && current.digest === reviewSources.get(page.path); })) return { ok: false, detail: `Source evidence is stale for ${page.path}. Read its current bytes before delivery.`, next: "source" };
   }
   if (required.some(item => item.kind === "inspect") && !results.some(item => ["read_file", "extract_document", "retrieve_knowledge"].includes(item.producer.tool))) return { ok: false, detail: "Inspection needs saved source evidence." };
-  for (const [path, digest] of changedDigests) if (digestNow(path) !== digest) return { ok: false, detail: `Applied source changed during review: ${path}. Read it again before delivery.`, next: "source" };
+  for (const [path, digest] of changedDigests) {
+    const change=changes.find(item=>item.path === path)!;
+    const current=currentAgentChange(context,change,results);
+    if (!current.ok || current.digest !== digest) return { ok: false, detail: `Applied source changed during review: ${path}. Read it again before delivery.`, next: "source" };
+  }
   const tests = ledger.verification?.evidence.find(item => item.criterionId === "acceptance:validate-written-code");
   if (required.some(item => item.acceptance.some(check => check.kind === "execution")) && tests?.status !== "passed" && !ledger.verification?.userSkip) return { ok: false, detail: "Mandatory executable behavior lacks current host test evidence." };
   if (tests?.status === "passed" && tests.revision !== captureAgentVerificationManifest(context.workspaceRoot).sha256) return { ok: false, detail: "Test evidence is stale for the current implementation, tests, or configuration." };

@@ -359,3 +359,11 @@ The three-file verification run passed 91 tests, with one opt-in live test skipp
 The live source-runtime diagnostic now saves this evaluator's result and digest before it cleans its temporary workspace. Completion in that diagnostic requires both the existing tests and independent browser checks to pass.
 
 Evaluator controls are recorded in `docs/evidence/flow-d-browser-evaluator-2026-10-31.json`. The pristine broken copy failed the expected tests and browser cases. A manually repaired temporary copy passed all nine checks. A second repaired copy with a modified test failed the protected-file check even though its own suite passed. These controls validate the evaluator; they are not an Agent repair success or packaged-app test. Type checking and diff checks passed; the opt-in live repair test was not run in this offline check.
+
+## Command publication evidence and uncertain outcomes
+
+Approved commands now save per-file before and after digests, file modes, and backup references for published changes. Follow-up attempts read those facts from the original immutable command result. The host includes published paths in test selection and checks their current bytes and modes before and after completion review. Historical command results that lack post-change digests cannot establish a current applied change. Result payloads remain run-scoped and are integrity-checked before host use.
+
+A failure during publication can occur after an earlier file was saved. That outcome now stops as an uncertain mutation, preserves prior changes and backups, and blocks Resume rather than treating the command as a clean failure. A simulated second-file failure confirmed the first change and backup remain available. A host-loop check confirmed an uncertain command cannot resume. Another check carried a command-published edit into a later attempt and rejected a permission change during review.
+
+The five-file check passed 107 tests with two opt-in live tests skipped. Full type checking, Electron build, and diff checks passed. These checks do not establish a successful live model repair.

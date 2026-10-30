@@ -1,10 +1,11 @@
 import { getDb } from "../persistence/db.js";
+import { RunResultStore } from "../run/result-store.js";
 import { z } from "zod";
 import type { AgentTask, AgentTaskFacts, IntermediateResultRecord, ResultOrigin } from "../../shared/contracts.js";
 import type { ToolExecutionContext } from "../tools/types.js";
 import { getAgentTaskBinding, listAgentTaskRuns, listTaskEvidence, taskEvidenceStore } from "../run/agent-task-store.js";
 import { getExecutionLedger } from "../run/execution-ledger.js";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { resolveSafe } from "../harness/path-guard.js";
 import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 
@@ -37,22 +38,41 @@ function appliedChangesFromRuns(runIds:string[]) {
     for(const operation of ledger?.completedOperations ?? []) {
       const attempt=ledger!.operationAttempts.find(item=>item.callId === operation.callId && item.status === "completed");
       if(attempt?.targetPath && ["write_file","edit_file","delete_file"].includes(operation.tool)) latest.set(attempt.targetPath,{path:attempt.targetPath,originRunId:runId,callId:operation.callId,tool:operation.tool,summary:operation.summary});
+      if(attempt && operation.tool === "run_command") {
+        const store=new RunResultStore(runId);
+        const record=operation.resultIds.map(resultId=>store.getResult(resultId)).find(item=>item.producer.tool === "run_command" && item.producer.callId === operation.callId && item.origin === "execution" && item.status === "complete");
+        if(!record)throw new Error("A completed command has no saved outcome. Its changes cannot be verified.");
+        const outcome=commandOutcomeSchema.parse(JSON.parse(store.readResultPayload(record.resultId)));
+        const published=outcome.publishedChanges;
+        if(published && (published.length !== outcome.changes.length || published.some((item,index)=>outcome.changes[index].replace(/\\/g,"/") !== `${item.afterDigest === null ? "deleted" : "written"}:${item.path}`))) throw new Error("Saved command publication evidence is inconsistent.");
+        const paths=published ? published.map(item=>item.path) : outcome.changes.map(item=>{
+          const match=/^(?:written|deleted):(.+)$/.exec(item);
+          if(!match)throw new Error("Saved command publication evidence is invalid.");
+          return match[1];
+        });
+        for(const target of paths)latest.set(target,{path:target,originRunId:runId,callId:operation.callId,tool:operation.tool,summary:`Command published ${target}`});
+      }
     }
   }
   return [...latest.values()];
 }
 
+const commandOutcomeSchema=z.object({changes:z.array(z.string()).max(10000),publishedChanges:z.array(z.object({
+  path:z.string().min(1).max(4096),beforeDigest:z.string().regex(/^[a-f0-9]{64}$/).nullable(),afterDigest:z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  beforeMode:z.number().int().nonnegative().nullable(),afterMode:z.number().int().nonnegative().nullable(),backupPath:z.string().optional(),
+}).strict()).max(10000).optional()}).passthrough();
+
 /** A saved change is current only when its immutable outcome matches the live target. */
 export function currentAgentChange(context: ToolExecutionContext, change: ReturnType<typeof agentAppliedChanges>[number], records: IntermediateResultRecord[]) {
   context.assertAuthority?.();
   const record=records.find(item=>item.runId === change.originRunId && item.producer.callId === change.callId && item.producer.tool === change.tool && item.status === "complete" && item.origin === "execution");
-  if(!record || record.storage.sizeBytes>32768)return {ok:false as const,reason:`The applied change lacks saved evidence: ${change.path}.`};
+  if(!record || change.tool !== "run_command" && record.storage.sizeBytes>32768)return {ok:false as const,reason:`The applied change lacks saved evidence: ${change.path}.`};
   const store=agentEvidenceStore(context,record.resultId);
-  let text="",offset:number|undefined=0;
-  while(offset!==undefined) { const page=store.retrieveResultSlice(record.resultId,{mode:"text",offset,maxChars:3000});text+=page.content;offset=page.nextOffset; }
-  const applied=z.object({afterDigest:z.string().regex(/^[a-f0-9]{64}$/).nullable()}).safeParse(JSON.parse(text));
-  const current=existsSync(resolveSafe(context.workspaceRoot,change.path)) ? fileDigest(readAgentSourceBytes(context.workspaceRoot,change.path)) : null;
+  const value=JSON.parse(store.readResultPayload(record.resultId));
+  const applied=change.tool === "run_command" ? z.object({afterDigest:z.string().regex(/^[a-f0-9]{64}$/).nullable(),afterMode:z.number().int().nonnegative().nullable()}).safeParse(commandOutcomeSchema.parse(value).publishedChanges?.find(item=>item.path === change.path)) : z.object({afterDigest:z.string().regex(/^[a-f0-9]{64}$/).nullable()}).safeParse(value);
+  const target=resolveSafe(context.workspaceRoot,change.path), current=existsSync(target) ? fileDigest(readAgentSourceBytes(context.workspaceRoot,change.path)) : null;
   if(!applied.success || current!==applied.data.afterDigest)return {ok:false as const,reason:`The saved change is no longer current: ${change.path}. Read it again before delivery.`};
+  if("afterMode" in applied.data && applied.data.afterMode !== (current === null ? null : statSync(target).mode & 0o777))return {ok:false as const,reason:`The saved file permissions are no longer current: ${change.path}.`};
   return {ok:true as const,digest:current,resultId:record.resultId};
 }
 
@@ -64,9 +84,11 @@ export function savedAgentTaskFacts(task: AgentTask): AgentTaskFacts {
   const checkFact=({runId,check}:typeof checks[number])=>({reason:check.reason,originRunId:runId,historical:runId !== task.latestRunId,...(check.revision ? {revision:check.revision} : {})});
   const active=task.snapshot.requirements.filter(item=>item.state === "active" && item.mandatory);
   const remaining=latest?.agentProgress?.remainingRequirementIds ?? [];
-  return {changesApplied:appliedChangesFromRuns(runIds).map(item=>({path:item.path,summary:item.summary,originRunId:item.originRunId,historical:item.originRunId !== task.latestRunId})),
+  let changes:ReturnType<typeof appliedChangesFromRuns>=[];let unavailable:string|undefined;
+  try {changes=appliedChangesFromRuns(runIds);} catch(error) {unavailable=String(error);}
+  return {changesApplied:changes.map(item=>({path:item.path,summary:item.summary,originRunId:item.originRunId,historical:item.originRunId !== task.latestRunId})),
     checksPassed:checks.filter(item=>item.check.status === "passed").map(checkFact),
-    checksUnavailable:checks.filter(item=>item.check.status === "unverified").map(checkFact),
+    checksUnavailable:[...checks.filter(item=>item.check.status === "unverified").map(checkFact),...(unavailable ? [{reason:unavailable,originRunId:task.latestRunId ?? "",historical:false}] : [])],
     checksFailed:checks.filter(item=>item.check.status === "failed").map(checkFact),
     checksSkipped:[...checks.filter(item=>item.check.status === "skipped").map(checkFact),...runIds.flatMap(runId=>{const waiver=getExecutionLedger(runId)?.verification?.userSkip;return waiver ? [{reason:`Tests skipped by user instruction: ${waiver.basis}`,originRunId:runId,historical:runId !== task.latestRunId}] : [];})],
     remainingRequirements:task.status === "completed" ? [] : active.filter(item=>!remaining.length || remaining.includes(item.id)).map(item=>({id:item.id,description:item.description})),

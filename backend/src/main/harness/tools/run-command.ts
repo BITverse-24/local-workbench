@@ -21,6 +21,7 @@ export interface CommandResult {
   durationMs: number;
   changes: string[];
   backupPaths: string[];
+  publishedChanges?: Array<{path:string;beforeDigest:string|null;afterDigest:string|null;beforeMode:number|null;afterMode:number|null;backupPath?:string}>;
   isolationStatus: "os_isolated" | "unisolated";
   isolationMessage: string;
   verification?: AgentTestExecutionEvidence;
@@ -385,12 +386,21 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
       if (existing !== before.get(name)?.hash) throw new PermissionError(`Workspace changed during command execution: ${name}. No changes were published.`);
     }
     assertRuntimeActive();
-    for (const name of changes) {
-      const changed = after.get(name);
-      const mutation = changed ? writeFile(root, name, changed.bytes) : deleteFile(root, name);
-      if (changed) chmodSync(resolveSafe(root, name), changed.mode);
-      if (mutation.backupPath) result.backupPaths.push(mutation.backupPath);
-      result.changes.push(`${changed ? "written" : "deleted"}:${name}`);
+    if(currentRuntimeScope()?.agentPhase === "actions")result.publishedChanges=[];
+    try {
+      for (const name of changes) {
+        const changed = after.get(name), original = before.get(name);
+        const mutation = changed ? writeFile(root, name, changed.bytes) : deleteFile(root, name);
+        if (changed) chmodSync(resolveSafe(root, name), changed.mode);
+        if (mutation.backupPath) result.backupPaths.push(mutation.backupPath);
+        result.changes.push(`${changed ? "written" : "deleted"}:${name}`);
+        result.publishedChanges?.push({path:name.split(path.sep).join("/"),beforeDigest:original?.hash ?? null,afterDigest:changed?.hash ?? null,
+          beforeMode:original?.mode ?? null,afterMode:changed?.mode ?? null,...(mutation.backupPath ? {backupPath:mutation.backupPath} : {})});
+      }
+    } catch (error) {
+      // Publication can fail after one or more atomic writes. Do not replay a
+      // command whose complete mutation outcome cannot be established.
+      throw {code:"persistence_failure",retryable:false,message:`Command publication may be incomplete. Reconcile current files and backups before retrying. ${String(error).slice(0,700)}`};
     }
     result.durationMs = Date.now()-started;
     return result;

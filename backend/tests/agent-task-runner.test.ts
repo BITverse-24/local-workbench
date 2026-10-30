@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as commandExecutor from "../src/main/harness/tools/run-command.js";
 import * as childProcesses from "../src/main/tools/child-process.js";
 import { AgentTaskRunner } from "../src/main/agent/agent-task-runner.js";
 import { selectAgentFailureStep } from "../src/main/agent/source-evidence.js";
@@ -16,7 +17,7 @@ import { addMessage } from "../src/main/persistence/messages.js";
 import { createRun, transition } from "../src/main/run/store.js";
 import { dataRoot, setDataDir } from "../src/main/run/filesystem.js";
 import { getCurrentAgentTask } from "../src/main/run/agent-task-store.js";
-import { reconcileInterruptedExecutions, getExecutionLedger } from "../src/main/run/execution-ledger.js";
+import { reconcileInterruptedExecutions, assertExecutionCanResume, updateExecutionLedgerState, getExecutionLedger } from "../src/main/run/execution-ledger.js";
 import { withRuntimeScope } from "../src/main/run/runtime-scope.js";
 import { RunResultStore } from "../src/main/run/result-store.js";
 import { MutationPolicyGuard } from "../src/main/harness/policy-guard.js";
@@ -830,6 +831,43 @@ describe("Agent v3 task host loop", () => {
     expect(getExecutionLedger(next.runId)?.completedOperations).toEqual([]);
     expect(getExecutionLedger(next.runId)?.verification?.evidence.some(check=>check.status === "passed")).toBe(false);
     expect(readFileSync(path.join(root,"note.txt"),"utf8")).toBe("saved content\n");
+  });
+  it("tracks approved command-published files across attempts and checks their current bytes",async()=>{
+    const request="Repair note.txt using a command", workspace=path.join(root,"project");
+    mkdirSync(workspace);writeFileSync(path.join(workspace,"note.txt"),"saved source\n");
+    replies=[()=>interpretation("change",request),()=>({tool_calls:[{name:"run_command",arguments:{command:"printf 'saved content\\n' > note.txt"}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"The requested change is saved."}}]}),payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The command saved the repair."}))};}];
+    const first=await run(request,false,undefined,undefined,workspace);
+    expect(first.result.outcome,first.result.text).toBe("completed");expect(first.approve).toHaveBeenCalledTimes(1);
+    expect(readFileSync(path.join(workspace,"note.txt"),"utf8")).toBe("saved content\n");
+    const operation=getExecutionLedger(first.runId)!.completedOperations.find(item=>item.tool === "run_command")!;
+    const record=new RunResultStore(first.runId).getResult(operation.resultIds[0]);
+    const published=JSON.parse(new RunResultStore(first.runId).readResultPayload(record.resultId)).publishedChanges;
+    expect(published).toEqual([expect.objectContaining({path:"note.txt",beforeDigest:createHash("sha256").update("saved source\n").digest("hex"),afterDigest:createHash("sha256").update("saved content\n").digest("hex"),backupPath:expect.stringContaining(".harness_backups")})]);
+    replies=[()=>({disposition:"evidence",requirements:[],updates:[],full_suite:false}),payload=>{
+      expect(packetState(payload.messages[1].content).appliedOperations).toContainEqual(expect.objectContaining({path:"note.txt",originRunId:first.runId,historical:true}));
+      return {tool_calls:[{name:"finish",arguments:{text:"The earlier command change remains saved."}}]};
+    },payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Saved command result"}))};}];
+    const next=await run("Continue",false,undefined,undefined,workspace);expect(next.result.outcome,next.result.text).toBe("completed");expect(next.approve).not.toHaveBeenCalled();
+    expect(getExecutionLedger(next.runId)?.completedOperations).toEqual([]);
+    expect(savedAgentTaskFacts(getCurrentAgentTask(chatId)!).changesApplied).toContainEqual(expect.objectContaining({path:"note.txt",originRunId:first.runId,historical:true}));
+    replies=[()=>({disposition:"evidence",requirements:[],updates:[],full_suite:false}),()=>({tool_calls:[{name:"finish",arguments:{text:"The command change remains saved."}}]}),payload=>{
+      const state=packetState(payload.messages[1].content);chmodSync(path.join(workspace,"note.txt"),0o600);
+      return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Saved command result"}))};
+    },payload=>{expect(packetState(payload.messages[1].content).feedback.text).toContain("changed during review");return {tool_calls:[{name:"finish",arguments:{text:"The command change remains saved."}}]};}];
+    const stale=await run("Continue again",false,undefined,undefined,workspace);
+    expect(stale.result.outcome).toBe("partial");expect(stale.approve).not.toHaveBeenCalled();
+  });
+  it("blocks replay when command publication has an uncertain outcome",async()=>{
+    const workspace=path.join(root,"project");mkdirSync(workspace);writeFileSync(path.join(workspace,"note.txt"),"saved source\n");
+    vi.spyOn(commandExecutor,"runCommand").mockRejectedValue({code:"persistence_failure",retryable:false,message:"Command publication may be incomplete."});
+    const request="Repair note.txt using a command";
+    replies=[()=>interpretation("change",request),()=>({tool_calls:[{name:"run_command",arguments:{command:"printf repaired > note.txt"}}]})];
+    const attempted=await run(request,false,undefined,undefined,workspace);
+    expect(attempted.result.stopReason).toBe("uncertain_mutation");
+    expect(getExecutionLedger(attempted.runId)?.agentProgress?.actions).toContainEqual(expect.objectContaining({operation:"run_command",status:"uncertain"}));
+    updateExecutionLedgerState(attempted.runId,"partial");
+    expect(()=>assertExecutionCanResume(attempted.runId)).toThrow("uncertain Agent mutation");
   });
   it("reviews a prior task change against current bytes and rejects changes during review", async () => {
     const request="Repair note.txt";

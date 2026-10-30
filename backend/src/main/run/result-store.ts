@@ -185,14 +185,19 @@ export class RunResultStore {
     return { ...record, sources: record.sources.slice(sourceOffset, sourceOffset + sourceCount), sourceCount: record.sources.length, nextSourceOffset: sourceOffset + sourceCount < record.sources.length ? sourceOffset + sourceCount : undefined };
   }
 
-  retrieveResultSlice(resultId: string, request: ResultSliceRequest = { mode: "text" }): ResultSlice {
+  /** Internal host access remains run-scoped and verifies the complete payload. */
+  readResultPayload(resultId: string): string {
     const record = this.getResult(resultId);
     const target = this.payloadPath(resultId, record.storage.encoding);
     if (!statSync(target).isFile() || statSync(target).size !== record.storage.sizeBytes || record.storage.sizeBytes > RESULT_PAYLOAD_MAX_BYTES) throw new Error("Result payload size/integrity mismatch");
     const bytes = readFileSync(target);
     if (createHash("sha256").update(bytes).digest("hex") !== record.storage.sha256) throw new Error("Result payload checksum mismatch");
+    return bytes.toString("utf8");
+  }
+
+  retrieveResultSlice(resultId: string, request: ResultSliceRequest = { mode: "text" }): ResultSlice {
+    const record = this.getResult(resultId), text = this.readResultPayload(resultId);
     const maxChars = z.number().int().min(1).max(RESULT_SLICE_MAX_CHARS).parse(request.maxChars ?? 2000);
-    const text = bytes.toString("utf8");
     if (request.mode === "text") {
       const offset = z.number().int().nonnegative().parse(request.offset ?? 0);
       const content = text.slice(offset, offset + maxChars);
