@@ -276,6 +276,12 @@ Small JavaScript/TypeScript failure modules can now use an explicit complete-sou
 
 The five-file check passed 244 tests with one opt-in live test skipped. Full type checking and the Electron build passed. Tests include complete-byte binding, target/digest override rejection, syntax errors, Markdown source rejection, escape/line-ending preservation, partial-context repacking, full-tool access, and Chat/Work boundaries. Live repair with this contract remains unproved.
 
+## Module drafting and context acquisition
+
+The first live complete-module contract failed: the model repeatedly selected the full-tool branch and made no edits. All 28 calls had verified exact counts; the run stopped Partial on a malformed command. Evidence: `docs/evidence/agent-module-union-live-2026-10-30.json`. The protected project stayed unchanged.
+
+The module draft now has one required content field. It can abstain with null content and a specific context request or blocker. The host opens the registered tool view for one context action. This data request grants no capability or mutation authority. Repeated context requests stop when only model/capability metadata changed. Module requests omit the broad tool inventory and directory agenda while retaining the current requirement, all global constraints, unresolved IDs, obligation summaries, selected source, and useful saved evidence. Bounded-edit requests retain their read agenda. The current source guard remains unchanged. Focused tests verify abstention, source/tool access after repacking, and the repeated-context stop; the broader host check passed 245 tests with one opt-in live test skipped. Full type checking and the Electron build passed.
+
 ## Current implementation scope
 
 The user has deferred release certification and will test 14B manually. Current work is implementation and harness quality for the 7B–14B range, with local 7B and 9B models available for development checks. The machine has Qwen2.5 Coder 7B and Qwen3.5 9B assets; no 14B model is installed. Do not download weights or treat release trial counts as a current completion requirement. Keep the release controls documented and keep production promotion separate. Packaged-environment implementation checks remain useful because the original failure occurred in a production build.

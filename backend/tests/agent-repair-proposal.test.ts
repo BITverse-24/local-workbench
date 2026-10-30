@@ -11,14 +11,14 @@ describe("Host-bound repair proposals",()=>{
   it("binds an explicit complete-module proposal to all observed original bytes",()=>{
     const complete={...source,completeSource:'export const pattern = "\\\\n";\r\nexport const label = "café";\r\n'};
     const content='export const pattern = "\\\\t";\r\nexport const label = "café";\r\n';
-    const args={kind:"replacement",content,requirement_id:"repair-module"};
+    const args={content,requirement_id:"repair-module"};
     const call={id:randomUUID(),name:"propose_module_repair",arguments:args};
     expect(new Validator().validate(args,JSON.parse(JSON.stringify(MODULE_REPAIR_PROPOSAL_TOOL.function.parameters))).valid).toBe(true);
     expect(bindAgentRepairProposal(call,complete)).toMatchObject({call:{name:"edit_file",arguments:{path:source.path,expected_digest:source.digest,requirement_id:"repair-module",replacements:[{old:complete.completeSource,new:content}]}}});
     expect(bindAgentRepairProposal(JSON.parse(JSON.stringify(call)),complete)).toEqual(bindAgentRepairProposal(call,complete));
   });
   it("rejects incomplete, invalid, or target-overriding module replacements without extracting Markdown",()=>{
-    const call={id:randomUUID(),name:"propose_module_repair",arguments:{kind:"replacement",content:"export const value = 1;"}};
+    const call={id:randomUUID(),name:"propose_module_repair",arguments:{content:"export const value = 1;"}};
     expect(()=>bindAgentRepairProposal(call,source)).toThrow();
     const complete={...source,completeSource:"export const value = 0;"};
     for(const args of [{...call.arguments,content:"```js\nexport const value = 1;\n```"},{...call.arguments,content:"const value=1; const value=2;"},{...call.arguments,path:"outside.js"},{...call.arguments,expected_digest:"c".repeat(64)}])expect(()=>bindAgentRepairProposal({...call,arguments:args},complete)).toThrow();
@@ -26,8 +26,9 @@ describe("Host-bound repair proposals",()=>{
   });
   it("retains missing-source and full-tool alternatives during complete-module proposals",()=>{
     const complete={...source,completeSource:"export const value = 0;"};
-    expect(bindAgentRepairProposal({id:randomUUID(),name:"propose_module_repair",arguments:{kind:"source",path:"src/types.js",reason:"Need input types"}},complete)).toMatchObject({call:{name:"read_file",arguments:{path:"src/types.js"}}});
-    expect(bindAgentRepairProposal({id:randomUUID(),name:"propose_module_repair",arguments:{kind:"tools",capability:"workspace_mutation",reason:"Use a bounded edit"}},complete)).toMatchObject({call:{name:"request_capability"}});
+    expect(bindAgentRepairProposal({id:randomUUID(),name:"propose_module_repair",arguments:{content:null,context_needed:"Read src/types.js for input types"}},complete)).toEqual({contextNeeded:"Read src/types.js for input types"});
+    expect(bindAgentRepairProposal({id:randomUUID(),name:"propose_module_repair",arguments:{content:null,blocked_reason:"Repair is not justified"}},complete)).toEqual({blocked:"Repair is not justified"});
+    for(const args of [{content:null},{content:"export const value = 1;",context_needed:"More tools"},{content:null,context_needed:"Source",blocked_reason:"Blocked"}])expect(()=>bindAgentRepairProposal({id:randomUUID(),name:"propose_module_repair",arguments:args},complete)).toThrow();
   });
   it("binds inspected source identity and preserves raw lines in native and JSON envelopes",()=>{
     const args={kind:"edit",requirement_id:"repair-storage",replacements:[{old:[String.raw`  return text.replace(/\n/g, "\\n");`],new:["  // café 🛠️",String.raw`  return text.replace(/\n/g, "\\n");`,""]}]};

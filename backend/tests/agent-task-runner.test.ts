@@ -73,18 +73,21 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
     if (String(payload.messages?.[0]?.content).startsWith("The host has verified the saved repair") && typeof content === "object" && content !== null && (content as any).tool_calls?.[0]?.name === "finish") content = (content as any).tool_calls[0].arguments.text;
     const shapes=payload.response_format?.json_schema?.schema?.properties?.tool_calls?.items?.anyOf;
     const directProposal=payload.response_format?.json_schema?.name === "agent_tool_arguments";
-    const moduleProposal=payload.response_format?.json_schema?.schema?.anyOf?.some((branch:any)=>branch.properties?.kind?.const === "replacement" || branch.properties?.kind?.enum?.includes("replacement"));
+    const moduleProposal=Boolean(payload.response_format?.json_schema?.schema?.properties?.context_needed);
     const proposalName=moduleProposal ? "propose_module_repair" : "propose_repair";
     if((directProposal || shapes?.length === 1 && shapes[0].properties.name.enum[0] === "propose_repair") && typeof content === "object" && content !== null){
       const calls=(content as any).tool_calls;
       if(calls?.length === 1 && calls[0].name !== "propose_repair") {
         const {name,arguments:args}=calls[0];
         const current=moduleProposal ? readFileSync(path.join(workspaceRoot,packetState(payload.messages[1].content).currentStep.target.path),"utf8") : "";
-        const proposal=name === "edit_file" ? moduleProposal ? {kind:"replacement",content:args.replacements.reduce((text:string,item:any)=>text.replace(item.old,item.new),current)} : {kind:"edit",replacements:args.replacements.map((item:any)=>({old:item.old.split("\n"),new:item.new.split("\n")}))} :
+        const proposal=name === "edit_file" ? moduleProposal ? {content:args.replacements.reduce((text:string,item:any)=>text.replace(item.old,item.new),current)} : {kind:"edit",replacements:args.replacements.map((item:any)=>({old:item.old.split("\n"),new:item.new.split("\n")}))} :
           name === "read_file" ? {kind:"source",...args,reason:"Obtain missing source"} : name === "request_capability" ? {kind:"tools",...args,reason:args.reason ?? "Show needed tools"} : name === "finish" ? {kind:"blocked",reason:args.text} : undefined;
         if(proposal)content={tool_calls:[{name:proposalName,arguments:proposal}]};
       }
-      if(directProposal && (content as any).tool_calls?.length === 1 && ["propose_repair","propose_module_repair"].includes((content as any).tool_calls[0].name))content=(content as any).tool_calls[0].arguments;
+      if(directProposal && (content as any).tool_calls?.length === 1 && ["propose_repair","propose_module_repair"].includes((content as any).tool_calls[0].name)){
+        const args=(content as any).tool_calls[0].arguments;
+        content=moduleProposal && ["source","tools","blocked"].includes(args.kind) ? args.kind === "blocked" ? {content:null,blocked_reason:args.reason} : {content:null,context_needed:args.reason} : args;
+      }
     }
     return { status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: typeof content === "string" ? content : JSON.stringify(content) }, finish_reason: "stop" }], usage: { prompt_tokens: input.inputTokens, completion_tokens: 30 } }) };
   } }, [{ id: "driver", runtime: "mlx-lm", baseUrl: "http://127.0.0.1:1234/v1", model: "driver", capabilities: ["text"], toolCallingFormat: "json", requestTimeoutMs: 1000, healthPath: "/models", enabled: true, contextLength: 8192 }]);
@@ -385,7 +388,7 @@ describe("Agent v3 task host loop", () => {
   });
   it("can show all registered tools for one repair action without granting mutation authority",async()=>{
     const {workspace,implementation}=failingWorkspace();writeFileSync(path.join(workspace,"extra.txt"),"needed context\n");
-    const toolNames=(payload:any)=>payload.response_format.json_schema.name === "agent_tool_arguments" ? [payload.response_format.json_schema.schema.anyOf?.some((branch:any)=>branch.properties?.kind?.const === "replacement" || branch.properties?.kind?.enum?.includes("replacement")) ? "propose_module_repair" : "propose_repair"] : payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.flatMap((tool:any)=>tool.properties.name.enum);
+    const toolNames=(payload:any)=>payload.response_format.json_schema.name === "agent_tool_arguments" ? [Boolean(payload.response_format.json_schema.schema.properties?.context_needed) ? "propose_module_repair" : "propose_repair"] : payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.flatMap((tool:any)=>tool.properties.name.enum);
     replies=[()=>interpretation("execute","Reproduce and repair value.cjs"),payload=>{
       expect(toolNames(payload)).toEqual(["propose_module_repair"]);
       return {tool_calls:[{name:"propose_repair",arguments:{kind:"tools",capability:"source_access",reason:"Find additional source for this repair"}}]};
@@ -400,7 +403,7 @@ describe("Agent v3 task host loop", () => {
     }];
     const {result,runId,approve}=await run("Reproduce and repair value.cjs",false,undefined,undefined,workspace);
     expect(result.stopReason,result.text).toBe("repair_blocked");expect(approve).toHaveBeenCalledTimes(1);
-    expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["request_capability","read_file"]);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["request_context","read_file"]);
     expect(getExecutionLedger(runId)?.agentProgress?.expandedToolFocus).toBeUndefined();
     expect(getExecutionLedger(runId)?.agentProgress?.reads.some(read=>read.path === "extra.txt")).toBe(true);
     expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
@@ -414,6 +417,15 @@ describe("Agent v3 task host loop", () => {
     expect(result.stopReason,result.text).toBe("malformed_action");expect(approve).toHaveBeenCalledTimes(1);
     expect(getExecutionLedger(runId)?.agentTask?.protocolCorrections).toBe(1);
     expect(getExecutionLedger(runId)?.agentProgress?.actions).toEqual([]);
+    expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
+  });
+  it("stops repeated module context requests when only capability metadata changed",async()=>{
+    const {workspace,implementation}=failingWorkspace();
+    const request="Reproduce and repair value.cjs";
+    replies=[()=>interpretation("execute",request),()=>({tool_calls:[{name:"propose_module_repair",arguments:{content:null,context_needed:"Need other tools"}}]}),()=>({tool_calls:[{name:"request_capability",arguments:{capability:"document_processing",reason:"Show another tool"}}]}),()=>({tool_calls:[{name:"propose_module_repair",arguments:{content:null,context_needed:"Need more tools again"}}]})];
+    const {result,runId,approve}=await run(request,false,undefined,undefined,workspace);
+    expect(result.stopReason,result.text).toBe("repeated_context_request");expect(approve).toHaveBeenCalledTimes(1);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["request_context","request_capability"]);
     expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
   });
   it("obtains read-only failure evidence without requiring a change category",async()=>{
@@ -449,7 +461,7 @@ describe("Agent v3 task host loop", () => {
     vi.spyOn(ModelGateway.prototype,"chatWithTools").mockImplementation(async function(this:ModelGateway,modelId,messages,tools,options){
       const state=packetState(messages[1]?.content ?? "{}");
       if(state.selectedSources?.pages.some((page:any)=>page.path === "value.test.cjs")){
-        expect(tools.map(tool=>tool.function.name)).toEqual(["propose_module_repair"]);
+        expect(tools.map(tool=>tool.function.name)).toContain(state.toolView ? "read_file" : "propose_module_repair");
         rejected++;return {ok:false,error:{kind:"ai-error",code:"agent_context_limit",message:"Remove optional source pages",retryable:false}};
       }
       return original.call(this,modelId,messages,tools,options);
@@ -460,13 +472,20 @@ describe("Agent v3 task host loop", () => {
       expect(state.selectedSources.complete).toBe(false);
       expect(state.selectedSources.pages.map((page:any)=>page.path)).toEqual(["value.cjs"]);
       expect(payload.response_format.json_schema.name).toBe("agent_tool_arguments");
+      expect(state.contextRule).toContain("registered tool view");
+      return {tool_calls:[{name:"propose_module_repair",arguments:{content:null,context_needed:"Read the omitted test source"}}]};
+    },payload=>{
+      const state=packetState(payload.messages[1].content);
       expect(state.suggestedReadPaths).toContain("value.test.cjs");
-      controller.abort();return {tool_calls:[{name:"read_file",arguments:{path:"value.cjs"}}]};
+      const read=payload.response_format.json_schema.schema.properties.tool_calls.items.anyOf.find((tool:any)=>tool.properties.name.enum[0] === "read_file");
+      expect(read.properties.arguments.properties.path.enum).toContain("value.test.cjs");
+      controller.abort();return {tool_calls:[{name:"read_file",arguments:{path:"value.test.cjs"}}]};
     }];
     const {result,runId,approve}=await run("Reproduce the existing failure",false,undefined,undefined,workspace);
-    expect(result.outcome,result.text).toBe("cancelled");expect(rejected).toBe(2);expect(approve).toHaveBeenCalledTimes(1);
-    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(3);
-    expect(getExecutionLedger(runId)?.agentProgress?.reads).toEqual([]);
+    expect(result.outcome,result.text).toBe("cancelled");expect(rejected).toBe(4);expect(approve).toHaveBeenCalledTimes(1);
+    expect(getExecutionLedger(runId)?.agentTask?.modelCalls).toBe(4);
+    expect(getExecutionLedger(runId)?.agentProgress?.reads.every(read=>read.path === "value.cjs")).toBe(true);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["request_context"]);
     expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
   });
   it("explicitly resumes the saved v3 contract, task, and call budget without repeating interpretation", async () => {

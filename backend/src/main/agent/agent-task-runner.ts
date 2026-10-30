@@ -248,6 +248,18 @@ export class AgentTaskRunner {
               context.resultStore.registerResult({type:"structured",status:"complete",origin:"model_derived",producer:{tool:"agent_repair_blocker",callId:randomUUID()},summary:"Repair proposal reported a blocker; no operation executed",payload:{taskId:task.taskId,taskRevision:bound.taskRevision,source:packet.repair,reason:proposal.blocked},sources:[]});
               return stop("repair_blocked",proposal.blocked);
             }
+            if("contextNeeded" in proposal) {
+              const records=context.resultStore.listResults({limit:50});
+              for(let offset=50;records.length === offset;offset+=50)records.push(...context.resultStore.listResults({limit:50,offset}));
+              const reads=getExecutionLedger(runId)?.agentProgress?.reads ?? [];
+              const observed=[...new Set(reads.map(read=>JSON.stringify([read.path,read.digest,read.startByte,read.endByte])))].sort();
+              const evidence=[...new Set(records.filter(record=>record.origin === "execution" || record.origin === "source_extracted" && record.producer.tool !== "read_file").map(record=>record.storage.sha256))].sort();
+              const key=hash([packet.repair.focusKey,observed,evidence]);
+              if(progress?.actions.some(action=>action.operation === "request_context" && action.hash === key))return stop("repeated_context_request","The same module requested more context without new source or execution evidence.");
+              const id=randomUUID(),record=context.resultStore.registerResult({type:"structured",status:"complete",origin:"model_derived",producer:{tool:"agent_repair_context_request",callId:id},summary:"Module draft requests context; no operation executed",payload:{taskId:task.taskId,taskRevision:bound.taskRevision,requirementId:context.agentRequirementId,path:packet.repair.path,reason:proposal.contextNeeded},sources:[]});
+              updateAgentProgress(runId,state=>{state.actions.push({id,hash:key,requirementId:context.agentRequirementId!,operation:"request_context",status:"completed",resultId:record.resultId});state.expandedToolFocus=packet.repair!.focusKey;state.feedback=proposal.contextNeeded;});
+              continue;
+            }
             call=proposal.call;
           }
           if (call.name !== "finish" && !dispatcher.getTool(call.name)) throw new Error("The proposed tool is not registered.");

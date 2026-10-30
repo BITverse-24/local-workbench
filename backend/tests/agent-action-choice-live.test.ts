@@ -103,6 +103,7 @@ it.skipIf(!process.env.WORKBENCH_LMSTUDIO_ACTION_CHOICE_PROBE)("diagnoses action
         const calls=result.value.tool_calls ?? [];expect(calls).toHaveLength(1);
         const bound=bindAgentRepairProposal(calls[0],{path:state.currentStep.target.path,digest:state.currentStep.target.digest,focusKey:"diagnostic",expanded:false});
         if("blocked" in bound)throw new Error(bound.blocked);
+        if("contextNeeded" in bound)throw new Error(bound.contextNeeded);
         proposed={kind:bound.call.name === "edit_file" ? "edit" : bound.call.name,replacements:bound.call.arguments.replacements};
       }
       if(!repairProposal && !diagnosisMode)expect(proposed.operation).toBe("edit_file");
