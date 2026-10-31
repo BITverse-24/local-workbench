@@ -14,6 +14,7 @@ import { captureAgentVerificationManifest } from "./test-verification.js";
 import { validateAgentDependencyChange } from "./dependency-constraint.js";
 import { assertAgentFileScope } from "./file-scope.js";
 import { currentRuntimeScope } from "../run/runtime-scope.js";
+import { runRoot } from "../run/filesystem.js";
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/), relative = z.string().min(1).max(1024);
 export function canonicalSourcePath(context: ToolExecutionContext, requested: string): string {
@@ -39,6 +40,17 @@ function tool(name: string, description: string, properties: AgentToolDefinition
 }
 const pathProperty = { type: "string", description: "Workspace relative path" };
 
+/** Read only a run-bound staged input, never a workspace file with the same name. */
+export function readAgentInputBytes(context:ToolExecutionContext, sourceId:string) {
+  const source=context.inputSources?.find(item=>item.id===sourceId);
+  if(!source)throw new PermissionError("Input source is unavailable in this run.");
+  const prefix=`runs/${context.runId}/input/`;
+  if(!source.relativePath.startsWith(prefix))throw new PermissionError("Input source is outside this run's input storage.");
+  const bytes=readAgentSourceBytes(path.join(runRoot(context.runId),"input"),source.relativePath.slice(prefix.length));
+  if(fileDigest(bytes)!==source.sha256)throw new PermissionError("The saved input changed. Submit a fresh source.");
+  return {source,bytes};
+}
+
 /** Check a concrete proposal before showing approval. The same conditions are rechecked under lock. */
 export function validateAgentFileProposal(operation: string, args: Record<string, unknown>, context: ToolExecutionContext): void {
   const requested = relative.parse(args.path), canonical = canonicalSourcePath(context, requested), target = resolveSafe(context.workspaceRoot, canonical);
@@ -56,6 +68,17 @@ export function validateAgentFileProposal(operation: string, args: Record<string
 }
 
 export const agentWorkspaceActions: AgentTool[] = [
+  tool("read_input", "Read a bounded page of a staged input by source_id. Returns its digest and continuation cursor; it cannot modify the workspace.", { source_id:{type:"string",description:"Run-bound staged input ID"}, max_bytes:{type:"integer",minimum:64,maximum:4000}, cursor:{type:"string"} }, ["source_id"], async(args,context)=>{
+    const input=z.object({source_id:z.string().min(1).max(256),max_bytes:z.number().int().min(64).max(4000).default(3000),cursor:z.string().max(4096).optional()}).strict().parse(args);
+    const {source,bytes}=readAgentInputBytes(context,input.source_id), revision=source.sha256;
+    new TextDecoder("utf-8",{fatal:true}).decode(bytes);
+    const query=`input:${source.id}`,start=continueAt(input.cursor,revision,query);
+    if(start>bytes.length || start<bytes.length && (bytes[start]&0xc0)===0x80)throw new Error("The input cursor is outside a UTF-8 boundary.");
+    let end=Math.min(bytes.length,start+input.max_bytes);
+    while(end>start && end<bytes.length && (bytes[end]&0xc0)===0x80)end--;
+    const data={inputPage:true,sourceId:source.id,filename:source.filename,digest:revision,startByte:start,endByte:end,sizeBytes:bytes.length,content:bytes.subarray(start,end).toString("utf8"),complete:start===0 && end===bytes.length,...(end<bytes.length?{nextCursor:cursor({offset:end,revision,query})}:{})};
+    return {output:JSON.stringify(data),summary:`Read staged input ${source.filename}`,data,intermediate:{type:"structured",status:"complete",origin:"source_extracted",payload:data,sources:[{filename:source.filename,relation:"source"}]}};
+  }),
   tool("read_file", "Read a bounded UTF-8 source page. Continue using its cursor. Returns file digest and byte/line ranges.", { path: pathProperty, start_line: { type: "integer", minimum: 1 }, max_bytes: { type: "integer", minimum: 64, maximum: 4000 }, cursor: { type: "string" } }, ["path"], async (args, context) => {
     const input = z.object({ path: relative, start_line: z.number().int().positive().default(1), max_bytes: z.number().int().min(64).max(4000).default(3000), cursor: z.string().max(4096).optional() }).strict().parse(args);
     const canonical = canonicalSourcePath(context, input.path), bytes = readAgentSourceBytes(context.workspaceRoot, canonical);

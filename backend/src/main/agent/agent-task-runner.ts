@@ -120,7 +120,7 @@ export class AgentTaskRunner {
       if (task.snapshot.messages.some(message => message.disposition === "pending")) return stop("requirements_pending", "An earlier request still needs requirement interpretation. Its complete text remains pending; it was not treated as logs or completed work.");
       if (!task.snapshot.requirements.some(item => item.state === "active")) return stop("requirements_missing", "The full message is saved, but no active requirement was extracted. Narrow or clarify this task.");
       const replacements = new Map(agentWorkspaceActions.map(tool => [tool.name, tool]));
-      const registered = [...getAllAvailableTools(modelId).map(tool => replacements.get(tool.name) ?? tool), replacements.get("edit_file")!];
+      const registered = [...getAllAvailableTools(modelId).map(tool => replacements.get(tool.name) ?? tool), replacements.get("edit_file")!, replacements.get("read_input")!];
       const dispatcher = new ToolDispatcher(registered);
       context.activeCapabilities = new Set(context.envelope.activeCapabilities);
       for (const capability of ["source_access", "workspace_mutation", "system_execution", "result_retrieval"] as const) context.activeCapabilities.add(capability);
@@ -217,7 +217,7 @@ export class AgentTaskRunner {
           continue;
         }
         const inactiveCapabilities = context.envelope.permittedCapabilities.filter(capability=>!context.activeCapabilities!.has(capability));
-        const visible = filterToolsForTurn(registered, context.envelope, context.activeCapabilities!, { hasRetrievableResults: true }).filter(tool=>tool.name !== "request_capability" || inactiveCapabilities.length > 0);
+        const visible = filterToolsForTurn(registered, context.envelope, context.activeCapabilities!, { hasRetrievableResults: true }).filter(tool=>(tool.name !== "request_capability" || inactiveCapabilities.length > 0) && (tool.name !== "read_input" || Boolean(context.inputSources?.length)));
         const definitions = (): AgentToolDefinition[] => visible.map(tool => conciseAgentTool({ ...tool.definition, function: { ...tool.definition.function, parameters: { ...tool.definition.function.parameters, properties: { ...tool.definition.function.parameters.properties,
           ...(tool.name === "request_capability" ? {capability:{type:"string",enum:inactiveCapabilities}} : {}),
           ...(tool.name === "read_file" && packet.readPaths ? {path:{type:"string",enum:packet.readPaths}} : {}),

@@ -14,7 +14,8 @@ import { closeDb, initDb } from "../src/main/persistence/db.js";
 import { createChat } from "../src/main/persistence/chats.js";
 import { createRun } from "../src/main/run/store.js";
 import { RunResultStore } from "../src/main/run/result-store.js";
-import { dataRoot, setDataDir } from "../src/main/run/filesystem.js";
+import { createRunDirectories, dataRoot, setDataDir } from "../src/main/run/filesystem.js";
+import { currentAgentInputPage } from "../src/main/agent/input-evidence.js";
 
 let temporary: string, previous: string, workspace: string, context: ToolExecutionContext;
 const source = "const café = 'आ';\r\n";
@@ -34,6 +35,28 @@ async function observe(args: Record<string, unknown> = {}) {
 }
 
 describe("Host literal source evidence", () => {
+  it("reads pinned staged inputs by ID and verifies every page without confusing workspace names",async()=>{
+    rmSync(path.join(workspace,"sample.txt"));
+    const content="input café\r\n".repeat(30), sourceId=randomUUID(), inputRoot=path.join(createRunDirectories(context.runId),"input"), file=path.join(inputRoot,"sample.txt");
+    writeFileSync(file,content);
+    context.inputSources=[{id:sourceId,filename:"sample.txt",relativePath:`runs/${context.runId}/input/sample.txt`,sha256:fileDigest(content)}];
+    const read=agentWorkspaceActions.find(tool=>tool.name==="read_input")!;
+    let cursor:string|undefined, first=true;
+    do {
+      const result=await read.execute({source_id:sourceId,max_bytes:64,...(cursor?{cursor}:{})},context);
+      const record=context.resultStore!.registerResult({...result.intermediate!,producer:{tool:"read_input",callId:randomUUID()},summary:result.summary});
+      expect(currentAgentInputPage(context,record)).toBeDefined();
+      cursor=(result.data as {nextCursor?:string}).nextCursor;
+      if(first){expect(checks(content)).toMatchObject({passed:false,needsSource:true});first=false;}
+    } while(cursor);
+    expect(verifyVerbatimChecks(requirement,context,context.resultStore!.listResults({limit:50}),Buffer.from(content))[0]).toMatchObject({passed:true,matchForm:"artifact_bytes"});
+    writeFileSync(path.join(workspace,"sample.txt"),"workspace version");
+    expect(checks(content)).toMatchObject({passed:false,reason:expect.stringContaining("more than one")});
+    rmSync(path.join(workspace,"sample.txt"));writeFileSync(file,"changed input");
+    expect(checks(content)).toMatchObject({passed:false,needsSource:true});
+    await expect(read.execute({source_id:sourceId},context)).rejects.toThrow("saved input changed");
+    await expect(read.execute({source_id:randomUUID()},context)).rejects.toThrow("unavailable");
+  });
   it("requires an actual complete observation before accepting even an exact guessed answer", () => {
     expect(checks(source)).toMatchObject({ passed: false, needsSource: true });
   });

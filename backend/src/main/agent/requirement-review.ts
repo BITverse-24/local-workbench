@@ -14,12 +14,13 @@ import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js"
 import { verifyVerbatimChecks } from "./verbatim-evidence.js";
 import { loadAgentSourcePage, sliceAgentSourcePage } from "./source-evidence.js";
 import { reviewAgentInterpretation } from "./requirement-scope.js";
-import { captureAgentVerificationManifest } from "./test-verification.js";
+import { captureAgentVerificationManifest, isCodeVerificationPath } from "./test-verification.js";
 import { inspectionGaps, loadSourceInspections } from "../run/source-inspection.js";
 import type { IntermediateResultRecord } from "../../shared/contracts.js";
 import { currentAgentArtifact, hasAgentArtifactAction, inspectAgentArtifacts } from "./artifact-evidence.js";
 import { assessAgentArtifactScope } from "./artifact-scope.js";
 import { reviewArtifactParts } from "./artifact-part-review.js";
+import { currentAgentInputPage } from "./input-evidence.js";
 
 /** Visual observations remain model interpretations. Accept them for review only
  * while their saved source, views, and underlying result records are current. */
@@ -61,9 +62,13 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
     if(scope.requested) requiredArtifacts.set(requirement.id,matching);
   }
   if (required.some(item=>item.kind === "change") && !changed.length && !artifacts.some(artifact=>required.some(item=>item.kind === "change" && item.id === artifact.requirementId))) return {ok:false,detail:"A change requirement has no current applied change or bound artifact."};
+  if (!ledger.verification?.userSkip && artifacts.some(artifact=>isCodeVerificationPath(artifact.filename) && required.some(item=>item.kind==="change" && item.id===artifact.requirementId))) return {ok:false,detail:"The exported code repair needs artifact-specific execution evidence. Workspace test results do not verify the exported bytes."};
   // Visual readings are explicitly labelled interpretations, never deterministic proof.
-  const results = agentEvidenceRecords(context).filter(item => ["source_extracted", "execution"].includes(item.origin) || currentVisualObservation(context, item));
+  const savedResults=agentEvidenceRecords(context);
+  if(savedResults.some(item=>item.runId===context.runId && item.producer.tool==="read_input" && item.origin==="source_extracted" && item.status==="complete" && !currentAgentInputPage(context,item))) return {ok:false,detail:"Staged input evidence is missing or changed. Submit the source again.",next:"source"};
+  const results = savedResults.filter(item => item.producer.tool === "read_input" ? Boolean(currentAgentInputPage(context,item)) : ["source_extracted", "execution"].includes(item.origin) || currentVisualObservation(context, item));
   const visualResults = results.filter(item => item.origin === "model_derived");
+  const inputResults = results.filter(item=>item.producer.tool === "read_input");
   const changedDigests = new Map<string, string | null>();
   const digestNow = (path: string) => existsSync(resolveSafe(context.workspaceRoot, path)) ? fileDigest(readAgentSourceBytes(context.workspaceRoot, path)) : null;
   const changes=agentAppliedChanges(context);
@@ -127,7 +132,7 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
       try { partReview=await reviewArtifactParts(requiredFiles[0],requirement,constraints,context,modelId); }
       catch(error) { assertRuntimeActive();return {ok:false,detail:`${requirement.id}: Artifact content remains unverified. ${String(error)}`}; }
     }
-    const relevant = results.filter(item => ["read_file", "extract_document", "retrieve_knowledge", "run_command", "edit_file", "write_file", "delete_file"].includes(item.producer.tool)).map((record, index) => {
+    const relevant = results.filter(item => ["read_file", "read_input", "extract_document", "retrieve_knowledge", "run_command", "edit_file", "write_file", "delete_file"].includes(item.producer.tool)).map((record, index) => {
       const action = ledger.agentProgress?.actions.find(action => action.resultId === record.resultId);
       const page = loadAgentSourcePage(context, record.resultId);
       const explicit = page && (requirement.source.quote.includes(page.path) || requirement.description.includes(page.path) || requirement.acceptance.some(check => check.path === page.path));
@@ -188,6 +193,7 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
     catch { return { ok: false, detail: `Source is unavailable after review: ${path}.`, next: "source" }; }
   }
   if (visualResults.some(record => !currentVisualObservation(context, record))) return { ok: false, detail: "Visual source evidence changed during review. Inspect the current source before delivery.", next: "source" };
+  if (inputResults.some(record => !currentAgentInputPage(context,record))) return {ok:false,detail:"Staged input evidence changed during review. Submit the source again.",next:"source"};
   try { artifacts.forEach(currentAgentArtifact); } catch (error) { return {ok:false,detail:`Artifact changed during review: ${String(error)}`}; }
   try {
     const current=checkLiterals();
@@ -198,7 +204,7 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
     const page = loadAgentSourcePage(context, record.resultId);
     if (page && reviewSources.has(page.path) && !changedDigests.has(page.path) && reviewSources.get(page.path) !== page.digest && !results.some(other => { const current = loadAgentSourcePage(context, other.resultId); return current?.path === page.path && current.digest === reviewSources.get(page.path); })) return { ok: false, detail: `Source evidence is stale for ${page.path}. Read its current bytes before delivery.`, next: "source" };
   }
-  if (required.some(item => item.kind === "inspect") && !results.some(item => ["read_file", "extract_document", "retrieve_knowledge"].includes(item.producer.tool))) return { ok: false, detail: "Inspection needs saved source evidence." };
+  if (required.some(item => item.kind === "inspect") && !results.some(item => ["read_file", "read_input", "extract_document", "retrieve_knowledge"].includes(item.producer.tool))) return { ok: false, detail: "Inspection needs saved source evidence." };
   for (const [path, digest] of changedDigests) {
     const change=changes.find(item=>item.path === path)!;
     const current=currentAgentChange(context,change,results);

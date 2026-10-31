@@ -18,7 +18,7 @@ export function selectAgentRequirement(task: AgentTask, context: ToolExecutionCo
   const progress = getExecutionLedger(context.runId)?.agentProgress;
   const reviewedGap = active.find(item => progress?.remainingRequirementIds.includes(item.id));
   if (reviewedGap) return reviewedGap;
-  const observations = new Set(["read_file", "extract_document", "retrieve_knowledge"]);
+  const observations = new Set(["read_file", "read_input", "extract_document", "retrieve_knowledge"]);
   const inspection = active.find(item => item.kind === "inspect" && !progress?.sourceResultIds.length && !progress?.actions.some(action =>
     action.requirementId === item.id && action.status === "completed" && observations.has(action.operation)));
   return inspection ?? active.find(item => item.kind === "change") ?? active.find(item => item.kind === "execute") ?? active[0];
@@ -137,7 +137,7 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
     }
   }
   const state = { taskId: task.taskId, taskRevision: task.snapshot.revision, currentStep, currentRequirement: requirement,
-    constraints, unresolvedRequirementIds: task.snapshot.requirements.filter(item => item.state === "active").map(item => item.id),
+    constraints, stagedInputs:(context.inputSources ?? []).map(source=>({sourceId:source.id,filename:source.filename,sha256:source.sha256,readVia:"read_input"})), unresolvedRequirementIds: task.snapshot.requirements.filter(item => item.state === "active").map(item => item.id),
     obligations: task.snapshot.requirements.filter(item => item.state === "active").map(item => ({ id: item.id, kind: item.kind, description: item.description, acceptance: item.acceptance })),
     appliedOperations: agentAppliedChanges(context).slice(-5).map(item=>({path:item.path,tool:item.tool,summary:item.summary,originRunId:item.originRunId,historical:item.originRunId !== context.runId})),
     sourceObservations: {items:observations.slice(-4),total:observations.length,complete:observations.length<=4,earlierEvidenceVia:{tool:"retrieve_result",action:"list",scope:"task",origin:"source_extracted"}},

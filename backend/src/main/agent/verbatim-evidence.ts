@@ -4,6 +4,10 @@ import type { AgentRequirement, IntermediateResultRecord } from "../../shared/co
 import type { ToolExecutionContext } from "../tools/types.js";
 import { fileDigest, observedRange, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 import { canonicalSourcePath } from "./workspace-actions.js";
+import { readAgentInputBytes } from "./workspace-actions.js";
+import { currentAgentInputPage } from "./input-evidence.js";
+import { existsSync } from "node:fs";
+import { resolveSafe } from "../harness/path-guard.js";
 
 const pageSchema = z.object({ sourcePage: z.literal(true), path: z.string(), digest: z.string(), startByte: z.number().int().nonnegative(), endByte: z.number().int().nonnegative(), sizeBytes: z.number().int().nonnegative(), content: z.string() });
 
@@ -12,9 +16,17 @@ export function verifyVerbatimChecks(requirement: AgentRequirement, context: Too
   return requirement.acceptance.filter(check => check.operation === "verbatim_source").map(check => {
     const evidenceIds: string[] = [];
     try {
-      const relative = canonicalSourcePath(context, check.path!), bytes = readAgentSourceBytes(context.workspaceRoot, relative), digest = fileDigest(bytes);
+      const relative = canonicalSourcePath(context, check.path!), inputs=(context.inputSources ?? []).filter(source=>source.filename===check.path);
+      const workspaceExists=existsSync(resolveSafe(context.workspaceRoot,relative));
+      if(inputs.length>1 || inputs.length && workspaceExists)throw new Error("The source name identifies more than one file. Disambiguate the attached input and workspace source.");
+      const attachment=inputs[0], bytes=attachment ? readAgentInputBytes(context,attachment.id).bytes : readAgentSourceBytes(context.workspaceRoot, relative), digest = fileDigest(bytes);
       const ranges: Array<{ path: string; digest: string; startByte: number; endByte: number }> = [];
       for (const record of records) {
+        if(attachment) {
+          const page=currentAgentInputPage(context,record);
+          if(page?.sourceId===attachment.id && page.digest===digest && page.sizeBytes===bytes.length) {ranges.push({path:relative,digest,startByte:page.startByte,endByte:page.endByte});evidenceIds.push(record.resultId);}
+          continue;
+        }
         if (record.producer.tool !== "read_file" || record.origin !== "source_extracted" || record.status !== "complete" || record.storage.sizeBytes > 32768) continue;
         let text = "", offset: number | undefined = 0;
         while (offset !== undefined) { const page = agentEvidenceStore(context,record.resultId).retrieveResultSlice(record.resultId, { mode: "text", offset, maxChars: 3000 }); text += page.content; offset = page.nextOffset; }

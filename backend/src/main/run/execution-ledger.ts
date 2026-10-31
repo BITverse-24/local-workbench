@@ -396,7 +396,7 @@ function addBlocker(ledger: RunExecutionLedger, message: string) {
   ledger.blockers = ledger.blockers.slice(-20);
 }
 
-const MEANINGFUL_TOOLS = new Set(["read_file", "extract_document", "ocr_extract", "retrieve_knowledge", "retrieve_result", "execute_python", "run_command", "write_file", "delete_file", "generate_deliverable", "inspect_drawing"]);
+const MEANINGFUL_TOOLS = new Set(["read_file", "read_input", "extract_document", "ocr_extract", "retrieve_knowledge", "retrieve_result", "execute_python", "run_command", "write_file", "delete_file", "generate_deliverable", "inspect_drawing"]);
 export function recordExecutionToolOutcome(input: {
   runId: string; callId: string; tool: string; args: Record<string, unknown>; summary: string; ok: boolean;
   error?: string; resultId?: string; artifacts?: ArtifactRef[];

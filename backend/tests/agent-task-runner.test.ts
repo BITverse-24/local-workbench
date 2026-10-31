@@ -15,7 +15,7 @@ import { closeDb, getDb, initDb } from "../src/main/persistence/db.js";
 import { createChat } from "../src/main/persistence/chats.js";
 import { addMessage } from "../src/main/persistence/messages.js";
 import { createRun, transition } from "../src/main/run/store.js";
-import { dataRoot, setDataDir } from "../src/main/run/filesystem.js";
+import { createRunDirectories, dataRoot, setDataDir } from "../src/main/run/filesystem.js";
 import { getCurrentAgentTask } from "../src/main/run/agent-task-store.js";
 import { reconcileInterruptedExecutions, assertExecutionCanResume, updateExecutionLedgerState, getExecutionLedger } from "../src/main/run/execution-ledger.js";
 import { withRuntimeScope } from "../src/main/run/runtime-scope.js";
@@ -54,8 +54,9 @@ function observedSource(payload:any,filename:string,content:string) {
   expect(state.selectedSources.pages.find((page:any)=>page.path === filename).content).toBeUndefined();
   expect(payload.messages[1].content).toContain(`<source>\n${content}\n</source>`);
 }
-async function run(text: string, managerPath = false, onApprove: (preview: string) => Promise<boolean> = async () => true, setupError?: string, workspaceRoot = root, registerArtifacts = false) {
+async function run(text: string, managerPath = false, onApprove: (preview: string) => Promise<boolean> = async () => true, setupError?: string, workspaceRoot = root, registerArtifacts = false, inputFixture?:{id:string;filename:string;content:string}) {
   let runId = managerPath ? "" : createRun(chatId, text);
+  const inputSources=inputFixture && !managerPath ? (()=>{const inputDir=path.join(createRunDirectories(runId),"input");writeFileSync(path.join(inputDir,inputFixture.filename),inputFixture.content);return [{id:inputFixture.id,filename:inputFixture.filename,relativePath:`runs/${runId}/input/${inputFixture.filename}`,sha256:createHash("sha256").update(inputFixture.content).digest("hex")}];})() : undefined;
   const messageId = addMessage({ chat_id: chatId, role: "user", content: text }).id;
   if (!managerPath) getDb().prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,'agent','agent-v3',?)").run(runId, workspaceRoot);
   const verification = await verifyLocalAgentCounter({ binding: { endpoint: "http://127.0.0.1:1234/v1", modelIdentity: "loaded", providerModel: "driver", transport: "json", templateDigest: createHash("sha256").update(template).digest("hex"), contextLimit: runContextLimit }, assetsDir: root, activeTemplate: template, probes: (["plain", "tools", "tool_result", "unicode"] as const).map(name => ({ name, payload: { model: "driver", messages: [{ role: "user", content: "Setup" }] } })), providerProbe: async () => ({ inputTokens: 4 }) });
@@ -134,7 +135,7 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
     const answer = getDb().prepare("SELECT content FROM messages WHERE run_id=? AND role='assistant' ORDER BY seq DESC LIMIT 1").get(runId) as { content: string };
     return { result: { outcome: snapshot.state, stopReason: getExecutionLedger(runId)?.agentProgress?.stopReason, text: answer.content }, runId, approve, emit, snapshot, manager };
   }
-  const result = await withRuntimeScope({ runId, mode: "agent", signal: runSignal ?? new AbortController().signal }, () => new AgentTaskRunner().run({ modelId: "driver", chatId, messageId, workspace: { root: workspaceRoot, registeredAt: "first" }, approve, state: state => { if (getDb().prepare("SELECT state FROM runs WHERE id=?").get(runId)) transition(runId, state); }, context: { runId, workspaceRoot, gateway, resultStore: new RunResultStore(runId), policyGuard: new MutationPolicyGuard(), envelope: buildExecutionEnvelope({ runId, mode: "agent", modelId: "driver", hasWorkspace: true, workspaceRoot }), emitRunEvent: emit } }));
+  const result = await withRuntimeScope({ runId, mode: "agent", signal: runSignal ?? new AbortController().signal }, () => new AgentTaskRunner().run({ modelId: "driver", chatId, messageId, workspace: { root: workspaceRoot, registeredAt: "first" }, approve, state: state => { if (getDb().prepare("SELECT state FROM runs WHERE id=?").get(runId)) transition(runId, state); }, context: { runId, workspaceRoot, gateway, inputSources, resultStore: new RunResultStore(runId), policyGuard: new MutationPolicyGuard(), envelope: buildExecutionEnvelope({ runId, mode: "agent", modelId: "driver", hasWorkspace: true, workspaceRoot }), emitRunEvent: emit } }));
   transition(runId, result.outcome === "completed" ? "completed" : result.outcome === "cancelled" ? "cancelled" : "partial");
   return { result, runId, approve, emit, manager: undefined };
 }
@@ -147,6 +148,33 @@ function failingWorkspace() {
   return {workspace,implementation};
 }
 describe("Agent v3 task host loop", () => {
+  it.each(["current","changed"] as const)("reads a staged input by ID and verifies an exact exported copy: %s",async mode=>{
+    const input={id:"11111111-1111-4111-8111-111111111111",filename:"attached.txt",content:"Attached café\r\n"};
+    const text="Read attached.txt and export its exact content as copy.txt.";
+    artifactScopeReplies=[()=>({requested:true,format:"txt",filename:"copy.txt",reason:"The instruction requests an exported copy."})];
+    replies=[()=>({disposition:"continue",requirements:[{kind:"deliver",description:text,source_id:"request",checks:[{description:"Export exact source",kind:"delivery",operation:"verbatim_source",path:"attached.txt"}]}],updates:[],full_suite:false}),
+      payload=>{expect(packetState(payload.messages[1].content).stagedInputs).toContainEqual(expect.objectContaining({sourceId:input.id,filename:input.filename}));return {tool_calls:[{name:"read_input",arguments:{source_id:input.id}}]};},
+      ()=>({tool_calls:[{name:"request_capability",arguments:{capability:"artifact_generation",reason:"Export the copy"}}]}),
+      ()=>({tool_calls:[{name:"generate_deliverable",arguments:{type:"txt",filename:"copy.txt",content:input.content}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"The copy is saved."}}]}),
+      payload=>{const state=packetState(payload.messages[1].content);expect(state.hostVerifiedChecks).toContainEqual(expect.objectContaining({passed:true,matchForm:"artifact_bytes"}));if(mode==="changed")writeFileSync(path.join(root,"runs",getCurrentAgentTask(chatId)!.latestRunId!,"input",input.filename),"changed");return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The saved bytes match the staged input."}))};},
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"The copy is saved."}}]})];
+    const {result,approve}=await run(text,false,async()=>true,undefined,root,true,input);
+    expect(result.outcome,result.text).toBe(mode==="current"?"completed":"partial");expect(approve).toHaveBeenCalledOnce();
+  });
+  it("does not claim an attached code repair is verified from an exported file alone",async()=>{
+    const input={id:"11111111-1111-4111-8111-111111111111",filename:"attached.py",content:"def value():\n    return 0\n"};
+    const text="Repair attached.py and export repaired.py.";
+    artifactScopeReplies=[()=>({requested:true,format:"file",filename:"repaired.py",reason:"The instruction requests an exported repair."})];
+    replies=[()=>interpretation("change",text),
+      ()=>({tool_calls:[{name:"read_input",arguments:{source_id:input.id}}]}),
+      ()=>({tool_calls:[{name:"request_capability",arguments:{capability:"artifact_generation",reason:"Export the repair"}}]}),
+      ()=>({tool_calls:[{name:"generate_deliverable",arguments:{type:"file",filename:"repaired.py",content:"def value():\n    return 1\n"}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"The repair is saved."}}]}),
+      payload=>{expect(packetState(payload.messages[1].content).feedback.text).toContain("artifact-specific execution evidence");return {tool_calls:[{name:"finish",arguments:{text:"The repair is saved."}}]};}];
+    const {result,approve}=await run(text,false,async()=>true,undefined,root,true,input);
+    expect(result.outcome).toBe("partial");expect(approve).toHaveBeenCalledOnce();
+  });
   it("does not complete a requested file from an answer alone",async()=>{
     const text="Create a downloadable report.md with the project summary.";
     artifactScopeReplies=[()=>({requested:true,format:"md",filename:"report.md",reason:"The instruction requests this file."})];

@@ -348,7 +348,7 @@ export class ToolDispatcher {
           context.assertAuthority?.();
           if (context.envelope) {
             const mode=currentRuntimeScope()?.mode??context.envelope.mode;
-            const registered=new Set(["request_capability","list_dir","read_file","search","write_file","edit_file","delete_file","run_command","execute_python","generate_deliverable","retrieve_result","retrieve_knowledge","extract_document"]);
+            const registered=new Set(["request_capability","list_dir","read_file","read_input","search","write_file","edit_file","delete_file","run_command","execute_python","generate_deliverable","retrieve_result","retrieve_knowledge","extract_document"]);
             if(!registered.has(call.name))throw new PermissionError("Unlisted tools cannot execute.");
             if(mode==="chat"&&!["extract_document","retrieve_result","retrieve_knowledge"].includes(call.name))throw new PermissionError("Chat cannot use this tool.");
             if(mode==="agent"&&["write_file","edit_file","delete_file","run_command"].includes(call.name)&&(!context.policyGuard?.isEnforcingExplicit(context.runId)||!context.policyGuard.isAuthorized(context.runId,call.name as "write_file"|"edit_file"|"delete_file"|"run_command",{...call.arguments,operation_digest:context.agentOperationDigest},true)))throw new PermissionError("Agent operation requires an approved run scope.");
@@ -572,7 +572,7 @@ export class ToolDispatcher {
                 status: normalizedResult.ok ? intermediate.status : "partial", producer: { tool: call.name, callId: call.id }, summary: rawSummary,
               });
             } catch (error) {
-              const readOnly = ["read_file", "list_dir", "search", "extract_document", "retrieve_knowledge"].includes(call.name);
+              const readOnly = ["read_file", "read_input", "list_dir", "search", "extract_document", "retrieve_knowledge"].includes(call.name);
               const effectMessage = readOnly ? "This read-only tool did not modify workspace files." :
                 rawResult.sideEffects?.length ? `Reported effects: ${rawResult.sideEffects.join(", ")}.` : "The tool may already have produced side effects.";
               throw { code: "persistence_failure", message: `Tool ${call.name} ran but its result could not be saved. ${effectMessage} ${error instanceof Error ? error.message : String(error)}`, retryable: false };
@@ -660,7 +660,7 @@ export class ToolDispatcher {
           };
         }
     };
-    const readOnly = new Set(["read_file", "list_dir", "search", "extract_document", "retrieve_knowledge", "retrieve_result", "retrieve_sop", "ocr_extract", "inspect_drawing", "get_file_info"]);
+    const readOnly = new Set(["read_file", "read_input", "list_dir", "search", "extract_document", "retrieve_knowledge", "retrieve_result", "retrieve_sop", "ocr_extract", "inspect_drawing", "get_file_info"]);
     const results: ExecutedToolOutput[] = [];
     let reads: AgentToolCall[] = [];
     const flush = async () => {

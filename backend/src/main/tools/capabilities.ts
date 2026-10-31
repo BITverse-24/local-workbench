@@ -70,6 +70,7 @@ for (const group of Object.values(CAPABILITY_GROUPS)) {
 }
 
 export function getCapabilityForTool(toolName: string): CapabilityGroup | undefined {
+  if (toolName === "read_input") return "source_access";
   return TOOL_TO_CAPABILITY.get(toolName);
 }
 
