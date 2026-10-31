@@ -5,6 +5,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import type { AgentTask } from "../../shared/contracts.js";
 import type { ToolExecutionContext } from "../tools/types.js";
 import { getExecutionLedger } from "../run/execution-ledger.js";
+import { getAgentTask, getAgentTaskBinding } from "../run/agent-task-store.js";
 import { assertRuntimeActive } from "../run/runtime-scope.js";
 import { parseAgentData } from "./task-interpretation.js";
 
@@ -32,7 +33,8 @@ export async function assessAgentArtifactScope(task:AgentTask, requirementId:str
 
 export function assertAgentArtifactScope(scope:AgentArtifactScope | undefined, args:Record<string,unknown>, context:ToolExecutionContext):void {
   const ledger=getExecutionLedger(context.runId);
-  if (!scope?.requested || scope.taskId!==ledger?.agentTask?.taskId || scope.taskRevision!==ledger.agentTask.taskRevision || scope.requirementId!==context.agentRequirementId) throw new Error("This task does not authorize the proposed artifact.");
+  const binding=getAgentTaskBinding(context.runId), task=scope && getAgentTask(scope.taskId);
+  if (!scope?.requested || scope.taskId!==ledger?.agentTask?.taskId || scope.taskRevision!==ledger.agentTask.taskRevision || scope.taskId!==binding?.taskId || scope.taskRevision!==binding.taskRevision || !task?.current || task.snapshot.revision!==scope.taskRevision || task.workspace.root!==context.workspaceRoot || !task.snapshot.requirements.some(item=>item.id===scope.requirementId && item.state==="active") || scope.requirementId!==context.agentRequirementId) throw new Error("This task does not authorize the proposed artifact.");
   if (typeof args.type!=="string" || typeof args.filename!=="string" || !args.filename || typeof args.content!=="string" || !args.content.trim()) throw new Error("Artifact actions require a format, contained filename, and complete content.");
   if (!scopeSchema.shape.format.unwrap().options.includes(args.type as any) || path.isAbsolute(args.filename) || args.filename.includes("\\") || args.filename.split("/").some(part=>!part || part==="." || part==="..") || args.type!=="file" && path.extname(args.filename).toLowerCase()!==`.${args.type}`) throw new Error("The artifact format and contained filename must agree with the approved action.");
   if (scope.format && scope.format!==args.type || scope.filename && scope.filename!==args.filename) throw new Error("The artifact does not match the requested filename or format.");

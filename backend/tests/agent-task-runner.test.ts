@@ -138,7 +138,7 @@ function failingWorkspace() {
   return {workspace,implementation};
 }
 describe("Agent v3 task host loop", () => {
-  it.each(["unrequested", "invented", "mismatch", "denied", "approved"] as const)("binds document generation to task scope and concrete approval: %s",async mode=>{
+  it.each(["unrequested", "invented", "mismatch", "denied", "stale", "approved"] as const)("binds document generation to task scope and concrete approval: %s",async mode=>{
     const text="Create a downloadable report.md with the project summary.";
     replies=[()=>interpretation("deliver",text),
       ()=>({tool_calls:[{name:"request_capability",arguments:{capability:"artifact_generation",reason:"Create the requested report"}}]}),
@@ -146,7 +146,7 @@ describe("Agent v3 task host loop", () => {
       ()=>({requested:mode!=="unrequested",format:mode==="unrequested"?null:"md",filename:mode==="unrequested"?null:mode==="invented"?"invented.md":"report.md",reason:"The saved instruction determines the output."}),
       ()=>({tool_calls:[{name:"finish",arguments:{text:"The report is saved."}}]}),
       ()=>({tool_calls:[{name:"finish",arguments:{text:"The report is saved."}}]})];
-    const {result,runId,approve}=await run(text,false,async()=>mode!=="denied");
+    const {result,runId,approve}=await run(text,false,async()=>{if(mode==="stale")getDb().prepare("UPDATE agent_tasks SET is_current=0 WHERE chat_id=?").run(chatId);return mode!=="denied";});
     const output=path.join(root,"runs",runId,"output","report.md");
     expect(existsSync(output)).toBe(mode==="approved");
     expect(approve).toHaveBeenCalledTimes(["unrequested","invented","mismatch"].includes(mode) ? 0 : 1);
