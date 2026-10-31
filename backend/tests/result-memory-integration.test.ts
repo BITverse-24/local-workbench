@@ -22,6 +22,8 @@ import { agentEvidenceSlice } from "../src/main/agent/context-packet.js";
 import { currentVisualObservation } from "../src/main/agent/requirement-review.js";
 import { withRuntimeScope } from "../src/main/run/runtime-scope.js";
 import { testModelRegistry } from "./helpers/test-model-registry.js";
+import { initializeExecutionLedger } from "../src/main/run/execution-ledger.js";
+import { inspectAgentArtifacts, currentAgentArtifact } from "../src/main/agent/artifact-evidence.js";
 
 describe("P1 production result registration and retrieval integration", () => {
   let root: string, dbPath: string, runId: string, runDir: string, context: ToolExecutionContext, oldRoot: string | undefined;
@@ -60,12 +62,18 @@ describe("P1 production result registration and retrieval integration", () => {
     const artifact = { artifactId, runId, filename, kind: "md" as const, relativePath: `runs/${runId}/output/${filename}`, sizeBytes: Buffer.byteLength(bytes), createdAt: new Date().toISOString() };
     const tool: AgentTool = { name: "generate_deliverable", definition: { type: "function", function: { name: "generate_deliverable", description: "Save a test artifact", parameters: { type: "object", properties: {} } } }, execute: async () => ({ output: "saved", summary: "saved", artifacts: [artifact] }) };
     context.agentRequirementId = "r-report";
+    initializeExecutionLedger({runId,schemaVersion:1,objective:"Create report",workspace:{requested:false,operations:[]},deliverables:[]} as any);
     const [saved] = await new ToolDispatcher([tool]).dispatchConcurrent([{ id: "artifact-call", name: tool.name, arguments: {} }], context);
     expect(saved.result.ok).toBe(true);
     const record = saved.result.resultRef!;
     expect(record.origin).toBe("execution");
     expect(JSON.parse(context.resultStore!.readResultPayload(record.resultId))).toMatchObject({ requirementId: "r-report", artifacts: [{ artifactId, sha256: createHash("sha256").update(bytes).digest("hex") }] });
+    getDb().prepare("INSERT INTO artifacts(artifact_id,run_id,kind,filename,relative_path,size_bytes,sha256,created_at) VALUES (?,?,?,?,?,?,?,?)").run(artifactId,runId,"md",filename,artifact.relativePath,artifact.sizeBytes,createHash("sha256").update(bytes).digest("hex"),artifact.createdAt);
+    const inspected=await inspectAgentArtifacts(context);
+    expect(inspected).toMatchObject([{requirementId:"r-report",filename,text:bytes}]);
     writeFileSync(path.join(runDir, "output", filename), "tampered");
+    expect(()=>currentAgentArtifact(inspected[0])).toThrow(/changed/);
+    await expect(inspectAgentArtifacts(context)).rejects.toThrow(/changed/);
     const [changed] = await new ToolDispatcher([tool]).dispatchConcurrent([{ id: "artifact-changed", name: tool.name, arguments: {} }], context);
     expect(changed.result.ok).toBe(false);
     if (!changed.result.ok) expect(changed.result.error.code).toBe("persistence_failure");
