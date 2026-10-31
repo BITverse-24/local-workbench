@@ -385,3 +385,9 @@ Knowledge retrieval now saves the returned indexed excerpts, query, citation IDs
 The requirement review can now consider a completed visual inspection as a labelled model interpretation. It verifies the immutable result, its matching saved inspection, the current source digest, saved view digests, and underlying result integrity before review and again afterward. Partial or changed inspections do not qualify. These checks establish processing coverage and currency, not the correctness of every visual reading. The existing inspection check is conservative: a gap elsewhere in the same run also excludes the observation.
 
 An integration test exercised the real extraction and result storage path, then changed the saved view and the source separately; each change invalidated the observation. The three focused suites passed 41 tests. Full type checking passed after fixing types in the previous knowledge-tool test. End-to-end v3 visual workload behavior and requested artifact generation remain unverified.
+
+## Artifact outcome evidence
+
+Before a successful v3 tool outcome is published, the dispatcher now records each produced artifact's run-bound path, requirement ID, size, format, and digest from the saved bytes. It rejects an artifact outside the run output or one whose saved size or supplied digest has changed. A failure to save this outcome is a persistence failure, so the host does not report a clean success after a possible side effect. This is a foundation for completion checks; it does not yet authorize a document request or prove its content meets that request.
+
+The focused result-memory and tool suites passed 21 tests. One test checked the recorded digest and confirmed that changed bytes prevent success. Full type checking and diff checks passed. Task-bound artifact scope, independent content review, completion checks, and end-to-end document scenarios remain open.

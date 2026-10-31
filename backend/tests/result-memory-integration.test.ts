@@ -1,6 +1,7 @@
 import { approvedPythonTool as executePythonTool } from "./helpers/approved-python.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import type { AgentTool, ToolExecutionContext } from "../src/main/tools/types.js";
@@ -51,6 +52,23 @@ describe("P1 production result registration and retrieval integration", () => {
     writeFileSync(view, viewBytes);
     writeFileSync(source, "changed");
     expect(currentVisualObservation(context, record)).toBe(false);
+  });
+
+  it("binds a v3 generated artifact to its actual saved bytes before publishing success", async () => {
+    const bytes = "Saved report content", filename = "report.md", artifactId = randomUUID();
+    writeFileSync(path.join(runDir, "output", filename), bytes);
+    const artifact = { artifactId, runId, filename, kind: "md" as const, relativePath: `runs/${runId}/output/${filename}`, sizeBytes: Buffer.byteLength(bytes), createdAt: new Date().toISOString() };
+    const tool: AgentTool = { name: "generate_deliverable", definition: { type: "function", function: { name: "generate_deliverable", description: "Save a test artifact", parameters: { type: "object", properties: {} } } }, execute: async () => ({ output: "saved", summary: "saved", artifacts: [artifact] }) };
+    context.agentRequirementId = "r-report";
+    const [saved] = await new ToolDispatcher([tool]).dispatchConcurrent([{ id: "artifact-call", name: tool.name, arguments: {} }], context);
+    expect(saved.result.ok).toBe(true);
+    const record = saved.result.resultRef!;
+    expect(record.origin).toBe("execution");
+    expect(JSON.parse(context.resultStore!.readResultPayload(record.resultId))).toMatchObject({ requirementId: "r-report", artifacts: [{ artifactId, sha256: createHash("sha256").update(bytes).digest("hex") }] });
+    writeFileSync(path.join(runDir, "output", filename), "tampered");
+    const [changed] = await new ToolDispatcher([tool]).dispatchConcurrent([{ id: "artifact-changed", name: tool.name, arguments: {} }], context);
+    expect(changed.result.ok).toBe(false);
+    if (!changed.result.ok) expect(changed.result.error.code).toBe("persistence_failure");
   });
 
   it("preserves 240 facts from twelve extracted documents after compaction, removal of sources/messages, and reopening the store", async () => {

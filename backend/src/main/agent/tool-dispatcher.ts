@@ -1,10 +1,11 @@
 import path from "node:path";
+import { statSync } from "node:fs";
 import { getCapabilityForTool } from "../tools/capabilities.js";
 import { assertRuntimeActive, currentRuntimeScope } from "../run/runtime-scope.js";
 import type { AgentToolCall, IntermediateResultInput, SourceReference } from "../../shared/contracts.js";
 import { compactToolObservation } from "./context-manager.js";
 import { recordExecutionToolOutcome, recordExecutionToolStarted } from "../run/execution-ledger.js";
-import { runRoot } from "../run/filesystem.js";
+import { runRoot, resolveRunPath, sha256File } from "../run/filesystem.js";
 import { resolveSafe, PermissionError } from "../harness/path-guard.js";
 import { extractPathArg } from "../tools/workspace-tools.js";
 import type {
@@ -547,13 +548,26 @@ export class ToolDispatcher {
             const filename = call.arguments.filename ?? call.arguments.path ?? call.arguments.file;
             const sources: SourceReference[] = typeof filename === "string" && call.name !== "execute_python" ? [{ filename, relation: "source" }] : [];
             const origin = call.name === "read_file" ? "source_extracted" : (["execute_python", "run_command"].includes(call.name) || (v3Observation && ["write_file", "edit_file", "delete_file"].includes(call.name))) ? "execution" : "model_derived";
-            const intermediate: Omit<IntermediateResultInput, "producer" | "summary"> = rawResult.intermediate ?? {
+            let intermediate: Omit<IntermediateResultInput, "producer" | "summary"> = rawResult.intermediate ?? {
               type: call.name === "read_file" ? "text" : ["execute_python", "run_command"].includes(call.name) ? "execution" : typeof data === "object" && data !== null ? "structured" : "text",
               payload: v3Observation ? rawOutput : typeof data === "string" || (data !== null && typeof data === "object") ? data as string | Record<string, unknown> | unknown[] : rawOutput,
               status: normalizedResult.ok ? "complete" : "partial", origin, sources,
             };
             let record;
             try {
+              if (v3Observation && normalizedResult.ok && normalizedResult.artifacts?.length) {
+                const artifacts = normalizedResult.artifacts.map(artifact => {
+                  const prefix = `runs/${context.runId}/output/`;
+                  if (artifact.runId !== context.runId || !artifact.relativePath.startsWith(prefix)) throw new Error("Artifact is outside the current run output.");
+                  const file = resolveRunPath(context.runId, artifact.relativePath.slice(`runs/${context.runId}/`.length), "output");
+                  const stat = statSync(file);
+                  if (!stat.isFile() || stat.size !== artifact.sizeBytes) throw new Error("Artifact size or file type changed before evidence was saved.");
+                  const sha256 = sha256File(file);
+                  if (artifact.sha256 && artifact.sha256 !== sha256) throw new Error("Artifact digest changed before evidence was saved.");
+                  return { artifactId: artifact.artifactId, filename: artifact.filename, relativePath: artifact.relativePath, kind: artifact.kind, sizeBytes: stat.size, sha256 };
+                });
+                intermediate = { type: "execution", status: "complete", origin: "execution", payload: { requirementId: context.agentRequirementId!, output: rawOutput, artifacts }, sources: [] };
+              }
               record = context.resultStore.registerResult({ ...intermediate,
                 status: normalizedResult.ok ? intermediate.status : "partial", producer: { tool: call.name, callId: call.id }, summary: rawSummary,
               });
