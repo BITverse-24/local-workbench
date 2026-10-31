@@ -305,6 +305,11 @@ export const retrieveKnowledgeTool: AgentTool = {
     return {
       output: formattedChunks,
       summary: `Retrieved ${chunks.length} clauses for "${query}" (top: ${chunks[0].docId} §${chunks[0].sectionLabel})`,
+      intermediate: {
+        type: "structured", status: "complete", origin: "source_extracted",
+        payload: { query, chunks },
+        sources: chunks.map(chunk => ({ filename: chunk.docId, page: chunk.page, locator: chunk.chunkId, relation: "source" as const })),
+      },
     };
   },
 };

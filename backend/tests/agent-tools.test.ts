@@ -1,12 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { workspaceTools, listDirTool, readFileTool, searchTool, writeFileTool } from "../src/main/tools/workspace-tools.js";
-import { specialistTools, generateDeliverableTool, extractDocumentTool } from "../src/main/tools/specialist-tools.js";
+import { specialistTools, generateDeliverableTool, extractDocumentTool, retrieveKnowledgeTool } from "../src/main/tools/specialist-tools.js";
 import type { ToolExecutionContext } from "../src/main/tools/types.js";
 import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import path from "node:path";
 
 describe("Agent Tools Suite", () => {
   const testWorkspace = path.join(process.cwd(), "data", "test-tools-ws");
+
+  it("retains retrieved knowledge as source evidence with its citations", async () => {
+    const chunk = { chunkId: "clause-1", docId: "standard.pdf", sectionLabel: "2", page: 3, text: "Inspect the valve.", score: 0.9 };
+    const context = { runId: "knowledge-test", workspaceRoot: testWorkspace, gateway: {} as any,
+      grounding: { prepare: async () => ({ runId: "knowledge-test", notes: [], chunks: [chunk] }) } } as ToolExecutionContext;
+    const result = await retrieveKnowledgeTool.execute({ query: "valve" }, context);
+    expect(result.intermediate).toMatchObject({ origin: "source_extracted", payload: { query: "valve", chunks: [chunk] },
+      sources: [{ filename: "standard.pdf", page: 3, locator: "clause-1", relation: "source" }] });
+    const empty = await retrieveKnowledgeTool.execute({ query: "other" }, { ...context, grounding: { prepare: async () => ({ runId: "knowledge-test", notes: [], chunks: [] }) } });
+    expect(empty.intermediate).toBeUndefined();
+  });
 
   it("exports all 6 workspace tools with valid schemas", () => {
     expect(workspaceTools).toHaveLength(6);
