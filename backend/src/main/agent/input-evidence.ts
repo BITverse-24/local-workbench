@@ -6,9 +6,9 @@ import { readAgentInputBytes } from "./workspace-actions.js";
 
 export const inputPageSchema=z.object({inputPage:z.literal(true),sourceId:z.string(),filename:z.string(),digest:z.string(),startByte:z.number().int().nonnegative(),endByte:z.number().int().nonnegative(),sizeBytes:z.number().int().nonnegative(),content:z.string(),complete:z.boolean()}).passthrough();
 
-/** A task may cite only its current run's pinned input and matching saved page. */
+/** Task-authorized pages must match a currently bound input and its pinned bytes. */
 export function currentAgentInputPage(context:ToolExecutionContext,record:IntermediateResultRecord) {
-  if(record.runId!==context.runId || record.producer.tool!=="read_input" || record.origin!=="source_extracted" || record.status!=="complete" || record.storage.encoding!=="json" || record.storage.sizeBytes>32768)return;
+  if(record.producer.tool!=="read_input" || record.origin!=="source_extracted" || record.status!=="complete" || record.storage.encoding!=="json" || record.storage.sizeBytes>32768)return;
   try {
     const store=agentEvidenceStore(context,record.resultId), page=inputPageSchema.parse(JSON.parse(store.readResultPayload(record.resultId)));
     const {source,bytes}=readAgentInputBytes(context,page.sourceId);

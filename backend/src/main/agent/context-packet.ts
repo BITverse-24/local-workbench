@@ -137,7 +137,7 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
     }
   }
   const state = { taskId: task.taskId, taskRevision: task.snapshot.revision, currentStep, currentRequirement: requirement,
-    constraints, stagedInputs:(context.inputSources ?? []).map(source=>({sourceId:source.id,filename:source.filename,sha256:source.sha256,readVia:"read_input"})), unresolvedRequirementIds: task.snapshot.requirements.filter(item => item.state === "active").map(item => item.id),
+    constraints, stagedInputs:(context.inputSources ?? []).map(source=>({sourceId:source.id,filename:source.filename,sha256:source.sha256,originRunId:source.originRunId ?? context.runId,historical:Boolean(source.originRunId && source.originRunId!==context.runId),readVia:"read_input"})), unresolvedRequirementIds: task.snapshot.requirements.filter(item => item.state === "active").map(item => item.id),
     obligations: task.snapshot.requirements.filter(item => item.state === "active").map(item => ({ id: item.id, kind: item.kind, description: item.description, acceptance: item.acceptance })),
     appliedOperations: agentAppliedChanges(context).slice(-5).map(item=>({path:item.path,tool:item.tool,summary:item.summary,originRunId:item.originRunId,historical:item.originRunId !== context.runId})),
     sourceObservations: {items:observations.slice(-4),total:observations.length,complete:observations.length<=4,earlierEvidenceVia:{tool:"retrieve_result",action:"list",scope:"task",origin:"source_extracted"}},

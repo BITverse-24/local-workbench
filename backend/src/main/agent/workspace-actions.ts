@@ -15,6 +15,7 @@ import { validateAgentDependencyChange } from "./dependency-constraint.js";
 import { assertAgentFileScope } from "./file-scope.js";
 import { currentRuntimeScope } from "../run/runtime-scope.js";
 import { runRoot } from "../run/filesystem.js";
+import { priorAgentInputs } from "./task-inputs.js";
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/), relative = z.string().min(1).max(1024);
 export function canonicalSourcePath(context: ToolExecutionContext, requested: string): string {
@@ -44,9 +45,11 @@ const pathProperty = { type: "string", description: "Workspace relative path" };
 export function readAgentInputBytes(context:ToolExecutionContext, sourceId:string) {
   const source=context.inputSources?.find(item=>item.id===sourceId);
   if(!source)throw new PermissionError("Input source is unavailable in this run.");
-  const prefix=`runs/${context.runId}/input/`;
+  const originRunId=source.originRunId ?? context.runId;
+  if(originRunId!==context.runId && !priorAgentInputs(context.runId).some(saved=>saved.originRunId===originRunId && saved.id===source.id && saved.filename===source.filename && saved.relativePath===source.relativePath && saved.sha256===source.sha256))throw new PermissionError("Input source is outside this task's bound attempts.");
+  const prefix=`runs/${originRunId}/input/`;
   if(!source.relativePath.startsWith(prefix))throw new PermissionError("Input source is outside this run's input storage.");
-  const bytes=readAgentSourceBytes(path.join(runRoot(context.runId),"input"),source.relativePath.slice(prefix.length));
+  const bytes=readAgentSourceBytes(path.join(runRoot(originRunId),"input"),source.relativePath.slice(prefix.length));
   if(fileDigest(bytes)!==source.sha256)throw new PermissionError("The saved input changed. Submit a fresh source.");
   return {source,bytes};
 }

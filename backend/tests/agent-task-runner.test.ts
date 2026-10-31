@@ -25,6 +25,7 @@ import { buildExecutionEnvelope } from "../src/main/run/envelope.js";
 import { parseTaskInterpretation } from "../src/main/agent/task-interpretation.js";
 import { RunManager } from "../src/main/run/manager.js";
 import { savedAgentTaskFacts } from "../src/main/agent/task-evidence.js";
+import { readAgentInputBytes } from "../src/main/agent/workspace-actions.js";
 import { recoverInterruptedModeRuns } from "../src/main/run/recovery.js";
 import { createConfirmation } from "../src/main/confirmation/store.js";
 import { HarnessManager } from "../src/main/harness/harness-manager.js";
@@ -54,7 +55,7 @@ function observedSource(payload:any,filename:string,content:string) {
   expect(state.selectedSources.pages.find((page:any)=>page.path === filename).content).toBeUndefined();
   expect(payload.messages[1].content).toContain(`<source>\n${content}\n</source>`);
 }
-async function run(text: string, managerPath = false, onApprove: (preview: string) => Promise<boolean> = async () => true, setupError?: string, workspaceRoot = root, registerArtifacts = false, inputFixture?:{id:string;filename:string;content:string}) {
+async function run(text: string, managerPath = false, onApprove: (preview: string) => Promise<boolean> = async () => true, setupError?: string, workspaceRoot = root, registerArtifacts = false, inputFixture?:{id:string;filename:string;content:string}, intent?:"continue"|"new") {
   let runId = managerPath ? "" : createRun(chatId, text);
   const inputSources=inputFixture && !managerPath ? (()=>{const inputDir=path.join(createRunDirectories(runId),"input");writeFileSync(path.join(inputDir,inputFixture.filename),inputFixture.content);return [{id:inputFixture.id,filename:inputFixture.filename,relativePath:`runs/${runId}/input/${inputFixture.filename}`,sha256:createHash("sha256").update(inputFixture.content).digest("hex")}];})() : undefined;
   const messageId = addMessage({ chat_id: chatId, role: "user", content: text }).id;
@@ -135,7 +136,7 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
     const answer = getDb().prepare("SELECT content FROM messages WHERE run_id=? AND role='assistant' ORDER BY seq DESC LIMIT 1").get(runId) as { content: string };
     return { result: { outcome: snapshot.state, stopReason: getExecutionLedger(runId)?.agentProgress?.stopReason, text: answer.content }, runId, approve, emit, snapshot, manager };
   }
-  const result = await withRuntimeScope({ runId, mode: "agent", signal: runSignal ?? new AbortController().signal }, () => new AgentTaskRunner().run({ modelId: "driver", chatId, messageId, workspace: { root: workspaceRoot, registeredAt: "first" }, approve, state: state => { if (getDb().prepare("SELECT state FROM runs WHERE id=?").get(runId)) transition(runId, state); }, context: { runId, workspaceRoot, gateway, inputSources, resultStore: new RunResultStore(runId), policyGuard: new MutationPolicyGuard(), envelope: buildExecutionEnvelope({ runId, mode: "agent", modelId: "driver", hasWorkspace: true, workspaceRoot }), emitRunEvent: emit } }));
+  const result = await withRuntimeScope({ runId, mode: "agent", signal: runSignal ?? new AbortController().signal }, () => new AgentTaskRunner().run({ modelId: "driver", chatId, messageId, intent, workspace: { root: workspaceRoot, registeredAt: "first" }, approve, state: state => { if (getDb().prepare("SELECT state FROM runs WHERE id=?").get(runId)) transition(runId, state); }, context: { runId, workspaceRoot, gateway, inputSources, resultStore: new RunResultStore(runId), policyGuard: new MutationPolicyGuard(), envelope: buildExecutionEnvelope({ runId, mode: "agent", modelId: "driver", hasWorkspace: true, workspaceRoot }), emitRunEvent: emit } }));
   transition(runId, result.outcome === "completed" ? "completed" : result.outcome === "cancelled" ? "cancelled" : "partial");
   return { result, runId, approve, emit, manager: undefined };
 }
@@ -161,6 +162,62 @@ describe("Agent v3 task host loop", () => {
       ()=>({tool_calls:[{name:"finish",arguments:{text:"The copy is saved."}}]})];
     const {result,approve}=await run(text,false,async()=>true,undefined,root,true,input);
     expect(result.outcome,result.text).toBe(mode==="current"?"completed":"partial");expect(approve).toHaveBeenCalledOnce();
+  });
+  it.each(["current","changed","conflict"] as const)("carries a task input into a later attempt: %s",async mode=>{
+    const input={id:"11111111-1111-4111-8111-111111111111",filename:"attached.txt",content:"Task input\r\n"};
+    const text="Read attached.txt and export its exact content as copy.txt.";
+    const parsed=()=>({disposition:"continue",requirements:[{kind:"deliver",description:text,source_id:"request",checks:[{description:"Export exact source",kind:"delivery",operation:"verbatim_source",path:"attached.txt"}]}],updates:[],full_suite:false});
+    artifactScopeReplies=[()=>({requested:true,format:"txt",filename:"copy.txt",reason:"The instruction requests a copy."})];
+    replies=[parsed,()=>({tool_calls:[{name:"read_input",arguments:{source_id:input.id}}]}),()=>({tool_calls:[{name:"finish",arguments:{text:"Pending."}}]}),()=>({tool_calls:[{name:"finish",arguments:{text:"Pending."}}]})];
+    const first=await run(text,false,async()=>true,undefined,root,true,input);
+    expect(first.result.outcome).toBe("partial");
+    const alias={...input,relativePath:`runs/${first.runId}/input/${input.filename}`,sha256:createHash("sha256").update(input.content).digest("hex")};
+    getDb().prepare("UPDATE run_mode_details SET metrics_json=? WHERE run_id=?").run(JSON.stringify({sourceAliases:[alias]}),first.runId);
+    if(mode==="changed")writeFileSync(path.join(root,alias.relativePath),"changed input");
+    artifactScopeReplies=[()=>({requested:true,format:"txt",filename:"copy.txt",reason:"The task requests a copy."})];
+    replies=[()=>({disposition:"evidence",requirements:[],updates:[],full_suite:false}),
+      payload=>{expect(packetState(payload.messages[1].content).stagedInputs).toContainEqual(expect.objectContaining({sourceId:input.id}));return {tool_calls:[{name:"read_input",arguments:{source_id:input.id}}]};},
+      ()=>({tool_calls:[{name:"request_capability",arguments:{capability:"artifact_generation",reason:"Export the copy"}}]}),
+      ()=>({tool_calls:[{name:"generate_deliverable",arguments:{type:"txt",filename:"copy.txt",content:input.content}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"Copy saved."}}]}),
+      ...(mode==="current" ? [(payload:any)=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Current input was copied."}))};}] : [()=>({tool_calls:[{name:"finish",arguments:{text:"Copy saved."}}]})])];
+    const second=await run("Continue",false,async()=>true,undefined,root,true,mode==="conflict"?{...input,content:"conflicting bytes"}:undefined);
+    expect(second.result.outcome,second.result.text).toBe(mode==="current"?"completed":"partial");
+    if(mode==="conflict"){expect(second.result.text).toContain("conflicting saved revisions");expect(second.approve).not.toHaveBeenCalled();}
+  });
+  it("does not carry task inputs into an explicitly new task",async()=>{
+    const input={id:"11111111-1111-4111-8111-111111111111",filename:"attached.txt",content:"Earlier input\n"}, text="Read attached.txt.";
+    replies=[()=>interpretation("inspect",text),()=>({tool_calls:[{name:"read_input",arguments:{source_id:input.id}}]}),()=>({tool_calls:[{name:"finish",arguments:{text:"Input inspected."}}]}),payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The input was inspected."}))};}];
+    const first=await run(text,false,async()=>true,undefined,root,false,input);
+    expect(first.result.outcome,first.result.text).toBe("completed");
+    getDb().prepare("UPDATE run_mode_details SET metrics_json=? WHERE run_id=?").run(JSON.stringify({sourceAliases:[{id:input.id,filename:input.filename,relativePath:`runs/${first.runId}/input/${input.filename}`,sha256:createHash("sha256").update(input.content).digest("hex")}]}),first.runId);
+    const next="Explain this new objective.";
+    replies=[()=>interpretation("deliver",next),payload=>{expect(packetState(payload.messages[1].content).stagedInputs).toEqual([]);return {tool_calls:[{name:"finish",arguments:{text:"A new objective."}}]};},payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The explanation was delivered."}))};}];
+    const second=await run(next,false,async()=>true,undefined,root,false,undefined,"new");
+    expect(second.result.outcome,second.result.text).toBe("completed");
+    expect(()=>readAgentInputBytes({runId:second.runId,workspaceRoot:root,gateway:{} as any,inputSources:[{id:input.id,filename:input.filename,relativePath:`runs/${first.runId}/input/${input.filename}`,sha256:createHash("sha256").update(input.content).digest("hex"),originRunId:first.runId}]},input.id)).toThrow("outside this task");
+  });
+  it("restores staged task inputs through the RunManager on a follow-up",async()=>{
+    const setup="Explain the setup.";
+    replies=[()=>interpretation("deliver",setup),()=>({tool_calls:[{name:"finish",arguments:{text:"Ready."}}]}),payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Delivered."}))};}];
+    const initial=await run(setup,true), manager=initial.manager!, input=Buffer.from("Manager staged input\n");
+    const attachment=manager.registerAttachment({chatId,filename:"attached.txt",mediaType:"text/plain",sizeBytes:input.length,base64OrBuffer:input});
+    const firstText="Inspect attached.txt.", firstMessage=addMessage({chat_id:chatId,role:"user",content:firstText}).id;
+    replies=[()=>interpretation("inspect",firstText),()=>({tool_calls:[{name:"read_input",arguments:{source_id:attachment.attachment.attachmentId}}]}),()=>({tool_calls:[{name:"finish",arguments:{text:"Inspected."}}]}),payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Input inspected."}))};}];
+    const first=await manager.start({chatId,userMessageId:firstMessage,userText:firstText,mode:"agent",selectedModel:"driver",agentTaskIntent:"new",attachmentToken:attachment.attachment.attachmentId});
+    await vi.waitFor(()=>expect(manager.getRunSnapshot({runId:first.runId})?.state).toBe("completed"),{timeout:10000});
+    const nextText="Inspect the same input again.", nextMessage=addMessage({chat_id:chatId,role:"user",content:nextText}).id;
+    replies=[()=>interpretation("inspect",nextText),payload=>{expect(packetState(payload.messages[1].content).stagedInputs).toContainEqual(expect.objectContaining({sourceId:attachment.attachment.attachmentId,historical:true}));return {tool_calls:[{name:"read_input",arguments:{source_id:attachment.attachment.attachmentId}}]};},()=>({tool_calls:[{name:"finish",arguments:{text:"Inspected again."}}]}),...Array.from({length:2},()=>(payload:any)=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Input inspected."}))};})];
+    const second=await manager.start({chatId,userMessageId:nextMessage,userText:nextText,mode:"agent",selectedModel:"driver"});
+    await vi.waitFor(()=>expect(["completed","partial","failed","cancelled"]).toContain(manager.getRunSnapshot({runId:second.runId})?.state),{timeout:10000});
+    const response=getDb().prepare("SELECT content FROM messages WHERE run_id=? AND role='assistant' ORDER BY seq DESC LIMIT 1").get(second.runId) as {content:string}|undefined;
+    expect(manager.getRunSnapshot({runId:second.runId})?.state,response?.content).toBe("completed");
+    const freshText="Explain a separate objective.", freshMessage=addMessage({chat_id:chatId,role:"user",content:freshText}).id;
+    replies=[()=>interpretation("deliver",freshText),payload=>{expect(packetState(payload.messages[1].content).stagedInputs).toEqual([]);return {tool_calls:[{name:"finish",arguments:{text:"Separate objective."}}]};},payload=>{const state=packetState(payload.messages[1].content);return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Delivered."}))};}];
+    const fresh=await manager.start({chatId,userMessageId:freshMessage,userText:freshText,mode:"agent",selectedModel:"driver",agentTaskIntent:"new"});
+    await vi.waitFor(()=>expect(["completed","partial","failed","cancelled"]).toContain(manager.getRunSnapshot({runId:fresh.runId})?.state),{timeout:10000});
+    const freshResponse=getDb().prepare("SELECT content FROM messages WHERE run_id=? AND role='assistant' ORDER BY seq DESC LIMIT 1").get(fresh.runId) as {content:string}|undefined;
+    expect(manager.getRunSnapshot({runId:fresh.runId})?.state,freshResponse?.content).toBe("completed");
   });
   it("does not claim an attached code repair is verified from an exported file alone",async()=>{
     const input={id:"11111111-1111-4111-8111-111111111111",filename:"attached.py",content:"def value():\n    return 0\n"};

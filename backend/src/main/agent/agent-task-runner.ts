@@ -28,6 +28,7 @@ import { agentTestEnvironmentKey, captureCommandWorkspaceDigest, commandApproval
 import { normalizeRunCommandArgs } from "../tools/workspace-tools.js";
 import { agentDependencyConstraints } from "./dependency-constraint.js";
 import { assessAgentArtifactScope, assertAgentArtifactScope } from "./artifact-scope.js";
+import { bindTaskInputs } from "./task-inputs.js";
 
 type RunnerInput = { context: ToolExecutionContext; modelId: string; chatId: string; messageId: string; workspace: AgentTask["workspace"]; intent?: "continue" | "new"; predecessorRunId?: string;
   state: (state: "classifying" | "planning" | "acting") => void; approve: (preview: string) => Promise<boolean> };
@@ -119,6 +120,7 @@ export class AgentTaskRunner {
       }
       if (task.snapshot.messages.some(message => message.disposition === "pending")) return stop("requirements_pending", "An earlier request still needs requirement interpretation. Its complete text remains pending; it was not treated as logs or completed work.");
       if (!task.snapshot.requirements.some(item => item.state === "active")) return stop("requirements_missing", "The full message is saved, but no active requirement was extracted. Narrow or clarify this task.");
+      bindTaskInputs(context);
       const replacements = new Map(agentWorkspaceActions.map(tool => [tool.name, tool]));
       const registered = [...getAllAvailableTools(modelId).map(tool => replacements.get(tool.name) ?? tool), replacements.get("edit_file")!, replacements.get("read_input")!];
       const dispatcher = new ToolDispatcher(registered);

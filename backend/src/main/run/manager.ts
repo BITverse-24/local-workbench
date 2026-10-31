@@ -505,7 +505,9 @@ export class RunManager {
     if(input.temperature!==undefined)this.runTemperatures.set(runId,input.temperature);
     this.runGroundingEnabled.set(runId,input.groundingEnabled===true);
     if(input.selectedModel??input.preferredRoute)this.runSelectedModels.set(runId,(input.selectedModel??input.preferredRoute)!);
-    const originals=requested.length?[...requested]:(references.length || input.agentPredecessorRunId)?[]:this.latestAttachments(chatId);
+    // Agent v3 restores prior inputs only after binding the current task. A new
+    // task must not inherit the chat's most recent attachment implicitly.
+    const originals=requested.length?[...requested]:(engineVersion==="agent-v3" || references.length || input.agentPredecessorRunId)?[]:this.latestAttachments(chatId);
     if (references.length) {
       try {
         if (originals.some(file => file.sizeBytes > 10 * 1024 * 1024)) throw new Error("Selected sources exceed the 10 MB per-file limit.");
