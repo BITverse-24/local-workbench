@@ -49,6 +49,7 @@ const executionContextSchema = z.object({
 const pendingAuthorizationSchema = z.object({ callId: z.string(), tool: z.string(), targetPath: z.string().max(1024).optional(), summary: z.string().max(240), createdAt: z.string().datetime() });
 const agentProgressSchema = z.object({
   fileScopes: z.array(z.object({ taskId:z.string().uuid(), taskRevision:z.number().int().positive(), requirementId:z.string().min(1).max(128), scope:agentFileScopeSchema, resultId:z.string().uuid() }).strict()).max(40).default([]),
+  artifactScopes: z.array(z.object({taskId:z.string().uuid(),taskRevision:z.number().int().positive(),requirementId:z.string().min(1).max(128),resultId:z.string().uuid()}).strict()).max(40).default([]),
   /** Review feedback selects work; it never establishes acceptance or grants authority. */
   remainingRequirementIds: z.array(z.string().min(1).max(128)).default([]),
   deliveryEvidenceDigest: z.string().optional(),
