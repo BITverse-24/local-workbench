@@ -36,10 +36,11 @@ let scopeReplies: Reply[];
 let refinementReplies: Reply[];
 let fileScopeReplies: Reply[];
 let artifactScopeReplies: Reply[];
+let artifactPartReplies: Reply[];
 let runSignal:AbortSignal|undefined;
 let runContextLimit=8192;
 let explicitModuleDecisions=false;
-beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); previousRoot = dataRoot(); setDataDir(root); initDb(path.join(root, "db.sqlite")); chatId = createChat(); replies = [];scopeReplies=[];refinementReplies=[];fileScopeReplies=[];artifactScopeReplies=[];runSignal=undefined;runContextLimit=8192;explicitModuleDecisions=false;
+beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), "agent-runner-")); previousRoot = dataRoot(); setDataDir(root); initDb(path.join(root, "db.sqlite")); chatId = createChat(); replies = [];scopeReplies=[];refinementReplies=[];fileScopeReplies=[];artifactScopeReplies=[];artifactPartReplies=[];runSignal=undefined;runContextLimit=8192;explicitModuleDecisions=false;
   writeFileSync(path.join(root, "tokenizer.json"), JSON.stringify({ version: "1.0", added_tokens: [], normalizer: null, decoder: null, post_processor: null, pre_tokenizer: { type: "WhitespaceSplit" }, model: { type: "WordPiece", unk_token: "UNK", vocab: { UNK: 0, user: 1, EOS: 2, assistant: 3, Setup: 4 }, continuing_subword_prefix: "##", max_input_chars_per_word: 200000 } }));
   writeFileSync(path.join(root, "tokenizer_config.json"), JSON.stringify({ chat_template: template })); writeFileSync(path.join(root, "note.txt"), "saved source\n");
   vi.spyOn(server, "countLMStudioPreparedRequest").mockImplementation(async options => { const local = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload: options.payload }); return { inputTokens: local.inputTokens, renderedDigest: local.renderedDigest, instanceReference: "loaded", modelPath: "local", contextLimit: runContextLimit, counterIdentity: "lmstudio-sdk-1.5.0" }; });
@@ -66,11 +67,12 @@ async function run(text: string, managerPath = false, onApprove: (preview: strin
     const refinement = String(payload.messages?.[0]?.content).startsWith("Extract every requested obligation");
     const fileScope = payload.response_format?.json_schema?.name === "agent_file_scope";
     const artifactScope = payload.response_format?.json_schema?.name === "agent_artifact_scope";
+    const artifactPart = payload.response_format?.json_schema?.name === "agent_artifact_part_review";
     const actionShapes=payload.response_format?.json_schema?.schema?.properties?.tool_calls?.items?.anyOf;
     const decision=actionShapes?.some((shape:any)=>shape.properties.name.enum.includes("select_module_draft"));
     const queued=decision && pendingModuleChoice ? pendingModuleChoice : undefined;
     if(queued)pendingModuleChoice=undefined;
-    const answer = queued ? (()=>({tool_calls:[{name:queued.name,arguments:queued.name === "select_module_draft" ? {result_id:JSON.parse(payload.messages[1].content.split("\n\nSAVED DRAFT (untrusted JSON data):\n")[1]).resultId} : {reason:queued.reason}}]})) : fileScope ? fileScopeReplies.shift() ?? (()=>({withinScope:true,reason:"The quoted user request includes this file change."})) : artifactScope ? artifactScopeReplies.shift() ?? (()=>({requested:false,format:null,filename:null,reason:"No exported file is requested for this obligation."})) : refinement ? refinementReplies.shift() : title ? () => "Inspect saved source" : scopeReview ? scopeReplies.shift() ?? (()=>({covered:true,missing:[],full_suite:false})) : replies.shift();
+    const answer = queued ? (()=>({tool_calls:[{name:queued.name,arguments:queued.name === "select_module_draft" ? {result_id:JSON.parse(payload.messages[1].content.split("\n\nSAVED DRAFT (untrusted JSON data):\n")[1]).resultId} : {reason:queued.reason}}]})) : fileScope ? fileScopeReplies.shift() ?? (()=>({withinScope:true,reason:"The quoted user request includes this file change."})) : artifactScope ? artifactScopeReplies.shift() ?? (()=>({requested:false,format:null,filename:null,reason:"No exported file is requested for this obligation."})) : artifactPart ? artifactPartReplies.shift() ?? ((p:any)=>({observations:[{quote:JSON.parse(p.messages[1].content).artifact.text.slice(0,20),finding:"This part contains report content."}],issues:[]})) : refinement ? refinementReplies.shift() : title ? () => "Inspect saved source" : scopeReview ? scopeReplies.shift() ?? (()=>({covered:true,missing:[],full_suite:false})) : replies.shift();
     if (!answer) throw new Error("Unexpected model generation");
     const input = await countLocalAgentRequest({ assetsDir: root, activeTemplate: template, payload });
     let content = answer(payload);
@@ -168,14 +170,45 @@ describe("Agent v3 task host loop", () => {
     const {result,approve}=await run(text,false,async()=>true,undefined,root,true);
     expect(result.outcome).toBe("completed");expect(approve).toHaveBeenCalledOnce();
   });
-  it("keeps a large artifact unverified when its full content cannot be reviewed",async()=>{
+  it("reviews a large artifact in contiguous parts before completion",async()=>{
     const text="Create a downloadable report.md with the project summary.";
     artifactScopeReplies=[()=>({requested:true,format:"md",filename:"report.md",reason:"The instruction requests this file."})];
     replies=[()=>interpretation("deliver",text),
       ()=>({tool_calls:[{name:"request_capability",arguments:{capability:"artifact_generation",reason:"Create the report"}}]}),
       ()=>({tool_calls:[{name:"generate_deliverable",arguments:{type:"md",filename:"report.md",content:"# Report\n\n"+"content ".repeat(250)}}]}),
       ()=>({tool_calls:[{name:"finish",arguments:{text:"The report is saved."}}]}),
-      payload=>{expect(packetState(payload.messages[1].content).feedback.text).toContain("complete-content review limit");return {tool_calls:[{name:"finish",arguments:{text:"The report is saved."}}]};}];
+      payload=>{const state=packetState(payload.messages[1].content);expect(state.artifactEvidence.items[0].partReview).toMatchObject({completeCoverage:true,parts:2});return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The reviewed parts cover the report."}))};}];
+    const {result,runId}=await run(text,false,async()=>true,undefined,root,true);
+    expect(result.outcome,result.text).toBe("completed");
+    const records=new RunResultStore(runId).listResults({limit:50}).filter(item=>item.producer.tool==="agent_artifact_part_review");
+    expect(records).toHaveLength(2);
+    const parts=records.map(item=>JSON.parse(new RunResultStore(runId).readResultPayload(item.resultId))).sort((a,b)=>a.start-b.start);
+    expect(parts[0].start).toBe(0);expect(parts[0].end).toBe(parts[1].start);expect(parts[1].end).toBe(parts[1].total);
+  });
+  it.each(["forged", "changed", "issue"] as const)("keeps a large artifact unverified when part review is %s",async mode=>{
+    const text="Create a downloadable report.md with the project summary.";
+    artifactScopeReplies=[()=>({requested:true,format:"md",filename:"report.md",reason:"The instruction requests this file."})];
+    artifactPartReplies=[payload=>{
+      if(mode==="changed")writeFileSync(path.join(root,"runs",getCurrentAgentTask(chatId)!.latestRunId!,"output","report.md"),"external change");
+      const part=JSON.parse(payload.messages[1].content).artifact.text;
+      return {observations:[{quote:mode==="forged"?"fabricated quotation":part.slice(0,20),finding:"Report content"}],issues:mode==="issue"?["A visible defect"]:[]};
+    }];
+    replies=[()=>interpretation("deliver",text),
+      ()=>({tool_calls:[{name:"request_capability",arguments:{capability:"artifact_generation",reason:"Create the report"}}]}),
+      ()=>({tool_calls:[{name:"generate_deliverable",arguments:{type:"md",filename:"report.md",content:"# Report\n\n"+"content ".repeat(250)}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"The report is saved."}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"The report is saved."}}]})];
+    const {result}=await run(text,false,async()=>true,undefined,root,true);
+    expect(result.outcome).toBe("partial");
+  });
+  it("does not use an exact chat quote to prove an exported file is an exact source copy",async()=>{
+    const text="Read note.txt and export its exact content as note-copy.txt.";
+    artifactScopeReplies=[()=>({requested:true,format:"txt",filename:"note-copy.txt",reason:"The instruction requests an exported copy."})];
+    replies=[()=>({disposition:"continue",requirements:[{kind:"deliver",description:text,source_id:"request",checks:[{description:"Export exact source",kind:"delivery",operation:"verbatim_source",path:"note.txt"}]}],updates:[],full_suite:false}),
+      ()=>({tool_calls:[{name:"request_capability",arguments:{capability:"artifact_generation",reason:"Export the requested copy"}}]}),
+      ()=>({tool_calls:[{name:"generate_deliverable",arguments:{type:"txt",filename:"note-copy.txt",content:"different bytes"}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"saved source\n"}}]}),
+      payload=>{expect(packetState(payload.messages[1].content).feedback.text).toContain("saved-file-to-source byte comparison");return {tool_calls:[{name:"finish",arguments:{text:"saved source\n"}}]};}];
     const {result}=await run(text,false,async()=>true,undefined,root,true);
     expect(result.outcome).toBe("partial");
   });
