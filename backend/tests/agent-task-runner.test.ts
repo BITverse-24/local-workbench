@@ -201,16 +201,24 @@ describe("Agent v3 task host loop", () => {
     const {result}=await run(text,false,async()=>true,undefined,root,true);
     expect(result.outcome).toBe("partial");
   });
-  it("does not use an exact chat quote to prove an exported file is an exact source copy",async()=>{
+  it.each(["exact", "unicode_crlf", "mismatch", "source_changed", "artifact_changed"] as const)("checks exported bytes against observed source: %s",async mode=>{
     const text="Read note.txt and export its exact content as note-copy.txt.";
+    const source=mode==="unicode_crlf"?"café\r\nnext\r\n":"saved source\n";
+    writeFileSync(path.join(root,"note.txt"),source);
     artifactScopeReplies=[()=>({requested:true,format:"txt",filename:"note-copy.txt",reason:"The instruction requests an exported copy."})];
     replies=[()=>({disposition:"continue",requirements:[{kind:"deliver",description:text,source_id:"request",checks:[{description:"Export exact source",kind:"delivery",operation:"verbatim_source",path:"note.txt"}]}],updates:[],full_suite:false}),
+      ()=>({tool_calls:[{name:"read_file",arguments:{path:"note.txt"}}]}),()=>"saved source\n",
       ()=>({tool_calls:[{name:"request_capability",arguments:{capability:"artifact_generation",reason:"Export the requested copy"}}]}),
-      ()=>({tool_calls:[{name:"generate_deliverable",arguments:{type:"txt",filename:"note-copy.txt",content:"different bytes"}}]}),
+      ()=>({tool_calls:[{name:"generate_deliverable",arguments:{type:"txt",filename:"note-copy.txt",content:mode==="mismatch"?"different bytes":source}}]}),
       ()=>({tool_calls:[{name:"finish",arguments:{text:"saved source\n"}}]}),
-      payload=>{expect(packetState(payload.messages[1].content).feedback.text).toContain("saved-file-to-source byte comparison");return {tool_calls:[{name:"finish",arguments:{text:"saved source\n"}}]};}];
+      payload=>{
+        if(mode==="mismatch"){expect(packetState(payload.messages[1].content).feedback.text).toContain("does not match");return {tool_calls:[{name:"finish",arguments:{text:"saved source\n"}}]};}
+        if(mode==="source_changed")writeFileSync(path.join(root,"note.txt"),"external change");
+        if(mode==="artifact_changed")writeFileSync(path.join(root,"runs",getCurrentAgentTask(chatId)!.latestRunId!,"output","note-copy.txt"),"external change");
+        const state=packetState(payload.messages[1].content);expect(state.hostVerifiedChecks).toContainEqual(expect.objectContaining({passed:true,matchForm:"artifact_bytes"}));return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"Exact copy reviewed."}))};
+      },()=>({tool_calls:[{name:"finish",arguments:{text:"saved source\n"}}]})];
     const {result}=await run(text,false,async()=>true,undefined,root,true);
-    expect(result.outcome).toBe("partial");
+    expect(result.outcome,result.text).toBe(["exact","unicode_crlf"].includes(mode)?"completed":"partial");
   });
   it.each(["unrequested", "invented", "mismatch", "denied", "stale", "approved"] as const)("binds document generation to task scope and concrete approval: %s",async mode=>{
     const text="Create a downloadable report.md with the project summary.";

@@ -419,3 +419,9 @@ Long extracted artifact text can now be reviewed in contiguous, separately admit
 Controlled tests cover a two-part report, contiguous ranges, invalid quotations, a changed artifact, and a reported defect. Full type checking passed. The earlier fixed 1,800-character rejection is replaced by this bounded process, but the 40-call limit and bounded final summary can still require a narrower task. Live-model and packaged document checks remain open.
 
 The Agent host-loop and result-memory suites passed 95 tests with one skipped. After a final exact-copy boundary change, eight affected document and literal-delivery checks passed. A requested verbatim export now remains Partial until the host can directly compare the saved artifact with the source; a correct quotation in chat is not accepted as proof of the file bytes.
+
+## Exact-copy artifact verification
+
+For a verbatim workspace-source export, the host now compares the saved artifact's bytes directly with the complete current source. It requires saved source pages that cover the source, checks the artifact's task-bound evidence and digest, and repeats the comparison after semantic review. The result records the source and artifact digests. A chat quotation does not substitute for this check. This path currently covers workspace sources; an attached-only source still needs its own source binding and coverage checks.
+
+Controlled tests covered an exact copy, Unicode and CRLF preservation, a mismatch, and source or artifact changes during review. The host-loop and result-memory suites passed 99 tests with one skipped before the final review-input change; eight affected checks passed afterward. Type checking and diff checks passed. Packaged and live-model document checks remain open.

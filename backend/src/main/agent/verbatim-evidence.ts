@@ -8,7 +8,7 @@ import { canonicalSourcePath } from "./workspace-actions.js";
 const pageSchema = z.object({ sourcePage: z.literal(true), path: z.string(), digest: z.string(), startByte: z.number().int().nonnegative(), endByte: z.number().int().nonnegative(), sizeBytes: z.number().int().nonnegative(), content: z.string() });
 
 /** A source quotation is a byte comparison. It is never a test pass or a scope decision. */
-export function verifyVerbatimChecks(requirement: AgentRequirement, context: ToolExecutionContext, records: IntermediateResultRecord[], answer: string) {
+export function verifyVerbatimChecks(requirement: AgentRequirement, context: ToolExecutionContext, records: IntermediateResultRecord[], answer: string | Buffer) {
   return requirement.acceptance.filter(check => check.operation === "verbatim_source").map(check => {
     const evidenceIds: string[] = [];
     try {
@@ -27,6 +27,11 @@ export function verifyVerbatimChecks(requirement: AgentRequirement, context: Too
         ranges.push(page); evidenceIds.push(record.resultId);
       }
       if (!ranges.length || !observedRange(ranges, relative, digest, 0, bytes.length)) return { requirementId: requirement.id, checkId: check.id, path: relative, passed: false, needsSource: true, reason: "The complete current source has not been observed.", evidenceIds };
+      if (Buffer.isBuffer(answer)) {
+        const passed=bytes.equals(answer);
+        return { requirementId: requirement.id, checkId: check.id, path: relative, passed, matchForm: passed ? "artifact_bytes" : "none", sourceDigest:digest, sourceBytes:bytes.length,
+          reason: passed ? "The saved artifact matches the complete observed source bytes." : "The saved artifact does not match the current source bytes.", evidenceIds };
+      }
       const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
       const quotes = [...answer.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].map(match => match[1]);
       const matchedQuote = quotes.some(quote => quote === content), passed = answer === content || matchedQuote;
