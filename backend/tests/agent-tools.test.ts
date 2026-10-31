@@ -11,11 +11,11 @@ describe("Agent Tools Suite", () => {
   it("retains retrieved knowledge as source evidence with its citations", async () => {
     const chunk = { chunkId: "clause-1", docId: "standard.pdf", sectionLabel: "2", page: 3, text: "Inspect the valve.", score: 0.9 };
     const context = { runId: "knowledge-test", workspaceRoot: testWorkspace, gateway: {} as any,
-      grounding: { prepare: async () => ({ runId: "knowledge-test", notes: [], chunks: [chunk] }) } } as ToolExecutionContext;
+      grounding: { prepare: async () => ({ runId: "knowledge-test", notes: [], chunks: [chunk] }) } } as unknown as ToolExecutionContext;
     const result = await retrieveKnowledgeTool.execute({ query: "valve" }, context);
     expect(result.intermediate).toMatchObject({ origin: "source_extracted", payload: { query: "valve", chunks: [chunk] },
       sources: [{ filename: "standard.pdf", page: 3, locator: "clause-1", relation: "source" }] });
-    const empty = await retrieveKnowledgeTool.execute({ query: "other" }, { ...context, grounding: { prepare: async () => ({ runId: "knowledge-test", notes: [], chunks: [] }) } });
+    const empty = await retrieveKnowledgeTool.execute({ query: "other" }, { ...context, grounding: { prepare: async () => ({ runId: "knowledge-test", notes: [], chunks: [] }) } as any });
     expect(empty.intermediate).toBeUndefined();
   });
 

@@ -8,7 +8,7 @@ import type { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { createChat } from "../src/main/persistence/chats.js";
 import { closeDb, getDb, initDb } from "../src/main/persistence/db.js";
 import { createRun } from "../src/main/run/store.js";
-import { createRunDirectories } from "../src/main/run/filesystem.js";
+import { createRunDirectories, absoluteDataPath } from "../src/main/run/filesystem.js";
 import { RunResultStore } from "../src/main/run/result-store.js";
 import { ToolDispatcher } from "../src/main/agent/tool-dispatcher.js";
 import { compactConversationHistory, compactToolObservation, type AgentMessage } from "../src/main/agent/context-manager.js";
@@ -18,6 +18,9 @@ import { retrieveResultTool } from "../src/main/tools/result-retrieval.js";
 import { normalizeRunContract } from "../src/main/run/contract.js";
 import { validateAndNormalizeIntent } from "../src/main/router/contextual-router.js";
 import { agentEvidenceSlice } from "../src/main/agent/context-packet.js";
+import { currentVisualObservation } from "../src/main/agent/requirement-review.js";
+import { withRuntimeScope } from "../src/main/run/runtime-scope.js";
+import { testModelRegistry } from "./helpers/test-model-registry.js";
 
 describe("P1 production result registration and retrieval integration", () => {
   let root: string, dbPath: string, runId: string, runDir: string, context: ToolExecutionContext, oldRoot: string | undefined;
@@ -27,6 +30,28 @@ describe("P1 production result registration and retrieval integration", () => {
     context = { runId, workspaceRoot: path.join(runDir, "input"), gateway: { execute() { throw new Error("Native fixture must not call a model"); } } as unknown as ModelGateway, resultStore: new RunResultStore(runId, getDb(), root) };
   });
   afterEach(() => { closeDb(); if (oldRoot === undefined) delete process.env.WORKBENCH_DATA_ROOT; else process.env.WORKBENCH_DATA_ROOT = oldRoot; rmSync(root, { recursive: true, force: true }); });
+
+  it("accepts visual observations for review only while the saved inspection and source remain current", async () => {
+    const filename = "drawing.svg", source = path.join(context.workspaceRoot, filename);
+    writeFileSync(source, '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><text x="5" y="20">VALVE</text></svg>');
+    context.originalUserRequest = "Inspect the drawing";
+    context.gateway = { registry: new Map(testModelRegistry().map(model => [model.id, model])),
+      execute: async () => ({ ok: true, value: { result: { sourceText: "VALVE", findings: [], pageReferences: [{ id: "p1", page: 1, text: "VALVE" }], warnings: [] } } }),
+      chatWithTools: async () => ({ ok: true, value: { content: '{"conflicts":[],"unresolved":[]}', finishReason: "stop" } }) } as any;
+    const [execution] = await withRuntimeScope({ runId, mode: "agent", signal: new AbortController().signal, remainingModelCalls: 24 },
+      () => new ToolDispatcher([extractDocumentTool]).dispatchConcurrent([{ id: "visual", name: "extract_document", arguments: { filename } }], context));
+    const record = execution.result.resultRef!;
+    expect(record.origin).toBe("model_derived");
+    const inspection = JSON.parse(context.resultStore!.readResultPayload(record.resultId)).inspection;
+    expect(inspection).toMatchObject({status:"complete", failures:[], warnings:[]});
+    expect(currentVisualObservation(context, record)).toBe(true);
+    const view = absoluteDataPath(inspection.views[0].relativePath), viewBytes = (await import("node:fs")).readFileSync(view);
+    writeFileSync(view, "changed");
+    expect(currentVisualObservation(context, record)).toBe(false);
+    writeFileSync(view, viewBytes);
+    writeFileSync(source, "changed");
+    expect(currentVisualObservation(context, record)).toBe(false);
+  });
 
   it("preserves 240 facts from twelve extracted documents after compaction, removal of sources/messages, and reopening the store", async () => {
     const extractor = new ToolDispatcher([extractDocumentTool]);
