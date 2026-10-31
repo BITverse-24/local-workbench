@@ -103,6 +103,7 @@ export interface ToolExecutionContext {
   agentCommandApproval?: import("../harness/tools/run-command.js").CommandApproval;
   agentDependencyConstraints?: import("../agent/dependency-constraint.js").AgentDependencyConstraint[];
   agentFileScope?: import("../agent/file-scope.js").AgentFileScope;
+  agentArtifactScope?: import("../agent/artifact-scope.js").AgentArtifactScope;
 }
 
 export interface ToolExecutionResult {

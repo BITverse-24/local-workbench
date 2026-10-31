@@ -138,6 +138,22 @@ function failingWorkspace() {
   return {workspace,implementation};
 }
 describe("Agent v3 task host loop", () => {
+  it.each(["unrequested", "invented", "mismatch", "denied", "approved"] as const)("binds document generation to task scope and concrete approval: %s",async mode=>{
+    const text="Create a downloadable report.md with the project summary.";
+    replies=[()=>interpretation("deliver",text),
+      ()=>({tool_calls:[{name:"request_capability",arguments:{capability:"artifact_generation",reason:"Create the requested report"}}]}),
+      ()=>({tool_calls:[{name:"generate_deliverable",arguments:{type:"md",filename:mode==="mismatch"?"other.md":"report.md",content:"# Project summary\n\nA complete project report."}}]}),
+      ()=>({requested:mode!=="unrequested",format:mode==="unrequested"?null:"md",filename:mode==="unrequested"?null:mode==="invented"?"invented.md":"report.md",reason:"The saved instruction determines the output."}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"The report is saved."}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"The report is saved."}}]})];
+    const {result,runId,approve}=await run(text,false,async()=>mode!=="denied");
+    const output=path.join(root,"runs",runId,"output","report.md");
+    expect(existsSync(output)).toBe(mode==="approved");
+    expect(approve).toHaveBeenCalledTimes(["unrequested","invented","mismatch"].includes(mode) ? 0 : 1);
+    if(["unrequested","invented","mismatch"].includes(mode))expect(result.stopReason).toBe("artifact_scope_unverified");
+    if(mode==="denied")expect(result.outcome).toBe("cancelled");
+    if(mode==="approved")expect(readFileSync(output,"utf8")).toContain("complete project report");
+  });
   it("honors cancellation at generation return before binding an execution attempt",async()=>{
     const controller=new AbortController();runSignal=controller.signal;
     replies=[()=>{controller.abort();return interpretation("change","Repair note.txt");}];

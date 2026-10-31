@@ -27,6 +27,7 @@ import { agentDeliveryGap, reviewAgentTaskCoverage } from "./requirement-review.
 import { agentTestEnvironmentKey, captureCommandWorkspaceDigest, commandApprovalDigest, COMMAND_FALLBACK_DISCLOSURE } from "../harness/tools/run-command.js";
 import { normalizeRunCommandArgs } from "../tools/workspace-tools.js";
 import { agentDependencyConstraints } from "./dependency-constraint.js";
+import { assessAgentArtifactScope, assertAgentArtifactScope } from "./artifact-scope.js";
 
 type RunnerInput = { context: ToolExecutionContext; modelId: string; chatId: string; messageId: string; workspace: AgentTask["workspace"]; intent?: "continue" | "new"; predecessorRunId?: string;
   state: (state: "classifying" | "planning" | "acting") => void; approve: (preview: string) => Promise<boolean> };
@@ -126,14 +127,14 @@ export class AgentTaskRunner {
       context.policyGuard.setEnforceExplicit(runId, true);
       context.agentDependencyConstraints = agentDependencyConstraints(task);
       const granted: string[] = [];
-      const clearApprovals = () => { context.policyGuard!.revokeScopes(granted.splice(0)); context.agentOperationDigest = undefined; context.agentCommandApproval = undefined; };
+      const clearApprovals = () => { context.policyGuard!.revokeScopes(granted.splice(0)); context.agentOperationDigest = undefined; context.agentCommandApproval = undefined; context.agentArtifactScope = undefined; };
       const authorize = async (calls: AgentToolCall[]) => {
         for (const call of calls) {
           assertRuntimeActive();
           const commandApproval = call.name === "run_command" ? { workspaceDigest: captureCommandWorkspaceDigest(context.workspaceRoot) } : undefined;
           const previewData = { taskId: bound!.taskId, taskRevision: bound!.taskRevision, requirementId: context.agentRequirementId ?? null,
             constraints: task.snapshot.requirements.filter(item => item.state === "active" && item.kind === "preserve"),
-            fileScope: context.agentFileScope ?? null,
+            fileScope: context.agentFileScope ?? null, artifactScope: context.agentArtifactScope ?? null,
             operation: call.name, arguments: call.arguments, ...(commandApproval ? { sourceRevision: commandApproval.workspaceDigest } : {}) };
           const preview = JSON.stringify(previewData, null, 2) + (call.name === "run_command" ? `\n\n${COMMAND_FALLBACK_DISCLOSURE}` : "");
           const before = fileMutations.has(call.name) ? this.sourceVersion(context, call.arguments) : undefined;
@@ -145,7 +146,7 @@ export class AgentTaskRunner {
           context.agentOperationDigest = commandApproval ? commandApprovalDigest(String(call.arguments.command), commandApproval) : hash([call.name, call.arguments]);
           context.resultStore!.registerResult({ type: "structured", status: "complete", origin: "execution", producer: { tool: "agent_operation_approval", callId: call.id }, summary: "Approved concrete operation and source revision", payload: { ...previewData, operationDigest: context.agentOperationDigest }, sources: [] });
           const grantedScope = context.policyGuard!.grantScope({ runId, operation: call.name as "write_file", targetPath: typeof call.arguments.path === "string" ? canonicalSourcePath(context, call.arguments.path) : undefined,
-            command: typeof call.arguments.command === "string" ? call.arguments.command : undefined, operationDigest: fileMutations.has(call.name) || commandApproval ? context.agentOperationDigest : undefined, allowUnisolated: call.name === "run_command" });
+            command: typeof call.arguments.command === "string" ? call.arguments.command : undefined, operationDigest: fileMutations.has(call.name) || commandApproval || call.name === "generate_deliverable" ? context.agentOperationDigest : undefined, allowUnisolated: call.name === "run_command" });
           granted.push(grantedScope.id);
         }
         return true;
@@ -334,6 +335,10 @@ export class AgentTaskRunner {
           return { ...completed, text: `${String(call.arguments.text)}\n\n${completed.text}` };
         }
         context.agentFileScope = undefined;
+        if (call.name === "generate_deliverable") {
+          try { context.agentArtifactScope = await assessAgentArtifactScope(task, context.agentRequirementId!, context, modelId); assertAgentArtifactScope(context.agentArtifactScope, call.arguments, context); }
+          catch (error) { assertRuntimeActive(); return stop("artifact_scope_unverified", `No artifact was approved or created. ${String(error)}`); }
+        }
         if (fileMutations.has(call.name) || call.name === "run_command") {
           try { if (fileMutations.has(call.name)) validateAgentFileProposal(call.name, call.arguments, context); }
           catch (error) { updateAgentProgress(runId, state => { state.actions.find(item => item.id === call.id)!.status = "failed"; state.feedback = String(error).slice(0, 1000); }); continue; }

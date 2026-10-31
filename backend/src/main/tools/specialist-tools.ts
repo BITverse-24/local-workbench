@@ -1,6 +1,8 @@
 import { inspectSource } from "../run/source-inspection.js";
 import { reviewProposedPython } from "../agent/source-review.js";
-import { assertRuntimeActive } from "../run/runtime-scope.js";
+import { assertRuntimeActive, currentRuntimeScope } from "../run/runtime-scope.js";
+import { agentArtifactActionDigest, assertAgentArtifactScope } from "../agent/artifact-scope.js";
+import { getAgentTaskBinding } from "../run/agent-task-store.js";
 import { parseFileIndependently } from "./file-worker.js";
 import { withTaskProgress } from "../run/task-progress.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -673,7 +675,13 @@ export const generateDeliverableTool: AgentTool = {
     let type = String(effectiveArgs.type ?? effectiveArgs.kind ?? effectiveArgs.format ?? "").toLowerCase();
     let title = String(effectiveArgs.title ?? effectiveArgs.name ?? effectiveArgs.heading ?? "Deliverable");
     let content = extractContentArg(effectiveArgs) || String(effectiveArgs.content ?? effectiveArgs.body ?? effectiveArgs.text ?? effectiveArgs.markdown ?? "");
-    if (context.runContract && context.runContract.deliverables.length === 0) {
+    const v3Artifact = currentRuntimeScope()?.mode === "agent" && Boolean(getAgentTaskBinding(context.runId));
+    if (v3Artifact) {
+      assertAgentArtifactScope(context.agentArtifactScope, args, context);
+      const digest=agentArtifactActionDigest(args);
+      if (context.agentOperationDigest !== digest || !context.policyGuard?.isEnforcingExplicit(context.runId) || !context.policyGuard.isAuthorized(context.runId,"generate_deliverable",{...args,operation_digest:digest},true)) throw {code:"permission_denied",retryable:false,message:"This artifact action requires its own concrete approval."};
+    }
+    if (!v3Artifact && context.runContract && context.runContract.deliverables.length === 0) {
       throw { code: "permission_denied", retryable: false, message: "This file export is not part of the user's run contract. Workspace edits do not authorize a new downloadable document." };
     }
     if (effectiveArgs.report_rows === null || (Array.isArray(effectiveArgs.report_rows) && effectiveArgs.report_rows.length === 0)) {

@@ -7,6 +7,7 @@ export type MutationOperation =
   | "delete_file"
   | "run_command"
   | "execute_python"
+  | "generate_deliverable"
   | "*";
 
 export interface MutationScopeConstraint {
