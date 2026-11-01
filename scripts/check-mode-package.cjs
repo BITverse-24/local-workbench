@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const app = path.resolve(process.argv[2] || 'release/0.1.0/mac-arm64/Local Workbench.app');
+const app = path.resolve(process.argv[2] || 'release/0.3.0/mac-arm64/Local Workbench.app');
 const packagedMain = path.join(app, 'Contents/Resources/app.asar/electron/dist-electron/main.cjs');
 if (!fs.existsSync(path.join(app, 'Contents/Resources/app.asar'))) throw new Error('Build the macOS directory package first.');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'workbench-package-check-'));

@@ -9,7 +9,7 @@ Local Workbench is a local-first desktop app for asking questions about files, c
 | **Unpaid_Interns** | **119100** |
 
 [![Documentation](https://img.shields.io/badge/Documentation-project%20docs-1f2937?style=flat-square)](docs/diagrams/00_ARCHITECTURE_AUDIT.md)
-[![Release](https://img.shields.io/badge/Release-v0.1.0-1f2937?style=flat-square)](VERSION)
+[![Release](https://img.shields.io/badge/Release-v0.3.0-1f2937?style=flat-square)](VERSION)
 [![License: MIT](https://img.shields.io/badge/License-MIT-1f2937?style=flat-square)](LICENSE)
 
 ## What it does
@@ -32,24 +32,64 @@ The app connects to a model server running on your computer or private network�
 
 ## Architecture Overview
 
-```text
-React renderer (Vite + Tailwind)
-    │ typed Electron IPC
-Electron main process (Window lifecycle, CSP, Native dialogs)
-    │
-RunManager ── ChatResponder (single-turn text Q&A)
-    │        ├ WorkOrchestrator (intents, generation, verification, repair)
-    │        └ AgentLoop (turn driver, mutation policy, harness tools)
-    │
-ModelGateway ── local OpenAI-compatible endpoint (LM Studio, Ollama, vLLM)
-    ├ SQLite persistence (workbench.db - chats, runs, contracts, ledger)
-    ├ Scoped run storage (data/runs/<runId>/...)
-    └ Local RAG subsystem (Vectra LocalIndex + SQLite FTS5)
+```mermaid
+flowchart TB
+    classDef default fill:none,stroke:#64748b,stroke-width:1px
+    classDef mode fill:none,stroke:#3b82f6,stroke-width:1.5px
+    classDef gate fill:none,stroke:#f59e0b,stroke-width:1.5px
+    classDef storage fill:none,stroke:#10b981,stroke-width:1.5px
+
+    subgraph App["Local Workbench (Desktop Application)"]
+        UI["React UI (Vite + Tailwind)"]
+        IPC["Preload IPC Bridge"]
+        RM["RunManager (Orchestrator)"]
+
+        Chat["Chat Mode<br/>• Single-turn text<br/>• Read-only context"]:::mode
+        Work["Work Mode<br/>• Multi-step extraction<br/>• Independent verification<br/>• Automated repair"]:::mode
+        Agent["Agent Mode<br/>• Autonomous ReAct loop<br/>• Bound workspace root<br/>• Project test suite"]:::mode
+
+        Gate{"Operator Confirmation Gate<br/>(Approvals for writes, commands, Python)"}:::gate
+        Guard["PathGuard & MutationPolicy<br/>(Path containment & write locks)"]
+        Tools["Guarded Tools<br/>• Specialist (extract, python, docx/xlsx)<br/>• Workspace (read, write, shell)"]
+    end
+
+    subgraph LocalEnv["Local Environment & Storage"]
+        Model["Local Model Server<br/>(LM Studio / Ollama / vLLM)<br/>localhost or private LAN"]
+        Store[("SQLite (workbench.db)<br/>& Run Artifacts (data/runs/)")]:::storage
+        RAG["Local RAG Subsystem<br/>(Vectra + SQLite FTS5)"]:::storage
+    end
+
+    UI <-->|"Typed IPC"| IPC
+    IPC <--> RM
+
+    RM --> Chat
+    RM --> Work
+    RM --> Agent
+
+    Chat <-->|"Inference"| Model
+    Work <-->|"Inference"| Model
+    Agent <-->|"Inference"| Model
+
+    Chat -.->|"Read context"| RAG
+    Work -.->|"Retrieve"| RAG
+
+    Work --> Tools
+    Agent --> Gate
+    Gate --> Guard
+    Guard --> Tools
+    Tools -->|"Execution Results"| Agent
+    Tools -->|"Parsed Outputs"| Work
+
+    RM -->|"Persist Chats & Runs"| Store
+    Tools -->|"Artifacts & Evidence"| Store
+
+    style App fill:none,stroke:#475569,stroke-width:1.5px,stroke-dasharray: 4 4
+    style LocalEnv fill:none,stroke:#475569,stroke-width:1.5px,stroke-dasharray: 4 4
 ```
 
-- **Interactive Context Mentions:** Type `@` in prompt input to attach workspace files (copies bytes) or folders (path reference).
-- **Adaptive UI:** Responsive layout with collapsible sidebar drawers below 1280px (Settings) and 960px (Explorer).
-- **Documentation & Reference:** See [AGENTS.md](AGENTS.md) for complete codebase architecture, IPC channels, and lifecycle contracts.
+- **Interactive Context Mentions:** Type `@` in the prompt input to attach workspace files (copies byte snapshots) or reference workspace directories.
+- **Adaptive Layout:** Responsive panels featuring collapsible drawer overlays below 1280px (Settings) and 960px (Explorer).
+- **In-Depth Technical Reference:** See [AGENTS.md](AGENTS.md) for detailed module contracts, IPC definitions, and storage lifecycles; see [`docs/diagrams/`](docs/diagrams/) for component, data flow, and security boundary diagrams.
 
 ---
 
@@ -60,10 +100,10 @@ End-to-end evaluation metrics measured on an **Apple M4 Mac Mini** (Apple Silico
 - **7B Multi-Model:** `qwen2.5-coder-7b-instruct-mlx` (Text / Code) + `qwen/qwen3-vl-4b` (Vision) + `text-embedding-nomic-embed-text-v1.5` (Embeddings)
 - **9B Unified:** `qwen/qwen3.5-9b` (Unified Multimodal) + `text-embedding-nomic-embed-text-v1.5` (Embeddings)
 
-| Task / Scenario | 7B Multi-Model | 9B Unified | Verification Pass Rate |
+| Task / Scenario | 7B (Non Thinking)  | 9B (Thinking) | Verification Pass Rate |
 | :--- | :---: | :---: | :---: |
-| Sensor log CSV parser bug repair & CLI execution validation | **76.0s** | **122.9s** | **100%** (12/12 checks) |
-| Pump skid SVG visual inspection & Piping SOP RAG compliance | **64.3s** | **89.0s** | **100%** (4/4 checks) |
+| Sensor log CSV parser bug repair & CLI execution validation |     **76.0s** | **122.9s** | **100%** (12/12 checks) |
+| Pump skid SVG visual inspection & Piping SOP RAG compliance |     **64.3s** | **89.0s** | **100%** (4/4 checks) |
 
 ---
 

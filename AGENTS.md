@@ -90,7 +90,7 @@ The `prepackage` and `prepackage:dir` hooks run `scripts/reset-dev-defaults.cjs`
 agent/
 ├── AGENTS.md                      # Codebase architecture and navigation guide (this file)
 ├── README.md                      # Quickstart and reference setup guide
-├── VERSION                        # Application version string (0.1.1)
+├── VERSION                        # Application version string (0.3.0)
 ├── LICENSE                        # MIT License
 ├── package.json                   # Root workspace scripts and dependencies
 ├── tsconfig.json                  # Root TypeScript configuration

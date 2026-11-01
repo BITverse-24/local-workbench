@@ -31,3 +31,5 @@ tests/profiles/*.local.json
 .tmp-v2-*/
 
 blog
+
+docs/evidence
