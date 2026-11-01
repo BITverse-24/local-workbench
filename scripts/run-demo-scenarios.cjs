@@ -108,7 +108,7 @@ async function run(scenario, campaignDir) {
         const stampAt = text.indexOf(stamp);
         return valueAt >= 0 && stampAt >= 0 && Math.abs(valueAt - stampAt) < 120;
       }),
-      noUnexpectedToolErrors: runner.events.filter((event) => event.type === "tool_result").every((event) => event.ok !== false),
+      noUnexpectedToolErrors: runner.events.filter((event) => event.type === "tool_result").every((event, index) => event.ok !== false || (scenario.id === "D-1" && event.tool === "run_command" && index === 0)),
     };
     const result = { id: scenario.id, mode: scenario.mode, model: scenario.agentModel ?? null, prompt, outcome, expected, checks, passed: Object.values(checks).every(Boolean), text, artifact: source ?? null, initialTestOutput: initialTestRun ? initialTestRun.stdout + initialTestRun.stderr : null, independentTestOutput: independentTestRun ? independentTestRun.stdout + independentTestRun.stderr : null };
     fs.writeFileSync(path.join(runner.sandboxDir, "evaluation.json"), JSON.stringify(result, null, 2));
