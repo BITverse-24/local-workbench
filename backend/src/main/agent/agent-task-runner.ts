@@ -133,11 +133,11 @@ export class AgentTaskRunner {
       const authorize = async (calls: AgentToolCall[]) => {
         for (const call of calls) {
           assertRuntimeActive();
-          const commandApproval = call.name === "run_command" ? { workspaceDigest: captureCommandWorkspaceDigest(context.workspaceRoot) } : undefined;
+          const commandApproval = call.name === "run_command" ? { workspaceDigest: captureCommandWorkspaceDigest(context.workspaceRoot), ...(context.agentVerification?.artifact ? {artifact:context.agentVerification.artifact} : {}) } : undefined;
           const previewData = { taskId: bound!.taskId, taskRevision: bound!.taskRevision, requirementId: context.agentRequirementId ?? null,
             constraints: task.snapshot.requirements.filter(item => item.state === "active" && item.kind === "preserve"),
             fileScope: context.agentFileScope ?? null, artifactScope: context.agentArtifactScope ?? null,
-            operation: call.name, arguments: call.arguments, ...(commandApproval ? { sourceRevision: commandApproval.workspaceDigest } : {}) };
+            operation: call.name, arguments: call.arguments, ...(commandApproval ? { sourceRevision: commandApproval.workspaceDigest, ...(commandApproval.artifact ? {testArtifact:commandApproval.artifact} : {}) } : {}) };
           const preview = JSON.stringify(previewData, null, 2) + (call.name === "run_command" ? `\n\n${COMMAND_FALLBACK_DISCLOSURE}` : "");
           const before = fileMutations.has(call.name) ? this.sourceVersion(context, call.arguments) : undefined;
           if (!await input.approve(preview)) return false;
