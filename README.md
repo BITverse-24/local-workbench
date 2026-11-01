@@ -57,15 +57,13 @@ ModelGateway ── local OpenAI-compatible endpoint (LM Studio, Ollama, vLLM)
 
 End-to-end evaluation metrics measured on an **Apple M4 Mac Mini** (Apple Silicon, 16GB Unified Memory) using a local model server (LM Studio / MLX):
 
-- **7B Multi-Model Setup:** `qwen2.5-coder-7b-instruct-mlx` (Text / Coding / Draft) + `qwen/qwen3-vl-4b` (Vision) + `text-embedding-nomic-embed-text-v1.5` (Embeddings)
-- **9B Unified Setup:** `qwen/qwen3.5-9b` (Unified Multimodal) + `text-embedding-nomic-embed-text-v1.5` (Embeddings)
+- **7B Multi-Model:** `qwen2.5-coder-7b-instruct-mlx` (Text / Code) + `qwen/qwen3-vl-4b` (Vision) + `text-embedding-nomic-embed-text-v1.5` (Embeddings)
+- **9B Unified:** `qwen/qwen3.5-9b` (Unified Multimodal) + `text-embedding-nomic-embed-text-v1.5` (Embeddings)
 
-| Flow | Scenario & Task | 7B Multi-Model | 9B Unified | Verification Pass Rate |
-| :--- | :--- | :---: | :---: | :---: |
-| **Flow A** | Multi-page PDF visual inspection & Word (.docx) approval note | **371.5s** | **533.7s** | **100%** (14/14 checks) |
-| **Flow B** | Sensor log CSV parser bug repair & CLI execution validation | **76.0s** | **122.9s** | **100%** (12/12 checks) |
-| **Flow C** | Pump skid SVG visual check & Piping SOP RAG compliance | **64.3s** | **89.0s** | **100%** (4/4 checks) |
-| **Total** | **Full Benchmark Suite** | **511.8s** | **745.6s** | **100% (30/30 checks)** |
+| Task / Scenario | 7B Multi-Model | 9B Unified | Verification Pass Rate |
+| :--- | :---: | :---: | :---: |
+| Sensor log CSV parser bug repair & CLI execution validation | **76.0s** | **122.9s** | **100%** (12/12 checks) |
+| Pump skid SVG visual inspection & Piping SOP RAG compliance | **64.3s** | **89.0s** | **100%** (4/4 checks) |
 
 ---
 
