@@ -57,7 +57,7 @@ describe("Agent verification stage", () => {
     const artifact={operation,criterionId:"acceptance:validate-export:r1",revision:"revision-1",assertCurrent:vi.fn()};
     const authorize=vi.fn(async()=>{expect(context.agentVerification?.artifact).toEqual(operation);return true;});
     const result=await runAgentVerificationStage({context,dispatcher:tools,changedPaths:["module.js"],artifact,authorize});
-    expect(result.action).toBe("passed");expect(artifact.assertCurrent).toHaveBeenCalledTimes(2);
+    expect(result.action).toBe("passed");expect(artifact.assertCurrent).toHaveBeenCalledTimes(3);
     expect(getRunVerificationState(runId)?.evidence.find(item=>item.criterionId===artifact.criterionId)).toMatchObject({status:"passed",revision:artifact.revision});
     expect(context.agentVerification).toBeUndefined();
     await runAgentVerificationStage({context,dispatcher:tools,changedPaths:["module.js"],artifact,authorize});
@@ -68,6 +68,12 @@ describe("Agent verification stage", () => {
   it("does not dispatch a declined export test", async () => {
     setupProject();const tools=dispatcher(),artifact={operation:{artifactPath:"/export.js",artifactDigest:"a".repeat(64),sourceDigest:"b".repeat(64),targetPath:"module.js"},criterionId:"acceptance:validate-export:r1",revision:"revision-1",assertCurrent:()=>{}};
     expect((await runAgentVerificationStage({context,dispatcher:tools,changedPaths:["module.js"],artifact,authorize:async()=>false})).action).toBe("cancelled");
+    expect(context.agentVerification).toBeUndefined();expect(tools.dispatchConcurrent).not.toHaveBeenCalled();
+  });
+  it("does not execute an export that changes while approval is pending", async () => {
+    setupProject(); const tools=dispatcher();let current=true;
+    const artifact={operation:{artifactPath:"/export.js",artifactDigest:"a".repeat(64),sourceDigest:"b".repeat(64),targetPath:"module.js"},criterionId:"acceptance:validate-export:r1",revision:"revision-1",assertCurrent:()=>{if(!current)throw new Error("export changed");}};
+    await expect(runAgentVerificationStage({context,dispatcher:tools,changedPaths:["module.js"],artifact,authorize:async()=>{current=false;return true;}})).rejects.toThrow("export changed");
     expect(context.agentVerification).toBeUndefined();expect(tools.dispatchConcurrent).not.toHaveBeenCalled();
   });
   it("runs each affected package and records only current immutable test evidence", async () => {

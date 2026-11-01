@@ -232,6 +232,33 @@ describe("Agent v3 task host loop", () => {
     const {result,approve}=await run(text,false,async()=>true,undefined,root,true,input);
     expect(result.outcome).toBe("partial");expect(approve).toHaveBeenCalledOnce();
   });
+  it.each(["current","changed"] as const)("tests an approved exported repair in the project copy: %s",async mode=>{
+    const workspace=path.join(root,"project");mkdirSync(workspace);
+    const input={id:"11111111-1111-4111-8111-111111111111",filename:"value.js",content:"module.exports = 1;\n"};
+    writeFileSync(path.join(workspace,"package.json"),JSON.stringify({scripts:{test:"node --test"}}));
+    writeFileSync(path.join(workspace,"value.js"),input.content);
+    writeFileSync(path.join(workspace,"value.test.js"),"const {test}=require('node:test');const assert=require('node:assert/strict');test('value',()=>assert.ok(require('./value.js')>0));\n");
+    const originalExecutor=childProcesses.executeProcess, tested:string[]=[];
+    vi.spyOn(childProcesses,"executeProcess").mockImplementation(async(binary,args,options)=>{
+      if(options.env?.WORKBENCH_TEST_REPORT && options.cwd) tested.push(readFileSync(path.join(options.cwd,"value.js"),"utf8"));
+      return originalExecutor(binary,args,options);
+    });
+    const text="Repair attached value.js and export repaired.js.";
+    artifactScopeReplies=[()=>({requested:true,format:"file",filename:"repaired.js",reason:"The instruction requests an exported repair."})];
+    replies=[()=>interpretation("change",text),
+      ()=>({tool_calls:[{name:"read_input",arguments:{source_id:input.id}}]}),
+      ()=>({tool_calls:[{name:"request_capability",arguments:{capability:"artifact_generation",reason:"Export the repair"}}]}),
+      ()=>({tool_calls:[{name:"generate_deliverable",arguments:{type:"file",filename:"repaired.js",content:"module.exports = 2;\n"}}]}),
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"The repair is saved."}}]}),
+      payload=>{const state=packetState(payload.messages[1].content);if(mode === "changed")writeFileSync(path.join(root,"runs",getCurrentAgentTask(chatId)!.latestRunId!,"input",input.filename),"changed");return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The exported repair and test evidence are saved."}))};},
+      ()=>({tool_calls:[{name:"finish",arguments:{text:"The repair is saved."}}]})];
+    const {result,runId,approve}=await run(text,false,async()=>true,undefined,workspace,true,input);
+    expect(result.outcome,result.text).toBe(mode === "current" ? "completed" : "partial");
+    expect(readFileSync(path.join(workspace,"value.js"),"utf8")).toBe(input.content);
+    expect(tested).toContain("module.exports = 2;\n");
+    expect(approve.mock.calls.some(([preview])=>preview.includes('"testArtifact"'))).toBe(true);
+    expect(getExecutionLedger(runId)?.verification?.evidence.some(check=>check.criterionId.startsWith("acceptance:validate-export:") && check.status === "passed")).toBe(true);
+  });
   it("does not complete a requested file from an answer alone",async()=>{
     const text="Create a downloadable report.md with the project summary.";
     artifactScopeReplies=[()=>({requested:true,format:"md",filename:"report.md",reason:"The instruction requests this file."})];

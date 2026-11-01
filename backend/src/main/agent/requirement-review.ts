@@ -21,7 +21,7 @@ import { currentAgentArtifact, hasAgentArtifactAction, inspectAgentArtifacts } f
 import { assessAgentArtifactScope } from "./artifact-scope.js";
 import { reviewArtifactParts } from "./artifact-part-review.js";
 import { currentAgentInputPage } from "./input-evidence.js";
-import { planArtifactTests } from "./artifact-test-plan.js";
+import { bindArtifactTests } from "./artifact-test-plan.js";
 
 /** Visual observations remain model interpretations. Accept them for review only
  * while their saved source, views, and underlying result records are current. */
@@ -63,12 +63,22 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
     if(scope.requested) requiredArtifacts.set(requirement.id,matching);
   }
   if (required.some(item=>item.kind === "change") && !changed.length && !artifacts.some(artifact=>required.some(item=>item.kind === "change" && item.id === artifact.requirementId))) return {ok:false,detail:"A change requirement has no current applied change or bound artifact."};
-  if (!ledger.verification?.userSkip) for(const artifact of artifacts) {
-    const requirement=required.find(item=>item.kind==="change" && item.id===artifact.requirementId);
-    if(!requirement || !isCodeVerificationPath(artifact.filename))continue;
-    const plan=planArtifactTests(context,requirement,artifact);
-    return {ok:false,detail:`The exported code repair needs artifact-specific execution evidence. ${plan.ok ? `Its staged source maps to ${plan.targetPath}; existing tests have not yet run against the exported bytes.` : plan.detail}`};
-  }
+  const checkExportTests = () => {
+    if (ledger.verification?.userSkip) return undefined;
+    for(const artifact of artifacts) {
+      const requirement=required.find(item=>item.kind==="change" && item.id===artifact.requirementId);
+      if(!requirement || !isCodeVerificationPath(artifact.filename))continue;
+      try {
+        const binding=bindArtifactTests(context,requirement,artifact,Boolean(getExecutionLedger(context.runId)?.agentProgress?.fullSuite));
+        const check=getExecutionLedger(context.runId)?.verification?.evidence.find(item=>item.criterionId===binding.criterionId && item.revision===binding.revision && item.status==="passed");
+        if(!check || !check.evidence.length || !check.evidence.every(ref=>ref.kind === "result" && context.resultStore!.verifyIntegrity(ref.id).valid)) return "The exported code repair needs artifact-specific execution evidence for its current bytes and test inputs.";
+        binding.assertCurrent();
+      } catch(error) { return `The exported code repair needs artifact-specific execution evidence. ${String(error)}`; }
+    }
+    return undefined;
+  };
+  const exportTestGap=checkExportTests();
+  if(exportTestGap)return {ok:false,detail:exportTestGap};
   // Visual readings are explicitly labelled interpretations, never deterministic proof.
   const savedResults=agentEvidenceRecords(context);
   if(savedResults.some(item=>item.runId===context.runId && item.producer.tool==="read_input" && item.origin==="source_extracted" && item.status==="complete" && !currentAgentInputPage(context,item))) return {ok:false,detail:"Staged input evidence is missing or changed. Submit the source again.",next:"source"};
@@ -201,6 +211,8 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
   if (visualResults.some(record => !currentVisualObservation(context, record))) return { ok: false, detail: "Visual source evidence changed during review. Inspect the current source before delivery.", next: "source" };
   if (inputResults.some(record => !currentAgentInputPage(context,record))) return {ok:false,detail:"Staged input evidence changed during review. Submit the source again.",next:"source"};
   try { artifacts.forEach(currentAgentArtifact); } catch (error) { return {ok:false,detail:`Artifact changed during review: ${String(error)}`}; }
+  const finalExportTestGap=checkExportTests();
+  if(finalExportTestGap)return {ok:false,detail:finalExportTestGap};
   try {
     const current=checkLiterals();
     if(current.some(check=>!check.passed) || current.some((check,index)=>check.sourceDigest!==literalChecks[index]?.sourceDigest || ("artifactDigest" in check && check.artifactDigest !== (literalChecks[index] as typeof check).artifactDigest))) return {ok:false,detail:"Exact source or artifact bytes changed during review.",next:"source"};
@@ -217,7 +229,8 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
     if (!current.ok || current.digest !== digest) return { ok: false, detail: `Applied source changed during review: ${path}. Read it again before delivery.`, next: "source" };
   }
   const tests = ledger.verification?.evidence.find(item => item.criterionId === "acceptance:validate-written-code");
-  if (required.some(item => item.acceptance.some(check => check.kind === "execution")) && tests?.status !== "passed" && !ledger.verification?.userSkip) return { ok: false, detail: "Mandatory executable behavior lacks current host test evidence." };
+  const needsWorkspaceTests=required.some(item=>item.acceptance.some(check=>check.kind === "execution") && !(item.kind === "change" && artifacts.some(artifact=>artifact.requirementId === item.id && isCodeVerificationPath(artifact.filename))));
+  if (needsWorkspaceTests && tests?.status !== "passed" && !ledger.verification?.userSkip) return { ok: false, detail: "Mandatory executable behavior lacks current host test evidence." };
   if (tests?.status === "passed" && tests.revision !== captureAgentVerificationManifest(context.workspaceRoot).sha256) return { ok: false, detail: "Test evidence is stale for the current implementation, tests, or configuration." };
   return { ok: true, detail: "Every requirement has a bounded assessment and the source scope audit passed. Executable proof remains host-owned." };
 }

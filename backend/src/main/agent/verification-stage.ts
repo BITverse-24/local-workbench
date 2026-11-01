@@ -38,7 +38,7 @@ export async function runAgentVerificationStage(input: {
   const criterion = input.artifact?.criterionId ?? (input.baseline ? "baseline:project-tests" : CRITERION);
   const evidence = (status: VerificationCheck["status"], reason: string, extra: Partial<VerificationCheck> = {}) => {
     recordVerificationEvidence(runId, [{ criterionId: criterion, requirement: "Run tests against the latest saved code", status,
-      method: "execution_record", evidence: [], reason: reason.slice(0, 500), verifiedAt: new Date().toISOString(), mandatory: !input.baseline, ...extra }]);
+      method: "execution_record", evidence: [], reason: reason.slice(0, 500), verifiedAt: new Date().toISOString(), mandatory: !input.baseline && !input.artifact, ...extra }]);
   };
   const stop = (reason: string, detail: string): AgentVerificationStageResult => {
     evidence("unverified", detail);
@@ -109,7 +109,7 @@ export async function runAgentVerificationStage(input: {
           return { action: "cancelled", detail };
         }
         let attempt: ReturnType<typeof startVerificationAttempt>;
-        try { context.signal?.throwIfAborted(); context.assertAuthority?.(); attempt = startVerificationAttempt(runId, planId); }
+        try { context.signal?.throwIfAborted(); context.assertAuthority?.(); input.artifact?.assertCurrent(); attempt = startVerificationAttempt(runId, planId); }
         catch (error) { context.agentVerification = undefined; throw error; }
         let execution: Awaited<ReturnType<ToolDispatcher["dispatchConcurrent"]>>[number] | undefined;
         try {

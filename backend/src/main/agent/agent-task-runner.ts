@@ -29,6 +29,8 @@ import { normalizeRunCommandArgs } from "../tools/workspace-tools.js";
 import { agentDependencyConstraints } from "./dependency-constraint.js";
 import { assessAgentArtifactScope, assertAgentArtifactScope } from "./artifact-scope.js";
 import { bindTaskInputs } from "./task-inputs.js";
+import { agentArtifactOutcomes } from "./artifact-evidence.js";
+import { bindArtifactTests } from "./artifact-test-plan.js";
 
 type RunnerInput = { context: ToolExecutionContext; modelId: string; chatId: string; messageId: string; workspace: AgentTask["workspace"]; intent?: "continue" | "new"; predecessorRunId?: string;
   state: (state: "classifying" | "planning" | "acting") => void; approve: (preview: string) => Promise<boolean> };
@@ -325,11 +327,33 @@ export class AgentTaskRunner {
         if (call.name === "finish") {
           const changed = changedPaths(), gap = agentDeliveryGap(task,context,changed);
           if (gap) {updateAgentProgress(runId,state=>{state.feedback=gap;});continue;}
-          if (needsTests || changed.some(isCodeVerificationPath)) {
+          const exports=agentArtifactOutcomes(context).flatMap(artifact=>{
+            const requirement=task.snapshot.requirements.find(item=>item.state === "active" && item.kind === "change" && item.id === artifact.requirementId);
+            return requirement && isCodeVerificationPath(artifact.filename) ? [{artifact,requirement}] : [];
+          });
+          const needsWorkspaceTests=task.snapshot.requirements.some(item=>item.state === "active" && (item.kind === "execute" || item.acceptance.some(check=>check.kind === "execution") && !exports.some(entry=>entry.requirement.id === item.id)));
+          if (changed.some(isCodeVerificationPath) || needsTests && (!exports.length || needsWorkspaceTests)) {
             const checked = await verifyChanges();
             if (checked.action === "repair") continue;
             if (!["passed", "skipped"].includes(checked.action)) return stop("checks_unavailable", checked.detail, checked.action === "cancelled" ? "cancelled" : "partial");
           }
+          if (!getExecutionLedger(runId)?.verification?.userSkip) for (const item of exports) {
+            let binding:ReturnType<typeof bindArtifactTests>;
+            const fullSuite=Boolean(getExecutionLedger(runId)?.agentProgress?.fullSuite);
+            try { binding=bindArtifactTests(context,item.requirement,item.artifact,fullSuite); }
+            catch(error) { return stop("checks_unavailable",`Exported repair tests are unavailable: ${String(error)}`); }
+            const checked=await runAgentVerificationStage({context,dispatcher,changedPaths:fullSuite ? [] : [binding.targetPath],artifact:binding,authorize});
+            clearApprovals();
+            updateAgentProgress(runId,state=>{state.feedback=checked.detail.slice(0,10000);});
+            if (checked.action === "repair") { await obtainAgentFailureSources(context,dispatcher,checked.sourceHints); break; }
+            if (checked.action !== "passed") return stop("checks_unavailable",checked.detail,checked.action === "cancelled" ? "cancelled" : "partial");
+          }
+          if (exports.some(item=>{
+            if(getExecutionLedger(runId)?.verification?.userSkip)return false;
+            try { const binding=bindArtifactTests(context,item.requirement,item.artifact,Boolean(getExecutionLedger(runId)?.agentProgress?.fullSuite));
+              return !getExecutionLedger(runId)?.verification?.evidence.some(check=>check.criterionId===binding.criterionId && check.status==="passed" && check.revision===binding.revision);
+            } catch { return true; }
+          })) continue;
           const complete = await reviewAgentTaskCoverage(task, context, modelId, changed, String(call.arguments.text));
           assertRuntimeActive();
           if (!complete.ok) { updateAgentProgress(runId, state => { state.feedback = complete.detail; if (complete.next === "delivery") state.deliveryEvidenceDigest = undefined; }); continue; }
