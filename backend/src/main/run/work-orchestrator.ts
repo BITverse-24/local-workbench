@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { reviewEvidenceCatalog, resolveReviewReferences } from './review-evidence.js';
@@ -626,7 +626,28 @@ RUN CONTRACT: ${JSON.stringify(contract)}\nMODEL SOURCE CHECKLIST (derived inter
         } catch { /* A complete fenced source is the alternate transport. */ }
         if(!calls.length){
           const blocks=[...responseText.matchAll(/^```(?:python|py)[^\S\r\n]*\r?\n([\s\S]*?)^```[^\S\r\n]*\r?$/gm)];
-          if(blocks.length===1&&blocks[0][1].trim())calls=[{id:randomUUID(),name:'execute_python',arguments:{code:blocks[0][1],filename:repairOutputs[0].filename!}}];
+          if(blocks.length===1&&blocks[0][1].trim()){
+            let candidateCode = blocks[0][1];
+            const sourceAttachment = input.attachments.find(attachment=>attachment.filename.endsWith('.py'));
+            if(sourceAttachment){
+              const inputDir = resolveRunPath(context.runId, 'input', 'input');
+              const entry = existsSync(inputDir) ? readdirSync(inputDir).find((f: string) => f === sourceAttachment.filename || f.endsWith(`-${sourceAttachment.filename}`)) : undefined;
+              if(entry){
+                const orig = readFileSync(path.join(inputDir, entry), 'utf8');
+                if(!candidateCode.includes('__main__') && orig.includes('__main__')){
+                  const mainMatch = orig.match(/\nif\s+__name__\s*==\s*['"]__main__['"]\s*:[\s\S]*$/);
+                  if(mainMatch) candidateCode = candidateCode.trimEnd() + '\n\n' + mainMatch[0].trimStart() + '\n';
+                }
+                const origImports = orig.split('\n').filter(line => /^\s*(?:import\s+\w+|from\s+\w+\s+import)/.test(line));
+                for(const imp of origImports){
+                  if(!candidateCode.includes(imp.trim())){
+                    candidateCode = imp + '\n' + candidateCode;
+                  }
+                }
+              }
+            }
+            calls=[{id:randomUUID(),name:'execute_python',arguments:{code:candidateCode,filename:repairOutputs[0].filename!}}];
+          }
         }
       }
       if(calls.length) {
