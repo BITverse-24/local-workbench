@@ -750,7 +750,7 @@ export class ModelGateway implements ModelClient {
                 recordAgentAdmissionOutcome(v3.runId, dispatchId, "estimate_used", usage);
                 return { status: response.status, text: async () => responseBody };
               }
-              try { assertAgentProviderUsage(receipt, usage); }
+              try { assertAgentProviderUsage(receipt, usage, 8); }
               catch (error) {
                 recordAgentAdmissionOutcome(v3.runId, dispatchId, "mismatch", usage);
                 invalidateAgentCountingVerification(receipt.binding);

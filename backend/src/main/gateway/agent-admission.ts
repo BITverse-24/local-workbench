@@ -152,6 +152,6 @@ export function assertAgentAdmissionReceipt(receipt: AgentAdmissionReceipt, payl
 }
 
 /** A mismatch invalidates the profile before any returned action can execute. Missing usage cannot validate it. */
-export function assertAgentProviderUsage(receipt: AgentAdmissionReceipt, inputTokens: number | undefined): void {
-  if (!Number.isSafeInteger(inputTokens) || inputTokens !== receipt.inputTokens) throw new Error("Provider prompt usage differs from the admitted count or is missing. Invalidate counting verification and stop this Agent run.");
+export function assertAgentProviderUsage(receipt: AgentAdmissionReceipt, inputTokens: number | undefined, tolerance = 0): void {
+  if (typeof inputTokens !== "number" || !Number.isSafeInteger(inputTokens) || Math.abs(inputTokens - receipt.inputTokens) > tolerance) throw new Error("Provider prompt usage differs from the admitted count or is missing. Invalidate counting verification and stop this Agent run.");
 }
