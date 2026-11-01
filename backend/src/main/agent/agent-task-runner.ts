@@ -322,7 +322,12 @@ export class AgentTaskRunner {
           updateAgentProgress(runId, state => { state.feedback = `Return one valid action. ${String(error).slice(0, 1000)}`; }); continue;
         }
         context.agentChangeReason = response.value.content?.slice(0, 1000) || selected.description;
-        const repeated = hash([call.name, call.arguments, this.sourceVersion(context, call.arguments), progress?.latestResultId ? context.resultStore!.getResult(progress.latestResultId).storage.sha256 : null]);
+        // A command result contains fresh timing and result IDs even when the
+        // same command ran against identical inputs. Those receipt details are
+        // not new project evidence and must not permit an endless retry loop.
+        const repeated = call.name === "run_command"
+          ? hash([call.name,call.arguments,captureCommandWorkspaceDigest(context.workspaceRoot),agentTestEnvironmentKey(context.workspaceRoot)])
+          : hash([call.name, call.arguments, this.sourceVersion(context, call.arguments), progress?.latestResultId ? context.resultStore!.getResult(progress.latestResultId).storage.sha256 : null]);
         if (progress?.actions.some(item => item.hash === repeated)) return stop("repeated_action", "The same action was proposed without new source or evidence. Pending requirements remain saved.");
         context.resultStore!.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_proposal", callId: call.id }, summary: context.agentChangeReason, payload: { taskId: task.taskId, taskRevision: bound.taskRevision, requirementId: context.agentRequirementId, reason: context.agentChangeReason, operation: call.name, arguments: call.arguments, ...(selectedDraftId ? {draftResultId:selectedDraftId} : {}) }, sources: selectedDraftId ? [{resultId:selectedDraftId,relation:"source"}] : [] });
         updateAgentProgress(runId, state => { state.actions.push({ id: call.id, hash: repeated, requirementId: context.agentRequirementId!, operation: call.name, status: "proposed" }); });

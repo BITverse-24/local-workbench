@@ -709,6 +709,15 @@ describe("Agent v3 task host loop", () => {
     expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["draft_module","request_context","request_capability"]);
     expect(readFileSync(path.join(workspace,"value.cjs"),"utf8")).toBe(implementation);
   });
+  it("stops the same command on unchanged project inputs after its first result",async()=>{
+    const request="Run the command printf READY.", command=()=>({tool_calls:[{name:"run_command",arguments:{command:"printf READY"}}]});
+    const workspace=path.join(root,"command-project");mkdirSync(workspace);
+    replies=[()=>interpretation("execute",request),command,command];
+    const {result,approve,runId}=await run(request,false,undefined,undefined,workspace);
+    expect(result.stopReason,result.text).toBe("repeated_action");
+    expect(approve).toHaveBeenCalledTimes(1);
+    expect(getExecutionLedger(runId)?.agentProgress?.actions.filter(action=>action.operation === "run_command")).toHaveLength(1);
+  });
   it("obtains read-only failure evidence without requiring a change category",async()=>{
     const workspace=path.join(root,"project");mkdirSync(workspace);
     const implementation='exports.readValue = () => { throw new Error("failure to inspect"); };\n';
