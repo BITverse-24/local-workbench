@@ -439,3 +439,9 @@ The wider Agent, source-edit, and literal-evidence suites passed 112 tests with 
 After the host binds a v3 run to its task, it can restore pinned inputs from earlier v3 attempts in that same task. Each read checks the originating run, task ownership, saved input path, ID, name, and digest. A changed input or conflicting revision for the same ID does not establish evidence. Earlier saved read pages are usable only when they match the currently bound input bytes. An explicit New task does not inherit the previous task's inputs, and a forged reference to another task is rejected.
 
 The RunManager previously selected the chat's latest attachment automatically when a new run had none. Agent v3 now uses explicit current attachments plus task-bound restoration; Chat and Work retain their existing selection behavior. Controlled tests covered same-task continuation, changed and conflicting inputs, a new task, a forged cross-task reference, and the RunManager path. Five focused task checks and 170 Chat/Work and literal-evidence checks passed. Type checking and diff checks passed. Artifact-specific execution for attached repairs, packaged checks, and live-model trials remain open.
+
+## Planning tests for exported repairs
+
+The host can now identify a test target when one pinned source maps by name and digest to exactly one unchanged workspace file. It discovers existing tests for that target. Changed, missing, or ambiguous sources and unchanged exports remain unverified. The completion review reports the specific blocker; this planning step does not run tests or establish a repair.
+
+Four planner tests, the Agent task loop (94 passed, one skipped), type checking, and the diff check passed. The next step is to bind approval and execution evidence to the export and place those exact bytes in the disposable test snapshot. The existing workspace-only test evidence cannot establish a pass for an export.
