@@ -718,6 +718,28 @@ describe("Agent v3 task host loop", () => {
     expect(approve).toHaveBeenCalledTimes(1);
     expect(getExecutionLedger(runId)?.agentProgress?.actions.filter(action=>action.operation === "run_command")).toHaveLength(1);
   });
+  it("rejects a wrong-module replacement when public behavior must be preserved",async()=>{
+    const workspace=path.join(root,"preserve-project");mkdirSync(workspace);
+    const source="export function filter() { return 1; }\nexport function change() { return 2; }\n";
+    writeFileSync(path.join(workspace,"module.js"),source);
+    const text="Repair module.js. Keep the current design and public behavior.";
+    const proposal=()=>({tool_calls:[{name:"edit_file",arguments:{path:"module.js",expected_digest:createHash("sha256").update(source).digest("hex"),replacements:[{old:source,new:"console.log('wrong module');\n"}]}}]});
+    replies=[()=>({disposition:"continue",requirements:[{kind:"change",description:"Repair module.js",source_id:"request",checks:[{description:"Repair it",kind:"review",operation:"semantic",path:null}]},{kind:"preserve",description:"Keep public behavior",source_id:"request",checks:[{description:"Preserve public behavior",kind:"review",operation:"semantic",path:null}]}],updates:[],full_suite:false}),
+      ()=>({tool_calls:[{name:"read_file",arguments:{path:"module.js"}}]}),proposal,proposal];
+    const {result,approve}=await run(text,false,undefined,undefined,workspace);
+    expect(result.outcome).toBe("partial");expect(approve).not.toHaveBeenCalled();
+    expect(readFileSync(path.join(workspace,"module.js"),"utf8")).toBe(source);
+  });
+  it("rejects command publication that removes preserved exports",async()=>{
+    const workspace=path.join(root,"command-preserve-project");mkdirSync(workspace);
+    const source="export function filter() { return 1; }\n";writeFileSync(path.join(workspace,"module.js"),source);
+    const text="Update module.js with a command. Keep current public behavior.";
+    const proposal=()=>({tool_calls:[{name:"run_command",arguments:{command:"printf 'console.log(1)' > module.js"}}]});
+    replies=[()=>({disposition:"continue",requirements:[{kind:"change",description:"Update module.js",source_id:"request",checks:[{description:"Update it",kind:"review",operation:"semantic",path:null}]},{kind:"preserve",description:"Keep public behavior",source_id:"request",checks:[{description:"Preserve behavior",kind:"review",operation:"semantic",path:null}]}],updates:[],full_suite:false}),proposal,proposal];
+    const {result,approve}=await run(text,false,undefined,undefined,workspace);
+    expect(result.outcome).toBe("partial");expect(approve).toHaveBeenCalledTimes(1);
+    expect(readFileSync(path.join(workspace,"module.js"),"utf8")).toBe(source);
+  });
   it("obtains read-only failure evidence without requiring a change category",async()=>{
     const workspace=path.join(root,"project");mkdirSync(workspace);
     const implementation='exports.readValue = () => { throw new Error("failure to inspect"); };\n';

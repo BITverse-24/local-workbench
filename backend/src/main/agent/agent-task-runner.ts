@@ -31,6 +31,7 @@ import { assessAgentArtifactScope, assertAgentArtifactScope } from "./artifact-s
 import { bindTaskInputs } from "./task-inputs.js";
 import { agentArtifactOutcomes } from "./artifact-evidence.js";
 import { bindArtifactTests } from "./artifact-test-plan.js";
+import { preservesPublicInterface } from "./export-preservation.js";
 
 type RunnerInput = { context: ToolExecutionContext; modelId: string; chatId: string; messageId: string; workspace: AgentTask["workspace"]; intent?: "continue" | "new"; predecessorRunId?: string;
   state: (state: "classifying" | "planning" | "acting") => void; approve: (preview: string) => Promise<boolean> };
@@ -130,6 +131,7 @@ export class AgentTaskRunner {
       for (const capability of ["source_access", "workspace_mutation", "system_execution", "result_retrieval"] as const) context.activeCapabilities.add(capability);
       context.policyGuard.setEnforceExplicit(runId, true);
       context.agentDependencyConstraints = agentDependencyConstraints(task);
+      context.agentPreservePublicInterface = preservesPublicInterface(task);
       const granted: string[] = [];
       const clearApprovals = () => { context.policyGuard!.revokeScopes(granted.splice(0)); context.agentOperationDigest = undefined; context.agentCommandApproval = undefined; context.agentArtifactScope = undefined; };
       const authorize = async (calls: AgentToolCall[]) => {

@@ -12,6 +12,7 @@ import { editFile, fileDigest, observedRange, prepareFileEdit, readAgentSourceBy
 import { getExecutionLedger } from "../run/execution-ledger.js";
 import { captureAgentVerificationManifest } from "./test-verification.js";
 import { validateAgentDependencyChange } from "./dependency-constraint.js";
+import { validatePublicExports } from "./export-preservation.js";
 import { assertAgentFileScope } from "./file-scope.js";
 import { currentRuntimeScope } from "../run/runtime-scope.js";
 import { runRoot } from "../run/filesystem.js";
@@ -62,12 +63,14 @@ export function validateAgentFileProposal(operation: string, args: Record<string
     const replacements = z.array(z.object({ old: z.string().min(1), new: z.string() }).strict()).min(1).parse(args.replacements);
     const prepared = prepareFileEdit(context.workspaceRoot, { path: canonical, expectedDigest: digest.parse(args.expected_digest), replacements, requirementId: context.agentRequirementId ?? "", reason: context.agentChangeReason ?? "" }, receipts);
     validateAgentDependencyChange(context.agentDependencyConstraints, canonical, readAgentSourceBytes(context.workspaceRoot, canonical), prepared.after);
+    validatePublicExports(context.agentPreservePublicInterface,canonical,readAgentSourceBytes(context.workspaceRoot,canonical),prepared.after);
   } else if (existsSync(target)) {
     const bytes = readAgentSourceBytes(context.workspaceRoot, canonical), actual = fileDigest(bytes);
     if (actual !== args.expected_digest || (operation === "write_file" && args.replace_existing !== true) || !observedRange(receipts, canonical, actual, 0, bytes.length)) throw new PermissionError("This proposal needs the complete current source and matching digest. Use read_file or bounded edits first.");
     if (operation === "write_file" && bytes.equals(Buffer.from(z.string().parse(args.content)))) throw new Error("The proposed replacement does not change the current file. No write or backup was created.");
   } else if (operation === "delete_file" || args.expected_digest) throw new PermissionError("The target is missing or changed.");
   if (operation !== "edit_file") validateAgentDependencyChange(context.agentDependencyConstraints, canonical, existsSync(target) ? readAgentSourceBytes(context.workspaceRoot, canonical) : undefined, operation === "delete_file" ? undefined : Buffer.from(z.string().parse(args.content)));
+  if (operation !== "edit_file") validatePublicExports(context.agentPreservePublicInterface,canonical,existsSync(target) ? readAgentSourceBytes(context.workspaceRoot,canonical) : undefined,operation === "delete_file" ? undefined : Buffer.from(z.string().parse(args.content)));
 }
 
 export const agentWorkspaceActions: AgentTool[] = [
