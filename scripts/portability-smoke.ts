@@ -6,7 +6,13 @@ import path from "node:path";
 import type { ModelGateway } from "../backend/src/main/gateway/model-gateway.js";
 import { closeDb, configurePersistence, getDb, initDb } from "../backend/src/main/persistence/db.js";
 import { createChat } from "../backend/src/main/persistence/chats.js";
-import { createRun } from "../backend/src/main/run/store.js";
+import { createRun, getState, transition } from "../backend/src/main/run/store.js";
+import { addMessage } from "../backend/src/main/persistence/messages.js";
+import { bindAgentTaskRun, getAgentTaskBinding } from "../backend/src/main/run/agent-task-store.js";
+import { bindAgentExecutionLedger, getExecutionLedger, initializeExecutionLedger, reconcileInterruptedExecutions } from "../backend/src/main/run/execution-ledger.js";
+import { persistRunContract } from "../backend/src/main/run/contract.js";
+import { recoverInterruptedModeRuns } from "../backend/src/main/run/recovery.js";
+import { createConfirmation, decide } from "../backend/src/main/confirmation/store.js";
 import { RunResultStore } from "../backend/src/main/run/result-store.js";
 import { buildExecutionEnvelope } from "../backend/src/main/run/envelope.js";
 import { withRuntimeScope } from "../backend/src/main/run/runtime-scope.js";
@@ -98,8 +104,22 @@ async function smoke() {
       }
       closeDb(); initDb(dbPath);
       assert.equal(new RunResultStore(runId, getDb(), root).retrieveResultSlice(id).content, source);
+      const recoveryChat=createChat(), recoveryRun=createRun(recoveryChat,"Preserve the pending repair"),messageId=addMessage({chat_id:recoveryChat,role:"user",content:"Preserve the pending repair"}).id;
+      getDb().prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,'agent','agent-v3',?)").run(recoveryRun,workspaceRoot);
+      const binding=bindAgentTaskRun({runId:recoveryRun,chatId:recoveryChat,messageId,workspace:{root:workspaceRoot,registeredAt:"package-smoke"},disposition:"continue",updates:[]});
+      const contract=persistRunContract({schemaVersion:1,runId:recoveryRun,createdAt:new Date().toISOString(),objective:"Preserve the pending repair",resolution:{status:"resolved"},routing:{intentType:"general_qa",taskType:"code",driverModel:"primary-model",actionable:true},response:{required:true,chatOnly:false},workspace:{requested:false,operations:[]},deliverables:[],constraints:{protectedPaths:[],restrictMutationsToTargets:false,userConstraints:[]},acceptance:{validateWrittenCode:false,validatedPythonDeliverables:[],artifactChecks:[]}});
+      initializeExecutionLedger(contract);bindAgentExecutionLedger(binding);
+      transition(recoveryRun,"classifying");transition(recoveryRun,"acting");transition(recoveryRun,"awaiting_confirmation");
+      const confirmation=createConfirmation(recoveryRun,"plan_approval");
+      closeDb();initDb(dbPath);reconcileInterruptedExecutions();recoverInterruptedModeRuns();
+      assert.equal(getState(recoveryRun),"partial");
+      assert.equal(getAgentTaskBinding(recoveryRun)?.taskRevision,binding.taskRevision);
+      assert.equal(getExecutionLedger(recoveryRun)?.resumeCount,0);
+      assert.ok(["expired","cancelled"].includes((getDb().prepare("SELECT outcome FROM confirmations WHERE action_id=?").get(confirmation.actionId) as {outcome:string}).outcome));
+      assert.throws(()=>decide(recoveryRun,confirmation.actionId,true));
+      assert.equal(readFileSync(path.join(workspaceRoot,"source.md"),"utf8"),source);
     });
-    console.log(`Package portability check passed on ${process.platform}: Agent read, result retrieval, integrity, reopen, command validation, storage failure${process.platform === "darwin" ? ", and missing Node" : ""}.`);
+    console.log(`Package portability check passed on ${process.platform}: Agent read, result retrieval, integrity, restart recovery, command validation, storage failure${process.platform === "darwin" ? ", and missing Node" : ""}.`);
   } finally {
     closeDb();
     if (priorRoot === undefined) delete process.env.WORKBENCH_DATA_ROOT; else process.env.WORKBENCH_DATA_ROOT = priorRoot;
