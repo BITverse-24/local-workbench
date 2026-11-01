@@ -87,6 +87,9 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
     selectedSources.complete=selectedSources.pages.length >= selectedSources.totalEligiblePages;
   }
   const providedPages=[...new Map([...(latestPage ? [latestPage] : []),...selectedSources.pages].map(page=>[`${page.path}:${page.digest}:${page.startByte}:${page.endByte}`,page])).values()];
+  // A recently requested supporting file must not precede the module that the
+  // model is drafting. Keep all admitted pages, but make their roles explicit.
+  if(repair)providedPages.sort((a,b)=>Number(b.path===repair.path && b.digest===repair.digest)-Number(a.path===repair.path && a.digest===repair.digest));
   if(repair && focus?.complete && focus.sizeBytes > 0 && focus.sizeBytes <= 2000 && /\.[cm]?[jt]sx?$/i.test(repair.path) && sourcePageIsCurrent(context,focus) && observedRange(providedPages,repair.path,repair.digest,0,focus.sizeBytes))repair.completeSource=focus.content;
   const observedSources=providedPages.map(sourcePageReceipt);
   const source = task.snapshot.messages.find(message => message.id === requirement.source.messageId);
@@ -162,7 +165,7 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
     };
     const moduleStep=repair.completeSource !== undefined && !repair.expanded;
     const packetState=moduleStep ? {taskId:state.taskId,taskRevision:state.taskRevision,currentStep:state.currentStep,currentRequirement:state.currentRequirement,constraints:state.constraints,unresolvedRequirementIds:state.unresolvedRequirementIds,obligations:focused.obligations,selectedSources:focused.selectedSources,latestResult:focused.latestResult,checkEvidence:state.checkEvidence,feedback:state.feedback,contextRule:"The next decision can request registered tools for one action; no capability or requirement is removed."} : focused;
-    const literal=providedPages.map(page=>`\n\nOBSERVED SOURCE ${page.path}\nDigest: ${page.digest}; bytes ${page.startByte}-${page.endByte} of ${page.sizeBytes}; complete file: ${page.complete}; result: ${page.resultId}\n<source>\n${page.content}\n</source>`).join("");
+    const literal=providedPages.map(page=>`\n\nOBSERVED SOURCE ${page.path}\nRole: ${page.path === repair.path && page.digest === repair.digest ? "CURRENT REPAIR TARGET" : "SUPPORTING CONTEXT; do not replace the target with this file"}\nDigest: ${page.digest}; bytes ${page.startByte}-${page.endByte} of ${page.sizeBytes}; complete file: ${page.complete}; result: ${page.resultId}\n<source>\n${page.content}\n</source>`).join("");
     messages=[{role:"system",content:repair.expanded ? AGENT_COMMON_INSTRUCTIONS : moduleStep ? AGENT_MODULE_REPAIR_INSTRUCTIONS : AGENT_REPAIR_INSTRUCTIONS},{role:"user",content:JSON.stringify(packetState)+literal}];
   }
   return {messages,observedSource,observedSources,requirement,readPaths,repair};

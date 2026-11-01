@@ -676,6 +676,9 @@ describe("Agent v3 task host loop", () => {
     },payload=>{
       expect(toolNames(payload)).toEqual(["draft_module"]);
       expect(payload.messages[1].content).toContain("<source>\nneeded context\n\n</source>");
+      expect(payload.messages[1].content.indexOf("OBSERVED SOURCE value.cjs")).toBeLessThan(payload.messages[1].content.indexOf("OBSERVED SOURCE extra.txt"));
+      expect(payload.messages[1].content).toContain("Role: CURRENT REPAIR TARGET");
+      expect(payload.messages[1].content).toContain("Role: SUPPORTING CONTEXT; do not replace the target with this file");
       return {tool_calls:[{name:"propose_repair",arguments:{kind:"blocked",reason:"No further repair is justified by this evidence"}}]};
     }];
     const {result,runId,approve}=await run("Reproduce and repair value.cjs",false,undefined,undefined,workspace);
