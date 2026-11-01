@@ -14,7 +14,8 @@ import { ToolDispatcher } from "../backend/src/main/agent/tool-dispatcher.js";
 import { readFileTool, runCommandTool, normalizeRunCommandArgs } from "../backend/src/main/tools/workspace-tools.js";
 import { retrieveResultTool } from "../backend/src/main/tools/result-retrieval.js";
 import { MutationPolicyGuard } from "../backend/src/main/harness/policy-guard.js";
-import { getCommandCapability } from "../backend/src/main/harness/tools/run-command.js";
+import { captureCommandWorkspaceDigest, commandApprovalDigest, getCommandCapability, runCommand } from "../backend/src/main/harness/tools/run-command.js";
+import { createAgentVerificationRequest, discoverAgentTestPlans } from "../backend/src/main/agent/test-verification.js";
 
 async function smoke() {
   const root = mkdtempSync(path.join(os.tmpdir(), "workbench-package-smoke-"));
@@ -70,10 +71,35 @@ async function smoke() {
       assert.equal(events.filter(e => e.type === "tool_result" && e.callId === "failure")[0].ok, false);
       assert.equal(readFileSync(path.join(workspaceRoot, "source.md"), "utf8"), source);
       getDb().exec("DROP TRIGGER fail_result_insert");
+      if (process.platform === "darwin") {
+        // Probe the packaged v3 command path with a launch environment that
+        // cannot find Node. Do not run the test command or modify the project.
+        writeFileSync(path.join(workspaceRoot, "package.json"), JSON.stringify({scripts:{test:"node --test"}}));
+        writeFileSync(path.join(workspaceRoot, "case.js"), "module.exports = 1;\n");
+        writeFileSync(path.join(workspaceRoot, "case.test.js"), "require('node:test').test('case',()=>{});\n");
+        const discovery=discoverAgentTestPlans({workspaceRoot,changedPaths:["case.js"]});
+        assert.equal(discovery.ok,true);
+        if (!discovery.ok) throw new Error(discovery.detail);
+        const request=createAgentVerificationRequest(discovery.plans[0]);
+        const approval={workspaceDigest:captureCommandWorkspaceDigest(workspaceRoot)};
+        const guard=new MutationPolicyGuard({strict:true});
+        guard.grantScope({runId,operation:"run_command",command:request.command,operationDigest:commandApprovalDigest(request.command,approval),allowUnisolated:true});
+        const priorPath=process.env.PATH,priorIsolation=process.env.WORKBENCH_USE_MAC_SANDBOX;
+        process.env.PATH=path.join(root,"no-tools");process.env.WORKBENCH_USE_MAC_SANDBOX="0";
+        try {
+          const result=await withRuntimeScope({runId,mode:"agent",agentPhase:"actions",signal:new AbortController().signal},()=>runCommand(workspaceRoot,request.command,5000,{guard,runId,approval},request));
+          assert.equal(result.verification?.reason,"test_runtime_unavailable");
+          assert.equal(result.verification?.executed,0);
+          assert.equal(readFileSync(path.join(workspaceRoot,"case.js"),"utf8"),"module.exports = 1;\n");
+        } finally {
+          if(priorPath===undefined)delete process.env.PATH;else process.env.PATH=priorPath;
+          if(priorIsolation===undefined)delete process.env.WORKBENCH_USE_MAC_SANDBOX;else process.env.WORKBENCH_USE_MAC_SANDBOX=priorIsolation;
+        }
+      }
       closeDb(); initDb(dbPath);
       assert.equal(new RunResultStore(runId, getDb(), root).retrieveResultSlice(id).content, source);
     });
-    console.log(`Package portability check passed on ${process.platform}: Agent read, result retrieval, integrity, reopen, command validation and storage failure.`);
+    console.log(`Package portability check passed on ${process.platform}: Agent read, result retrieval, integrity, reopen, command validation, storage failure${process.platform === "darwin" ? ", and missing Node" : ""}.`);
   } finally {
     closeDb();
     if (priorRoot === undefined) delete process.env.WORKBENCH_DATA_ROOT; else process.env.WORKBENCH_DATA_ROOT = priorRoot;
