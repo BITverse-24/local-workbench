@@ -10,11 +10,11 @@ import { agentFileScopeSchema } from "../agent/file-scope.js";
 
 
 export const verificationCheckSchema = z.object({
-  criterionId: z.string().min(1).max(256), requirement: z.string().max(500),
+  criterionId: z.string().min(1).max(256), requirement: z.string().transform(s => s.slice(0, 500)),
   status: z.enum(["passed", "failed", "unverified", "not_applicable", "skipped"]),
   method: z.enum(["sha256", "result_store_checksum", "format_parser", "filesystem", "execution_record", "agent_loop_completion", "content_check", "independent_reader", "message_record"]),
   evidence: z.array(z.object({ kind: z.enum(["result", "artifact", "execution", "message"]), id: z.string().min(1).max(256) })).max(40),
-  reason: z.string().max(500), verifiedAt: z.string().datetime(), mandatory: z.boolean(),
+  reason: z.string().transform(s => s.slice(0, 500)), verifiedAt: z.string().datetime(), mandatory: z.boolean(),
   revision: z.string().max(256).optional(), planId: z.string().max(256).optional(),
   sourceManifest: z.record(z.string().regex(/^[a-f0-9]{64}$/).nullable()).optional(),
   waiver: z.object({ basis: z.string().min(1).max(2000), recordedAt: z.string().datetime() }).optional(),

@@ -9,6 +9,7 @@
       "requestTimeoutMs": 300000,
       "healthPath": "/models",
       "enabled": true,
+      "contextLength": 32768,
       "maxOutputTokens": 4096,
       "toolCallingFormat": "native",
       "temperature": 0
@@ -23,6 +24,7 @@
       "healthPath": "/models",
       "enabled": true,
       "fallbackOnly": true,
+      "contextLength": 32768,
       "maxOutputTokens": 4096,
       "temperature": 0
     }

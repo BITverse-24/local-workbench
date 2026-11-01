@@ -18,7 +18,12 @@ const MAX_STRUCTURAL_PARSE_BYTES = 64 * 1024 * 1024;
 
 function now(): string { return new Date().toISOString(); }
 function check(input: Omit<VerificationCheck, "verifiedAt">, timestamp = now()): VerificationCheck {
-  return checkSchema.parse({ ...input, verifiedAt: timestamp });
+  return checkSchema.parse({
+    ...input,
+    reason: input.reason.slice(0, 500),
+    requirement: input.requirement.slice(0, 500),
+    verifiedAt: timestamp,
+  });
 }
 function fileFormat(file: string, kind: string, bytes: Buffer): { status: VerificationStatus; reason: string } {
   if (bytes.length === 0) return { status: "failed", reason: "Artifact is empty." };
