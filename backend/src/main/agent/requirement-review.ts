@@ -21,6 +21,7 @@ import { currentAgentArtifact, hasAgentArtifactAction, inspectAgentArtifacts } f
 import { assessAgentArtifactScope } from "./artifact-scope.js";
 import { reviewArtifactParts } from "./artifact-part-review.js";
 import { currentAgentInputPage } from "./input-evidence.js";
+import { planArtifactTests } from "./artifact-test-plan.js";
 
 /** Visual observations remain model interpretations. Accept them for review only
  * while their saved source, views, and underlying result records are current. */
@@ -62,7 +63,12 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
     if(scope.requested) requiredArtifacts.set(requirement.id,matching);
   }
   if (required.some(item=>item.kind === "change") && !changed.length && !artifacts.some(artifact=>required.some(item=>item.kind === "change" && item.id === artifact.requirementId))) return {ok:false,detail:"A change requirement has no current applied change or bound artifact."};
-  if (!ledger.verification?.userSkip && artifacts.some(artifact=>isCodeVerificationPath(artifact.filename) && required.some(item=>item.kind==="change" && item.id===artifact.requirementId))) return {ok:false,detail:"The exported code repair needs artifact-specific execution evidence. Workspace test results do not verify the exported bytes."};
+  if (!ledger.verification?.userSkip) for(const artifact of artifacts) {
+    const requirement=required.find(item=>item.kind==="change" && item.id===artifact.requirementId);
+    if(!requirement || !isCodeVerificationPath(artifact.filename))continue;
+    const plan=planArtifactTests(context,requirement,artifact);
+    return {ok:false,detail:`The exported code repair needs artifact-specific execution evidence. ${plan.ok ? `Its staged source maps to ${plan.targetPath}; existing tests have not yet run against the exported bytes.` : plan.detail}`};
+  }
   // Visual readings are explicitly labelled interpretations, never deterministic proof.
   const savedResults=agentEvidenceRecords(context);
   if(savedResults.some(item=>item.runId===context.runId && item.producer.tool==="read_input" && item.origin==="source_extracted" && item.status==="complete" && !currentAgentInputPage(context,item))) return {ok:false,detail:"Staged input evidence is missing or changed. Submit the source again.",next:"source"};
