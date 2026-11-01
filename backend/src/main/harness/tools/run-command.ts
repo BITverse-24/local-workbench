@@ -11,7 +11,7 @@ import { resolveSafe, PermissionError } from "../path-guard.js";
 import { writeFile } from "./write-file.js";
 import { deleteFile } from "./delete-file.js";
 import type { MutationPolicyGuard } from "../policy-guard.js";
-import { agentManifestDigest, agentRuntimeProbeCommand, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, parseAgentTestReport, type AgentTestExecutionEvidence, type AgentTestExecutionRequest } from "../../agent/test-verification.js";
+import { agentManifestDigest, agentRuntimeProbeCommand, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, parseAgentTestReport, type AgentTestArtifact, type AgentTestExecutionEvidence, type AgentTestExecutionRequest } from "../../agent/test-verification.js";
 
 export interface CommandResult {
   stdout: string;
@@ -64,7 +64,7 @@ const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex
 type Snapshot = Map<string, { bytes: Buffer; mode: number; hash: string; linkTarget?: string }> & { directories: Set<string> };
 
 /** Host-only approval identity. Never accepted from model tool arguments. */
-export interface CommandApproval { workspaceDigest: string }
+export interface CommandApproval { workspaceDigest: string; artifact?: AgentTestArtifact }
 
 function snapshotDigest(root: string, files: Snapshot): string {
   return createHash("sha256").update(JSON.stringify({ root,
@@ -79,7 +79,7 @@ export function captureCommandWorkspaceDigest(workspaceRoot: string): string {
 }
 
 export function commandApprovalDigest(command: string, approval: CommandApproval): string {
-  return createHash("sha256").update(JSON.stringify(["run_command", command, approval.workspaceDigest])).digest("hex");
+  return createHash("sha256").update(JSON.stringify(["run_command", command, approval.workspaceDigest, ...(approval.artifact ? [approval.artifact] : [])])).digest("hex");
 }
 
 /** Never follow links while taking a snapshot or publishing subprocess output. */
@@ -248,6 +248,8 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
   if (currentRuntimeScope()?.agentPhase === "actions" && !policy?.approval) throw new PermissionError("Agent v3 command execution requires a revision-bound approval.");
   const authorization = { command, ...(policy?.approval ? { operation_digest: commandApprovalDigest(command, policy.approval) } : {}) };
   if (verification && verification.command !== command) throw new PermissionError("The verification command does not match its approved test plan.");
+  if (verification?.artifact && (!policy?.approval?.artifact || JSON.stringify(policy.approval.artifact) !== JSON.stringify(verification.artifact))) throw new PermissionError("The test artifact does not match the approved operation.");
+  if (policy?.approval?.artifact && !verification?.artifact) throw new PermissionError("The approved test artifact is missing from the test plan.");
   const started = Date.now();
   const temporary = realpathSync(mkdtempSync(path.join(tmpdir(), "workbench-command-")));
   const work = path.join(temporary, "workspace");
@@ -275,6 +277,19 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
       const destination = path.join(work, name);
       mkdirSync(path.dirname(destination), { recursive: true });
       writeFileSync(destination, file.bytes, { mode: file.mode });
+    }
+    const artifact = verification?.artifact;
+    const artifactCurrent = () => {
+      if (!artifact || !path.isAbsolute(artifact.artifactPath) || !lstatSync(artifact.artifactPath).isFile() || lstatSync(artifact.artifactPath).isSymbolicLink()) throw new PermissionError("The test artifact is unavailable or is not a regular file.");
+      const bytes = readFileSync(artifact.artifactPath);
+      if (digest(bytes) !== artifact.artifactDigest) throw new PermissionError("The test artifact changed after approval.");
+      return bytes;
+    };
+    if (artifact) {
+      const target = resolveSafe(work, artifact.targetPath);
+      const original = before.get(artifact.targetPath.split("/").join(path.sep));
+      if (!original || original.linkTarget || original.hash !== artifact.sourceDigest || verification.sourceManifest[artifact.targetPath] !== artifact.sourceDigest) throw new PermissionError("The test artifact target is stale or invalid.");
+      writeFileSync(target, artifactCurrent());
     }
     const { launch } = selected;
     currentRuntimeScope()?.observe?.({ commandIsolationStatus: selected.status,
@@ -319,6 +334,7 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
       const evidence: AgentTestExecutionEvidence = { planId: verification.planId, command, runner: verification.runner, phase: verification.phase,
         manifestSha256: verification.workspaceManifestSha256, sourceManifest: beforeFiles, exitCode, timedOut, executed: 0, failed: 0, skipped: 0,
         testFiles: [], isolationStatus: selected.status, ...(runtimeProbes.length ? {runtimeProbes} : {}),
+        ...(artifact ? {artifact:{targetPath:artifact.targetPath,sourceDigest:artifact.sourceDigest,artifactDigest:artifact.artifactDigest}} : {}),
         ...(verification.successMarker ? { successMarker: verification.successMarker, successMarkerObserved: stdout.split(/\r?\n/).some(line => line.trim() === verification.successMarker) } : {}) };
       result.verification = evidence;
       try {
@@ -347,7 +363,8 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
         if (/(?:^|[/\\])(?:coverage|\.pytest_cache|\.cache|__pycache__|dist|build)(?:[/\\]|$)/.test(name)) continue;
         try {
           const target = resolveSafe(work, name);
-          if (!lstatSync(target).isFile() || digest(readFileSync(target)) !== file.hash) { evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command changed an input file: ${name}.`; break; }
+          const expected = artifact && name.split(path.sep).join("/") === artifact.targetPath ? artifact.artifactDigest : file.hash;
+          if (!lstatSync(target).isFile() || digest(readFileSync(target)) !== expected) { evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command changed an input file: ${name}.`; break; }
         } catch { evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command removed or replaced an input file: ${name}.`; break; }
       }
       try {
@@ -361,6 +378,7 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
         if (captureAgentVerificationManifest(root).sha256 !== verification.workspaceManifestSha256 ||
           (policy?.approval && captureCommandWorkspaceDigest(root) !== policy.approval.workspaceDigest)) { evidence.reason = "stale_test_evidence"; evidence.detail = "Workspace inputs changed during test execution."; }
       } catch (error) { evidence.reason = "stale_test_evidence"; evidence.detail = String(error); }
+      if (artifact) try { artifactCurrent(); } catch (error) { evidence.reason = "stale_test_evidence"; evidence.detail = String(error); }
       result.durationMs = Date.now() - started;
       return result;
     }

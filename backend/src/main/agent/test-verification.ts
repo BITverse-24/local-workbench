@@ -36,6 +36,10 @@ export interface AgentTestPlan {
   runtimeTools?: AgentTestRuntimeTool[];
 }
 export type AgentTestRuntimeTool = "node" | "npm" | "pnpm" | "yarn" | "python3" | "pytest";
+/** Host-selected export to substitute only inside the disposable test copy. */
+export interface AgentTestArtifact {
+  artifactPath: string; artifactDigest: string; sourceDigest: string; targetPath: string;
+}
 /** Only the controller supplies this context. It is never a model tool argument. */
 export interface AgentTestExecutionRequest {
   planId: string; command: string; phase: AgentTestPhase; runner: AgentTestRunner; suiteRoot: string;
@@ -43,6 +47,7 @@ export interface AgentTestExecutionRequest {
   reportFormat: AgentTestPlan["reportFormat"]; testFiles: string[];
   successMarker?: string;
   runtimeTools?: AgentTestRuntimeTool[];
+  artifact?: AgentTestArtifact;
 }
 export interface AgentTestExecutionEvidence {
   planId: string; command: string; phase: AgentTestPhase; runner: AgentTestRunner;
@@ -54,6 +59,7 @@ export interface AgentTestExecutionEvidence {
   failureLocationsComplete?: boolean;
   successMarker?: string; successMarkerObserved?: boolean;
   runtimeProbes?: Array<{tool:AgentTestRuntimeTool;available:boolean;version?:string;detail?:string}>;
+  artifact?: Omit<AgentTestArtifact, "artifactPath">;
 }
 export interface AgentFailureLocation { path: string; line: number }
 export type AgentTestDiscovery = { ok: true; plans: AgentTestPlan[] } | { ok: false; reason: string; detail: string };

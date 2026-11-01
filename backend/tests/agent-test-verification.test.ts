@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { agentFailureLocations, discoverAgentTestPlans, createAgentVerificationRequest, parseAgentTestReport, assessAgentTestExecution, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, type AgentTestExecutionRequest } from "../src/main/agent/test-verification.js";
 import { agentTestEnvironmentKey, captureCommandWorkspaceDigest, commandApprovalDigest, runCommand } from "../src/main/harness/tools/run-command.js";
 import { withRuntimeScope } from "../src/main/run/runtime-scope.js";
@@ -188,6 +189,47 @@ describe("Agent existing-test verification", () => {
     const result = await runCommand(root, request.command, 5000, { guard, runId: "run" }, request);
     expect(result.changes).toEqual([]); expect(result.verification?.executed).toBe(1); expect(result.verification?.report).toContain("assertionResults");
     expect(assessAgentTestExecution(result.verification).status).toBe("passed"); expect(existsSync(scratch)).toBe(false); expect(existsSync(path.join(root, "coverage"))).toBe(false);
+  });
+  it("tests the approved export in the disposable snapshot and keeps the project unchanged", async () => {
+    fixture(); const exportDir=mkdtempSync(path.join(tmpdir(),"agent-export-"));
+    try {
+      const artifactPath=path.join(exportDir,"repaired.ts"), bytes="export const value=2";
+      writeFileSync(artifactPath,bytes);
+      const sha=(text:string)=>createHash("sha256").update(text).digest("hex");
+      const artifact={artifactPath,artifactDigest:sha(bytes),sourceDigest:sha("export const value=1"),targetPath:"src/value.ts"};
+      const request={...createAgentVerificationRequest(plan()),artifact};
+      const approval={workspaceDigest:captureCommandWorkspaceDigest(root),artifact};
+      const guard=new MutationPolicyGuard({strict:true});
+      guard.grantScope({runId:"run",operation:"run_command",command:request.command,operationDigest:commandApprovalDigest(request.command,approval)});
+      vi.mocked(executeProcess).mockImplementation(async (_binary,args,options)=>{
+        if(args.at(-1)==="printf WORKBENCH_ISOLATED")return {stdout:"WORKBENCH_ISOLATED",stderr:""};
+        expect(readFileSync(path.join(options.cwd!,artifact.targetPath),"utf8")).toBe(bytes);
+        writeFileSync(options.env!.WORKBENCH_TEST_REPORT!,report(request,options.cwd));
+        return {stdout:"",stderr:""};
+      });
+      const result=await runCommand(root,request.command,5000,{guard,runId:"run",approval},request);
+      expect(assessAgentTestExecution(result.verification).status).toBe("passed");
+      expect(result.verification?.artifact).toEqual({targetPath:artifact.targetPath,sourceDigest:artifact.sourceDigest,artifactDigest:artifact.artifactDigest});
+      expect(readFileSync(path.join(root,artifact.targetPath),"utf8")).toBe("export const value=1");
+      writeFileSync(artifactPath,"changed");
+      await expect(runCommand(root,request.command,5000,{guard,runId:"run",approval},request)).rejects.toThrow(/artifact changed/);
+      await expect(runCommand(root,request.command,5000,{guard,runId:"run",approval:{...approval,artifact:{...artifact,targetPath:"other.ts"}}},request)).rejects.toThrow(/does not match/);
+    } finally {rmSync(exportDir,{recursive:true,force:true});}
+  });
+  it("invalidates exported test evidence when the export changes during execution", async () => {
+    fixture(); const exportDir=mkdtempSync(path.join(tmpdir(),"agent-export-"));
+    try {
+      const artifactPath=path.join(exportDir,"repaired.ts"),bytes="export const value=2",sha=(text:string)=>createHash("sha256").update(text).digest("hex");
+      writeFileSync(artifactPath,bytes);
+      const artifact={artifactPath,artifactDigest:sha(bytes),sourceDigest:sha("export const value=1"),targetPath:"src/value.ts"};
+      const request={...createAgentVerificationRequest(plan()),artifact},approval={workspaceDigest:captureCommandWorkspaceDigest(root),artifact};
+      const guard=new MutationPolicyGuard({strict:true});guard.grantScope({runId:"run",operation:"run_command",command:request.command,operationDigest:commandApprovalDigest(request.command,approval)});
+      vi.mocked(executeProcess).mockImplementation(async (_binary,args,options)=>{
+        if(args.at(-1)==="printf WORKBENCH_ISOLATED")return {stdout:"WORKBENCH_ISOLATED",stderr:""};
+        writeFileSync(options.env!.WORKBENCH_TEST_REPORT!,report(request,options.cwd));writeFileSync(artifactPath,"changed");return {stdout:"",stderr:""};
+      });
+      expect((await runCommand(root,request.command,5000,{guard,runId:"run",approval},request)).verification?.reason).toBe("stale_test_evidence");
+    } finally {rmSync(exportDir,{recursive:true,force:true});}
   });
   it("retains marker evidence beyond the short stdout preview", async () => {
     fixture(); const request = { ...createAgentVerificationRequest(plan()), successMarker: "CHECK_OK" };
