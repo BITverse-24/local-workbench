@@ -55,7 +55,7 @@ async function run(scenario, campaignDir) {
     await runner.startWorker(boot);
     const { runId } = await runner.callCommand("send", { mode: scenario.mode, chat: scenario.id, text: prompt, files, groundingEnabled: Boolean(scenario.kb) });
     let outcome;
-    try { outcome = await runner.waitForTerminalState(runId, 300000); }
+    try { outcome = await runner.waitForTerminalState(runId, Number(process.env.DEMO_TIMEOUT_MS || 600000)); }
     catch { outcome = "timeout"; await runner.callCommand("invoke", { channel: "workbench:cancelRun", input: { runId } }); }
     const inspection = await runner.callCommand("inspect");
     const text = inspection.messages.filter((message) => message.role === "assistant").map((message) => message.content).join("\n");

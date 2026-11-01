@@ -12,7 +12,7 @@ const toolSchema = z.object({ type: z.literal("function"), function: z.object({ 
 
 /** Lossless conversion for prepared text requests. Unsupported prompt options fail closed. */
 export function lmStudioCountingInput(payload: Record<string, unknown>): { chat: ChatHistoryData; tools: LLMTool[] } {
-  for (const option of ["chat_template", "chat_template_kwargs", "enable_thinking", "reasoning_effort", "documents"])
+  for (const option of ["chat_template", "chat_template_kwargs", "documents"])
     if (payload[option] !== undefined) throw new Error(`LM Studio counting does not support prompt option: ${option}`);
   const messages = z.array(messageSchema).min(1).parse(payload.messages);
   const tools = z.array(toolSchema).parse(payload.tools ?? []) as LLMTool[];
