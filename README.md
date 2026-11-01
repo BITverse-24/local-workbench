@@ -55,21 +55,17 @@ ModelGateway ── local OpenAI-compatible endpoint (LM Studio, Ollama, vLLM)
 
 ## Benchmarks (M4 Mac Mini)
 
-Evaluated on an **Apple M4 Mac Mini** (Apple Silicon unified memory) running a local OpenAI-compatible server (LM Studio / MLX) at `http://127.0.0.1:1234/v1`:
-- **Setup 1 (Unified 9B):** `qwen/qwen3.5-9b` (serving all text, vision, and coding tasks).
-- **Setup 2 (Dedicated 7B + 4B Vision):** `qwen2.5-coder-7b-instruct-mlx` (text/coding/draft) + `qwen/qwen3-vl-4b` (vision, concurrency: 3) + `text-embedding-nomic-embed-text-v1.5`.
+End-to-end evaluation metrics measured on an **Apple M4 Mac Mini** (Apple Silicon, 16GB Unified Memory) using a local model server (LM Studio / MLX):
 
-| Flow | Scenario & Task | `qwen3.5-9b` | `qwen2.5-coder-7b` + `qwen3-vl-4b` | Wall-Clock Delta | Check Pass Rate |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| **Flow A** | Multi-page PDF visual inspection & Word (.docx) approval note | **533.7s** | **371.5s** | **-162.2s (-30.4%)** | **100%** (14/14 checks) |
-| **Flow B** | Sensor log CSV parser bug repair & CLI validation | **122.9s** | **76.0s** | **-46.9s (-38.2%)** | **100%** (12/12 checks) |
-| **Flow C** | Pump skid SVG visual check & Piping SOP RAG compliance | **89.0s** | **64.3s** | **-24.7s (-27.8%)** | **100%** (4/4 checks) |
-| **Total** | **Full Benchmark Suite** | **745.6s (~12.4 min)** | **511.8s (~8.5 min)** | **-233.8s (-31.4%)** | **100% (30/30 checks)** |
+- **7B Multi-Model Setup:** `qwen2.5-coder-7b-instruct-mlx` (Text / Coding / Draft) + `qwen/qwen3-vl-4b` (Vision) + `text-embedding-nomic-embed-text-v1.5` (Embeddings)
+- **9B Unified Setup:** `qwen/qwen3.5-9b` (Unified Multimodal) + `text-embedding-nomic-embed-text-v1.5` (Embeddings)
 
-### Performance Insights
-- **Parallel Vision Inspection:** Running vision extraction across multiple pages and crops concurrently with warm-prefix cache reuse reduced Flow A latency by over 2.7 minutes.
-- **Parallel Behavior Review:** Work Mode runs post-execution behavior checks concurrently across criteria (warmup call first, followed by concurrent batches), cutting verification wall-clock time from 49.1s down to 24.4s on 7B.
-- **Memory Bandwidth on Unified Memory:** Dedicated 7B coder weights produce ~50% faster token generation during iterative code repair and review cycles compared to heavier 9B unified models.
+| Flow | Scenario & Task | 7B Multi-Model | 9B Unified | Verification Pass Rate |
+| :--- | :--- | :---: | :---: | :---: |
+| **Flow A** | Multi-page PDF visual inspection & Word (.docx) approval note | **371.5s** | **533.7s** | **100%** (14/14 checks) |
+| **Flow B** | Sensor log CSV parser bug repair & CLI execution validation | **76.0s** | **122.9s** | **100%** (12/12 checks) |
+| **Flow C** | Pump skid SVG visual check & Piping SOP RAG compliance | **64.3s** | **89.0s** | **100%** (4/4 checks) |
+| **Total** | **Full Benchmark Suite** | **511.8s** | **745.6s** | **100% (30/30 checks)** |
 
 ---
 
