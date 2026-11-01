@@ -243,14 +243,14 @@ describe("Agent v3 task host loop", () => {
       if(options.env?.WORKBENCH_TEST_REPORT && options.cwd) tested.push(readFileSync(path.join(options.cwd,"value.js"),"utf8"));
       return originalExecutor(binary,args,options);
     });
-    const text="Repair attached value.js and export repaired.js.";
+    const text="Repair attached value.js, export repaired.js, and run the full test suite.";
     artifactScopeReplies=[()=>({requested:true,format:"file",filename:"repaired.js",reason:"The instruction requests an exported repair."})];
-    replies=[()=>interpretation("change",text),
+    replies=[()=>({disposition:"continue",requirements:[{kind:"change",description:text,source_id:"request",checks:[{description:"Repair and export the file",kind:"review",operation:"semantic",path:null}]},{kind:"execute",description:"Run the full test suite on the repair",source_id:"request",checks:[{description:"Full test suite passes",kind:"execution",operation:"semantic",path:null}]}],updates:[],full_suite:true}),
       ()=>({tool_calls:[{name:"read_input",arguments:{source_id:input.id}}]}),
       ()=>({tool_calls:[{name:"request_capability",arguments:{capability:"artifact_generation",reason:"Export the repair"}}]}),
       ()=>({tool_calls:[{name:"generate_deliverable",arguments:{type:"file",filename:"repaired.js",content:"module.exports = 2;\n"}}]}),
       ()=>({tool_calls:[{name:"finish",arguments:{text:"The repair is saved."}}]}),
-      payload=>{const state=packetState(payload.messages[1].content);if(mode === "changed")writeFileSync(path.join(root,"runs",getCurrentAgentTask(chatId)!.latestRunId!,"input",input.filename),"changed");return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The exported repair and test evidence are saved."}))};},
+      ...Array.from({length:2},()=> (payload:any)=>{const state=packetState(payload.messages[1].content);if(mode === "changed")writeFileSync(path.join(root,"runs",getCurrentAgentTask(chatId)!.latestRunId!,"input",input.filename),"changed");return {covered:true,missing:[],requirements:state.requirements.map((item:any)=>({id:item.id,satisfied:true,reason:"The exported repair and test evidence are saved."}))};}),
       ()=>({tool_calls:[{name:"finish",arguments:{text:"The repair is saved."}}]})];
     const {result,runId,approve}=await run(text,false,async()=>true,undefined,workspace,true,input);
     expect(result.outcome,result.text).toBe(mode === "current" ? "completed" : "partial");

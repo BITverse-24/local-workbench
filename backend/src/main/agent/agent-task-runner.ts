@@ -331,8 +331,8 @@ export class AgentTaskRunner {
             const requirement=task.snapshot.requirements.find(item=>item.state === "active" && item.kind === "change" && item.id === artifact.requirementId);
             return requirement && isCodeVerificationPath(artifact.filename) ? [{artifact,requirement}] : [];
           });
-          const needsWorkspaceTests=task.snapshot.requirements.some(item=>item.state === "active" && (item.kind === "execute" || item.acceptance.some(check=>check.kind === "execution") && !exports.some(entry=>entry.requirement.id === item.id)));
-          if (changed.some(isCodeVerificationPath) || needsTests && (!exports.length || needsWorkspaceTests)) {
+          if (exports.length && (exports.length > 1 || changed.some(isCodeVerificationPath)) && task.snapshot.requirements.some(item=>item.state === "active" && (item.kind === "execute" || item.acceptance.some(check=>check.kind === "execution")))) return stop("checks_unavailable","The combined exported and applied code needs tests in one shared test copy. Separate test results do not establish the combined behavior.");
+          if (changed.some(isCodeVerificationPath) || needsTests && !exports.length) {
             const checked = await verifyChanges();
             if (checked.action === "repair") continue;
             if (!["passed", "skipped"].includes(checked.action)) return stop("checks_unavailable", checked.detail, checked.action === "cancelled" ? "cancelled" : "partial");

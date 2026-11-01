@@ -229,7 +229,10 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
     if (!current.ok || current.digest !== digest) return { ok: false, detail: `Applied source changed during review: ${path}. Read it again before delivery.`, next: "source" };
   }
   const tests = ledger.verification?.evidence.find(item => item.criterionId === "acceptance:validate-written-code");
-  const needsWorkspaceTests=required.some(item=>item.acceptance.some(check=>check.kind === "execution") && !(item.kind === "change" && artifacts.some(artifact=>artifact.requirementId === item.id && isCodeVerificationPath(artifact.filename))));
+  const hasTestedExport=artifacts.some(artifact=>isCodeVerificationPath(artifact.filename) && required.some(item=>item.kind === "change" && item.id === artifact.requirementId));
+  const codeExports=artifacts.filter(artifact=>isCodeVerificationPath(artifact.filename) && required.some(item=>item.kind === "change" && item.id === artifact.requirementId));
+  if (!ledger.verification?.userSkip && codeExports.length && (codeExports.length > 1 || changed.some(isCodeVerificationPath)) && required.some(item=>item.kind === "execute" || item.acceptance.some(check=>check.kind === "execution"))) return {ok:false,detail:"Combined exported and applied code needs execution evidence from one shared test copy."};
+  const needsWorkspaceTests=required.some(item=>item.acceptance.some(check=>check.kind === "execution")) && (changed.some(isCodeVerificationPath) || !hasTestedExport);
   if (needsWorkspaceTests && tests?.status !== "passed" && !ledger.verification?.userSkip) return { ok: false, detail: "Mandatory executable behavior lacks current host test evidence." };
   if (tests?.status === "passed" && tests.revision !== captureAgentVerificationManifest(context.workspaceRoot).sha256) return { ok: false, detail: "Test evidence is stale for the current implementation, tests, or configuration." };
   return { ok: true, detail: "Every requirement has a bounded assessment and the source scope audit passed. Executable proof remains host-owned." };
