@@ -97,7 +97,9 @@ export function initBackend(
   reconcileInterruptedExecutions();
   recoverInterruptedModeRuns();
   registerChatHandlers(ipcMain, emitChat);
-  const manager = new RunManager(gateway, emit, emitChat, { agentV3Preview: config?.agentV3Preview === true });
+  const manager = new RunManager(gateway, emit, emitChat, {
+    agentV3Preview: config?.agentV3Preview ?? (process.env.NODE_ENV !== "production" && process.env.WORKBENCH_AGENT_V3 === "true"),
+  });
   registerRunHandlers(ipcMain, manager);
   const harness = new HarnessManager(event=>{manager.workspaceChanged();emitWorkspace?.(event);}, emit);
   registerWorkspaceHandlers(ipcMain, harness);

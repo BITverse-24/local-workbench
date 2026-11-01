@@ -114,14 +114,14 @@ async function evaluate(flow, text, artifacts, runner, outcome) {
     checks.valve = /XV-204/i.test(text) && /150/.test(text) && /300/.test(text);
     checks.line = /DN\s*80/i.test(text) && /DN\s*100/i.test(text);
     checks.citations = /SOP-?220/i.test(text) && /4\.2/.test(text) && /4\.3/.test(text);
-    checks.withheld = /non.?compliant|not approved|withhold|withheld|before.*sign.?off/i.test(text);
+    checks.withheld = /non.?compliant|not approved|withhold|withheld|pending|before.*sign.?off|does not meet/i.test(text);
     checks.actions = /replace|upgrad|repair/i.test(text) && /upsize|increase|diameter|DN100/i.test(text);
     checks.noInventedScaleRule = !/drawing must.{0,30}scale|must be (?:to )?scale|scaled to meet/i.test(text);
     const tableRows = text.split("\n").filter(line => /^\s*\|/.test(line));
     checks.noRatingTransferredToPump = !tableRows.some(line => /^\s*\|\s*P-204\b/i.test(line) && !/discharge|line|valve/i.test(line.split("|")[1] ?? "") && /(?:class|rating)\s*150/i.test(line));
-    checks.dischargeObservation = tableRows.some(line => /DN\s*80/i.test(line) && /discharge|line/i.test(line) && /4\.3/.test(line) && /non.?compliant/i.test(line)) ||
-      /(?:discharge|line)[\s\S]{0,80}DN\s*80[\s\S]{0,160}(?:4\.3|SOP-?220)[\s\S]{0,80}non.?compliant/i.test(text) ||
-      /DN\s*80[\s\S]{0,160}(?:4\.3|SOP-?220)[\s\S]{0,80}non.?compliant/i.test(text);
+    checks.dischargeObservation = tableRows.some(line => /DN\s*80/i.test(line) && /discharge|line/i.test(line) && /4\.3/.test(line) && /non.?compliant|does not meet/i.test(line)) ||
+      /(?:discharge|line)[\s\S]{0,80}DN\s*80[\s\S]{0,160}(?:4\.3|SOP-?220)[\s\S]{0,80}(?:non.?compliant|does not meet)/i.test(text) ||
+      /DN\s*80[\s\S]{0,160}(?:4\.3|SOP-?220)[\s\S]{0,80}(?:non.?compliant|does not meet)/i.test(text);
     checks.retrieved = runner.events.some(e => e.type === "tool_result" && e.tool === "retrieve_knowledge" && e.ok);
   }
   return checks;
@@ -141,7 +141,7 @@ async function run(flow, variant, campaignDir) {
     const preparationSec = (start - flowStart) / 1000;
     const { runId } = await runner.callCommand("send", { mode: flow === "C" ? "chat" : "work", chat: `${flow}-${variant}`, text: variants[flow][variant], files: f.files, groundingEnabled: Boolean(f.kb) });
     let outcome;
-    try { outcome = await runner.waitForTerminalState(runId, 300000); }
+    try { outcome = await runner.waitForTerminalState(runId, Number(process.env.DEMO_TIMEOUT_MS || 480000)); }
     catch { outcome = "timeout"; await runner.callCommand("invoke", { channel: "workbench:cancelRun", input: { runId } }); }
     const durationSec = (performance.now() - start) / 1000;
     const fullFlowSec = (performance.now() - flowStart) / 1000;

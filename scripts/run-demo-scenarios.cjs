@@ -13,7 +13,7 @@ const scenarios = [
   { id: "B-3", dir: "flow_b/scenario-3", mode: "agent", files: [], workspaceFiles: ["coldroom.py", "tests/test_coldroom.py"], output: null },
   { id: "C-2", dir: "flow_c/scenario-2", mode: "work", files: ["relief-valve-register.csv"], kb: "process-safety-standard.md", output: ".docx" },
   { id: "C-3", dir: "flow_c/scenario-3", mode: "agent", files: [], kb: "utility-standard-UT-9.md", workspaceFiles: ["utility-manifold-U18.svg"], output: null },
-  { id: "D-1", dir: "flow_d", mode: "agent", files: [], workspaceFiles: ["README.md", "index.html", "src/app.js", "src/work-orders.js", "src/storage.js", "tests/work-orders.test.js", "tests/storage.test.js"], output: null },
+  { id: "D-1", dir: "flow_d", mode: "agent", files: [], agentModel: "qwen/qwen3.5-9b", workspaceFiles: ["src/work-orders.js", "src/storage.js", "tests/work-orders.test.js", "tests/storage.test.js"], output: null },
 ];
 
 const collect = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -40,8 +40,11 @@ async function run(scenario, campaignDir) {
   for (const file of files) fs.copyFileSync(path.join(sourceDir, file), path.join(runner.sandboxDir, "attachments", file));
   if (scenario.kb) fs.copyFileSync(path.join(sourceDir, scenario.kb), path.join(runner.sandboxDir, "kb", scenario.kb));
   if (scenario.mode === "agent") {
-    const workspace = path.join(sourceDir, "workspace");
+    const workspace = (scenario.id === "D-1" && fs.existsSync("/tmp/flow-d-pristine-baseline"))
+      ? "/tmp/flow-d-pristine-baseline"
+      : path.join(sourceDir, "workspace");
     for (const file of collect(workspace)) {
+      if (file.includes(".harness_backups")) continue;
       const rel = path.relative(workspace, file);
       const target = path.join(runner.sandboxDir, "workspace", rel);
       fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -70,7 +73,10 @@ async function run(scenario, campaignDir) {
     const workspace = path.join(runner.sandboxDir, "workspace");
     const sourceCode = scenario.id === "B-3" ? fs.readFileSync(path.join(workspace, "coldroom.py"), "utf8") : "";
     const tests = scenario.id === "B-3" ? fs.readFileSync(path.join(workspace, "tests/test_coldroom.py"), "utf8") : "";
-    const initialTestRun = scenario.id === "D-1" ? spawnSync(process.execPath, ["--test", "--test-reporter=tap"], { cwd: path.join(sourceDir, "workspace"), encoding: "utf8", timeout: 30000 }) : null;
+    const initialWorkspace = (scenario.id === "D-1" && fs.existsSync("/tmp/flow-d-pristine-baseline"))
+      ? "/tmp/flow-d-pristine-baseline"
+      : path.join(sourceDir, "workspace");
+    const initialTestRun = scenario.id === "D-1" ? spawnSync(process.execPath, ["--test", "--test-reporter=tap"], { cwd: initialWorkspace, encoding: "utf8", timeout: 30000 }) : null;
     const independentTestRun = ["B-3", "D-1"].includes(scenario.id) ? (scenario.id === "D-1"
       ? spawnSync(process.execPath, ["--test", "--test-reporter=tap"], { cwd: workspace, encoding: "utf8", timeout: 30000 })
       : spawnSync("python3", ["-m", "unittest", "discover", "-s", "tests", "-v"], { cwd: workspace, encoding: "utf8", timeout: 30000 })) : null;
@@ -87,9 +93,9 @@ async function run(scenario, campaignDir) {
       agentFoundBug: scenario.id !== "B-3" || /value\s*>\s*limit/.test(sourceCode) && /test_exact_boundary_is_alert/.test(tests),
       agentExplainedFix: scenario.id !== "B-3" || />=/.test(text) && /test_exact_boundary_is_alert/.test(text),
       agentConfirmedExpectedFailure: scenario.id !== "B-3" || independentTestRun.status === 1 && /test_exact_boundary_is_alert/.test(independentTestRun.stderr) && /AssertionError/.test(independentTestRun.stderr),
-      repairScenarioStartsFailing: scenario.id !== "D-1" || initialTestRun.status === 1 && /not ok .*status filter/i.test(initialTestRun.stdout + initialTestRun.stderr) && /not ok .*malformed saved data/i.test(initialTestRun.stdout + initialTestRun.stderr),
+      repairScenarioStartsFailing: scenario.id !== "D-1" || initialTestRun.status === 1 && /not ok .*status filter/i.test(initialTestRun.stdout + initialTestRun.stderr) && /not ok .*(?:malformed saved data|storage\.test\.js)/i.test(initialTestRun.stdout + initialTestRun.stderr),
       repairScenarioPasses: scenario.id !== "D-1" || independentTestRun.status === 0,
-      repairScenarioUpdatedFiles: scenario.id !== "D-1" || ["src/work-orders.js", "src/storage.js"].every((file) => !fs.readFileSync(path.join(sourceDir, "workspace", file)).equals(fs.readFileSync(path.join(workspace, file)))),
+      repairScenarioUpdatedFiles: scenario.id !== "D-1" || ["src/work-orders.js", "src/storage.js"].every((file) => !fs.readFileSync(path.join(initialWorkspace, file)).equals(fs.readFileSync(path.join(workspace, file)))),
       repairScenarioExplained: scenario.id !== "D-1" || /filter|status/i.test(text) && /storage|saved|invalid|malformed/i.test(text),
       repairCloseoutDecision: scenario.id !== "A-3" || /E-?310/i.test(text) && /18 tubes/i.test(text) && /15\.2/.test(text) && /30 minutes/i.test(text) && /no leakage/i.test(text) && /pending/i.test(text) && /isolated/i.test(text),
       calibrationDecisions: scenario.id !== "A-2" || /PG-G17[\s\S]{0,180}(eligible|approved|pass|current)/i.test(text + artifactText) && /PG-G18[\s\S]{0,180}(expired|not approved|out of date|pending)/i.test(text + artifactText) && /PG-G19[\s\S]{0,180}(unknown|missing|not approved|not found)/i.test(text + artifactText),

@@ -74,6 +74,7 @@ class FlowRunner {
           ...process.env,
           ELECTRON_RUN_AS_NODE: "1",
           WORKBENCH_AGENT_V2: "true",
+          WORKBENCH_AGENT_V3: "true",
         },
         stdio: ["pipe", "pipe", "pipe"],
       });

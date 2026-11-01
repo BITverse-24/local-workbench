@@ -105,7 +105,7 @@ def validate_inputs() -> None:
 def validate_manifest() -> None:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     check(manifest["fixtureVersion"] == "2.1.0", "Unexpected fixture version")
-    actual = {p.relative_to(ROOT).as_posix() for p in ROOT.rglob("*") if p.is_file()}
+    actual = {p.relative_to(ROOT).as_posix() for p in ROOT.rglob("*") if p.is_file() and ".harness_backups" not in p.parts}
     check(actual == set(manifest["files"]), "Manifest file list does not match the minimal demo folders")
     for relative, details in manifest["files"].items():
         path = ROOT / relative
@@ -115,7 +115,7 @@ def validate_manifest() -> None:
 
 def validate_flow_d() -> None:
     folder = ROOT / "flow_d"
-    actual = {path.relative_to(folder).as_posix() for path in folder.rglob("*") if path.is_file()}
+    actual = {path.relative_to(folder).as_posix() for path in folder.rglob("*") if path.is_file() and ".harness_backups" not in path.parts}
     check(actual == FLOW_D_FILES, f"Flow D project files differ: {sorted(actual ^ FLOW_D_FILES)}")
     prompt = (folder / "prompt.md").read_text(encoding="utf-8")
     check("workspace" in prompt.lower() and "tests" in prompt.lower(), "Flow D prompt must ask for a workspace repair and test run")

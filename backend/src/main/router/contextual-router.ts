@@ -315,6 +315,14 @@ export function validateAndNormalizeIntent(
       continue;
     }
 
+    // Attached input sources that the user does not explicitly request as outputs must not become deliverables
+    if (rawFn && context.attachments?.some(a => a.filename.toLowerCase() === rawFn.toLowerCase())) {
+      const requestedAsOutput = new RegExp(`\\b(?:return|export|save|generate|create|provide)\\b[^.!?\\n]*\\b${rawFn.replace(/\./g, "\\.")}\\b`, "i").test(context.userPrompt);
+      if (!requestedAsOutput) {
+        continue;
+      }
+    }
+
     // A workspace source file being modified must NOT become a deliverable
     if (rawFn && targetSet.has(rawFn.toLowerCase())) {
       const ext = rawFn.split(".").pop()?.toLowerCase();
@@ -382,8 +390,20 @@ export function validateAndNormalizeIntent(
   }
 
   // If no workspace is active, workspace mutations cannot occur
-  if (!context.hasWorkspace && workspaceMutationRequested && targetFiles.length === 0) {
+  if (!context.hasWorkspace) {
     workspaceMutationRequested = false;
+    data.workspaceOperations.length = 0;
+    for (const t of targetFiles) {
+      if (context.attachments?.some(a => a.filename.toLowerCase() === t.toLowerCase())) {
+        continue;
+      }
+      const ext = t.split(".").pop()?.toLowerCase();
+      const type: ExpectedDeliverableSpec["type"] = ext === "docx" ? "docx" : ext === "xlsx" ? "xlsx" : ext === "csv" ? "csv" : ext === "json" ? "json" : ext === "md" ? "md" : "file";
+      if (!expectedDeliverables.some(d => d.filename?.toLowerCase() === t.toLowerCase())) {
+        expectedDeliverables.push({ type, filename: t });
+      }
+    }
+    targetFiles.length = 0;
     if (!isActionable && expectedDeliverables.length === 0) {
       chatResponseOnly = true;
       intentType = "general_qa";

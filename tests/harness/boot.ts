@@ -9,7 +9,19 @@ import { EventStore } from "./event-store.js";
 export async function boot(config: WorkerBootConfig, events: EventStore) {
   const ipc = new FakeIpcRegistrar();
   const gateway = new ModelGateway(undefined, config.registry);
-  const manager = initBackend(ipc, (event) => events.push(event), { dataDir: path.join(config.root, "data"), modelsPath: path.join(config.root, "config", "models.json"), schemaPath: config.schemaPath, embeddingConfig: config.embedding }, undefined, gateway);
+  const manager = initBackend(
+    ipc,
+    (event) => events.push(event),
+    {
+      agentV3Preview: (config as any).agentV3Preview ?? (process.env.WORKBENCH_AGENT_V3 === "true"),
+      dataDir: path.join(config.root, "data"),
+      modelsPath: path.join(config.root, "config", "models.json"),
+      schemaPath: config.schemaPath,
+      embeddingConfig: config.embedding,
+    },
+    undefined,
+    gateway,
+  );
   await manager.ragService.init();
   if (JSON.stringify([...gateway.registry.values()]) !== JSON.stringify(config.registry)) throw new Error("Effective model registry changed during startup");
   await ipc.invoke("workspace:register", { dirPath: path.join(config.root, "workspace") });

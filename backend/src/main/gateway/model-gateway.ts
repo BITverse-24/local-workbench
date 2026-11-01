@@ -1065,6 +1065,8 @@ export class ModelGateway implements ModelClient {
     if (responseFormatPayload !== undefined) {
       requestPayload.response_format = responseFormatPayload;
     }
+    const reasoningControl = resolveReasoningControl();
+    Object.assign(requestPayload, reasoningControl.params);
     if (request.reasoningEffort !== undefined) {
       requestPayload.reasoning_effort = request.reasoningEffort;
     }
