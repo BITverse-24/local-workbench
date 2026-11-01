@@ -515,9 +515,17 @@ async function reviewProposedPythonImpl(input: ProposedPythonInput): Promise<Arr
     .replace(/[\"'\x60]/g, "").replace(/,\s*(?=[A-Za-z_])/g, " ").replace(/\s+/g, " ").trim();
   // A model-derived checklist organizes review; it cannot create requirements.
   const source = normalize(input.request + "\n" + input.sourceEvidence);
-  const modelGaps = parsed.gaps.filter(gap => gap.issue.trim() && gap.sourceEvidence.trim() && gap.implementationEvidence.trim() &&
-    source.includes(normalize(gap.sourceEvidence)) && normalize(input.proposedSource).includes(normalize(gap.implementationEvidence)))
-    .map(gap => ({ issue: `${gap.issue} (check: ${gap.check})`, evidence: gap.sourceEvidence }));
+  const modelGaps = parsed.gaps.filter(gap => {
+    if (!gap.issue.trim() || !gap.sourceEvidence.trim() || !gap.implementationEvidence.trim()) return false;
+    if (!source.includes(normalize(gap.sourceEvidence))) return false;
+    if (!normalize(input.proposedSource).includes(normalize(gap.implementationEvidence))) return false;
+    if (/\b(?:original\s+source|original\s+code)\b/i.test(gap.issue) && !/\b(?:proposed|repaired|new)\b/i.test(gap.issue)) return false;
+    if (gap.check && hasPythonSatisfactionEvidence([input.proposedSource], gap.check)) {
+      if (/\b(?:TypeError|ValueError|KeyError|command.line|CLI)\b/i.test(gap.check)) return false;
+    }
+    if (gap.check && /\b(?:inclusive|equality)\b/i.test(gap.check) && /(?:>=|<=|==)/.test(input.proposedSource)) return false;
+    return true;
+  }).map(gap => ({ issue: `${gap.issue} (check: ${gap.check})`, evidence: gap.sourceEvidence }));
   const structuralGaps = [...missingDeclaredReturnGaps(input.sourceEvidence, input.proposedSource),
     ...unchangedMarkedConditionGaps(input.sourceEvidence, input.proposedSource,input.request),
     ...unmarkedConditionalUpdateGaps(input.sourceEvidence,input.proposedSource)];
