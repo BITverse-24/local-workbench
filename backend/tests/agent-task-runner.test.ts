@@ -699,7 +699,11 @@ describe("Agent v3 task host loop", () => {
   it("stops repeated module context requests when only capability metadata changed",async()=>{
     const {workspace,implementation}=failingWorkspace();
     const request="Reproduce and repair value.cjs";
-    replies=[()=>interpretation("execute",request),()=>({tool_calls:[{name:"propose_module_repair",arguments:{content:null,context_needed:"Need other tools"}}]}),()=>({tool_calls:[{name:"request_capability",arguments:{capability:"document_processing",reason:"Show another tool"}}]}),()=>({tool_calls:[{name:"propose_module_repair",arguments:{content:null,context_needed:"Need more tools again"}}]})];
+    replies=[()=>interpretation("execute",request),()=>({tool_calls:[{name:"propose_module_repair",arguments:{content:null,context_needed:"Need other tools"}}]}),()=>{
+      const id=getCurrentAgentTask(chatId)!.latestRunId!;
+      new RunResultStore(id).registerResult({type:"structured",status:"complete",origin:"execution",producer:{tool:"agent_operation_approval",callId:"approval"},summary:"Approval receipt",payload:{operation:"run_command"},sources:[]});
+      return {tool_calls:[{name:"request_capability",arguments:{capability:"document_processing",reason:"Show another tool"}}]};
+    },()=>({tool_calls:[{name:"propose_module_repair",arguments:{content:null,context_needed:"Need more tools again"}}]})];
     const {result,runId,approve}=await run(request,false,undefined,undefined,workspace);
     expect(result.stopReason,result.text).toBe("repeated_context_request");expect(approve).toHaveBeenCalledTimes(1);
     expect(getExecutionLedger(runId)?.agentProgress?.actions.map(action=>action.operation)).toEqual(["draft_module","request_context","request_capability"]);

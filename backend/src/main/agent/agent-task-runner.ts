@@ -294,7 +294,9 @@ export class AgentTaskRunner {
               for(let offset=50;records.length === offset;offset+=50)records.push(...context.resultStore.listResults({limit:50,offset}));
               const reads=getExecutionLedger(runId)?.agentProgress?.reads ?? [];
               const observed=[...new Set(reads.map(read=>JSON.stringify([read.path,read.digest,read.startByte,read.endByte])))].sort();
-              const evidence=[...new Set(records.filter(record=>record.origin === "execution" || record.origin === "source_extracted" && record.producer.tool !== "read_file").map(record=>record.storage.sha256))].sort();
+              // Approval receipts authorize operations; they are not observations
+              // of the project and cannot make a repeated request productive.
+              const evidence=[...new Set(records.filter(record=>record.origin === "execution" && record.producer.tool !== "agent_operation_approval" || record.origin === "source_extracted" && record.producer.tool !== "read_file").map(record=>record.storage.sha256))].sort();
               const key=hash([packet.repair.focusKey,observed,evidence]);
               if(progress?.actions.some(action=>action.operation === "request_context" && action.hash === key))return stop("repeated_context_request","The same module requested more context without new source or execution evidence.");
               const id=randomUUID(),record=context.resultStore.registerResult({type:"structured",status:"complete",origin:"model_derived",producer:{tool:"agent_repair_context_request",callId:id},summary:"Module draft requests context; no operation executed",payload:{taskId:task.taskId,taskRevision:bound.taskRevision,requirementId:context.agentRequirementId,path:packet.repair.path,reason:proposal.contextNeeded},sources:[]});
