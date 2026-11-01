@@ -146,6 +146,14 @@ export async function validateWorkArtifacts(context:ToolExecutionContext, review
   }
   let executionEvidence='';
   let completeRequestDependencies: string[] | undefined;
+  const requirements = contract.acceptance.artifactChecks ?? [];
+  const clauses = requirements.filter(requirement => requirement.id !== 'complete_request');
+  const canAggregate = clauses.length > 0 &&
+    requirements.some(requirement => requirement.id === 'complete_request');
+  if (canAggregate) {
+    runtimeCriteria.add('content:complete_request');
+    completeRequestDependencies = clauses.map(criterion => `content:${criterion.id}`);
+  }
   if(contract.acceptance.validatedPythonDeliverables.length){
     let payload:Record<string,any>|undefined;let executionResultId:string|undefined;let executionComplete=false;
     for(const resultId of execution?.resultIds??[])try{
@@ -188,18 +196,10 @@ export async function validateWorkArtifacts(context:ToolExecutionContext, review
     }
     // One source review owns each exact Python content clause. Do not send
     // those clauses to a second reviewer after their evidence was accepted.
-    const requirements = contract.acceptance.artifactChecks ?? [];
-    const clauses = requirements.filter(requirement => requirement.id !== 'complete_request');
-    const canAggregate = clauses.length > 0 &&
-      requirements.some(requirement => requirement.id === 'complete_request');
     const pythonCriteria = clauses.filter(requirement => requirement.kind === 'semantic' &&
       (!requirement.filename || requirement.filename === savedSource?.[0]) &&
       !runtimeCriteria.has(`content:${requirement.id}`));
     for (const criterion of pythonCriteria) runtimeCriteria.add(`content:${criterion.id}`);
-    if (canAggregate) {
-      runtimeCriteria.add('content:complete_request');
-      completeRequestDependencies = clauses.map(criterion => `content:${criterion.id}`);
-    }
     const pythonPlan = buildPythonReviewPlan(context.sourceReviewChecklist, pythonCriteria);
     if(reviewSemantic&&passed&&savedSource&&!review.python){
       for(;;){
