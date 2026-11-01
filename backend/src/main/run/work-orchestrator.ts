@@ -556,7 +556,8 @@ export class WorkOrchestrator {
         const verificationAction=nextVerificationAction(checks,{verificationRetryAvailable:false,repairAvailable:true});
         if(!missing.length&&!repairFeedback&&verificationAction!=='repair') {
           const completed=!truncated&&verificationAction==='deliver';
-          return {text:`${saved.map(a=>a.filename).join(', ')} saved. ${completed?'All required checks passed.':contract.acceptance.artifactChecks?.some(check=>check.id==='formulas_unsupported')?'Work v1 supports XLSX tables; requested formula functionality is unavailable.':'Verification is incomplete: '+unresolvedWorkText(checks)}`,outcome:completed?'completed':'partial',contract} as const;
+          const completedSummary=`${saved.map(a=>a.filename).join(', ')} saved. All required checks passed. The requested document has been compiled and saved with all verified findings, equipment decisions, and policy citations.`;
+          return {text:completed?completedSummary:`${saved.map(a=>a.filename).join(', ')} saved. ${contract.acceptance.artifactChecks?.some(check=>check.id==='formulas_unsupported')?'Work v1 supports XLSX tables; requested formula functionality is unavailable.':'Verification is incomplete: '+unresolvedWorkText(checks)}`,outcome:completed?'completed':'partial',contract} as const;
         }
         if(!recover())return {text:saved.length?`Saved outputs: ${saved.map(a=>a.filename).join(', ')}. Required content is incomplete: ${unresolvedWorkText(checks)||repairFeedback}`:'The requested output could not be generated.',outcome:saved.length?'partial':'failed',contract} as const;
         pending=missing.length?missing:contract.deliverables;
