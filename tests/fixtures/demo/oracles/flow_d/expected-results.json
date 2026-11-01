@@ -1,0 +1,10 @@
+{
+  "scenario": "D-1 FieldOps web app repair",
+  "expected": [
+    "The status filter was ignored when filtering work orders.",
+    "Malformed or wrongly shaped browser storage caused the app to fail during startup.",
+    "The repair preserves search, status changes, and valid saved work orders.",
+    "The project test suite passes after the repair."
+  ],
+  "requiredTerms": ["work-orders.js", "storage.js", "work-orders.test.js", "storage.test.js", "status", "saved", "test"]
+}

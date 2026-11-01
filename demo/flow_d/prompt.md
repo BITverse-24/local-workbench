@@ -1,0 +1,1 @@
+Inspect the FieldOps work-order web app in this workspace. Reproduce its failing tests, then repair both defects: the status filter must work with search, and invalid saved browser data must not stop the app from loading. Keep the current design and public behavior. Do not add dependencies. Run the full test suite and explain the cause and fix in each module.
