@@ -52,6 +52,7 @@ try {
   if(payload.enable_thinking!==undefined)variables.enable_thinking=payload.enable_thinking;
   const rendered=new Template(source).render(variables);
   if(Buffer.byteLength(rendered)>2*1024*1024)throw new Error('Rendered prompt exceeds the counting limit.');
+  if(typeof config.pretokenize_regex==='string'&&Array.isArray(tokenizerJson.pre_tokenizer?.pretokenizers))for(const item of tokenizerJson.pre_tokenizer.pretokenizers)if(item.type==='Split'&&item.pattern?.Regex)item.pattern.Regex=config.pretokenize_regex;
   const tokenizer=new Tokenizer(tokenizerJson,config);
   const count=tokenizer.encode(rendered,{add_special_tokens:false}).ids.length;
   if(!Number.isSafeInteger(count)||count<1)throw new Error('Tokenizer returned an invalid count.');

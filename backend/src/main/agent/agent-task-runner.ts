@@ -207,7 +207,7 @@ export class AgentTaskRunner {
         const inspectionDelivery = verbatimPageComplete && packet.observedSource && evidenceDigest && progress?.deliveryEvidenceDigest !== evidenceDigest && pending.every(item => ["inspect", "deliver", "preserve"].includes(item.kind)) && !pending.some(item => item.acceptance.some(check => check.kind === "execution"));
         if (evidenceDigest && (inspectionDelivery || repairDelivery && progress?.deliveryEvidenceDigest !== evidenceDigest)) {
           updateAgentProgress(runId, state => { state.deliveryEvidenceDigest = evidenceDigest; });
-          const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: repairDelivery ? "The host has verified the saved repair with the listed existing tests. Propose the requested explanation from the supplied requirements, changes, and evidence. Do not request tools in this delivery step. A test pass covers only its recorded scope. State unresolved obligations and unavailable checks. The host will review each requirement before completion." : "The host has obtained source evidence. Propose the requested answer from the supplied requirements and observed content. Do not request or perform more tools in this delivery step. For verbatim_source checks, quote the complete observed source in a fenced block and preserve its whitespace and line endings. Do not claim complete coverage beyond the supplied evidence. The host will review every requirement separately." }, packet.messages[1]], [], { runId, maxTokens: 768, signal: scope.signal });
+          const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: repairDelivery ? "The host has verified the saved repair with the listed existing tests. All appliedOperations are saved and acceptance:validate-written-code passed (baseline:project-tests records the initial pre-repair failure reproduction). Propose the requested explanation from the supplied requirements, changes, and evidence: state what was inspected, how the failing baseline tests were reproduced, the cause and applied fix in each modified module, and that the existing test suite passed while preserving the current design/public behavior and adding no dependencies. Do not request tools in this delivery step or list completed repairs/tests as unresolved. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing explanation with no Analysis or Drafting sections." : "The host has obtained source evidence. Propose the requested answer from the supplied requirements and observed content. Do not request or perform more tools in this delivery step. For verbatim_source checks, output ONLY a fenced code block (```\\n<exact content>```) containing the exact observed source content with its exact whitespace and line endings and no extra blank lines inside the fence. Do not claim complete coverage beyond the supplied evidence. The host will review every requirement separately. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing answer with no Analysis or Drafting sections." }, packet.messages[1]], [], { runId, maxTokens: 1024, signal: scope.signal });
           assertRuntimeActive();
           if (!answer.ok || answer.value.finishReason === "length" || answer.value.tool_calls?.length || !answer.value.content?.trim()) return stop("delivery_unavailable", answer.ok ? "The delivery proposal was incomplete or requested another action." : answer.error.message);
           const answerDigest = hash(answer.value.content);
@@ -376,7 +376,7 @@ export class AgentTaskRunner {
         }
         if (fileMutations.has(call.name) || call.name === "run_command") {
           try { if (fileMutations.has(call.name)) validateAgentFileProposal(call.name, call.arguments, context); }
-          catch (error) { updateAgentProgress(runId, state => { state.actions.find(item => item.id === call.id)!.status = "failed"; state.feedback = String(error).slice(0, 1000); }); continue; }
+          catch (error) { updateAgentProgress(runId, state => { state.actions.find(item => item.id === call.id)!.status = "failed"; if (selectedDraftId && state.repairDraft?.resultId === selectedDraftId) delete state.repairDraft; state.feedback = String(error).slice(0, 1000); }); continue; }
           const assessed = await assessAgentFileScope(task,context.agentRequirementId!,call,context,modelId);
           if (!assessed.verified || !assessed.withinScope) {
             updateAgentProgress(runId,state=>{state.actions.find(item=>item.id === call.id)!.status="failed";});
@@ -384,7 +384,7 @@ export class AgentTaskRunner {
           }
           // Scope assessment can await inference. Recheck before showing a concrete preview.
           try { if (fileMutations.has(call.name)) validateAgentFileProposal(call.name,call.arguments,context); }
-          catch (error) { updateAgentProgress(runId,state=>{state.actions.find(item=>item.id === call.id)!.status="failed";state.feedback=String(error).slice(0,1000);});continue; }
+          catch (error) { updateAgentProgress(runId,state=>{state.actions.find(item=>item.id === call.id)!.status="failed"; if (selectedDraftId && state.repairDraft?.resultId === selectedDraftId) delete state.repairDraft; state.feedback=String(error).slice(0,1000);});continue; }
         }
         if (mutations.has(call.name) && !await authorize([call])) return stop("approval_denied", "The proposed action was declined.", "cancelled");
         const [output] = await dispatcher.dispatchConcurrent([call], context);
@@ -395,7 +395,7 @@ export class AgentTaskRunner {
           if(output.result.ok && call.name === "request_capability" && packet.repair && !packet.repair.expanded)state.expandedToolFocus=packet.repair.focusKey;
           else if(packet.repair?.expanded)delete state.expandedToolFocus;
           if(output.result.ok && packet.repair?.expanded && call.name !== "request_capability")delete state.repairDraft;
-          state.feedback = `${output.result.summary}\n${output.result.ok ? "" : output.result.output}`.slice(0, 10000);
+          state.feedback = `${output.result.summary}${output.result.ok && call.name === "generate_deliverable" ? ". Deliverable is saved; if all requested operations are complete, call finish with your final response." : ""}\n${output.result.ok ? "" : output.result.output}`.slice(0, 10000);
         });
         clearApprovals();
         if (uncertain) return stop("uncertain_mutation", "The operation ran but its evidence could not be saved. Reconcile current files before an explicit retry. Backups remain available.");

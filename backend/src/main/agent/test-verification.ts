@@ -285,7 +285,9 @@ export function parseAgentTestReport(request: AgentTestExecutionRequest, report:
   const parsed = parseAgentTestReportData(request, report, executionRoot);
   if (!parsed.failed) return parsed;
   const failureLocations = agentFailureLocations(parsed.failureOutput ?? "", executionRoot, request.sourceManifest);
-  return { ...parsed, failureLocations, failureLocationsComplete: false };
+  const prefixes = [pathToFileURL(path.join(executionRoot, path.sep)).href, path.join(executionRoot, path.sep)];
+  const failureOutput = prefixes.reduce((text, prefix) => text.replaceAll(prefix, ""), parsed.failureOutput ?? "");
+  return { ...parsed, ...(failureOutput ? { failureOutput } : {}), failureLocations, failureLocationsComplete: false };
 }
 
 function parseAgentTestReportData(request: AgentTestExecutionRequest, report: string, executionRoot: string): ParsedTests {
@@ -316,7 +318,12 @@ function parseAgentTestReportData(request: AgentTestExecutionRequest, report: st
   if (request.reportFormat === "unittest") {
     const data = JSON.parse(report);
     if (!Array.isArray(data.testFiles) || !data.testFiles.every((item: unknown) => typeof item === "string")) throw new Error("Test report has no test files.");
-    const failureOutput = Array.isArray(data.failures) ? data.failures.map((failure: { name?: string; message?: string; stack?: string }) => `${failure.name ?? ""}: ${failure.message ?? ""}\n${failure.stack ?? ""}`).join("\n").slice(0, 6000) : "";
+    const failureOutput = Array.isArray(data.failures) ? data.failures.map((failure: { name?: string; message?: string; stack?: string }) => {
+      const stackLines = (failure.stack ?? "").split("\n");
+      const frames = stackLines.filter(line => /^\s*at\s+/.test(line) && !/\(node:(?:internal|async_hooks)\b/.test(line)).join("\n");
+      const message = ((failure.message || stackLines.find(line => !/^\s*at\s+/.test(line)) || "").split("\n")[0] || "").trim();
+      return [`${failure.name ?? ""}: ${message}`.trim(), frames].filter(Boolean).join("\n");
+    }).join("\n").slice(0, 6000) : "";
     return { executed: count(data.executed), failed: count(data.failed), skipped: count(data.skipped), testFiles: data.testFiles.map((file: string) => testFile(file, executionRoot, request.suiteRoot)), ...(failureOutput ? { failureOutput } : {}) };
   }
   if (request.reportFormat === "tap") {

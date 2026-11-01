@@ -875,7 +875,8 @@ describe("Agent v3 task host loop", () => {
   it.skipIf(!process.env.WORKBENCH_LMSTUDIO_RUNNER_PROBE)("runs an actual 7B inspection through the new loop without workspace mutations", async () => {
     vi.restoreAllMocks();
     const endpoint = process.env.WORKBENCH_LMSTUDIO_PROBE_ENDPOINT ?? "http://127.0.0.1:1234";
-    const gateway = new ModelGateway(undefined, [{ id: "live-driver", runtime: "mlx-lm", baseUrl: `${endpoint.replace(/\/$/, "")}/v1`, model: "qwen2.5-coder-7b-instruct-mlx", capabilities: ["text"], requestTimeoutMs: 60000, healthPath: "/models", enabled: true, contextLength: 8192, toolCallingFormat: "json" }]);
+    const model = process.env.WORKBENCH_AGENT_REPAIR_MODEL ?? "qwen2.5-coder-7b-instruct-mlx";
+    const gateway = new ModelGateway(undefined, [{ id: "live-driver", runtime: "mlx-lm", baseUrl: `${endpoint.replace(/\/$/, "")}/v1`, model, capabilities: ["text"], requestTimeoutMs: 60000, healthPath: "/models", enabled: true, contextLength: 8192, toolCallingFormat: "json" }]);
     const text = "Read note.txt and report its exact content. Do not edit any file.";
     const runId = createRun(chatId, text), messageId = addMessage({ chat_id: chatId, role: "user", content: text }).id;
     getDb().prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,'agent','agent-v3',?)").run(runId, root);
@@ -891,12 +892,57 @@ describe("Agent v3 task host loop", () => {
         while (offset !== undefined) { const page = store.retrieveResultSlice(record.resultId, { mode: "text", offset, maxChars: 3000 }); content += page.content; offset = page.nextOffset; }
         return { record, content };
       });
-      const proof = { recordedAt: new Date().toISOString(), model: "qwen2.5-coder-7b-instruct-mlx", contextLimit: 8192, result, admissions: getExecutionLedger(runId)?.agentAdmissions, progress: getExecutionLedger(runId)?.agentProgress, requirements: getCurrentAgentTask(chatId)?.snapshot.requirements, approvalRequests: approve.mock.calls.length, savedResults };
+      const proof = { recordedAt: new Date().toISOString(), model, contextLimit: 8192, result, admissions: getExecutionLedger(runId)?.agentAdmissions, progress: getExecutionLedger(runId)?.agentProgress, requirements: getCurrentAgentTask(chatId)?.snapshot.requirements, approvalRequests: approve.mock.calls.length, savedResults };
       if (process.env.WORKBENCH_AGENT_RUNNER_PROBE_REPORT) writeFileSync(process.env.WORKBENCH_AGENT_RUNNER_PROBE_REPORT, JSON.stringify(proof, null, 2));
       expect(result.outcome, result.text).toBe("completed"); expect(result.text).toContain("saved source"); expect(approve).not.toHaveBeenCalled();
       expect(readFileSync(path.join(root, "note.txt"), "utf8")).toBe("saved source\n");
     } finally { clearTimeout(timeout); }
   }, 120000);
+  it.skipIf(!process.env.WORKBENCH_LMSTUDIO_DOCUMENT_PROBE)("completes a live staged-input inspection and Markdown deliverable export through the v3 loop", async () => {
+    vi.restoreAllMocks();
+    const endpoint = process.env.WORKBENCH_LMSTUDIO_PROBE_ENDPOINT ?? "http://127.0.0.1:1234";
+    const model = process.env.WORKBENCH_AGENT_REPAIR_MODEL ?? "qwen/qwen3.5-9b";
+    const gateway = new ModelGateway(undefined, [{ id: "live-driver", runtime: "mlx-lm", baseUrl: `${endpoint.replace(/\/$/, "")}/v1`, model, capabilities: ["text"], requestTimeoutMs: 60000, healthPath: "/models", enabled: true, contextLength: 8192, toolCallingFormat: "json" }]);
+    const input = { id: "11111111-1111-4111-8111-111111111111", filename: "incident-notes.txt", content: "Pump P-204 pressure sensor failed calibration during the 08:00 inspection.\nAction: Replace sensor unit S-204 and rerun pressure test.\n" };
+    const text = "Read the staged input incident-notes.txt and create a downloadable Markdown file named summary.md that summarizes the pump incident and required action. Do not edit any workspace files.";
+    const runId = createRun(chatId, text), messageId = addMessage({ chat_id: chatId, role: "user", content: text }).id;
+    getDb().prepare("INSERT INTO run_mode_details(run_id,mode,engine_version,workspace_root) VALUES (?,'agent','agent-v3',?)").run(runId, root);
+    const inputDir = path.join(root, "runs", runId, "input"); mkdirSync(inputDir, { recursive: true });
+    writeFileSync(path.join(inputDir, input.filename), input.content);
+    const inputSources = [{ id: input.id, filename: input.filename, relativePath: `runs/${runId}/input/${input.filename}`, sha256: createHash("sha256").update(input.content).digest("hex"), originRunId: runId }];
+    const approvals: unknown[] = [];
+    const approve = vi.fn(async (preview: string) => {
+      const parsed = JSON.parse(preview.split("\n\n")[0]);
+      approvals.push(parsed);
+      return parsed.operation === "generate_deliverable" && parsed.arguments?.filename === "summary.md";
+    });
+    const emit = vi.fn((event: any) => {
+      if (event.type === "artifact_ready") {
+        const artifact = event.artifact, file = path.join(root, artifact.relativePath), digest = createHash("sha256").update(readFileSync(file)).digest("hex");
+        getDb().prepare("INSERT INTO artifacts(artifact_id,run_id,kind,filename,relative_path,size_bytes,sha256,created_at) VALUES (?,?,?,?,?,?,?,?)").run(artifact.artifactId, artifact.runId, artifact.kind, artifact.filename, artifact.relativePath, artifact.sizeBytes, digest, artifact.createdAt);
+      }
+    });
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 240000);
+    try {
+      const result = await withRuntimeScope({ runId, mode: "agent", signal: controller.signal }, () => new AgentTaskRunner().run({ modelId: "live-driver", chatId, messageId, workspace: { root, registeredAt: "live-doc" }, approve, state: state => transition(runId, state), context: { runId, workspaceRoot: root, gateway, inputSources, resultStore: new RunResultStore(runId), policyGuard: new MutationPolicyGuard(), envelope: buildExecutionEnvelope({ runId, mode: "agent", modelId: "live-driver", hasWorkspace: true, workspaceRoot: root }), emitRunEvent: emit } }));
+      const output = path.join(root, "runs", runId, "output", "summary.md");
+      const exported = existsSync(output) ? readFileSync(output, "utf8") : null;
+      const store = new RunResultStore(runId);
+      const records = store.listResults({ limit: 50 });
+      for (let offset = 50; records.length === offset; offset += 50) records.push(...store.listResults({ limit: 50, offset }));
+      const savedResults = records.map(record => {
+        let content = "", offset: number | undefined = 0;
+        while (offset !== undefined) { const page = store.retrieveResultSlice(record.resultId, { mode: "text", offset, maxChars: 3000 }); content += page.content; offset = page.nextOffset; }
+        return { record, content };
+      });
+      const proof = { recordedAt: new Date().toISOString(), model, contextLimit: 8192, result, admissions: getExecutionLedger(runId)?.agentAdmissions, progress: getExecutionLedger(runId)?.agentProgress, requirements: getCurrentAgentTask(chatId)?.snapshot.requirements, approvals, exported, noteUnchanged: readFileSync(path.join(root, "note.txt"), "utf8") === "saved source\n", savedResults };
+      if (process.env.WORKBENCH_AGENT_DOCUMENT_PROBE_REPORT) writeFileSync(process.env.WORKBENCH_AGENT_DOCUMENT_PROBE_REPORT, JSON.stringify(proof, null, 2));
+      expect(result.outcome, result.text).toBe("completed");
+      expect(exported).toContain("P-204");
+      expect(approve).toHaveBeenCalledTimes(1);
+      expect(proof.noteUnchanged).toBe(true);
+    } finally { clearTimeout(timeout); }
+  }, 260000);
   it("routes an opted-in preview through RunManager and exposes the durable task snapshot", async () => {
     const text = "Inspect note.txt";
     replies = [() => interpretation("inspect", text), () => ({ tool_calls: [{ name: "read_file", arguments: { path: "note.txt" } }] }), () => "Inspected the saved source.", payload => {

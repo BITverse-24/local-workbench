@@ -163,6 +163,6 @@ export function selectAgentSourcePages(context: ToolExecutionContext, requiremen
     pages.push(page); usedChars += size;
   }
   return { pages, totalEligiblePages: ranges.size, complete: pages.length === ranges.size,
-    omittedPagesVia: { tool: "retrieve_result", action: "list", scope:"task", origin:"source_extracted" },
+    ...(pages.length < ranges.size ? { omittedPagesVia: { tool: "retrieve_result", action: "list", scope:"task", origin:"source_extracted" } } : {}),
     rule: "These are complete observed pages of currently matching source revisions. Page coverage is explicit. Selection does not prove requirement coverage; retrieve omitted pages when needed." };
 }

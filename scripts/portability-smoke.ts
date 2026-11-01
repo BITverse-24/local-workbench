@@ -1,5 +1,6 @@
 // Built only for the native package smoke check. Uses production backend paths.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -101,6 +102,25 @@ async function smoke() {
           if(priorPath===undefined)delete process.env.PATH;else process.env.PATH=priorPath;
           if(priorIsolation===undefined)delete process.env.WORKBENCH_USE_MAC_SANDBOX;else process.env.WORKBENCH_USE_MAC_SANDBOX=priorIsolation;
         }
+        // Verify exported-repair test execution in an isolated snapshot copy without mutating the workspace.
+        rmSync(path.join(workspaceRoot, "package.json"), { force: true });
+        writeFileSync(path.join(workspaceRoot, "test_module.py"), "import unittest\nimport module\nclass TestModule(unittest.TestCase):\n    def test_repaired(self):\n        self.assertEqual(module.double(7), 21)\n");
+        const exportedPath=path.join(root, "repaired-module.py"), exportedBytes="def double(value): return value * 3\n";
+        writeFileSync(exportedPath, exportedBytes);
+        const artifact={artifactPath:exportedPath,artifactDigest:createHash("sha256").update(exportedBytes).digest("hex"),sourceDigest:createHash("sha256").update("def double(value): return value * 2\n").digest("hex"),targetPath:"module.py"};
+        const exportDiscovery=discoverAgentTestPlans({workspaceRoot,changedPaths:["module.py"]});
+        assert.equal(exportDiscovery.ok,true);
+        if (!exportDiscovery.ok) throw new Error(exportDiscovery.detail);
+        const exportRequest={...createAgentVerificationRequest(exportDiscovery.plans[0],"full"),artifact};
+        const exportApproval={workspaceDigest:captureCommandWorkspaceDigest(workspaceRoot),artifact};
+        const exportGuard=new MutationPolicyGuard({strict:true});
+        exportGuard.grantScope({runId,operation:"run_command",command:exportRequest.command,operationDigest:commandApprovalDigest(exportRequest.command,exportApproval),allowUnisolated:true});
+        const exportResult=await withRuntimeScope({runId,mode:"agent",agentPhase:"actions",signal:new AbortController().signal},()=>runCommand(workspaceRoot,exportRequest.command,15000,{guard:exportGuard,runId,approval:exportApproval},exportRequest));
+        assert.equal(exportResult.exitCode,0,exportResult.stderr || exportResult.stdout);
+        assert.equal(exportResult.verification?.executed,1);
+        assert.equal(exportResult.verification?.failed,0);
+        assert.deepEqual(exportResult.verification?.artifact,{artifactDigest:artifact.artifactDigest,sourceDigest:artifact.sourceDigest,targetPath:artifact.targetPath});
+        assert.equal(readFileSync(path.join(workspaceRoot,"module.py"),"utf8"),"def double(value): return value * 2\n");
       }
       closeDb(); initDb(dbPath);
       assert.equal(new RunResultStore(runId, getDb(), root).retrieveResultSlice(id).content, source);
@@ -119,7 +139,7 @@ async function smoke() {
       assert.throws(()=>decide(recoveryRun,confirmation.actionId,true));
       assert.equal(readFileSync(path.join(workspaceRoot,"source.md"),"utf8"),source);
     });
-    console.log(`Package portability check passed on ${process.platform}: Agent read, result retrieval, integrity, restart recovery, command validation, storage failure${process.platform === "darwin" ? ", and missing Node" : ""}.`);
+    console.log(`Package portability check passed on ${process.platform}: Agent read, result retrieval, integrity, restart recovery, command validation, storage failure${process.platform === "darwin" ? ", missing Node, and exported-repair isolated snapshot test execution" : ""}.`);
   } finally {
     closeDb();
     if (priorRoot === undefined) delete process.env.WORKBENCH_DATA_ROOT; else process.env.WORKBENCH_DATA_ROOT = priorRoot;

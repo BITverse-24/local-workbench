@@ -8,7 +8,7 @@ import { countLocalAgentRequest } from "./local-token-counter.js";
 import { homedir } from "node:os";
 import { resolveSafe } from "../harness/path-guard.js";
 import { randomUUID, createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseStructuredData } from "./structured-data.js";
@@ -296,7 +296,8 @@ function jsonToolParameterSchema(field: any): any {
 
 export function formatJSONToolMessages(messages: Parameters<typeof formatMessagesForFallback>[0], tools: AgentToolDefinition[], required = false, strict = false) {
   const descriptions = tools.map(tool => `- ${tool.function.name}: ${tool.function.description}\n  Arguments schema: ${JSON.stringify(jsonToolParameterSchema(tool.function.parameters))}`).join("\n\n");
-  return formatMessagesForFallback(messages, `\n\nAVAILABLE TOOLS:\n${descriptions}\n\nReturn JSON: {"tool_calls":[{"name": <available tool name>, "arguments": <schema fields>}], "content":""}. ${strict ? "Return ONE bare JSON object. Do not wrap it in Markdown fences or prose. Fenced examples never execute. Select at most one tool call. " : ""}Emit each operation once. Multiline arguments are arrays of raw lines; preserve indentation, use empty strings for blank lines, and do not add newline escapes. ${required ? "A required operation remains incomplete. Call its tool now." : "If no operation is needed, tool_calls is [] and content is your final response."}`);
+  const hasFinish = tools.some(tool => tool.function.name === "finish");
+  return formatMessagesForFallback(messages, `\n\nAVAILABLE TOOLS:\n${descriptions}\n\nReturn JSON: {"tool_calls":[{"name": <available tool name>, "arguments": <schema fields>}], "content":""}. ${strict ? "Return ONE bare JSON object. Do not wrap it in Markdown fences or prose. Fenced examples never execute. Select at most one tool call. " : ""}Emit each operation once. Multiline arguments are arrays of raw lines; preserve indentation, use empty strings for blank lines, and do not add newline escapes. ${required ? (hasFinish ? "Select one tool call from AVAILABLE TOOLS (call finish when all requested operations and deliverables are complete, or call another tool if work remains)." : "A required operation remains incomplete. Call its tool now.") : "If no operation is needed, tool_calls is [] and content is your final response."}`);
 }
 
 /** Constrain the JSON envelope where supported. Host schemas and policy still validate each action. */
@@ -1260,10 +1261,15 @@ export class ModelGateway implements ModelClient {
         if (finishReason === "length") {
           throw new Error("Intent classifier exhausted its output budget before completing JSON. Check the model's reasoning control.");
         }
-        if (typeof extractedContent !== "string" || !extractedContent.trim()) {
+        const rawClassification = typeof extractedContent === "string" && extractedContent.trim()
+          ? extractedContent
+          : typeof reasoning === "string" && reasoning.trim().startsWith("{") && reasoning.trim().endsWith("}")
+            ? reasoning
+            : extractedContent;
+        if (typeof rawClassification !== "string" || !rawClassification.trim()) {
           throw new Error("Intent classifier returned no final JSON. The provider may have spent its output budget on reasoning.");
         }
-        parsedJson = parseProviderContent(extractedContent);
+        parsedJson = parseProviderContent(rawClassification, reasoning);
       } else if (request.responseFormat === "chat-result" || request.responseFormat === "code-summary") {
         if (typeof extractedContent === "string" && extractedContent.trim().length > 0) {
           const trimmed = extractedContent.trim();
@@ -1287,7 +1293,7 @@ export class ModelGateway implements ModelClient {
         }
       } else {
         try {
-          parsedJson = parseProviderContent(extractedContent);
+          parsedJson = parseProviderContent(extractedContent, reasoning);
         } catch (e) {
           logGatewayError(request, "parseProviderContent failed (empty/invalid JSON)", e instanceof Error ? e.message : String(e));
           persistGatewayTrace(request.runId, request.requestId, { phase: "parse_error", taskType: request.taskType, error: e instanceof Error ? e.message : String(e), extractedContent, reasoning, rawText, envelope });
@@ -1544,7 +1550,21 @@ export class ModelGateway implements ModelClient {
     if (!model) throw new AgentAdmissionError("The selected Agent model is unavailable.");
     const seed = { model: model.model, messages: [{ role: "system", content: "Return only OK." }, { role: "user", content: "Counting setup." }], max_tokens: 8, stream: false };
     const server = await countLMStudioPreparedRequest({ endpoint: model.baseUrl, payload: seed, signal: options.signal });
-    const assetsDir = options.assetsDir ?? resolveSafe(path.join(homedir(), ".lmstudio", "models"), server.modelPath);
+    const modelsRoot = path.join(homedir(), ".lmstudio", "models");
+    const assetsDir = options.assetsDir ?? (() => {
+      const direct = resolveSafe(modelsRoot, server.modelPath);
+      if (existsSync(path.join(direct, "tokenizer.json"))) return direct;
+      try {
+        const manifestPath = resolveSafe(path.join(homedir(), ".lmstudio", "hub", "models"), path.join(server.modelPath, "manifest.json"));
+        const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { dependencies?: Array<{ sources?: Array<{ type?: string; user?: string; repo?: string }> }> };
+        const candidates = (manifest.dependencies ?? []).flatMap(dep => dep.sources ?? [])
+          .filter((src): src is { type: string; user: string; repo: string } => src.type === "huggingface" && typeof src.user === "string" && typeof src.repo === "string")
+          .map(src => resolveSafe(modelsRoot, path.join(src.user, src.repo)))
+          .filter(dir => existsSync(path.join(dir, "tokenizer.json")));
+        if (candidates.length === 1) return candidates[0];
+      } catch {}
+      return direct;
+    })();
     const local = await countLocalAgentRequest({ assetsDir, payload: seed, includeTemplate: true, signal: options.signal });
     if (!local.activeTemplate || local.renderedDigest !== server.renderedDigest || local.inputTokens !== server.inputTokens) throw new AgentAdmissionError("Local tokenizer assets do not match the loaded LM Studio model and template.");
     const activeTemplate = local.activeTemplate;
@@ -1738,7 +1758,14 @@ export class ModelGateway implements ModelClient {
             }
           }
 
-          let content = typeof msg?.content === "string" ? withoutInlineReasoning(msg.content) || null : null;
+          const rawNativeReasoning = typeof (msg?.reasoning_content ?? msg?.reasoning) === "string"
+            ? (msg.reasoning_content ?? msg.reasoning).trim()
+            : "";
+          let content = typeof msg?.content === "string" && msg.content.trim()
+            ? withoutInlineReasoning(msg.content) || null
+            : options?.responseSchema && rawNativeReasoning.startsWith("{") && rawNativeReasoning.endsWith("}")
+              ? rawNativeReasoning
+              : null;
           if (!agentV3Scope() && parsedCalls.length === 0 && content) {
             const embedded = extractEmbeddedToolCalls(content);
             if (embedded.toolCalls.length > 0) {
@@ -1896,7 +1923,15 @@ export class ModelGateway implements ModelClient {
       if (response.status >= 200 && response.status < 300) {
         const envelope = JSON.parse(rawText);
         const choice = envelope.choices?.[0];
-        const rawContent = typeof choice?.message?.content === "string" ? withoutInlineReasoning(choice.message.content) : choice?.message?.content;
+        const rawReasoning = typeof (choice?.message?.reasoning_content ?? choice?.message?.reasoning) === "string"
+          ? (choice.message.reasoning_content ?? choice.message.reasoning).trim()
+          : "";
+        const rawMessageContent = typeof choice?.message?.content === "string" && choice.message.content.trim()
+          ? choice.message.content
+          : rawReasoning.startsWith("{") && rawReasoning.endsWith("}")
+            ? rawReasoning
+            : choice?.message?.content;
+        const rawContent = typeof rawMessageContent === "string" ? withoutInlineReasoning(rawMessageContent) : rawMessageContent;
         let parsedJson: any = null;
         let parsedArguments = false;
 

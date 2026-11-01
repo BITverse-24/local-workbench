@@ -1,0 +1,90 @@
+{
+  "recordedAt": "2026-11-01T08:00:44.558Z",
+  "scope": "Source-runtime live Agent v3 probes (workspace inspection & staged-input deliverable export)",
+  "model": "qwen/qwen3.5-9b",
+  "contextLimit": 8192,
+  "workspaceInspectionProbe": {
+    "recordedAt": "2026-11-01T07:37:50.447Z",
+    "sourceReportSha256": "18d4dc9996ff6e3d6a47602e4813078a4f90af0a8017f345dac30fffc206be15",
+    "result": {
+      "outcome": "completed",
+      "stopReason": "requirements_satisfied",
+      "text": "\n\n```\nsaved source\n```\n\nChanges applied: none\nChecks passed: none\nChecks unavailable: none recorded\nRemaining requirements: none"
+    },
+    "modelCalls": 8,
+    "admissions": {
+      "undefined": 8
+    },
+    "approvalRequests": 0,
+    "savedTools": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "stagedInputDeliverableProbe": {
+    "recordedAt": "2026-11-01T08:00:44.558Z",
+    "sourceReportSha256": "0ac7784c5f63143c1945f6e8e4b71cab0552e43e56001589d284b567c5cbb849",
+    "result": {
+      "outcome": "completed",
+      "stopReason": "requirements_satisfied",
+      "text": "Deliverable summary.md has been successfully generated and verified. The file contains the required summary of the pump incident and action items. All acceptance criteria have been met.\n\nChanges applied: none\nChecks passed: none\nChecks unavailable: none recorded\nRemaining requirements: none"
+    },
+    "modelCalls": 11,
+    "admissions": {
+      "undefined": 11
+    },
+    "approvals": [
+      {
+        "taskId": "fe3fc5f6-4ac7-46d2-bcef-a1336dd2ef51",
+        "taskRevision": 2,
+        "requirementId": "r-0f6221ee69b3",
+        "constraints": [],
+        "fileScope": null,
+        "artifactScope": {
+          "requested": true,
+          "format": "md",
+          "filename": "summary.md",
+          "reason": "The instruction explicitly requests a downloadable Markdown file named summary.md",
+          "taskId": "fe3fc5f6-4ac7-46d2-bcef-a1336dd2ef51",
+          "taskRevision": 2,
+          "requirementId": "r-0f6221ee69b3"
+        },
+        "operation": "generate_deliverable",
+        "arguments": {
+          "type": "md",
+          "title": "Pump Incident Summary",
+          "content": "# Pump Incident Summary\n\n## Incident Details\n\n- **Pump**: P-204\n- **Issue**: Pressure sensor failed calibration during the 08:00 inspection.\n- **Sensor**: S-204\n\n## Required Action\n\n1. Replace sensor unit S-204\n2. Rerun pressure test",
+          "filename": "summary.md"
+        }
+      }
+    ],
+    "exported": "# Pump Incident Summary\n\n## Incident Details\n\n- **Pump**: P-204\n- **Issue**: Pressure sensor failed calibration during the 08:00 inspection.\n- **Sensor**: S-204\n\n## Required Action\n\n1. Replace sensor unit S-204\n2. Rerun pressure test",
+    "noteUnchanged": true,
+    "savedTools": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  }
+}
