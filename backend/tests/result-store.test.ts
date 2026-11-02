@@ -26,6 +26,18 @@ describe("P1 durable result store", () => {
     const dir = path.join(root, "runs", runId, "intermediate", "results");
     expect(readdirSync(dir).every((name) => !name.includes("pending"))).toBe(true);
   });
+  it("pages only the requested evidence origin while preserving run isolation",()=>{
+    for(const origin of ["source_extracted","execution","model_derived"] as const){
+      for(let index=0;index<4;index++)store.registerResult(input({origin,summary:`${origin} ${index}`,payload:`${origin} ${index}`}));
+    }
+    const all=store.listResults({origin:"source_extracted",limit:50});
+    const pages=[...store.listResults({origin:"source_extracted",limit:2}),...store.listResults({origin:"source_extracted",offset:2,limit:2})];
+    expect(all).toHaveLength(4);expect(pages.map(record=>record.resultId)).toEqual(all.map(record=>record.resultId));
+    expect(all.every(record=>record.origin === "source_extracted")).toBe(true);
+    const other=new RunResultStore(createRun(createChat(),"other"),getDb(),root);
+    expect(other.listResults({origin:"source_extracted"})).toEqual([]);
+    expect(()=>store.listResults({origin:"unknown" as any})).toThrow();
+  });
   it("reconstructs full payload and provenance with a newly opened SQLite/store instance", () => {
     const record = store.registerResult(input({ type: "table", payload: { rows: [{ value: 1 }, { value: 2 }] }, structuredSchema: { columns: ["value"] }, sources: [{ filename: "input.xlsx", sheet: "Readings", range: "A2:A3", page: 2, section: "Results", locator: "table-1", relation: "source" }] }));
     closeDb(); initDb(dbPath); store = new RunResultStore(runId, getDb(), root);

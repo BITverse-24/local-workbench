@@ -25,8 +25,25 @@ SCENARIOS = {
     "flow_c/scenario-3": {"mode": "agent", "attach": [], "kb": ["utility-standard-UT-9.md"], "workspace": ["utility-manifold-U18.svg"]},
 }
 
+FLOW_D_FILES = {
+    "prompt.md",
+    "workspace/README.md",
+    "workspace/index.html",
+    "workspace/package.json",
+    "workspace/styles.css",
+    "workspace/src/app.js",
+    "workspace/src/seed.js",
+    "workspace/src/storage.js",
+    "workspace/src/work-orders.js",
+    "workspace/tests/storage.test.js",
+    "workspace/tests/work-orders.test.js",
+}
+
 
 FLOW_C_ONLY = "--flow-c" in sys.argv
+FLOW_D_ONLY = "--flow-d" in sys.argv
+if FLOW_C_ONLY and FLOW_D_ONLY:
+    raise SystemExit("Choose one focused flow validation")
 if FLOW_C_ONLY:
     SCENARIOS = {name: spec for name, spec in SCENARIOS.items() if name.startswith("flow_c/")}
 
@@ -37,7 +54,8 @@ def check(condition: bool, message: str) -> None:
 
 
 def validate_layout() -> None:
-    actual_dirs = {p.relative_to(ROOT).as_posix() for p in ROOT.rglob("*") if p.is_dir() and (p / "prompt.md").exists() and (not FLOW_C_ONLY or p.relative_to(ROOT).as_posix().startswith("flow_c/"))}
+    selected_prefix = "flow_c/"
+    actual_dirs = {p.relative_to(ROOT).as_posix() for p in ROOT.rglob("*") if p.is_dir() and (p / "prompt.md").exists() and p.relative_to(ROOT).as_posix() != "flow_d" and (not FLOW_C_ONLY or p.relative_to(ROOT).as_posix().startswith(selected_prefix))}
     check(actual_dirs == set(SCENARIOS), f"Scenario folders differ: {sorted(actual_dirs ^ set(SCENARIOS))}")
     expected_paths: set[str] = set()
     for relative, spec in SCENARIOS.items():
@@ -66,26 +84,28 @@ def validate_layout() -> None:
         actual_files = {p.relative_to(ROOT).as_posix() for p in folder.rglob("*") if p.is_file()}
         local_expected = {p for p in expected_paths if p.startswith(relative + "/")}
         check(actual_files == local_expected, f"Unexpected or missing files in {relative}: {sorted(actual_files ^ local_expected)}")
-    for flow in (("flow_c",) if FLOW_C_ONLY else ("flow_a", "flow_b", "flow_c")):
+    selected_flows = ("flow_c",) if FLOW_C_ONLY else ("flow_a", "flow_b", "flow_c")
+    for flow in selected_flows:
         modes = [spec["mode"] for name, spec in SCENARIOS.items() if name.startswith(flow + "/")]
         check(sorted(modes) == ["agent", "chat", "work"], f"{flow} must have one chat, one work, and one agent scenario")
 
 
 def validate_inputs() -> None:
-    for relative in (() if FLOW_C_ONLY else ("flow_a/scenario-1/inspection-report-E201-annotated.pdf", "flow_a/scenario-1/inspection-report-E202-followup.pdf")):
+    for relative in (() if FLOW_C_ONLY or FLOW_D_ONLY else ("flow_a/scenario-1/inspection-report-E201-annotated.pdf", "flow_a/scenario-1/inspection-report-E202-followup.pdf")):
         check((ROOT / relative).read_bytes().startswith(b"%PDF-"), f"Invalid PDF: {relative}")
-    with (ROOT / "flow_b/scenario-2/cold-room-readings.csv").open(newline="", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
-    check(len(rows) == 8, "Cold-room demo input must contain eight rows")
-    check({row["temp_c"] for row in rows if row["temp_c"]} == {"3.2", "5.0", "5.1", "1.9", "2.0", "4.8", "6.4"}, "Cold-room values changed")
-    drawing = (ROOT / "flow_c/scenario-1/pump-skid-P204.svg").read_text(encoding="utf-8")
-    check("data:image/png;base64," in drawing and "DN80 discharge" in drawing and "CLASS 150" not in drawing, "Drawing must preserve visible image-only evidence")
+    if not (FLOW_C_ONLY or FLOW_D_ONLY):
+        with (ROOT / "flow_b/scenario-2/cold-room-readings.csv").open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        check(len(rows) == 8, "Cold-room demo input must contain eight rows")
+        check({row["temp_c"] for row in rows if row["temp_c"]} == {"3.2", "5.0", "5.1", "1.9", "2.0", "4.8", "6.4"}, "Cold-room values changed")
+        drawing = (ROOT / "flow_c/scenario-1/pump-skid-P204.svg").read_text(encoding="utf-8")
+        check("data:image/png;base64," in drawing and "DN80 discharge" in drawing and "CLASS 150" not in drawing, "Drawing must preserve visible image-only evidence")
 
 
 def validate_manifest() -> None:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     check(manifest["fixtureVersion"] == "2.1.0", "Unexpected fixture version")
-    actual = {p.relative_to(ROOT).as_posix() for p in ROOT.rglob("*") if p.is_file()}
+    actual = {p.relative_to(ROOT).as_posix() for p in ROOT.rglob("*") if p.is_file() and ".harness_backups" not in p.parts}
     check(actual == set(manifest["files"]), "Manifest file list does not match the minimal demo folders")
     for relative, details in manifest["files"].items():
         path = ROOT / relative
@@ -93,11 +113,24 @@ def validate_manifest() -> None:
         check(path.stat().st_size == details["bytes"], f"Manifest size mismatch: {relative}")
 
 
+def validate_flow_d() -> None:
+    folder = ROOT / "flow_d"
+    actual = {path.relative_to(folder).as_posix() for path in folder.rglob("*") if path.is_file() and ".harness_backups" not in path.parts}
+    check(actual == FLOW_D_FILES, f"Flow D project files differ: {sorted(actual ^ FLOW_D_FILES)}")
+    prompt = (folder / "prompt.md").read_text(encoding="utf-8")
+    check("workspace" in prompt.lower() and "tests" in prompt.lower(), "Flow D prompt must ask for a workspace repair and test run")
+    package = json.loads((folder / "workspace/package.json").read_text(encoding="utf-8"))
+    check(package.get("scripts", {}).get("test") == "node --test", "Flow D must use Node's built-in test runner")
+    check(not package.get("dependencies") and not package.get("devDependencies"), "Flow D must not add dependencies")
+
+
 def main() -> None:
-    validate_layout()
-    validate_inputs()
+    if not FLOW_D_ONLY:
+        validate_layout()
+        validate_inputs()
+    validate_flow_d()
     validate_manifest()
-    print("Demo fixtures passed: selected scenario folders contain only prompts, attachments, knowledge files, and Agent workspace inputs.")
+    print("Demo fixtures passed: scenario inputs and the Flow D web project match the manifest.")
 
 
 if __name__ == "__main__":

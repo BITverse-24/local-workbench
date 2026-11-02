@@ -1,6 +1,7 @@
 import { approvedPythonTool as executePythonTool } from "./helpers/approved-python.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import type { AgentTool, ToolExecutionContext } from "../src/main/tools/types.js";
@@ -8,7 +9,7 @@ import type { ModelGateway } from "../src/main/gateway/model-gateway.js";
 import { createChat } from "../src/main/persistence/chats.js";
 import { closeDb, getDb, initDb } from "../src/main/persistence/db.js";
 import { createRun } from "../src/main/run/store.js";
-import { createRunDirectories } from "../src/main/run/filesystem.js";
+import { createRunDirectories, absoluteDataPath } from "../src/main/run/filesystem.js";
 import { RunResultStore } from "../src/main/run/result-store.js";
 import { ToolDispatcher } from "../src/main/agent/tool-dispatcher.js";
 import { compactConversationHistory, compactToolObservation, type AgentMessage } from "../src/main/agent/context-manager.js";
@@ -17,6 +18,12 @@ import { readFileTool, listDirTool, writeFileTool } from "../src/main/tools/work
 import { retrieveResultTool } from "../src/main/tools/result-retrieval.js";
 import { normalizeRunContract } from "../src/main/run/contract.js";
 import { validateAndNormalizeIntent } from "../src/main/router/contextual-router.js";
+import { agentEvidenceSlice } from "../src/main/agent/context-packet.js";
+import { currentVisualObservation } from "../src/main/agent/requirement-review.js";
+import { withRuntimeScope } from "../src/main/run/runtime-scope.js";
+import { testModelRegistry } from "./helpers/test-model-registry.js";
+import { initializeExecutionLedger } from "../src/main/run/execution-ledger.js";
+import { inspectAgentArtifacts, currentAgentArtifact } from "../src/main/agent/artifact-evidence.js";
 
 describe("P1 production result registration and retrieval integration", () => {
   let root: string, dbPath: string, runId: string, runDir: string, context: ToolExecutionContext, oldRoot: string | undefined;
@@ -26,6 +33,51 @@ describe("P1 production result registration and retrieval integration", () => {
     context = { runId, workspaceRoot: path.join(runDir, "input"), gateway: { execute() { throw new Error("Native fixture must not call a model"); } } as unknown as ModelGateway, resultStore: new RunResultStore(runId, getDb(), root) };
   });
   afterEach(() => { closeDb(); if (oldRoot === undefined) delete process.env.WORKBENCH_DATA_ROOT; else process.env.WORKBENCH_DATA_ROOT = oldRoot; rmSync(root, { recursive: true, force: true }); });
+
+  it("accepts visual observations for review only while the saved inspection and source remain current", async () => {
+    const filename = "drawing.svg", source = path.join(context.workspaceRoot, filename);
+    writeFileSync(source, '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><text x="5" y="20">VALVE</text></svg>');
+    context.originalUserRequest = "Inspect the drawing";
+    context.gateway = { registry: new Map(testModelRegistry().map(model => [model.id, model])),
+      execute: async () => ({ ok: true, value: { result: { sourceText: "VALVE", findings: [], pageReferences: [{ id: "p1", page: 1, text: "VALVE" }], warnings: [] } } }),
+      chatWithTools: async () => ({ ok: true, value: { content: '{"conflicts":[],"unresolved":[]}', finishReason: "stop" } }) } as any;
+    const [execution] = await withRuntimeScope({ runId, mode: "agent", signal: new AbortController().signal, remainingModelCalls: 24 },
+      () => new ToolDispatcher([extractDocumentTool]).dispatchConcurrent([{ id: "visual", name: "extract_document", arguments: { filename } }], context));
+    const record = execution.result.resultRef!;
+    expect(record.origin).toBe("model_derived");
+    const inspection = JSON.parse(context.resultStore!.readResultPayload(record.resultId)).inspection;
+    expect(inspection).toMatchObject({status:"complete", failures:[], warnings:[]});
+    expect(currentVisualObservation(context, record)).toBe(true);
+    const view = absoluteDataPath(inspection.views[0].relativePath), viewBytes = (await import("node:fs")).readFileSync(view);
+    writeFileSync(view, "changed");
+    expect(currentVisualObservation(context, record)).toBe(false);
+    writeFileSync(view, viewBytes);
+    writeFileSync(source, "changed");
+    expect(currentVisualObservation(context, record)).toBe(false);
+  });
+
+  it("binds a v3 generated artifact to its actual saved bytes before publishing success", async () => {
+    const bytes = "Saved report content", filename = "report.md", artifactId = randomUUID();
+    writeFileSync(path.join(runDir, "output", filename), bytes);
+    const artifact = { artifactId, runId, filename, kind: "md" as const, relativePath: `runs/${runId}/output/${filename}`, sizeBytes: Buffer.byteLength(bytes), createdAt: new Date().toISOString() };
+    const tool: AgentTool = { name: "generate_deliverable", definition: { type: "function", function: { name: "generate_deliverable", description: "Save a test artifact", parameters: { type: "object", properties: {} } } }, execute: async () => ({ output: "saved", summary: "saved", artifacts: [artifact] }) };
+    context.agentRequirementId = "r-report";
+    initializeExecutionLedger({runId,schemaVersion:1,objective:"Create report",workspace:{requested:false,operations:[]},deliverables:[]} as any);
+    const [saved] = await new ToolDispatcher([tool]).dispatchConcurrent([{ id: "artifact-call", name: tool.name, arguments: {} }], context);
+    expect(saved.result.ok).toBe(true);
+    const record = saved.result.resultRef!;
+    expect(record.origin).toBe("execution");
+    expect(JSON.parse(context.resultStore!.readResultPayload(record.resultId))).toMatchObject({ requirementId: "r-report", artifacts: [{ artifactId, sha256: createHash("sha256").update(bytes).digest("hex") }] });
+    getDb().prepare("INSERT INTO artifacts(artifact_id,run_id,kind,filename,relative_path,size_bytes,sha256,created_at) VALUES (?,?,?,?,?,?,?,?)").run(artifactId,runId,"md",filename,artifact.relativePath,artifact.sizeBytes,createHash("sha256").update(bytes).digest("hex"),artifact.createdAt);
+    const inspected=await inspectAgentArtifacts(context);
+    expect(inspected).toMatchObject([{requirementId:"r-report",filename,text:bytes}]);
+    writeFileSync(path.join(runDir, "output", filename), "tampered");
+    expect(()=>currentAgentArtifact(inspected[0])).toThrow(/changed/);
+    await expect(inspectAgentArtifacts(context)).rejects.toThrow(/changed/);
+    const [changed] = await new ToolDispatcher([tool]).dispatchConcurrent([{ id: "artifact-changed", name: tool.name, arguments: {} }], context);
+    expect(changed.result.ok).toBe(false);
+    if (!changed.result.ok) expect(changed.result.error.code).toBe("persistence_failure");
+  });
 
   it("preserves 240 facts from twelve extracted documents after compaction, removal of sources/messages, and reopening the store", async () => {
     const extractor = new ToolDispatcher([extractDocumentTool]);
@@ -124,6 +176,31 @@ describe("P1 production result registration and retrieval integration", () => {
     expect(slice.content).toBe(payload.slice(0, slice.nextOffset));
     expect(result.output).not.toContain("OBSERVATION COMPACTED");
     expect(JSON.parse(result.output.slice(result.output.indexOf("\n") + 1)).content).toBe(slice.content);
+  });
+  it("persists v3 retrieval as structured evidence without nested JSON or undefined metadata",async()=>{
+    context.agentRequirementId="r-source";
+    const code='const pattern = "\\n";\nconst name = "café 🛠️";\n';
+    const record=context.resultStore!.registerResult({type:"structured",status:"complete",origin:"source_extracted",producer:{tool:"read_file",callId:"original"},summary:"Original code",payload:{sourceText:code},sources:[]});
+    const dispatcher=new ToolDispatcher([retrieveResultTool]);
+    const actions=[{action:"read",result_id:record.resultId,mode:"json",pointer:"/sourceText",max_chars:code.length},{action:"inspect",result_id:record.resultId},{action:"list",origin:"source_extracted",count:1}];
+    const saved=[];
+    for(const args of actions){
+      const [result]=await dispatcher.dispatchConcurrent([{id:`retrieval-${saved.length}`,name:"retrieve_result",arguments:args}],context);
+      expect(result.result.ok,result.result.output).toBe(true);
+      const reference=result.result.resultRef!;expect(reference.storage.encoding).toBe("json");expect(reference.origin).toBe("model_derived");
+      saved.push(reference);
+    }
+    const slice=agentEvidenceSlice(context,saved[0].resultId,5000) as any;
+    expect(slice).toMatchObject({completeResult:true,value:{content:code,truncated:false,resultId:record.resultId}});
+    expect(slice.value).not.toHaveProperty("nextOffset");
+    expect(saved[0].sources).toEqual([{resultId:record.resultId,relation:"source"}]);
+    const inspected=agentEvidenceSlice(context,saved[1].resultId,5000) as any;
+    expect(inspected.value).not.toHaveProperty("structuredSchema");expect(inspected.value).not.toHaveProperty("nextSourceOffset");
+    const listing=agentEvidenceSlice(context,saved[2].resultId,5000) as any;
+    expect(listing.value.results.map((item:any)=>item.resultId)).toEqual([record.resultId]);expect(listing.value.origin).toBe("source_extracted");
+    expect(listing.value).not.toHaveProperty("nextOffset");
+    const one=await retrieveResultTool.execute({result_id:record.resultId,mode:"json",pointer:"/sourceText",max_chars:1},context);
+    expect(one.data).toMatchObject({content:code[0],nextOffset:1,truncated:true});
   });
   it("does not publish canonical workspace writes as deliverable artifacts", async () => {
     context.runContract = normalizeRunContract(runId, validateAndNormalizeIntent({ intentType: "code_modification", primaryGoal: "Write a workspace module", isActionable: true, chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: ["module.py"], expectedDeliverables: [] }, { hasWorkspace: true, workspaceFiles: [], userPrompt: "Write module.py" }));

@@ -1,6 +1,6 @@
 {
   "name": "local-workbench",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Local Workbench — self-hosted agentic AI desktop app (Electron shell, framework-agnostic backend, React/Vite renderer)",
@@ -10,6 +10,7 @@
     "demo": "npm run build:behavioral && node scripts/test-all-flows.cjs",
     "demo:flow-c:release": "npm run build:behavioral && node scripts/release-flow-c.cjs",
     "demo:scenarios": "npm run build:behavioral && node scripts/run-demo-scenarios.cjs",
+    "demo:flow-d": "npm run build:behavioral && DEMO_SCENARIOS=D-1 node scripts/run-demo-scenarios.cjs",
     "benchmark:modes": "node scripts/benchmark-modes.cjs",
     "certify:v0": "npm run build:behavioral && node scripts/certify-v0.cjs",
     "dev": "node scripts/dev.cjs",
@@ -35,11 +36,16 @@
     "postinstall": "electron-builder install-app-deps && node scripts/patch-vectra.cjs"
   },
   "dependencies": {
+    "@babel/parser": "7.29.8",
+    "@huggingface/jinja": "0.5.11",
+    "@huggingface/tokenizers": "0.2.0",
+    "@lmstudio/sdk": "1.5.0",
     "better-sqlite3": "13.0.3",
     "canvas": "^3.2.3",
     "docx": "^9.7.1",
     "exceljs": "^4.4.0",
     "json5": "2.2.3",
+    "jsonschema": "1.5.0",
     "jszip": "^3.10.2",
     "pdfjs-dist": "^6.3.289",
     "react": "^18.2.0",
@@ -47,7 +53,8 @@
     "saxes": "^6.0.0",
     "uuid": "^14.0.2",
     "vectra": "^0.15.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "3.25.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

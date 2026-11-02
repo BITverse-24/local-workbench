@@ -3,7 +3,7 @@ import { findBubblewrap } from "../../tools/python-runtime.js";
 import { MACOS_TOOL_SELECTORS, macosReadRules } from "../../tools/macos-sandbox.js";
 import { executeProcess } from "../../tools/child-process.js";
 import { assertRuntimeActive, currentRuntimeScope } from "../../run/runtime-scope.js";
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, lstatSync, readFileSync, writeFileSync, rmSync, realpathSync, chmodSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, lstatSync, statSync, readFileSync, readlinkSync, writeFileSync, rmSync, realpathSync, chmodSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,7 +11,7 @@ import { resolveSafe, PermissionError } from "../path-guard.js";
 import { writeFile } from "./write-file.js";
 import { deleteFile } from "./delete-file.js";
 import type { MutationPolicyGuard } from "../policy-guard.js";
-import { agentManifestDigest, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, parseAgentTestReport, type AgentTestExecutionEvidence, type AgentTestExecutionRequest } from "../../agent/test-verification.js";
+import { agentManifestDigest, agentRuntimeProbeCommand, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, parseAgentTestReport, type AgentTestArtifact, type AgentTestExecutionEvidence, type AgentTestExecutionRequest } from "../../agent/test-verification.js";
 
 export interface CommandResult {
   stdout: string;
@@ -21,6 +21,7 @@ export interface CommandResult {
   durationMs: number;
   changes: string[];
   backupPaths: string[];
+  publishedChanges?: Array<{path:string;beforeDigest:string|null;afterDigest:string|null;beforeMode:number|null;afterMode:number|null;backupPath?:string}>;
   isolationStatus: "os_isolated" | "unisolated";
   isolationMessage: string;
   verification?: AgentTestExecutionEvidence;
@@ -60,11 +61,30 @@ export function validateCommandSafety(command: string): void {
 const MAX_FILES = 10000;
 const MAX_BYTES = 128 * 1024 * 1024;
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
-type Snapshot = Map<string, { bytes: Buffer; mode: number; hash: string }> & { directories: Set<string> };
+type Snapshot = Map<string, { bytes: Buffer; mode: number; hash: string; linkTarget?: string }> & { directories: Set<string> };
+
+/** Host-only approval identity. Never accepted from model tool arguments. */
+export interface CommandApproval { workspaceDigest: string; artifact?: AgentTestArtifact }
+
+function snapshotDigest(root: string, files: Snapshot): string {
+  return createHash("sha256").update(JSON.stringify({ root,
+    directories: [...files.directories].sort(),
+    files: [...files].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([name, file]) => [name, file.hash, file.mode, file.linkTarget ?? null]),
+  })).digest("hex");
+}
+
+export function captureCommandWorkspaceDigest(workspaceRoot: string): string {
+  const root = resolveSafe(workspaceRoot, ".");
+  return snapshotDigest(root, snapshot(root, false));
+}
+
+export function commandApprovalDigest(command: string, approval: CommandApproval): string {
+  return createHash("sha256").update(JSON.stringify(["run_command", command, approval.workspaceDigest, ...(approval.artifact ? [approval.artifact] : [])])).digest("hex");
+}
 
 /** Never follow links while taking a snapshot or publishing subprocess output. */
 function snapshot(root: string, rejectLinks: boolean): Snapshot {
-  const files = Object.assign(new Map<string, { bytes: Buffer; mode: number; hash: string }>(), { directories: new Set<string>() });
+  const files: Snapshot = Object.assign(new Map(), { directories: new Set<string>() });
   let total = 0;
   const visit = (relative: string) => {
     assertRuntimeActive();
@@ -81,7 +101,7 @@ function snapshot(root: string, rejectLinks: boolean): Snapshot {
         total += lstatSync(resolved).size;
         if (total > MAX_BYTES) throw new PermissionError("Command snapshot exceeds 128 MiB.");
         const bytes = readFileSync(resolved);
-        files.set(name, { bytes, mode: 0o600, hash: digest(bytes) });
+        files.set(name, { bytes, mode: 0o600, hash: digest(bytes), linkTarget: readlinkSync(file) });
       } else if (stat.isDirectory()) { files.directories.add(name); visit(name); }
       else if (stat.isFile()) {
         total += stat.size;
@@ -154,6 +174,29 @@ function directLaunch(scratch: string, command: string, extraEnv: NodeJS.Process
   return { binary: "/bin/sh", args: ["-c", command], env };
 }
 
+/** Observe executable identities, including absent candidates. Installing into the
+ * same PATH must invalidate an earlier missing-tool result. This is not a probe
+ * or a grant: execution still tests the selected launch environment below. */
+export function agentTestEnvironmentKey(workspaceRoot:string): string {
+  const launches=[directLaunch(tmpdir(),"")];
+  try {launches.push(sandboxLaunch(workspaceRoot,tmpdir(),""));} catch {}
+  const candidates=new Set<string>([process.execPath]);
+  if(process.env.PYTHON && path.isAbsolute(process.env.PYTHON))candidates.add(process.env.PYTHON);
+  for(const launch of launches) {
+    candidates.add(launch.binary);
+    for(const directory of (launch.env.PATH ?? "").split(path.delimiter).filter(Boolean)) {
+      for(const tool of ["node","npm","pnpm","yarn","python3","python","pytest"]) {
+        for(const extension of process.platform === "win32" ? (launch.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";") : [""])candidates.add(path.resolve(workspaceRoot,directory,tool+extension));
+      }
+    }
+  }
+  const files=[...candidates].sort().map(filename=>{
+    try {const target=realpathSync(filename),stat=statSync(target);return [filename,target,stat.dev,stat.ino,stat.mode,stat.size,stat.mtimeMs,stat.ctimeMs];}
+    catch {return [filename,null];}
+  });
+  return createHash("sha256").update(JSON.stringify([process.platform,process.execPath,process.env.PYTHON,process.env.WORKBENCH_USE_MAC_SANDBOX,launches.map(launch=>launch.env),files])).digest("hex");
+}
+
 /** Probe fixed code only. Select fallback before, never after, running user code. */
 async function selectCommandLaunch(workspace: string, scratch: string, command: string, extraEnv: NodeJS.ProcessEnv = {}) {
   try {
@@ -196,13 +239,17 @@ export async function getCommandCapability(): Promise<ExecutionCapability> {
  * guarded writers with backups. Failed/cancelled commands publish no changes.
  */
 export async function runCommand(workspaceRoot: string, command: string, timeoutMs = 60000,
-  policy?: { guard: MutationPolicyGuard; runId?: string; assertAuthority?: () => void }, verification?: AgentTestExecutionRequest): Promise<CommandResult> {
+  policy?: { guard: MutationPolicyGuard; runId?: string; assertAuthority?: () => void; approval?: CommandApproval; validateChange?: (path: string, before: Buffer | undefined, after: Buffer | undefined) => void }, verification?: AgentTestExecutionRequest): Promise<CommandResult> {
   assertRuntimeActive();
   if (currentRuntimeScope() && currentRuntimeScope()!.mode !== "agent") throw new PermissionError("Only Agent may execute workspace commands.");
   policy?.assertAuthority?.();
   const root = resolveSafe(workspaceRoot, ".");
   validateCommandSafety(command);
+  if (currentRuntimeScope()?.agentPhase === "actions" && !policy?.approval) throw new PermissionError("Agent v3 command execution requires a revision-bound approval.");
+  const authorization = { command, ...(policy?.approval ? { operation_digest: commandApprovalDigest(command, policy.approval) } : {}) };
   if (verification && verification.command !== command) throw new PermissionError("The verification command does not match its approved test plan.");
+  if (verification?.artifact && (!policy?.approval?.artifact || JSON.stringify(policy.approval.artifact) !== JSON.stringify(verification.artifact))) throw new PermissionError("The test artifact does not match the approved operation.");
+  if (policy?.approval?.artifact && !verification?.artifact) throw new PermissionError("The approved test artifact is missing from the test plan.");
   const started = Date.now();
   const temporary = realpathSync(mkdtempSync(path.join(tmpdir(), "workbench-command-")));
   const work = path.join(temporary, "workspace");
@@ -214,14 +261,15 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
     if (verification?.runner === "node") writeFileSync(reporterPath, NODE_EXISTING_TEST_REPORTER);
     const selected = await selectCommandLaunch(work, scratch, command, verification ? { WORKBENCH_TEST_REPORT: reportPath, WORKBENCH_TEST_REPORTER: reporterPath,
       ...(verification.runner === "node" ? { NODE_OPTIONS: `--test-reporter=${JSON.stringify(reporterPath)}` } : {}) } : {});
-    const fallbackApproved = () => Boolean(policy?.guard.isUnisolatedCommandAuthorized(policy.runId, command));
+    const fallbackApproved = () => Boolean(policy?.guard.isUnisolatedCommandAuthorized(policy.runId, command, authorization.operation_digest));
     if (selected.status === "unisolated" && !fallbackApproved()) {
       throw new PermissionError(`Unsupported sandbox containment: command execution without OS isolation requires approval for this exact command and run. No command was executed. ${selected.message}`);
     }
     assertRuntimeActive();
     policy?.assertAuthority?.();
-    if (policy && !policy.guard.isAuthorized(policy.runId, "run_command", { command })) throw new PermissionError("Command approval was revoked before execution.");
+    if (policy && !policy.guard.isAuthorized(policy.runId, "run_command", authorization)) throw new PermissionError("Command approval was revoked before execution.");
     const before = snapshot(root, false);
+    if (policy?.approval && snapshotDigest(root, before) !== policy.approval.workspaceDigest) throw new PermissionError("Command approval is stale: workspace inputs changed before execution. No command was executed.");
     const beforeFiles = Object.fromEntries([...before].map(([name, file]) => [name.split(path.sep).join("/"), file.hash]));
     if (verification && agentManifestDigest(beforeFiles) !== verification.workspaceManifestSha256) throw new PermissionError("Test plan is stale: workspace inputs changed before execution.");
     for (const directory of before.directories) mkdirSync(path.join(work, directory), { recursive: true });
@@ -230,10 +278,47 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
       mkdirSync(path.dirname(destination), { recursive: true });
       writeFileSync(destination, file.bytes, { mode: file.mode });
     }
+    const artifact = verification?.artifact;
+    const artifactCurrent = () => {
+      if (!artifact || !path.isAbsolute(artifact.artifactPath) || !lstatSync(artifact.artifactPath).isFile() || lstatSync(artifact.artifactPath).isSymbolicLink()) throw new PermissionError("The test artifact is unavailable or is not a regular file.");
+      const bytes = readFileSync(artifact.artifactPath);
+      if (digest(bytes) !== artifact.artifactDigest) throw new PermissionError("The test artifact changed after approval.");
+      return bytes;
+    };
+    if (artifact) {
+      const target = resolveSafe(work, artifact.targetPath);
+      const original = before.get(artifact.targetPath.split("/").join(path.sep));
+      if (!original || original.linkTarget || original.hash !== artifact.sourceDigest || verification.sourceManifest[artifact.targetPath] !== artifact.sourceDigest) throw new PermissionError("The test artifact target is stale or invalid.");
+      writeFileSync(target, artifactCurrent());
+    }
     const { launch } = selected;
     currentRuntimeScope()?.observe?.({ commandIsolationStatus: selected.status,
       isolationStatus: selected.status === "os_isolated" ? "os_isolated" : "approved_uncontained" });
     let stdout = "", stderr = "", exitCode = 0, timedOut = false;
+    const runtimeProbes:NonNullable<AgentTestExecutionEvidence["runtimeProbes"]>=[];
+    if(verification && currentRuntimeScope()?.agentPhase === "actions") {
+      for(const tool of verification.runtimeTools ?? []) {
+        assertRuntimeActive();policy?.assertAuthority?.();
+        const probeCommand=agentRuntimeProbeCommand(tool);
+        // Reuse the exact chosen isolation/fallback and environment. Do not
+        // switch launch modes because a runtime or package manager is missing.
+        const probe=selected.status === "os_isolated" ? sandboxLaunch(work,scratch,probeCommand) : directLaunch(scratch,probeCommand);
+        try {
+          const result=await executeProcess(probe.binary,probe.args,{cwd:work,env:probe.env,windowsVerbatimArguments:probe.windowsVerbatimArguments,timeout:5000,maxBuffer:4096});
+          const version=(result.stdout || result.stderr).trim();
+          if(!version || !/\d+\.\d+/.test(version))throw new Error("The runtime returned no valid version.");
+          runtimeProbes.push({tool,available:true,version:version.slice(0,500)});
+        } catch(error) {
+          assertRuntimeActive();policy?.assertAuthority?.();
+          const detail=`The test runtime ${tool} is unavailable in the app's command environment. ${String(error).slice(0,700)}`;
+          runtimeProbes.push({tool,available:false,detail});
+          return {stdout:"",stderr:detail,exitCode:1,timedOut:false,durationMs:Date.now()-started,changes:[],backupPaths:[],isolationStatus:selected.status,isolationMessage:selected.message,
+            verification:{planId:verification.planId,command,runner:verification.runner,phase:verification.phase,manifestSha256:verification.workspaceManifestSha256,sourceManifest:beforeFiles,exitCode:1,timedOut:false,executed:0,failed:0,skipped:0,testFiles:[],reason:"test_runtime_unavailable",detail,runtimeProbes}};
+        }
+      }
+    }
+    assertRuntimeActive();policy?.assertAuthority?.();
+    if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", authorization) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before execution.");
     try {
       ({stdout, stderr} = await executeProcess(launch.binary, launch.args, { cwd: work, env: launch.env, windowsVerbatimArguments: launch.windowsVerbatimArguments, timeout: timeoutMs, maxBuffer: 1024 * 1024 }));
     } catch (error: any) {
@@ -245,10 +330,11 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
     const result: CommandResult = { stdout: stdout.slice(0,8000), stderr: stderr.slice(0,8000), exitCode, timedOut, durationMs: Date.now()-started, changes: [], backupPaths: [], isolationStatus: selected.status, isolationMessage: selected.message };
     if (verification) {
       policy?.assertAuthority?.();
-      if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", { command }) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before verification completed.");
+      if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", authorization) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before verification completed.");
       const evidence: AgentTestExecutionEvidence = { planId: verification.planId, command, runner: verification.runner, phase: verification.phase,
         manifestSha256: verification.workspaceManifestSha256, sourceManifest: beforeFiles, exitCode, timedOut, executed: 0, failed: 0, skipped: 0,
-        testFiles: [], isolationStatus: selected.status,
+        testFiles: [], isolationStatus: selected.status, ...(runtimeProbes.length ? {runtimeProbes} : {}),
+        ...(artifact ? {artifact:{targetPath:artifact.targetPath,sourceDigest:artifact.sourceDigest,artifactDigest:artifact.artifactDigest}} : {}),
         ...(verification.successMarker ? { successMarker: verification.successMarker, successMarkerObserved: stdout.split(/\r?\n/).some(line => line.trim() === verification.successMarker) } : {}) };
       result.verification = evidence;
       try {
@@ -277,7 +363,8 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
         if (/(?:^|[/\\])(?:coverage|\.pytest_cache|\.cache|__pycache__|dist|build)(?:[/\\]|$)/.test(name)) continue;
         try {
           const target = resolveSafe(work, name);
-          if (!lstatSync(target).isFile() || digest(readFileSync(target)) !== file.hash) { evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command changed an input file: ${name}.`; break; }
+          const expected = artifact && name.split(path.sep).join("/") === artifact.targetPath ? artifact.artifactDigest : file.hash;
+          if (!lstatSync(target).isFile() || digest(readFileSync(target)) !== expected) { evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command changed an input file: ${name}.`; break; }
         } catch { evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command removed or replaced an input file: ${name}.`; break; }
       }
       try {
@@ -288,8 +375,10 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
         }
       } catch (error) { evidence.reason = "test_snapshot_invalid"; evidence.detail = String(error); }
       try {
-        if (captureAgentVerificationManifest(root).sha256 !== verification.workspaceManifestSha256) { evidence.reason = "stale_test_evidence"; evidence.detail = "Workspace inputs changed during test execution."; }
+        if (captureAgentVerificationManifest(root).sha256 !== verification.workspaceManifestSha256 ||
+          (policy?.approval && captureCommandWorkspaceDigest(root) !== policy.approval.workspaceDigest)) { evidence.reason = "stale_test_evidence"; evidence.detail = "Workspace inputs changed during test execution."; }
       } catch (error) { evidence.reason = "stale_test_evidence"; evidence.detail = String(error); }
+      if (artifact) try { artifactCurrent(); } catch (error) { evidence.reason = "stale_test_evidence"; evidence.detail = String(error); }
       result.durationMs = Date.now() - started;
       return result;
     }
@@ -304,8 +393,10 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
     const changes = [...new Set([...before.keys(), ...after.keys()])].filter(name => before.get(name)?.hash !== after.get(name)?.hash || before.get(name)?.mode !== after.get(name)?.mode);
     // Validate the entire change set and current authority before the first write.
     policy?.assertAuthority?.();
-    if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", { command }) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before publication.");
+    if (policy && (!policy.guard.isAuthorized(policy.runId, "run_command", authorization) || (selected.status === "unisolated" && !fallbackApproved()))) throw new PermissionError("Command approval was revoked before publication.");
+    if (policy?.approval && captureCommandWorkspaceDigest(root) !== policy.approval.workspaceDigest) throw new PermissionError("Workspace changed during command execution. No changes were published.");
     for (const name of changes) {
+      policy?.validateChange?.(name.split(path.sep).join("/"), before.get(name)?.bytes, after.get(name)?.bytes);
       if (policy && (policy.guard.isPathProtected(policy.runId, name) || policy.guard.isPathTargetRestricted(policy.runId, name))) throw new PermissionError(`Command attempted an out-of-scope change: ${name}. No changes were published.`);
       if (existsSync(path.join(root, name)) && lstatSync(path.join(root, name)).isSymbolicLink()) throw new PermissionError(`Command changed a symlink input: ${name}. No changes were published.`);
       const target = resolveSafe(root, name);
@@ -313,12 +404,21 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
       if (existing !== before.get(name)?.hash) throw new PermissionError(`Workspace changed during command execution: ${name}. No changes were published.`);
     }
     assertRuntimeActive();
-    for (const name of changes) {
-      const changed = after.get(name);
-      const mutation = changed ? writeFile(root, name, changed.bytes) : deleteFile(root, name);
-      if (changed) chmodSync(resolveSafe(root, name), changed.mode);
-      if (mutation.backupPath) result.backupPaths.push(mutation.backupPath);
-      result.changes.push(`${changed ? "written" : "deleted"}:${name}`);
+    if(currentRuntimeScope()?.agentPhase === "actions")result.publishedChanges=[];
+    try {
+      for (const name of changes) {
+        const changed = after.get(name), original = before.get(name);
+        const mutation = changed ? writeFile(root, name, changed.bytes) : deleteFile(root, name);
+        if (changed) chmodSync(resolveSafe(root, name), changed.mode);
+        if (mutation.backupPath) result.backupPaths.push(mutation.backupPath);
+        result.changes.push(`${changed ? "written" : "deleted"}:${name}`);
+        result.publishedChanges?.push({path:name.split(path.sep).join("/"),beforeDigest:original?.hash ?? null,afterDigest:changed?.hash ?? null,
+          beforeMode:original?.mode ?? null,afterMode:changed?.mode ?? null,...(mutation.backupPath ? {backupPath:mutation.backupPath} : {})});
+      }
+    } catch (error) {
+      // Publication can fail after one or more atomic writes. Do not replay a
+      // command whose complete mutation outcome cannot be established.
+      throw {code:"persistence_failure",retryable:false,message:`Command publication may be incomplete. Reconcile current files and backups before retrying. ${String(error).slice(0,700)}`};
     }
     result.durationMs = Date.now()-started;
     return result;

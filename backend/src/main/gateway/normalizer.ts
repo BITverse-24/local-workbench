@@ -46,6 +46,30 @@ export function extractJsonFromText(text: string): unknown | undefined {
   return fallbackObj;
 }
 
+function repairTruncatedJson(str: string): string {
+  let inString = false;
+  let escaped = false;
+  const stack: string[] = [];
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (escaped) { escaped = false; continue; }
+    if (c === "\\") { escaped = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (!inString) {
+      if (c === "{" || c === "[") stack.push(c);
+      else if (c === "}" && stack[stack.length - 1] === "{") stack.pop();
+      else if (c === "]" && stack[stack.length - 1] === "[") stack.pop();
+    }
+  }
+  let res = str;
+  if (inString) res += '"';
+  while (stack.length) {
+    const top = stack.pop();
+    res += (top === "{" ? "}" : "]");
+  }
+  return res;
+}
+
 export function parseProviderContent(content: unknown, reasoning?: unknown): unknown {
   let parsed: unknown = null;
   let parseError: unknown = null;
@@ -62,24 +86,36 @@ export function parseProviderContent(content: unknown, reasoning?: unknown): unk
     try {
       parsed = JSON.parse(clean);
     } catch (firstError) {
-      parseError = firstError;
-      const firstBrace = content.indexOf("{");
-      const last = content.lastIndexOf("}");
-      if (firstBrace !== -1 && last !== -1 && last > firstBrace) {
-        const extracted = content.slice(firstBrace, last + 1);
-        try {
-          parsed = JSON.parse(extracted);
-          parseError = null;
-        } catch {}
-        if (!parsed) {
-          // Try unwrapping escaped inner JSON (model double-stringifies).
+      try {
+        const repaired = repairTruncatedJson(clean);
+        parsed = JSON.parse(repaired);
+      } catch {
+        parseError = firstError;
+        const firstBrace = content.indexOf("{");
+        const last = content.lastIndexOf("}");
+        if (firstBrace !== -1 && last !== -1 && last > firstBrace) {
+          const extracted = content.slice(firstBrace, last + 1);
           try {
-            const unwrapped = JSON.parse(`"${extracted.replace(/"/g, '\\"')}"`);
-            if (typeof unwrapped === "string") {
-              parsed = JSON.parse(unwrapped);
-              parseError = null;
-            }
+            parsed = JSON.parse(extracted);
+            parseError = null;
           } catch {}
+          if (!parsed) {
+            try {
+              const repairedExtracted = repairTruncatedJson(extracted);
+              parsed = JSON.parse(repairedExtracted);
+              parseError = null;
+            } catch {}
+          }
+          if (!parsed) {
+            // Try unwrapping escaped inner JSON (model double-stringifies).
+            try {
+              const unwrapped = JSON.parse(`"${extracted.replace(/"/g, '\\"')}"`);
+              if (typeof unwrapped === "string") {
+                parsed = JSON.parse(unwrapped);
+                parseError = null;
+              }
+            } catch {}
+          }
         }
       }
     }

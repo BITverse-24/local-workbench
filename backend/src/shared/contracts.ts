@@ -1,3 +1,4 @@
+export type * from "./agent-task.js";
 export type TaskType = "vision" | "draft" | "code";
 export type ModelRuntime = "mlx-lm" | "llama-server" | "ollama";
 /** One configured inference model drives all semantic task types. */
@@ -77,7 +78,7 @@ export interface CodeDraftResult { filename: "task.py"; source: string; expected
 export interface PythonInputEvidence { filename: string; originalFilename: string; beforeSha256: string | null; afterSha256: string | null; originalAfterSha256: string | null; }
 export interface PythonExecutionResult { exitCode: number; stdout: string; stderr: string; timedOut: boolean; outputFiles: string[]; durationMs: number; capturedOutput?: { stdout: string; stderr: string; truncated: boolean }; inputEvidence?: PythonInputEvidence[]; }
 export interface CodeSummaryResult { summary: string; verified: boolean; }
-export type AIErrorCode = "model_unavailable" | "model_timeout" | "model_rejected_request" | "empty_model_response" | "invalid_model_response" | "unsupported_task" | "missing_required_content" | "unsafe_generated_code";
+export type AIErrorCode = "model_unavailable" | "model_timeout" | "model_rejected_request" | "agent_context_limit" | "agent_admission_failed" | "empty_model_response" | "invalid_model_response" | "unsupported_task" | "missing_required_content" | "unsafe_generated_code";
 export interface AIError { kind: "ai-error"; code: AIErrorCode; message: string; retryable: boolean; requestId?: string; runId?: string; taskType?: TaskType; modelId?: ModelId; }
 export interface ValidationFailure { kind: "validation-failure"; code: "wrong-type" | "missing-field" | "invalid-value" | "extra-field"; message: string; path: string; expected: string; received?: string; requestId?: string; }
 export type AIWorkflowError = AIError | ValidationFailure;
@@ -170,6 +171,11 @@ export interface RunSnapshot {
   chatId: string;
   mode: ExecutionMode | null;
   engineVersion: string | null;
+  /** Current host capability. Historical engine identity does not enable v3. */
+  agentV3Available?: boolean;
+  agentTask?: import("./agent-task.js").AgentTask;
+  agentTaskBinding?: import("./agent-task.js").AgentTaskBinding;
+  agentTaskFacts?: import("./agent-task.js").AgentTaskFacts;
   state: RunState;
   queued: boolean;
   progress: TaskProgressEvent[];
@@ -182,6 +188,7 @@ export interface RunSnapshot {
   draft?: { messageId:string; modelId:string; text:string };
   recovery?: {
     canResume: boolean;
+    approvalsExpired?: boolean;
     largerGenerationAllowance: boolean;
     reason: string;
     sourceMessageId?: string;
@@ -515,6 +522,9 @@ export interface OnboardingStatus {
 // ── Local Workbench v2 Unified Agent Tool Contracts ────────────────────
 
 export interface FunctionToolParameterProperty {
+  minimum?: number;
+  maximum?: number;
+  additionalProperties?: boolean;
   format?: "multiline";
   minItems?: number;
   type: string;
@@ -526,6 +536,7 @@ export interface FunctionToolParameterProperty {
 }
 
 export interface FunctionToolParameters {
+  additionalProperties?: boolean;
   type: "object";
   properties: Record<string, FunctionToolParameterProperty>;
   required?: readonly string[] | string[];

@@ -50,7 +50,7 @@ export const CAPABILITY_GROUPS: Record<CapabilityGroup, CapabilityMetadata> = {
     name: "workspace_mutation",
     label: "Workspace Mutation",
     description: "Creating, editing, or deleting files within the active project workspace",
-    tools: ["write_file", "delete_file"],
+    tools: ["write_file", "edit_file", "delete_file"],
     requiresAgentMode: true,
   },
   system_execution: {
@@ -70,6 +70,7 @@ for (const group of Object.values(CAPABILITY_GROUPS)) {
 }
 
 export function getCapabilityForTool(toolName: string): CapabilityGroup | undefined {
+  if (toolName === "read_input") return "source_access";
   return TOOL_TO_CAPABILITY.get(toolName);
 }
 

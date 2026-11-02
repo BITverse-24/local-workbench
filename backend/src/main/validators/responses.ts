@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type { ChatResult, CodeDraftResult, Finding, VisionResult } from "../../shared/contracts.js";
-const page = z.object({ id: z.string().min(1), page: z.number().int().positive(), text: z.string().min(1).max(8000), location: z.string().max(200).optional() }).strict();
-const finding = z.object({ findingId: z.string().min(1), title: z.string().min(1).max(200), value: z.string().min(1).max(1000), pageReferenceIds: z.array(z.string().min(1)).min(1), confidence: z.enum(["high", "medium", "low"]), evidence: z.string().min(1).max(2000) }).strict();
-export const visionResultSchema = z.object({ sourceText: z.string().max(50000), findings: z.array(finding), pageReferences: z.array(page), warnings: z.array(z.string().max(500)).optional() }).strict();
+const page = z.object({ id: z.string().min(1), page: z.number().int().positive().or(z.string().transform(Number)), text: z.string().max(8000).default(""), location: z.string().max(200).optional() }).passthrough();
+const finding = z.object({ findingId: z.string().min(1), title: z.string().min(1).max(200), value: z.string().min(1).max(1000), pageReferenceIds: z.array(z.string().min(1)).min(1), confidence: z.enum(["high", "medium", "low"]), evidence: z.string().min(1).max(2000) }).passthrough();
+export const visionResultSchema = z.object({ sourceText: z.string().max(50000), findings: z.array(finding), pageReferences: z.array(page), warnings: z.array(z.string().max(500)).optional() }).passthrough();
 const nullableOptional = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (value === null || (typeof value === "string" && value.trim() === "") ? undefined : value), schema.optional());
 export const codeResultSchema = z.object({

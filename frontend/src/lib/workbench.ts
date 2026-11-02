@@ -103,6 +103,7 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export async function startRun(input: {
+  agentTaskIntent?: "continue" | "new";
   userText: string;
   userMessageId?: string;
   attachmentToken?: string;

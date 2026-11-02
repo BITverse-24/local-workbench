@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f6f8">
+    <title>FieldOps | Work Orders</title>
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="src/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="FieldOps home"><span class="brand-mark">F</span>FieldOps</a>
+      <span class="topbar-label">OPERATIONS</span>
+      <button class="avatar" type="button" aria-label="Signed in as Jordan Lee">JL</button>
+    </header>
+
+    <main class="page-shell">
+      <div class="breadcrumbs">Operations <span>/</span> Work orders</div>
+      <section class="page-heading" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">NORTH YARD · SHIFT A</p>
+          <h1 id="page-title">Work orders</h1>
+          <p class="subtitle">Track active maintenance across your sites.</p>
+        </div>
+      </section>
+
+      <section class="work-panel" aria-label="Work order list">
+        <div class="panel-heading">
+          <div><h2>All work orders</h2><p>Review status and recent activity.</p></div>
+          <span class="sync-label"><span class="sync-dot"></span> Up to date</span>
+        </div>
+        <div class="filters">
+          <label class="search-box"><span aria-hidden="true">⌕</span><span class="sr-only">Search work orders</span><input id="search" type="search" placeholder="Search by ID, title, or site"></label>
+          <label class="status-filter">Status <select id="status-filter"><option value="all">All statuses</option><option value="open">Open</option><option value="in-progress">In progress</option><option value="closed">Closed</option></select></label>
+        </div>
+        <p id="result-count" class="result-count" aria-live="polite"></p>
+        <div id="work-order-list" class="order-list"></div>
+        <p id="empty-state" class="empty-state" hidden>No work orders match these filters.</p>
+      </section>
+      <footer>FieldOps <span>·</span> Maintenance workspace</footer>
+    </main>
+  </body>
+</html>

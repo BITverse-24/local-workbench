@@ -3,9 +3,11 @@ import path from "node:path";
 
 export type MutationOperation =
   | "write_file"
+  | "edit_file"
   | "delete_file"
   | "run_command"
   | "execute_python"
+  | "generate_deliverable"
   | "*";
 
 export interface MutationScopeConstraint {
@@ -14,6 +16,7 @@ export interface MutationScopeConstraint {
   operation: MutationOperation;
   targetPath?: string;
   command?: string;
+  operationDigest?: string;
   /** Approval preview disclosed execution with user permissions if isolation fails. */
   allowUnisolated?: boolean;
   expiresAt?: string;
@@ -251,6 +254,7 @@ export class MutationPolicyGuard {
       operation: constraint.operation,
       targetPath: constraint.targetPath ? normalizePath(constraint.targetPath) : undefined,
       command: constraint.command ? normalizeCommand(constraint.command) : undefined,
+      operationDigest: constraint.operationDigest,
       allowUnisolated: constraint.allowUnisolated,
       expiresAt: constraint.expiresAt,
     };
@@ -266,6 +270,10 @@ export class MutationPolicyGuard {
     this.strictRuns.delete(runId);
     this.protectedPathsByRun.delete(runId);
     this.targetRestrictionsByRun.delete(runId);
+  }
+  revokeScopes(ids: string[]): void {
+    const selected = new Set(ids);
+    this.scopes = this.scopes.filter(scope => !selected.has(scope.id));
   }
 
   clear(): void {
@@ -300,7 +308,7 @@ export class MutationPolicyGuard {
     }
 
     // 2. Always check if mutations are restricted to declared targets only
-    if (runId && targetPath && (operation === "write_file" || operation === "delete_file")) {
+    if (runId && targetPath && (operation === "write_file" || operation === "edit_file" || operation === "delete_file")) {
       if (this.isPathTargetRestricted(runId, targetPath)) {
         return false;
       }
@@ -323,6 +331,7 @@ export class MutationPolicyGuard {
     });
 
     for (const scope of active) {
+      if (scope.operationDigest && args?.operation_digest !== scope.operationDigest) continue;
       // Check operation match
       if (scope.operation !== "*" && scope.operation !== operation) {
         continue;
@@ -347,11 +356,13 @@ export class MutationPolicyGuard {
     return false;
   }
 
-  isUnisolatedCommandAuthorized(runId: string | undefined, command: string): boolean {
-    return Boolean(runId && this.isAuthorized(runId, "run_command", { command }, true) &&
-      this.getActiveScopes(runId).some(scope => scope.runId === runId &&
-        scope.operation === "run_command" && scope.allowUnisolated === true &&
-        scope.command && isCommandMatch(scope.command, command)));
+  isUnisolatedCommandAuthorized(runId: string | undefined, command: string, operationDigest?: string): boolean {
+    // The fallback grant and source-bound operation must be in the same live scope.
+    return Boolean(runId && this.getActiveScopes(runId).some(scope => scope.runId === runId &&
+      scope.operation === "run_command" && scope.allowUnisolated === true &&
+      (!scope.operationDigest || scope.operationDigest === operationDigest) &&
+      (!scope.targetPath || scope.targetPath === "*") &&
+      scope.command && isCommandMatch(scope.command, command)));
   }
 
   async authorize(

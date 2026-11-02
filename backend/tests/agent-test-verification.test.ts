@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, chmodSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
-import { discoverAgentTestPlans, createAgentVerificationRequest, parseAgentTestReport, assessAgentTestExecution, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, type AgentTestExecutionRequest } from "../src/main/agent/test-verification.js";
-import { runCommand } from "../src/main/harness/tools/run-command.js";
+import { createHash } from "node:crypto";
+import { agentFailureLocations, discoverAgentTestPlans, createAgentVerificationRequest, parseAgentTestReport, assessAgentTestExecution, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, type AgentTestExecutionRequest } from "../src/main/agent/test-verification.js";
+import { agentTestEnvironmentKey, captureCommandWorkspaceDigest, commandApprovalDigest, runCommand } from "../src/main/harness/tools/run-command.js";
+import { withRuntimeScope } from "../src/main/run/runtime-scope.js";
 import { MutationPolicyGuard } from "../src/main/harness/policy-guard.js";
 import { executeProcess } from "../src/main/tools/child-process.js";
 import { ToolDispatcher } from "../src/main/agent/tool-dispatcher.js";
@@ -60,7 +63,8 @@ describe("Agent existing-test verification", () => {
     save("case.test.cjs", "const {test}=require('node:test');const assert=require('node:assert/strict');test('existing case',()=>assert.equal(1,1));");
     save("reporter.cjs", NODE_EXISTING_TEST_REPORTER);
     const output = path.join(root, "report.json");
-    execFileSync(process.execPath, ["--test", path.join(root, "case.test.cjs")], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", WORKBENCH_TEST_REPORT: output, NODE_OPTIONS: `--test-reporter=${JSON.stringify(path.join(root, "reporter.cjs"))}` } });
+    // Electron can disable NODE_OPTIONS in a child. Test the reporter through Node's CLI.
+    execFileSync(process.execPath, ["--test", `--test-reporter=${path.join(root, "reporter.cjs")}`, path.join(root, "case.test.cjs")], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", WORKBENCH_TEST_REPORT: output } });
     expect(JSON.parse(readFileSync(output, "utf8"))).toMatchObject({ executed: 1, failed: 0, testFiles: [path.join(root, "case.test.cjs")] });
   });
   it("discovers every changed package and selects changed test files", () => {
@@ -69,6 +73,17 @@ describe("Agent existing-test verification", () => {
     expect(result.ok).toBe(true); if (!result.ok) return;
     expect(result.plans).toHaveLength(2); expect(result.plans.every(item => item.relatedCommand?.includes("--findRelatedTests"))).toBe(true);
     expect(result.plans[1].changedTestPaths).toEqual(["two/src/index.test.ts"]);
+  });
+  it("discovers every existing suite for a baseline or full-suite request with no changed files", () => {
+    for (const dir of ["one", "two"]) { save(`${dir}/package.json`, JSON.stringify({ scripts: { test: "vitest run" } })); save(`${dir}/value.test.ts`, "test('existing',()=>{})"); }
+    const result = discoverAgentTestPlans({ workspaceRoot: root, changedPaths: [] });
+    expect(result.ok).toBe(true); if (!result.ok) return;
+    expect(result.plans.map(item => item.suiteRoot)).toEqual(["one", "two"]);
+    expect(result.plans.every(item => item.initialPhase === "full" && !item.relatedCommand)).toBe(true);
+    expect(result.plans.every(item => item.testFiles.length > 0)).toBe(true);
+  });
+  it("does not report an empty project as a usable full suite", () => {
+    expect(discoverAgentTestPlans({ workspaceRoot: root, changedPaths: [] })).toMatchObject({ ok: false, reason: "no_usable_test_setup" });
   });
   it("does not replace a missing or unsupported existing test setup", () => {
     save("index.py", "value=1");
@@ -89,6 +104,15 @@ describe("Agent existing-test verification", () => {
     expect(parseAgentTestReport(request, JSON.stringify({ ...JSON.parse(report(request)), success: false }), root).failed).toBeGreaterThan(0);
     expect(() => parseAgentTestReport(request, JSON.stringify({ ...JSON.parse(report(request)), wasInterrupted: true }), root)).toThrow(/interrupted/);
   });
+  it("maps failure stack hints only to files in the exact execution snapshot",()=>{
+    const snapshot=path.join(root,"snapshot with spaces"),files={"src/café.js":"digest","tests/case.test.js":"digest"};
+    const uri=pathToFileURL(path.join(snapshot,"src/café.js")).href;
+    const stack=`at load (${uri}:24:8)\n at ${path.join(snapshot,"tests/case.test.js")}:19:2\n at /outside/project/src/café.js:8:4\n at ${snapshot}/../outside.js:1:2\n at ${snapshot}/missing.js:1:2\n at ${uri}:99:4`;
+    expect(agentFailureLocations(stack,snapshot,files)).toEqual([{path:"tests/case.test.js",line:19},{path:"src/café.js",line:24}]);
+    fixture();const request={...createAgentVerificationRequest(plan()),reportFormat:"unittest" as const};
+    const parsed=parseAgentTestReport(request,JSON.stringify({executed:1,failed:1,skipped:0,testFiles:[path.join(root,"src/value.test.ts")],failures:[{name:"value",stack:`at ${path.join(root,"src/value.ts")}:3:7`}]}),root);
+    expect(parsed).toMatchObject({failureLocations:[{path:"src/value.ts",line:3}],failureLocationsComplete:false,failed:1});
+  });
   it("parses executed JUnit cases and rejects DTDs and incomplete XML", () => {
     fixture(); const request = { ...createAgentVerificationRequest(plan()), reportFormat: "junit" as const };
     expect(parseAgentTestReport(request, '<testsuites><testsuite><testcase file="src/value.test.ts"/><testcase><skipped/></testcase><testcase><failure/></testcase></testsuite></testsuites>', root)).toMatchObject({ executed: 2, failed: 1, skipped: 1 });
@@ -105,6 +129,51 @@ describe("Agent existing-test verification", () => {
     expect(assessAgentTestExecution({ ...evidence, phase: "full" }).fallbackAllowed).toBe(false);
     expect(assessAgentTestExecution({ ...evidence, executed: 1, failed: 1, reason: "tested_inputs_changed" })).toMatchObject({ status: "unverified", fallbackAllowed: false });
   });
+  it("invalidates a missing executable when it appears on an unchanged PATH",()=>{
+    const bin=path.join(root,"tools");mkdirSync(bin);vi.stubEnv("PATH",bin);
+    try {
+      const before=agentTestEnvironmentKey(root);
+      save("tools/node","#!/bin/sh\necho v22.0.0\n");chmodSync(path.join(bin,"node"),0o700);
+      const installed=agentTestEnvironmentKey(root);expect(installed).not.toBe(before);
+      expect(agentTestEnvironmentKey(root)).toBe(installed);
+      chmodSync(path.join(bin,"node"),0o600);expect(agentTestEnvironmentKey(root)).not.toBe(installed);
+    } finally {vi.unstubAllEnvs();}
+  });
+  it.each([true,false])("probes runtimes in the chosen test launch and does not launch tests when a tool is missing: isolated=%s",async isolated=>{
+    fixture();const request=createAgentVerificationRequest(plan()),approval={workspaceDigest:captureCommandWorkspaceDigest(root)};
+    const guard=new MutationPolicyGuard({strict:true});
+    guard.grantScope({runId:"run",operation:"run_command",command:request.command,operationDigest:commandApprovalDigest(request.command,approval),allowUnisolated:true});
+    const calls:Array<{command:string;binary:string;env:NodeJS.ProcessEnv}>=[];
+    vi.mocked(executeProcess).mockImplementation(async(binary,args,options)=>{
+      const command=String(args.at(-1));calls.push({command,binary,env:options.env!});
+      if(command === "printf WORKBENCH_ISOLATED") {if(isolated)return {stdout:"WORKBENCH_ISOLATED",stderr:""};throw new Error("isolation unavailable");}
+      if(command === "node --version")return {stdout:"v22.0.0",stderr:""};
+      if(command === "npm --version")throw new Error("npm not found");
+      throw new Error("The test command must not run");
+    });
+    const result=await withRuntimeScope({runId:"run",mode:"agent",agentPhase:"actions",signal:new AbortController().signal},()=>runCommand(root,request.command,5000,{guard,runId:"run",approval},request));
+    expect(result.verification).toMatchObject({executed:0,failed:0,reason:"test_runtime_unavailable",runtimeProbes:[{tool:"node",available:true,version:"v22.0.0"},{tool:"npm",available:false}]});
+    expect(assessAgentTestExecution(result.verification)).toMatchObject({status:"unverified",reason:"test_runtime_unavailable"});
+    expect(calls.some(call=>call.command === request.command)).toBe(false);
+    const probes=calls.filter(call=>call.command.endsWith("--version"));
+    expect(probes).toHaveLength(2);expect(probes[0].binary).toBe(probes[1].binary);expect(probes[0].env).toEqual(probes[1].env);
+    expect(result.changes).toEqual([]);expect(result.backupPaths).toEqual([]);
+  });
+  it("rechecks command approval after runtime probes and before tests",async()=>{
+    fixture();const request=createAgentVerificationRequest(plan()),approval={workspaceDigest:captureCommandWorkspaceDigest(root)};
+    const guard=new MutationPolicyGuard({strict:true});
+    guard.grantScope({runId:"run",operation:"run_command",command:request.command,operationDigest:commandApprovalDigest(request.command,approval),allowUnisolated:true});
+    const commands:string[]=[];
+    vi.mocked(executeProcess).mockImplementation(async(_binary,args)=>{
+      const command=String(args.at(-1));commands.push(command);
+      if(command === "printf WORKBENCH_ISOLATED")return {stdout:"WORKBENCH_ISOLATED",stderr:""};
+      if(command === "node --version")return {stdout:"v22.0.0",stderr:""};
+      if(command === "npm --version") {guard.revokeRunScopes("run");return {stdout:"10.0.0",stderr:""};}
+      throw new Error("The test command must not run");
+    });
+    await expect(withRuntimeScope({runId:"run",mode:"agent",agentPhase:"actions",signal:new AbortController().signal},()=>runCommand(root,request.command,5000,{guard,runId:"run",approval},request))).rejects.toThrow("approval was revoked");
+    expect(commands).not.toContain(request.command);
+  });
   it("captures reports before cleanup and discards test outputs without publication approval", async () => {
     fixture(); const request = createAgentVerificationRequest(plan(["src/value.test.ts"]));
     const guard = new MutationPolicyGuard({ strict: true }); guard.grantScope({ runId: "run", operation: "run_command", command: request.command });
@@ -120,6 +189,47 @@ describe("Agent existing-test verification", () => {
     const result = await runCommand(root, request.command, 5000, { guard, runId: "run" }, request);
     expect(result.changes).toEqual([]); expect(result.verification?.executed).toBe(1); expect(result.verification?.report).toContain("assertionResults");
     expect(assessAgentTestExecution(result.verification).status).toBe("passed"); expect(existsSync(scratch)).toBe(false); expect(existsSync(path.join(root, "coverage"))).toBe(false);
+  });
+  it("tests the approved export in the disposable snapshot and keeps the project unchanged", async () => {
+    fixture(); const exportDir=mkdtempSync(path.join(tmpdir(),"agent-export-"));
+    try {
+      const artifactPath=path.join(exportDir,"repaired.ts"), bytes="export const value=2";
+      writeFileSync(artifactPath,bytes);
+      const sha=(text:string)=>createHash("sha256").update(text).digest("hex");
+      const artifact={artifactPath,artifactDigest:sha(bytes),sourceDigest:sha("export const value=1"),targetPath:"src/value.ts"};
+      const request={...createAgentVerificationRequest(plan()),artifact};
+      const approval={workspaceDigest:captureCommandWorkspaceDigest(root),artifact};
+      const guard=new MutationPolicyGuard({strict:true});
+      guard.grantScope({runId:"run",operation:"run_command",command:request.command,operationDigest:commandApprovalDigest(request.command,approval)});
+      vi.mocked(executeProcess).mockImplementation(async (_binary,args,options)=>{
+        if(args.at(-1)==="printf WORKBENCH_ISOLATED")return {stdout:"WORKBENCH_ISOLATED",stderr:""};
+        expect(readFileSync(path.join(options.cwd!,artifact.targetPath),"utf8")).toBe(bytes);
+        writeFileSync(options.env!.WORKBENCH_TEST_REPORT!,report(request,options.cwd));
+        return {stdout:"",stderr:""};
+      });
+      const result=await runCommand(root,request.command,5000,{guard,runId:"run",approval},request);
+      expect(assessAgentTestExecution(result.verification).status).toBe("passed");
+      expect(result.verification?.artifact).toEqual({targetPath:artifact.targetPath,sourceDigest:artifact.sourceDigest,artifactDigest:artifact.artifactDigest});
+      expect(readFileSync(path.join(root,artifact.targetPath),"utf8")).toBe("export const value=1");
+      writeFileSync(artifactPath,"changed");
+      await expect(runCommand(root,request.command,5000,{guard,runId:"run",approval},request)).rejects.toThrow(/artifact changed/);
+      await expect(runCommand(root,request.command,5000,{guard,runId:"run",approval:{...approval,artifact:{...artifact,targetPath:"other.ts"}}},request)).rejects.toThrow(/does not match/);
+    } finally {rmSync(exportDir,{recursive:true,force:true});}
+  });
+  it("invalidates exported test evidence when the export changes during execution", async () => {
+    fixture(); const exportDir=mkdtempSync(path.join(tmpdir(),"agent-export-"));
+    try {
+      const artifactPath=path.join(exportDir,"repaired.ts"),bytes="export const value=2",sha=(text:string)=>createHash("sha256").update(text).digest("hex");
+      writeFileSync(artifactPath,bytes);
+      const artifact={artifactPath,artifactDigest:sha(bytes),sourceDigest:sha("export const value=1"),targetPath:"src/value.ts"};
+      const request={...createAgentVerificationRequest(plan()),artifact},approval={workspaceDigest:captureCommandWorkspaceDigest(root),artifact};
+      const guard=new MutationPolicyGuard({strict:true});guard.grantScope({runId:"run",operation:"run_command",command:request.command,operationDigest:commandApprovalDigest(request.command,approval)});
+      vi.mocked(executeProcess).mockImplementation(async (_binary,args,options)=>{
+        if(args.at(-1)==="printf WORKBENCH_ISOLATED")return {stdout:"WORKBENCH_ISOLATED",stderr:""};
+        writeFileSync(options.env!.WORKBENCH_TEST_REPORT!,report(request,options.cwd));writeFileSync(artifactPath,"changed");return {stdout:"",stderr:""};
+      });
+      expect((await runCommand(root,request.command,5000,{guard,runId:"run",approval},request)).verification?.reason).toBe("stale_test_evidence");
+    } finally {rmSync(exportDir,{recursive:true,force:true});}
   });
   it("retains marker evidence beyond the short stdout preview", async () => {
     fixture(); const request = { ...createAgentVerificationRequest(plan()), successMarker: "CHECK_OK" };

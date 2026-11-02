@@ -34,13 +34,23 @@
         "workspace-svg-with-embedded-image"
       ]
     },
+    "flowD": {
+      "scenarioRoot": "flow_d",
+      "focus": "agentic-multi-file-web-project-repair",
+      "sourceTypes": [
+        "web-app",
+        "multiple-javascript-modules",
+        "node-built-in-tests"
+      ]
+    },
     "additionalScenarios": [
       "flow_a/scenario-2: gauge calibration release review",
       "flow_a/scenario-3: exchanger repair close-out review",
       "flow_b/scenario-2: cold-room incident summary",
       "flow_b/scenario-3: Agent-mode Python codebase boundary fix",
       "flow_c/scenario-2: relief-valve register review",
-      "flow_c/scenario-3: utility-manifold drawing review"
+      "flow_c/scenario-3: utility-manifold drawing review",
+      "flow_d: Agent-mode FieldOps web app repair"
     ]
   },
   "files": {
@@ -163,6 +173,50 @@
     "flow_c/scenario-3/workspace/utility-manifold-U18.svg": {
       "sha256": "0aa8ce22e8da3bb5e3c79d53ce0fe2a2b835b3c608eee5c5f618ab70347d1f27",
       "bytes": 6008
+    },
+    "flow_d/prompt.md": {
+      "sha256": "84698dadc4d0134cb7d04a8a564a1e9d48909037bde2ca6e057c69d408f21a72",
+      "bytes": 362
+    },
+    "flow_d/workspace/README.md": {
+      "sha256": "9304963c105445f2583bccf1b23a9eb17912fca1d06625208643a61461e7c480",
+      "bytes": 650
+    },
+    "flow_d/workspace/index.html": {
+      "sha256": "24627098f98c27a8d188ce6c5bae56cad197986d8f46eda642ee8ba648420740",
+      "bytes": 2171
+    },
+    "flow_d/workspace/package.json": {
+      "sha256": "a20640e2c8714a15140ea77e6dec2c765a59d58a48b3e8c13224fe8c34d93ec1",
+      "bytes": 122
+    },
+    "flow_d/workspace/src/app.js": {
+      "sha256": "4d68ad3d99e6d248d582b3a0bfe11997383011d46c9006a016468545e2f5138d",
+      "bytes": 2662
+    },
+    "flow_d/workspace/src/seed.js": {
+      "sha256": "4a8997707c3f13de129d2b7f73e16a1bc70a8c291a7b4f03c8607cdf6fc1e20b",
+      "bytes": 659
+    },
+    "flow_d/workspace/src/storage.js": {
+      "sha256": "61b5cf4ff60ddcdce41bf565266d809fc413e99f5c2be68e191f5a5a25b9212f",
+      "bytes": 324
+    },
+    "flow_d/workspace/src/work-orders.js": {
+      "sha256": "388ad1622b3dced8b071a4da310c6770c62abcb0db2b2242184fcec572e02b19",
+      "bytes": 474
+    },
+    "flow_d/workspace/styles.css": {
+      "sha256": "ff43c788d99d2575f062d766b00f475cb6a33a83364db669787ed38b09f93111",
+      "bytes": 4380
+    },
+    "flow_d/workspace/tests/storage.test.js": {
+      "sha256": "60b50402992e2509e9effa77658357ddc0359c992c84be9f74d3df114d31e7b6",
+      "bytes": 1536
+    },
+    "flow_d/workspace/tests/work-orders.test.js": {
+      "sha256": "ac428ac6e23cc3d556757d2d1dad001ad1f4d4e6033d01078b2f1a963fa9ab97",
+      "bytes": 1441
     }
   }
 }

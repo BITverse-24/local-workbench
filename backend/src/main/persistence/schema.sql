@@ -225,3 +225,34 @@ CREATE TABLE IF NOT EXISTS run_mode_details (
 
 CREATE TABLE IF NOT EXISTS run_artifact_validations (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, checks_json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS run_drafts (run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, message_id TEXT NOT NULL, model_id TEXT NOT NULL, text TEXT NOT NULL);
+
+-- Agent v3 tasks outlive execution runs. Historical runs receive no invented task.
+CREATE TABLE IF NOT EXISTS agent_tasks (
+  task_id TEXT PRIMARY KEY,
+  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  workspace_json TEXT NOT NULL,
+  current_revision INTEGER NOT NULL CHECK(current_revision > 0),
+  is_current INTEGER NOT NULL CHECK(is_current IN (0,1)),
+  status TEXT NOT NULL CHECK(status IN ('open','partial','completed')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_tasks_current ON agent_tasks(chat_id) WHERE is_current=1;
+CREATE TABLE IF NOT EXISTS agent_task_revisions (
+  task_id TEXT NOT NULL REFERENCES agent_tasks(task_id) ON DELETE CASCADE,
+  revision INTEGER NOT NULL CHECK(revision > 0),
+  source_message_id TEXT NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(task_id,revision)
+);
+CREATE TABLE IF NOT EXISTS agent_task_runs (
+  run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+  task_id TEXT NOT NULL,
+  task_revision INTEGER NOT NULL,
+  source_message_id TEXT NOT NULL,
+  disposition TEXT NOT NULL CHECK(disposition IN ('continue','evidence','scope_revision','status','regression')),
+  predecessor_run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+  UNIQUE(task_id,source_message_id),
+  FOREIGN KEY(task_id,task_revision) REFERENCES agent_task_revisions(task_id,revision) ON DELETE CASCADE
+);

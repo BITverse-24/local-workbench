@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ExecutionMode } from "../../shared/contracts.js";
+import type { AgentCountingProfile } from "../gateway/agent-admission.js";
 
 /** Set by the backend dispatcher, never by a model or a tool argument. */
 export interface RuntimeScope {
@@ -8,6 +9,10 @@ export interface RuntimeScope {
   signal: AbortSignal;
   remainingModelCalls?: number;
   remainingRecoveryAttempts?: number;
+  /** Set only after host counting setup. Each selected transport needs its own verification. */
+  agentCountingProfiles?: AgentCountingProfile[];
+  /** Requirements calls have no workspace tools and precede the immutable run/task binding. */
+  agentPhase?: "requirements" | "actions";
   assertAuthority?: () => void;
   approveUncontainedPython?: (code: string, inputs: string[], digest: string) => Promise<boolean>;
   observe?: (values: Record<string, unknown>) => void;

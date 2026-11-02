@@ -13,6 +13,7 @@ const scenarios = [
   { id: "B-3", dir: "flow_b/scenario-3", mode: "agent", files: [], workspaceFiles: ["coldroom.py", "tests/test_coldroom.py"], output: null },
   { id: "C-2", dir: "flow_c/scenario-2", mode: "work", files: ["relief-valve-register.csv"], kb: "process-safety-standard.md", output: ".docx" },
   { id: "C-3", dir: "flow_c/scenario-3", mode: "agent", files: [], kb: "utility-standard-UT-9.md", workspaceFiles: ["utility-manifold-U18.svg"], output: null },
+  { id: "D-1", dir: "flow_d", mode: "agent", files: [], agentModel: "qwen/qwen3.5-9b", workspaceFiles: ["src/work-orders.js", "src/storage.js", "tests/work-orders.test.js", "tests/storage.test.js"], output: null },
 ];
 
 const collect = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -39,8 +40,11 @@ async function run(scenario, campaignDir) {
   for (const file of files) fs.copyFileSync(path.join(sourceDir, file), path.join(runner.sandboxDir, "attachments", file));
   if (scenario.kb) fs.copyFileSync(path.join(sourceDir, scenario.kb), path.join(runner.sandboxDir, "kb", scenario.kb));
   if (scenario.mode === "agent") {
-    const workspace = path.join(sourceDir, "workspace");
+    const workspace = (scenario.id === "D-1" && fs.existsSync("/tmp/flow-d-pristine-baseline"))
+      ? "/tmp/flow-d-pristine-baseline"
+      : path.join(sourceDir, "workspace");
     for (const file of collect(workspace)) {
+      if (file.includes(".harness_backups")) continue;
       const rel = path.relative(workspace, file);
       const target = path.join(runner.sandboxDir, "workspace", rel);
       fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -51,7 +55,7 @@ async function run(scenario, campaignDir) {
     await runner.startWorker(boot);
     const { runId } = await runner.callCommand("send", { mode: scenario.mode, chat: scenario.id, text: prompt, files, groundingEnabled: Boolean(scenario.kb) });
     let outcome;
-    try { outcome = await runner.waitForTerminalState(runId, 300000); }
+    try { outcome = await runner.waitForTerminalState(runId, Number(process.env.DEMO_TIMEOUT_MS || 600000)); }
     catch { outcome = "timeout"; await runner.callCommand("invoke", { channel: "workbench:cancelRun", input: { runId } }); }
     const inspection = await runner.callCommand("inspect");
     const text = inspection.messages.filter((message) => message.role === "assistant").map((message) => message.content).join("\n");
@@ -69,7 +73,13 @@ async function run(scenario, campaignDir) {
     const workspace = path.join(runner.sandboxDir, "workspace");
     const sourceCode = scenario.id === "B-3" ? fs.readFileSync(path.join(workspace, "coldroom.py"), "utf8") : "";
     const tests = scenario.id === "B-3" ? fs.readFileSync(path.join(workspace, "tests/test_coldroom.py"), "utf8") : "";
-    const independentTestRun = scenario.id === "B-3" ? spawnSync("python3", ["-m", "unittest", "discover", "-s", "tests", "-v"], { cwd: workspace, encoding: "utf8", timeout: 30000 }) : null;
+    const initialWorkspace = (scenario.id === "D-1" && fs.existsSync("/tmp/flow-d-pristine-baseline"))
+      ? "/tmp/flow-d-pristine-baseline"
+      : path.join(sourceDir, "workspace");
+    const initialTestRun = scenario.id === "D-1" ? spawnSync(process.execPath, ["--test", "--test-reporter=tap"], { cwd: initialWorkspace, encoding: "utf8", timeout: 30000 }) : null;
+    const independentTestRun = ["B-3", "D-1"].includes(scenario.id) ? (scenario.id === "D-1"
+      ? spawnSync(process.execPath, ["--test", "--test-reporter=tap"], { cwd: workspace, encoding: "utf8", timeout: 30000 })
+      : spawnSync("python3", ["-m", "unittest", "discover", "-s", "tests", "-v"], { cwd: workspace, encoding: "utf8", timeout: 30000 })) : null;
     const verificationText = independentTestRun ? `\n${independentTestRun.stdout}\n${independentTestRun.stderr}` : "";
     const reviewedText = (text + "\n" + artifactText + verificationText).toLowerCase();
     const checks = {
@@ -83,6 +93,10 @@ async function run(scenario, campaignDir) {
       agentFoundBug: scenario.id !== "B-3" || /value\s*>\s*limit/.test(sourceCode) && /test_exact_boundary_is_alert/.test(tests),
       agentExplainedFix: scenario.id !== "B-3" || />=/.test(text) && /test_exact_boundary_is_alert/.test(text),
       agentConfirmedExpectedFailure: scenario.id !== "B-3" || independentTestRun.status === 1 && /test_exact_boundary_is_alert/.test(independentTestRun.stderr) && /AssertionError/.test(independentTestRun.stderr),
+      repairScenarioStartsFailing: scenario.id !== "D-1" || initialTestRun.status === 1 && /not ok .*status filter/i.test(initialTestRun.stdout + initialTestRun.stderr) && /not ok .*(?:malformed saved data|storage\.test\.js)/i.test(initialTestRun.stdout + initialTestRun.stderr),
+      repairScenarioPasses: scenario.id !== "D-1" || independentTestRun.status === 0,
+      repairScenarioUpdatedFiles: scenario.id !== "D-1" || ["src/work-orders.js", "src/storage.js"].every((file) => !fs.readFileSync(path.join(initialWorkspace, file)).equals(fs.readFileSync(path.join(workspace, file)))),
+      repairScenarioExplained: scenario.id !== "D-1" || /filter|status/i.test(text) && /storage|saved|invalid|malformed/i.test(text),
       repairCloseoutDecision: scenario.id !== "A-3" || /E-?310/i.test(text) && /18 tubes/i.test(text) && /15\.2/.test(text) && /30 minutes/i.test(text) && /no leakage/i.test(text) && /pending/i.test(text) && /isolated/i.test(text),
       calibrationDecisions: scenario.id !== "A-2" || /PG-G17[\s\S]{0,180}(eligible|approved|pass|current)/i.test(text + artifactText) && /PG-G18[\s\S]{0,180}(expired|not approved|out of date|pending)/i.test(text + artifactText) && /PG-G19[\s\S]{0,180}(unknown|missing|not approved|not found)/i.test(text + artifactText),
       reliefValveDecisions: scenario.id !== "C-2" || /RV-301[\s\S]{0,180}(non.?compliant|above|replace|reset)/i.test(text + artifactText) && /RV-302[\s\S]{0,180}(unknown|missing|out of service|pending)/i.test(text + artifactText) && /RV-303[\s\S]{0,180}(compliant|meets|within|pass)/i.test(text + artifactText),
@@ -94,9 +108,9 @@ async function run(scenario, campaignDir) {
         const stampAt = text.indexOf(stamp);
         return valueAt >= 0 && stampAt >= 0 && Math.abs(valueAt - stampAt) < 120;
       }),
-      noUnexpectedToolErrors: runner.events.filter((event) => event.type === "tool_result").every((event) => event.ok !== false),
+      noUnexpectedToolErrors: runner.events.filter((event) => event.type === "tool_result").every((event, index) => event.ok !== false || (scenario.id === "D-1" && event.tool === "run_command" && index === 0)),
     };
-    const result = { id: scenario.id, mode: scenario.mode, model: scenario.agentModel ?? null, prompt, outcome, expected, checks, passed: Object.values(checks).every(Boolean), text, artifact: source ?? null, independentTestOutput: independentTestRun?.stdout + independentTestRun?.stderr };
+    const result = { id: scenario.id, mode: scenario.mode, model: scenario.agentModel ?? null, prompt, outcome, expected, checks, passed: Object.values(checks).every(Boolean), text, artifact: source ?? null, initialTestOutput: initialTestRun ? initialTestRun.stdout + initialTestRun.stderr : null, independentTestOutput: independentTestRun ? independentTestRun.stdout + independentTestRun.stderr : null };
     fs.writeFileSync(path.join(runner.sandboxDir, "evaluation.json"), JSON.stringify(result, null, 2));
     fs.writeFileSync(path.join(runner.sandboxDir, "events.json"), JSON.stringify(runner.events, null, 2));
     console.log(`${scenario.id}: ${result.passed ? "PASS" : "FAIL"}; failed checks: ${Object.entries(checks).filter(([, ok]) => !ok).map(([key]) => key).join(", ")}`);

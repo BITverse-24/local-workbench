@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { SaxesParser } from "saxes";
 import type { AgentToolCall } from "../../shared/contracts.js";
 import { PermissionError, resolveSafe } from "../harness/path-guard.js";
@@ -32,6 +33,12 @@ export interface AgentTestPlan {
   changedPaths: string[]; changedTestPaths: string[]; sourceManifest: Record<string, string>;
   manifestSha256: string; initialPhase: AgentTestPhase; relatedCommand?: string; fullCommand: string;
   reportFormat: "json" | "junit" | "tap" | "unittest"; testFiles: string[];
+  runtimeTools?: AgentTestRuntimeTool[];
+}
+export type AgentTestRuntimeTool = "node" | "npm" | "pnpm" | "yarn" | "python3" | "pytest";
+/** Host-selected export to substitute only inside the disposable test copy. */
+export interface AgentTestArtifact {
+  artifactPath: string; artifactDigest: string; sourceDigest: string; targetPath: string;
 }
 /** Only the controller supplies this context. It is never a model tool argument. */
 export interface AgentTestExecutionRequest {
@@ -39,6 +46,8 @@ export interface AgentTestExecutionRequest {
   workspaceManifestSha256: string; sourceManifest: Record<string, string>; changedTestPaths: string[];
   reportFormat: AgentTestPlan["reportFormat"]; testFiles: string[];
   successMarker?: string;
+  runtimeTools?: AgentTestRuntimeTool[];
+  artifact?: AgentTestArtifact;
 }
 export interface AgentTestExecutionEvidence {
   planId: string; command: string; phase: AgentTestPhase; runner: AgentTestRunner;
@@ -46,8 +55,13 @@ export interface AgentTestExecutionEvidence {
   executed: number; failed: number; skipped: number; testFiles: string[];
   reason?: string; detail?: string; resultId?: string; report?: string; isolationStatus?: string;
   failureOutput?: string;
+  failureLocations?: AgentFailureLocation[];
+  failureLocationsComplete?: boolean;
   successMarker?: string; successMarkerObserved?: boolean;
+  runtimeProbes?: Array<{tool:AgentTestRuntimeTool;available:boolean;version?:string;detail?:string}>;
+  artifact?: Omit<AgentTestArtifact, "artifactPath">;
 }
+export interface AgentFailureLocation { path: string; line: number }
 export type AgentTestDiscovery = { ok: true; plans: AgentTestPlan[] } | { ok: false; reason: string; detail: string };
 const MAX_FILES = 10000, MAX_BYTES = 128 * 1024 * 1024;
 const hash = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
@@ -57,7 +71,7 @@ export function isCodeVerificationPath(filename: string): boolean {
   return /\.(?:[cm]?[jt]sx?|py|pyi|java|kt|kts|go|rs|c|cc|cpp|cxx|h|hpp|cs|fs|rb|php|swift|scala|sh|bash|ps1|sql|vue|svelte|json|ya?ml|toml|ini|cfg)$/i.test(filename) ||
     /(?:^|\/)(?:package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|pyproject\.toml|pytest\.ini|setup\.cfg|tox\.ini|requirements[^/]*\.txt|Cargo\.(?:toml|lock)|go\.(?:mod|sum)|Makefile|CMakeLists\.txt|pom\.xml|build\.gradle|[^/]*(?:vitest|jest|tsconfig)[^/]*)$/i.test(filename);
 }
-const isTestPath = (filename: string) => /\.(?:[cm]?[jt]sx?|py|java|kt|go|rs|c|cc|cpp|cs|rb|php|swift|scala)$/i.test(filename) &&
+export const isAgentTestPath = (filename: string) => /\.(?:[cm]?[jt]sx?|py|java|kt|go|rs|c|cc|cpp|cs|rb|php|swift|scala)$/i.test(filename) &&
   !/(?:^|\/)(?:helpers?|fixtures?|support)(?:\/|$)/i.test(filename) &&
   /(?:^|\/)(?:__tests__|tests?|spec)(?:\/|$)|(?:^|\/)(?:test[_-][^/]+|[^/]+(?:[._-](?:test|spec)|_test))\.[^/]+$/i.test(filename);
 export function agentManifestDigest(files: Record<string, string>): string {
@@ -140,13 +154,23 @@ export function discoverAgentTestPlans(input: { workspaceRoot: string; changedPa
     const paths = [...new Set(input.changedPaths.map(file => slash(path.relative(root, resolveSafe(root, file)))) )].sort();
     const groups = new Map<string, string[]>();
     for (const file of paths) { const dir = closestRoot(root, file); groups.set(dir, [...(groups.get(dir) ?? []), file]); }
+    if (!paths.length) {
+      // Baseline and explicit full-suite requests have no changed-file mapping.
+      // Discover existing suite roots; an empty plan is never test evidence.
+      for (const file of Object.keys(manifest.files)) {
+        if (/(?:^|\/)(?:node_modules|\.git|\.venv|venv|vendor)\//.test(file) || !isAgentTestPath(file)) continue;
+        groups.set(closestRoot(root, file), []);
+      }
+      if (!groups.size) groups.set(".", []);
+    }
     const plans: AgentTestPlan[] = [];
     for (const [dir, changedPaths] of groups) {
-      const testFiles = Object.keys(manifest.files).filter(file => (dir === "." || file.startsWith(`${dir}/`)) && !/(?:^|\/)(?:node_modules|\.git|\.venv|venv|vendor)\//.test(file) && isTestPath(file));
-      const changedTestPaths = changedPaths.filter(file => isTestPath(file) && manifest.files[file]);
+      const testFiles = Object.keys(manifest.files).filter(file => (dir === "." || file.startsWith(`${dir}/`)) && !/(?:^|\/)(?:node_modules|\.git|\.venv|venv|vendor)\//.test(file) && isAgentTestPath(file));
+      const changedTestPaths = changedPaths.filter(file => isAgentTestPath(file) && manifest.files[file]);
       const relativeChanged = changedPaths.map(file => slash(path.posix.relative(dir, file)));
-      const configOrShared = changedPaths.some(file => !/\.(?:[cm]?[jt]sx?|py|vue|svelte)$/i.test(file) || /(?:^|\/)(?:shared|common)\/|(?:config|setup)\.[^/]+$/i.test(file));
+      const configOrShared = !changedPaths.length || changedPaths.some(file => !/\.(?:[cm]?[jt]sx?|py|vue|svelte)$/i.test(file) || /(?:^|\/)(?:shared|common)\/|(?:config|setup)\.[^/]+$/i.test(file));
       let runner: AgentTestRunner | undefined, full = "", related: string | undefined, configuredExplicit = false, format: AgentTestPlan["reportFormat"] = "json";
+      let runtimeTools:AgentTestRuntimeTool[]=[];
       const packageText = readSmall(root, path.posix.join(dir, "package.json"));
       if (packageText) {
         const pkg = JSON.parse(packageText);
@@ -156,6 +180,7 @@ export function discoverAgentTestPlans(input: { workspaceRoot: string; changedPa
         runner = wrapperRunner(root, dir, script);
         const manager = explicitScript?.[1] ?? (String(pkg.packageManager ?? "").split("@")[0] || (existsSync(resolveSafe(root, path.posix.join(dir, "pnpm-lock.yaml"))) ? "pnpm" : existsSync(resolveSafe(root, path.posix.join(dir, "yarn.lock"))) ? "yarn" : "npm"));
         if (!["npm", "pnpm", "yarn"].includes(manager)) runner = undefined;
+        else runtimeTools=["node",manager as AgentTestRuntimeTool];
         configuredExplicit = Boolean(explicitScript && runner);
         const base = explicitScript ? `${input.userCommand}${manager === "yarn" || /\s--(?:\s|$)/.test(input.userCommand!) ? "" : " --"}` : `${manager} test${manager === "yarn" ? "" : " --"}`;
         const report = reportArgument();
@@ -178,22 +203,27 @@ export function discoverAgentTestPlans(input: { workspaceRoot: string; changedPa
         const config = ["pyproject.toml", "pytest.ini", "setup.cfg", "tox.ini"].map(name => readSmall(root, path.posix.join(dir, name)) ?? "").join("\n");
         if (/pytest|\[tool\.pytest|\[pytest\]/.test(config) && testFiles.some(file => file.endsWith(".py"))) {
           runner = "pytest"; format = "junit"; full = `${pythonCommand()} -B -m pytest --junitxml=${reportArgument()} -o junit_family=xunit1`;
+          runtimeTools=["python3"];
         } else {
           const existing = testFiles.filter(file => file.endsWith(".py") && /\bunittest\b/.test(readSmall(root, file) ?? ""));
           const directory = existing.length ? path.posix.dirname(path.posix.relative(dir, existing[0])) : undefined;
           if (directory && existing.every(file => path.posix.relative(dir, file).startsWith(directory === "." ? "" : `${directory}/`))) {
             runner = "unittest"; format = "unittest"; full = unittestCommand(directory);
+            runtimeTools=["python3"];
           }
         }
       }
       if (input.userCommand && runner === "pytest" && /^(?:python[0-9.]*\s+(?:-B\s+)?-m\s+pytest|pytest)(?:\s+[^;&|\r\n]*)?$/.test(input.userCommand)) {
         full = `${input.userCommand} --junitxml=${reportArgument()} -o junit_family=xunit1`; related = undefined; configuredExplicit = true;
+        runtimeTools=input.userCommand.startsWith("pytest") ? ["pytest"] : ["python3"];
       }
       if (input.userCommand && /^node\s+--test(?:\s+[^;&|\r\n]*)?$/.test(input.userCommand) && testFiles.some(file => /(?:require\(['"]node:test['"]\)|from\s+['"]node:test['"])/.test(readSmall(root, file) ?? ""))) {
         runner = "node"; format = "unittest"; full = input.userCommand; related = undefined; configuredExplicit = true;
+        runtimeTools=["node"];
       }
       if (input.userCommand && !configuredExplicit) {
         // Custom commands must already select a machine report. Do not infer success from their words.
+        runtimeTools=[];
         if (/--junitxml(?:=|\s)|--reporter[=\s]+junit/.test(input.userCommand) && input.userCommand.includes("WORKBENCH_TEST_REPORT")) { runner = "junit"; format = "junit"; full = input.userCommand; related = undefined; }
         else if (/--(?:test-)?reporter[=\s]+tap/.test(input.userCommand)) { runner = "tap"; format = "tap"; full = input.userCommand; related = undefined; }
         else return { ok: false, reason: "unsupported_test_setup", detail: "The specified test command has no supported machine report. Use the existing setup's JSON, JUnit, or TAP reporter." };
@@ -201,7 +231,7 @@ export function discoverAgentTestPlans(input: { workspaceRoot: string; changedPa
       if (!runner || !full || !testFiles.length) return { ok: false, reason: "no_usable_test_setup", detail: `No usable existing test setup was found in ${dir}. Tests were not created or substituted.` };
       plans.push({ id: hash(JSON.stringify({ suiteRoot: dir, runner, changedPaths, full, related })), workspaceRoot: root, suiteRoot: dir, runner, changedPaths, changedTestPaths, sourceManifest: manifest.files,
         manifestSha256: manifest.sha256, initialPhase: related ? "related" : "full", relatedCommand: related ? prefix(dir, related) : undefined,
-        fullCommand: prefix(dir, full), reportFormat: format, testFiles });
+        fullCommand: prefix(dir, full), reportFormat: format, testFiles, runtimeTools });
     }
     return { ok: true, plans };
   } catch (error) {
@@ -212,7 +242,13 @@ export function discoverAgentTestPlans(input: { workspaceRoot: string; changedPa
 export function createAgentVerificationRequest(plan: AgentTestPlan, phase: AgentTestPhase = plan.initialPhase): AgentTestExecutionRequest {
   return { planId: plan.id, command: phase === "related" && plan.relatedCommand ? plan.relatedCommand : plan.fullCommand, phase,
     runner: plan.runner, suiteRoot: plan.suiteRoot, workspaceManifestSha256: plan.manifestSha256, sourceManifest: plan.sourceManifest,
-    changedTestPaths: plan.changedTestPaths, reportFormat: plan.reportFormat, testFiles: plan.testFiles };
+    changedTestPaths: plan.changedTestPaths, reportFormat: plan.reportFormat, testFiles: plan.testFiles, runtimeTools:plan.runtimeTools };
+}
+/** Fixed host probes. User source and model arguments cannot supply probe commands. */
+export function agentRuntimeProbeCommand(tool:AgentTestRuntimeTool): string {
+  if(tool === "python3")return `${pythonCommand()} --version`;
+  if(!["node","npm","pnpm","yarn","pytest"].includes(tool))throw new Error("Unknown test runtime probe.");
+  return `${tool} --version`;
 }
 export function createAgentVerificationCall(request: AgentTestExecutionRequest, id = randomUUID()): AgentToolCall {
   return { id, name: "run_command", arguments: { command: request.command } };
@@ -224,7 +260,37 @@ function testFile(file: string, executionRoot: string, suiteRoot: string): strin
   if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Test report path is outside the execution snapshot.");
   return slash(relative).replace(/^\.\//, "");
 }
-export function parseAgentTestReport(request: AgentTestExecutionRequest, report: string, executionRoot: string): ParsedTests {
+/** Stack locations are selection hints only. Only paths in this exact snapshot may be returned. */
+export function agentFailureLocations(text: string, executionRoot: string, sourceManifest: Record<string, string>): AgentFailureLocation[] {
+  const locations = new Map<string, AgentFailureLocation>();
+  for (const prefix of [path.join(executionRoot, path.sep), pathToFileURL(path.join(executionRoot, path.sep)).href]) {
+    let offset = 0;
+    while ((offset = text.indexOf(prefix, offset)) >= 0) {
+      const suffix = text.slice(offset + prefix.length).match(/^([^\r\n]+?):([1-9][0-9]*)(?::[0-9]+)?(?=[\s)]|$)/);
+      offset += prefix.length;
+      if (!suffix) continue;
+      let filename: string;
+      try { filename = prefix.startsWith("file:") ? decodeURIComponent(suffix[1]) : suffix[1]; } catch { continue; }
+      const relative = slash(path.relative(executionRoot, path.resolve(executionRoot, filename)));
+      const line = Number(suffix[2]);
+      if (!Number.isSafeInteger(line) || !Object.hasOwn(sourceManifest, relative)) continue;
+      if (!locations.has(relative)) locations.set(relative, { path: relative, line });
+      if (locations.size >= 16) return [...locations.values()];
+    }
+  }
+  return [...locations.values()];
+}
+
+export function parseAgentTestReport(request: AgentTestExecutionRequest, report: string, executionRoot: string): ParsedTests & Pick<AgentTestExecutionEvidence, "failureLocations" | "failureLocationsComplete"> {
+  const parsed = parseAgentTestReportData(request, report, executionRoot);
+  if (!parsed.failed) return parsed;
+  const failureLocations = agentFailureLocations(parsed.failureOutput ?? "", executionRoot, request.sourceManifest);
+  const prefixes = [pathToFileURL(path.join(executionRoot, path.sep)).href, path.join(executionRoot, path.sep)];
+  const failureOutput = prefixes.reduce((text, prefix) => text.replaceAll(prefix, ""), parsed.failureOutput ?? "");
+  return { ...parsed, ...(failureOutput ? { failureOutput } : {}), failureLocations, failureLocationsComplete: false };
+}
+
+function parseAgentTestReportData(request: AgentTestExecutionRequest, report: string, executionRoot: string): ParsedTests {
   if (request.reportFormat === "json") {
     const data = JSON.parse(report), results = data.testResults;
     if (!Array.isArray(results) || !results.every(item => Array.isArray(item.assertionResults))) throw new Error("Test report has no assertion results.");
@@ -252,7 +318,12 @@ export function parseAgentTestReport(request: AgentTestExecutionRequest, report:
   if (request.reportFormat === "unittest") {
     const data = JSON.parse(report);
     if (!Array.isArray(data.testFiles) || !data.testFiles.every((item: unknown) => typeof item === "string")) throw new Error("Test report has no test files.");
-    const failureOutput = Array.isArray(data.failures) ? data.failures.map((failure: { name?: string; message?: string; stack?: string }) => `${failure.name ?? ""}: ${failure.message ?? ""}\n${failure.stack ?? ""}`).join("\n").slice(0, 6000) : "";
+    const failureOutput = Array.isArray(data.failures) ? data.failures.map((failure: { name?: string; message?: string; stack?: string }) => {
+      const stackLines = (failure.stack ?? "").split("\n");
+      const frames = stackLines.filter(line => /^\s*at\s+/.test(line) && !/\(node:(?:internal|async_hooks)\b/.test(line)).join("\n");
+      const message = ((failure.message || stackLines.find(line => !/^\s*at\s+/.test(line)) || "").split("\n")[0] || "").trim();
+      return [`${failure.name ?? ""}: ${message}`.trim(), frames].filter(Boolean).join("\n");
+    }).join("\n").slice(0, 6000) : "";
     return { executed: count(data.executed), failed: count(data.failed), skipped: count(data.skipped), testFiles: data.testFiles.map((file: string) => testFile(file, executionRoot, request.suiteRoot)), ...(failureOutput ? { failureOutput } : {}) };
   }
   if (request.reportFormat === "tap") {

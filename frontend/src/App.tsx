@@ -1,3 +1,4 @@
+import AgentTaskFacts from "./components/AgentTaskFacts";
 import RunRecoveryCard from "./components/RunRecoveryCard";
 import { useChatDraft } from "./lib/hooks/useChatDraft";
 import SourcePageDialog from "./components/SourcePageDialog";
@@ -108,6 +109,8 @@ export default function App() {
   const [chatLoading, setChatLoading] = useState(false);
   const [creatingChat, setCreatingChat] = useState(false);
   const [recovery, setRecovery] = useState<RunSnapshot["recovery"]>();
+  const [agentSnapshot, setAgentSnapshot] = useState<RunSnapshot>();
+  const [newAgentTaskChats, setNewAgentTaskChats] = useState<Set<string | null>>(() => new Set());
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [attemptBusy, setAttemptBusy] = useState(false);
   const reportStorageError = useCallback((error: unknown) => {
@@ -630,6 +633,7 @@ export default function App() {
       const snapshot=await wb.getRunSnapshot({chatId:id});
       if(chatIdRef.current!==id)return;
       const loaded=toChatMessages(rows);
+      setAgentSnapshot(snapshot?.agentV3Available ? snapshot : undefined);
       if(snapshot){
         const state = revision === eventRevision.current ? snapshot.state : sessions.current.states.get(snapshot.runId) ?? snapshot.state;
         setRecovery(["partial", "failed", "cancelled", "limit_exceeded"].includes(state) ? snapshot.recovery : undefined);
@@ -654,6 +658,7 @@ export default function App() {
       activeRunRef.current=null;
       // Reset run UI when switching chats
       setActiveRunId(null);
+      setAgentSnapshot(undefined);
       setRunState(null);setRecovery(undefined);
       setActiveRoute(null);
       setPendingConfirmation(null);setPendingPageSelection(null);
@@ -697,7 +702,7 @@ export default function App() {
       setHistory(previous => [{ id, title: "New chat", updated_at: new Date().toISOString() }, ...previous]);
       if (chatIdRef.current === previousChat) {
         setChatId(id); setMessages([]); setActiveRunId(null); activeRunRef.current = null;
-        setRunState(null); setRecovery(undefined); setActiveRoute(null);
+        setRunState(null); setRecovery(undefined); setActiveRoute(null); setChatLoading(false); setAgentSnapshot(undefined);
         setPendingConfirmation(null); setPendingPageSelection(null); setRunEvents([]);
         setRunArtifacts([]); runArtifactsRef.current = []; setRunError(null); setGroundingStatus(null);
         void wb.setSetting("lastChatId", id).catch(reportStorageError);
@@ -847,6 +852,7 @@ export default function App() {
       return;
     }
     const submissionKey=chatIdRef.current??"new-chat";
+    const taskIntent = executionMode === "agent" && newAgentTaskChats.has(chatIdRef.current) ? "new" : "continue";
     if(pendingSubmissions.current.has(submissionKey))return;
     pendingSubmissions.current.add(submissionKey);setRunRevision(value=>value+1);
     let submittedChatId:string|null=null;
@@ -928,7 +934,9 @@ export default function App() {
             preferredRoute: selectedModel?.id,
             selectedModel: selectedModel?.id,
             mode: executionMode,
+            ...(executionMode === "agent" ? { agentTaskIntent: taskIntent } : {}),
           });
+          if (executionMode === "agent") setNewAgentTaskChats(previous => { const next = new Set(previous); next.delete(submissionKey === "new-chat" ? null : submissionKey); return next; });
           if(chatIdRef.current===cid){setActiveRunId(runId);activeRunRef.current = runId;}
           try {
             await drafts.clear(cid);
@@ -1086,11 +1094,12 @@ export default function App() {
   }, [persistent, history, handleSelectChat, reportStorageError, restoreRunList]);
 
   useEffect(() => {
-    if (!activeRunId || !["partial", "failed", "cancelled", "limit_exceeded"].includes(runState ?? "")) return;
+    if (!activeRunId || !wb.isWorkbenchAvailable() || !["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(runState ?? "")) return;
     let current = true;
     void wb.getRunSnapshot({ runId: activeRunId }).then(snapshot => {
       if (current && snapshot && activeRunRef.current === snapshot.runId) {
         setRecovery(snapshot.recovery); runArtifactsRef.current = snapshot.artifacts;
+        setAgentSnapshot(snapshot.agentV3Available ? snapshot : undefined);
       }
     }).catch(reportStorageError);
     return () => { current = false; };
@@ -1216,6 +1225,7 @@ export default function App() {
               const original = messages.find(message => message.id === recovery.sourceMessageId);
               if (original) void handleEditMessage(original.id, original.text).catch(() => undefined);
             } : undefined} />}
+          {executionMode === "agent" && agentSnapshot?.chatId === chatId && agentSnapshot.agentTaskFacts && <AgentTaskFacts facts={agentSnapshot.agentTaskFacts} />}
           <ChatArea
             messages={messages}
             onEditMessage={handleEditMessage}
@@ -1233,6 +1243,14 @@ export default function App() {
               {drafts.loadFailed ? "Saved draft could not be restored." : "Draft is not saved."} {drafts.error} <button className="underline" onClick={() => void drafts.retry().catch(() => undefined)}>{drafts.loadFailed ? "Retry draft restore" : "Retry draft save"}</button>
             </> : (input || attachedFiles.length) ? "Draft saved on this computer" : null}
           </div>
+          {executionMode === "agent" && agentSnapshot?.chatId === chatId && agentSnapshot.agentTask && <div aria-label="Agent task controls" className="mx-4 mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-secondary)]">
+            <span role="status">{newAgentTaskChats.has(chatId) ? "The next message starts a new task. Earlier work stays saved." : "The next message continues the current task."}</span>
+            <button type="button" aria-pressed={newAgentTaskChats.has(chatId)} disabled={isRunning || creatingChat || chatLoading || attemptBusy || recoveryBusy}
+              onClick={() => setNewAgentTaskChats(previous => { const next = new Set(previous); if (next.has(chatId)) next.delete(chatId); else next.add(chatId); return next; })}
+              className="px-3 py-1.5 rounded-[var(--radius-sm)] neu-button disabled:opacity-50">
+              {newAgentTaskChats.has(chatId) ? "Continue current task" : "New task"}
+            </button>
+          </div>}
           <InputBar
             input={input}
             setInput={setInput}

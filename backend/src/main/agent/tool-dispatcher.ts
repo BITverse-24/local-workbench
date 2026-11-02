@@ -1,10 +1,11 @@
 import path from "node:path";
+import { statSync } from "node:fs";
 import { getCapabilityForTool } from "../tools/capabilities.js";
 import { assertRuntimeActive, currentRuntimeScope } from "../run/runtime-scope.js";
 import type { AgentToolCall, IntermediateResultInput, SourceReference } from "../../shared/contracts.js";
 import { compactToolObservation } from "./context-manager.js";
 import { recordExecutionToolOutcome, recordExecutionToolStarted } from "../run/execution-ledger.js";
-import { runRoot } from "../run/filesystem.js";
+import { runRoot, resolveRunPath, sha256File } from "../run/filesystem.js";
 import { resolveSafe, PermissionError } from "../harness/path-guard.js";
 import { extractPathArg } from "../tools/workspace-tools.js";
 import type {
@@ -347,10 +348,10 @@ export class ToolDispatcher {
           context.assertAuthority?.();
           if (context.envelope) {
             const mode=currentRuntimeScope()?.mode??context.envelope.mode;
-            const registered=new Set(["request_capability","list_dir","read_file","search","write_file","delete_file","run_command","execute_python","generate_deliverable","retrieve_result","retrieve_knowledge","extract_document"]);
+            const registered=new Set(["request_capability","list_dir","read_file","read_input","search","write_file","edit_file","delete_file","run_command","execute_python","generate_deliverable","retrieve_result","retrieve_knowledge","extract_document"]);
             if(!registered.has(call.name))throw new PermissionError("Unlisted tools cannot execute.");
             if(mode==="chat"&&!["extract_document","retrieve_result","retrieve_knowledge"].includes(call.name))throw new PermissionError("Chat cannot use this tool.");
-            if(mode==="agent"&&["write_file","delete_file","run_command"].includes(call.name)&&(!context.policyGuard?.isEnforcingExplicit(context.runId)||!context.policyGuard.isAuthorized(context.runId,call.name as "write_file"|"delete_file"|"run_command",call.arguments,true)))throw new PermissionError("Agent operation requires an approved run scope.");
+            if(mode==="agent"&&["write_file","edit_file","delete_file","run_command"].includes(call.name)&&(!context.policyGuard?.isEnforcingExplicit(context.runId)||!context.policyGuard.isAuthorized(context.runId,call.name as "write_file"|"edit_file"|"delete_file"|"run_command",{...call.arguments,operation_digest:context.agentOperationDigest},true)))throw new PermissionError("Agent operation requires an approved run scope.");
             if(mode!=="agent"){
               const relative=path.relative(runRoot(context.runId),context.workspaceRoot);
               if(context.harness || relative.startsWith("..") || path.isAbsolute(relative))throw new PermissionError(`${mode} requires run-scoped storage.`);
@@ -366,7 +367,7 @@ export class ToolDispatcher {
               throw new PermissionError("Work cannot modify a persistent workspace or execute workspace commands.");
             }
           }
-          if (context.resultStore && (call.name === "write_file" || call.name === "delete_file")) {
+          if (context.resultStore && (["write_file", "edit_file", "delete_file"].includes(call.name))) {
             const target = resolveSafe(context.workspaceRoot, extractPathArg(call.arguments));
             if (context.resultStore.isStoragePath(target)) throw new PermissionError("Durable result payloads are immutable; create a new result instead");
           }
@@ -535,7 +536,9 @@ export class ToolDispatcher {
 
           // Persist before returning success or publishing the observation. The store is run-bound;
           // standalone/legacy callers without it retain their original tool contract.
-          if (context.resultStore && call.name !== "retrieve_result" && (
+          const v3Observation = context.agentRequirementId !== undefined;
+          if (context.resultStore && (call.name !== "retrieve_result" || v3Observation) && (
+            v3Observation ||
             rawResult.intermediate || ["read_file", "extract_document", "execute_python", "run_command"].includes(call.name) ||
             // Command output also drives P0 verification inside AgentLoop; retain that typed control result.
             (call.name !== "run_command" && rawOutput.length > 4000 && !normalizedResult.artifacts?.length)
@@ -544,19 +547,32 @@ export class ToolDispatcher {
             const data = rawResult.data ?? tryParseJson(rawOutput);
             const filename = call.arguments.filename ?? call.arguments.path ?? call.arguments.file;
             const sources: SourceReference[] = typeof filename === "string" && call.name !== "execute_python" ? [{ filename, relation: "source" }] : [];
-            const origin = call.name === "read_file" ? "source_extracted" : ["execute_python", "run_command"].includes(call.name) ? "execution" : "model_derived";
-            const intermediate: Omit<IntermediateResultInput, "producer" | "summary"> = rawResult.intermediate ?? {
+            const origin = call.name === "read_file" ? "source_extracted" : (["execute_python", "run_command"].includes(call.name) || (v3Observation && ["write_file", "edit_file", "delete_file"].includes(call.name))) ? "execution" : "model_derived";
+            let intermediate: Omit<IntermediateResultInput, "producer" | "summary"> = rawResult.intermediate ?? {
               type: call.name === "read_file" ? "text" : ["execute_python", "run_command"].includes(call.name) ? "execution" : typeof data === "object" && data !== null ? "structured" : "text",
-              payload: typeof data === "string" || (data !== null && typeof data === "object") ? data as string | Record<string, unknown> | unknown[] : rawOutput,
+              payload: v3Observation ? rawOutput : typeof data === "string" || (data !== null && typeof data === "object") ? data as string | Record<string, unknown> | unknown[] : rawOutput,
               status: normalizedResult.ok ? "complete" : "partial", origin, sources,
             };
             let record;
             try {
+              if (v3Observation && normalizedResult.ok && normalizedResult.artifacts?.length) {
+                const artifacts = normalizedResult.artifacts.map(artifact => {
+                  const prefix = `runs/${context.runId}/output/`;
+                  if (artifact.runId !== context.runId || !artifact.relativePath.startsWith(prefix)) throw new Error("Artifact is outside the current run output.");
+                  const file = resolveRunPath(context.runId, artifact.relativePath.slice(`runs/${context.runId}/`.length), "output");
+                  const stat = statSync(file);
+                  if (!stat.isFile() || stat.size !== artifact.sizeBytes) throw new Error("Artifact size or file type changed before evidence was saved.");
+                  const sha256 = sha256File(file);
+                  if (artifact.sha256 && artifact.sha256 !== sha256) throw new Error("Artifact digest changed before evidence was saved.");
+                  return { artifactId: artifact.artifactId, filename: artifact.filename, relativePath: artifact.relativePath, kind: artifact.kind, sizeBytes: stat.size, sha256 };
+                });
+                intermediate = { type: "execution", status: "complete", origin: "execution", payload: { requirementId: context.agentRequirementId!, output: rawOutput, artifacts }, sources: [] };
+              }
               record = context.resultStore.registerResult({ ...intermediate,
                 status: normalizedResult.ok ? intermediate.status : "partial", producer: { tool: call.name, callId: call.id }, summary: rawSummary,
               });
             } catch (error) {
-              const readOnly = ["read_file", "list_dir", "search", "extract_document", "retrieve_knowledge"].includes(call.name);
+              const readOnly = ["read_file", "read_input", "list_dir", "search", "extract_document", "retrieve_knowledge"].includes(call.name);
               const effectMessage = readOnly ? "This read-only tool did not modify workspace files." :
                 rawResult.sideEffects?.length ? `Reported effects: ${rawResult.sideEffects.join(", ")}.` : "The tool may already have produced side effects.";
               throw { code: "persistence_failure", message: `Tool ${call.name} ran but its result could not be saved. ${effectMessage} ${error instanceof Error ? error.message : String(error)}`, retryable: false };
@@ -644,7 +660,7 @@ export class ToolDispatcher {
           };
         }
     };
-    const readOnly = new Set(["read_file", "list_dir", "search", "extract_document", "retrieve_knowledge", "retrieve_result", "retrieve_sop", "ocr_extract", "inspect_drawing", "get_file_info"]);
+    const readOnly = new Set(["read_file", "read_input", "list_dir", "search", "extract_document", "retrieve_knowledge", "retrieve_result", "retrieve_sop", "ocr_extract", "inspect_drawing", "get_file_info"]);
     const results: ExecutedToolOutput[] = [];
     let reads: AgentToolCall[] = [];
     const flush = async () => {

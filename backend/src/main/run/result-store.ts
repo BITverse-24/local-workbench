@@ -3,7 +3,7 @@ import { closeSync, constants, copyFileSync, existsSync, fsyncSync, linkSync, mk
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { z } from "zod";
-import type { IntermediateResultInput, IntermediateResultRecord, ResultSlice, ResultSliceRequest } from "../../shared/contracts.js";
+import type { IntermediateResultInput, IntermediateResultRecord, ResultOrigin, ResultSlice, ResultSliceRequest } from "../../shared/contracts.js";
 import { getDb } from "../persistence/db.js";
 import { resolveSafe, PermissionError } from "../harness/path-guard.js";
 import { dataRoot } from "./filesystem.js";
@@ -170,10 +170,11 @@ export class RunResultStore {
     }
   }
 
-  listResults(options: { limit?: number; offset?: number } = {}): IntermediateResultRecord[] {
+  listResults(options: { limit?: number; offset?: number; origin?: ResultOrigin } = {}): IntermediateResultRecord[] {
     const limit = z.number().int().min(1).max(50).parse(options.limit ?? 10);
     const offset = z.number().int().nonnegative().parse(options.offset ?? 0);
-    const rows = this.db.prepare("SELECT result_id FROM intermediate_results WHERE run_id=? ORDER BY created_at,result_id LIMIT ? OFFSET ?").all(this.runId, limit, offset) as Array<{ result_id: string }>;
+    const origin=inputSchema.shape.origin.optional().parse(options.origin);
+    const rows = this.db.prepare(`SELECT result_id FROM intermediate_results WHERE run_id=?${origin ? " AND origin=?" : ""} ORDER BY created_at,result_id LIMIT ? OFFSET ?`).all(this.runId,...(origin ? [origin] : []),limit,offset) as Array<{ result_id: string }>;
     return rows.map((row) => this.getResult(row.result_id));
   }
 
@@ -184,14 +185,19 @@ export class RunResultStore {
     return { ...record, sources: record.sources.slice(sourceOffset, sourceOffset + sourceCount), sourceCount: record.sources.length, nextSourceOffset: sourceOffset + sourceCount < record.sources.length ? sourceOffset + sourceCount : undefined };
   }
 
-  retrieveResultSlice(resultId: string, request: ResultSliceRequest = { mode: "text" }): ResultSlice {
+  /** Internal host access remains run-scoped and verifies the complete payload. */
+  readResultPayload(resultId: string): string {
     const record = this.getResult(resultId);
     const target = this.payloadPath(resultId, record.storage.encoding);
     if (!statSync(target).isFile() || statSync(target).size !== record.storage.sizeBytes || record.storage.sizeBytes > RESULT_PAYLOAD_MAX_BYTES) throw new Error("Result payload size/integrity mismatch");
     const bytes = readFileSync(target);
     if (createHash("sha256").update(bytes).digest("hex") !== record.storage.sha256) throw new Error("Result payload checksum mismatch");
+    return bytes.toString("utf8");
+  }
+
+  retrieveResultSlice(resultId: string, request: ResultSliceRequest = { mode: "text" }): ResultSlice {
+    const record = this.getResult(resultId), text = this.readResultPayload(resultId);
     const maxChars = z.number().int().min(1).max(RESULT_SLICE_MAX_CHARS).parse(request.maxChars ?? 2000);
-    const text = bytes.toString("utf8");
     if (request.mode === "text") {
       const offset = z.number().int().nonnegative().parse(request.offset ?? 0);
       const content = text.slice(offset, offset + maxChars);

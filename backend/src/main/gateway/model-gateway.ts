@@ -1,7 +1,14 @@
 import { isInferenceConcurrencyError, localInferenceScheduler, modelInferenceGroup } from "./inference-scheduler.js";
 import { currentRuntimeScope, assertRuntimeActive } from "../run/runtime-scope.js";
+import { getDb } from "../persistence/db.js";
+import { consumeAgentModelCall, getExecutionLedger, recordAgentAdmissionOutcome } from "../run/execution-ledger.js";
+import { AgentAdmissionError, AgentRequestTooLargeError, admitLocalAgentRequest, admitEstimatedAgentVisionRequest, assertAgentAdmissionReceipt, assertAgentProviderUsage, assertSavedAgentCountingVerification, invalidateAgentCountingVerification, loadAgentCountingVerification, preparedRequestDigest, saveAgentCountingVerification, verifyLocalAgentCounter, type AgentAdmissionReceipt, type AgentVisionAdmissionReceipt, type AgentCountingProfile } from "./agent-admission.js";
+import { countLMStudioPreparedRequest } from "./lmstudio-token-counter.js";
+import { countLocalAgentRequest } from "./local-token-counter.js";
+import { homedir } from "node:os";
+import { resolveSafe } from "../harness/path-guard.js";
 import { randomUUID, createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseStructuredData } from "./structured-data.js";
@@ -56,6 +63,13 @@ export interface DelegatedInvocationTelemetry {
   totalTokens: number;
 }
 
+function agentV3Scope() {
+  const scope = currentRuntimeScope();
+  if (scope?.mode !== "agent") return undefined;
+  const row = getDb().prepare("SELECT engine_version FROM run_mode_details WHERE run_id=?").get(scope.runId) as { engine_version: string } | undefined;
+  return row?.engine_version === "agent-v3" ? scope : undefined;
+}
+
 function gatewayConsole(level: "log" | "warn" | "error", request: { requestId: string; runId: string; taskType: string; modelId: string }, message: string, extra?: unknown) {
   const prefix = `[model-gateway:${request.taskType}:${request.modelId}:${request.requestId.slice(0, 8)}]`;
   const line = extra !== undefined ? `${prefix} ${message} ${typeof extra === "string" ? extra : JSON.stringify(extra).slice(0, 4000)}` : `${prefix} ${message}`;
@@ -106,13 +120,13 @@ export interface GatewayTransport {
   queueWaitMs?: () => number;
   request(
     url: string,
-    init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
+    init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal; redirect?: "error" },
     timeoutMs: number,
   ): Promise<{ status: number; text(): Promise<string> }>;
 
   streamRequest?(
     url: string,
-    init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
+    init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal; redirect?: "error" },
     timeoutMs: number,
     onChunk: (delta: string) => void,
     onActivity?: (activity: StreamActivity) => void,
@@ -232,7 +246,7 @@ export function formatMessagesForFallback(
   messages: Array<{ role: string; content?: any; tool_calls?: any[]; tool_call_id?: string; toolName?: string; [key: string]: any }>,
   systemPromptAddition: string,
 ): Array<Record<string, any>> {
-  return messages.map((m, idx) => {
+  const formatted = messages.map((m, idx) => {
     if (idx === 0 && m.role === "system") {
       return {
         role: "system",
@@ -270,8 +284,35 @@ export function formatMessagesForFallback(
       content: typeof m.content === "string" ? m.content : String(m.content ?? ""),
     };
   });
+  if (systemPromptAddition && messages[0]?.role !== "system") formatted.unshift({ role: "system", content: systemPromptAddition });
+  return formatted;
 }
  
+function jsonToolParameterSchema(field: any): any {
+  return field.format === "multiline"
+    ? { type: "array", items: { type: "string" }, description: `${field.description ? field.description + " " : ""}One raw string per line; retain indentation. Blank lines are empty strings.` }
+    : { ...field, ...(field.properties ? { properties: Object.fromEntries(Object.entries(field.properties).map(([key, value]) => [key, jsonToolParameterSchema(value)])) } : {}), ...(field.items ? { items: jsonToolParameterSchema(field.items) } : {}) };
+}
+
+export function formatJSONToolMessages(messages: Parameters<typeof formatMessagesForFallback>[0], tools: AgentToolDefinition[], required = false, strict = false) {
+  const descriptions = tools.map(tool => `- ${tool.function.name}: ${tool.function.description}\n  Arguments schema: ${JSON.stringify(jsonToolParameterSchema(tool.function.parameters))}`).join("\n\n");
+  const hasFinish = tools.some(tool => tool.function.name === "finish");
+  return formatMessagesForFallback(messages, `\n\nAVAILABLE TOOLS:\n${descriptions}\n\nReturn JSON: {"tool_calls":[{"name": <available tool name>, "arguments": <schema fields>}], "content":""}. ${strict ? "Return ONE bare JSON object. Do not wrap it in Markdown fences or prose. Fenced examples never execute. Select at most one tool call. " : ""}Emit each operation once. Multiline arguments are arrays of raw lines; preserve indentation, use empty strings for blank lines, and do not add newline escapes. ${required ? (hasFinish ? "Select one tool call from AVAILABLE TOOLS (call finish when all requested operations and deliverables are complete, or call another tool if work remains)." : "A required operation remains incomplete. Call its tool now.") : "If no operation is needed, tool_calls is [] and content is your final response."}`);
+}
+
+/** Constrain the JSON envelope where supported. Host schemas and policy still validate each action. */
+export function agentJSONResponseFormat(tools: AgentToolDefinition[], required = false) {
+  return { type: "json_schema", json_schema: { name: "agent_action", strict: true, schema: {
+    type: "object", properties: {
+      tool_calls: { type: "array", minItems: required ? 1 : 0, maxItems: 1, items: { anyOf: tools.map(tool=>({
+        type:"object",properties:{name:{type:"string",enum:[tool.function.name]},arguments:jsonToolParameterSchema(tool.function.parameters)},
+        required:["name","arguments"],additionalProperties:false,
+      })) } },
+      content: { type: "string" },
+    }, required: ["tool_calls", "content"], additionalProperties: false,
+  } } };
+}
+
 export function normalizeParsedToolArgs(val: unknown): any {
   // JSON.parse already decoded transport escapes. Code and commands may contain
   // intentional literal backslashes; a second decoding changes their meaning.
@@ -603,7 +644,7 @@ export class ModelGateway implements ModelClient {
 
   /** Observe every inference, including specialist calls and JSON tool fallbacks. */
   private inferenceTransport(
-    metadata: Pick<ModelProgressEvent, "runId" | "modelId" | "purpose" | "parentCallId">,
+    metadata: Pick<ModelProgressEvent, "runId" | "modelId" | "purpose" | "parentCallId"> & { visionExtension?: string },
     structured: boolean,
     signal?: AbortSignal,
   ): GatewayTransport {
@@ -634,6 +675,8 @@ export class ModelGateway implements ModelClient {
         publish(firstOutput);
       };
       const scope = currentRuntimeScope();
+      const v3 = agentV3Scope();
+      if (v3 && metadata.runId !== v3.runId) throw new AgentAdmissionError("Agent inference belongs to another run.");
       const requestSignal = signal ?? scope?.signal;
       assertRuntimeActive();
       if (scope?.remainingModelCalls !== undefined) {
@@ -648,23 +691,76 @@ export class ModelGateway implements ModelClient {
       scope?.observe?.({ queued: true });
       let release: (() => void) | undefined = await localInferenceScheduler.acquire(scope?.mode ?? "work", requestSignal, group);
       const queueWaitMs = Date.now() - queuedAt;queueWait=queueWaitMs;startedAt=Date.now();
-      scope?.observe?.({ queued: false, queueWaitMs, modelCallCount: 1 });
+      scope?.observe?.({ queued: false, queueWaitMs, ...(!v3 ? { modelCallCount: 1 } : {}) });
       let inferenceStarted = Date.now();
+      let activeDispatchId: string | undefined;
       try {
         assertRuntimeActive();
         const stream = Boolean(this.transport.streamRequest && (onChunk || this.progressListeners.size));
         if (stream) { payload.stream = true; payload.stream_options = { include_usage: true }; }
         else { delete payload.stream; delete payload.stream_options; }
-        const outbound = { ...init, signal: requestSignal, body: JSON.stringify(payload) };
         let streamedChars = 0;
-        const send = async () => stream
+        const send = async () => {
+          let receipt: AgentAdmissionReceipt | AgentVisionAdmissionReceipt | undefined;
+          const dispatchId = randomUUID();
+          if (v3?.agentPhase === "requirements" && (metadata.purpose !== "classification" || payload.tools?.length || metadata.visionExtension !== undefined)) throw new AgentAdmissionError("Requirement interpretation cannot use workspace tools or vision generation.");
+          if (v3 && metadata.visionExtension !== undefined) {
+            try { receipt = admitEstimatedAgentVisionRequest({ payload, endpoint: url.replace(/\/chat\/completions\/?$/, ""), contextLimit: configured?.contextLength ?? 8192, extension: metadata.visionExtension }); }
+            catch (error) { throw error instanceof AgentAdmissionError ? error : new AgentAdmissionError(error instanceof Error ? error.message : String(error), { cause: error }); }
+          } else if (v3) {
+            const selectedTransport = Array.isArray(payload.tools) && payload.tools.length ? "native" : "json";
+            const endpoint = url.replace(/\/chat\/completions\/?$/, "").replace(/\/$/, "");
+            const profile = v3.agentCountingProfiles?.find(item => item.verification.binding.transport === selectedTransport && item.verification.binding.providerModel === payload.model && item.verification.binding.endpoint.replace(/\/$/, "") === endpoint);
+            if (!profile) throw new AgentAdmissionError(`Agent counting setup is missing for ${selectedTransport} transport.`);
+            try {
+              assertSavedAgentCountingVerification(profile);
+              const binding = profile.verification.binding;
+              if (url.replace(/\/chat\/completions\/?$/, "").replace(/\/$/, "") !== binding.endpoint.replace(/\/$/, "")) throw new Error("The prepared endpoint differs from the verified endpoint.");
+              receipt = await admitLocalAgentRequest({ payload, binding, verification: profile.verification, assetsDir: profile.assetsDir, activeTemplate: profile.activeTemplate, signal: requestSignal });
+              const server = await countLMStudioPreparedRequest({ endpoint: binding.endpoint, payload, signal: requestSignal });
+              if (server.instanceReference !== binding.modelIdentity || server.inputTokens !== receipt.inputTokens || server.renderedDigest !== receipt.renderedDigest || Math.min(8192, server.contextLimit) !== receipt.contextLimit) throw new Error("The server model, template, context, or rendered count changed. Verify counting again.");
+              assertRuntimeActive();
+              assertAgentAdmissionReceipt(receipt, payload, binding);
+            } catch (error) {
+              if (error instanceof AgentRequestTooLargeError) throw error;
+              invalidateAgentCountingVerification(profile.verification.binding);
+              throw new AgentAdmissionError(error instanceof Error ? error.message : String(error), { cause: error });
+            }
+          }
+          if (v3 && receipt) {
+            assertRuntimeActive();
+            consumeAgentModelCall(v3.runId, { requestId: dispatchId, receipt });
+            activeDispatchId = dispatchId;
+            v3.observe?.({ modelCallCount: 1, [receipt.countingMethod === "exact" ? "admittedInputTokens" : "estimatedVisionInputTokens"]: receipt.inputTokens });
+          }
+          const outbound = { ...init, signal: requestSignal, body: JSON.stringify(payload), ...(v3 ? { redirect: "error" as const } : {}) };
+          const response = stream
           ? await this.transport.streamRequest!(url, outbound, timeoutMs, delta => {
               streamedChars += delta.length;
               previewFilter?.process(delta);
               activity("text", delta.length);
               if (!structured) onChunk?.(delta);
             }, update => { activity(update.channel, update.chars); onActivity?.(update); })
-          : this.transport.request(url, outbound, timeoutMs);
+          : await this.transport.request(url, outbound, timeoutMs);
+          const responseBody = await response.text();
+          if (v3 && receipt) {
+            if (response.status >= 200 && response.status < 300) {
+              const usage = (() => { try { return parseProviderUsage(JSON.parse(responseBody).usage).promptTokens; } catch { return undefined; } })();
+              if (receipt.countingMethod === "vision_estimate") {
+                recordAgentAdmissionOutcome(v3.runId, dispatchId, "estimate_used", usage);
+                return { status: response.status, text: async () => responseBody };
+              }
+              try { assertAgentProviderUsage(receipt, usage, 8); }
+              catch (error) {
+                recordAgentAdmissionOutcome(v3.runId, dispatchId, "mismatch", usage);
+                invalidateAgentCountingVerification(receipt.binding);
+                throw new AgentAdmissionError(error instanceof Error ? error.message : String(error), { cause: error });
+              }
+              recordAgentAdmissionOutcome(v3.runId, dispatchId, "usage_verified", usage);
+            } else recordAgentAdmissionOutcome(v3.runId, dispatchId, "provider_error");
+          }
+          return { status: response.status, text: async () => responseBody };
+        };
         let response = await send();
         let body = await response.text();
         if (!streamedChars && isInferenceConcurrencyError(response.status, body)) {
@@ -686,6 +782,7 @@ export class ModelGateway implements ModelClient {
         publish(true);
         return { status: response.status, text: async () => body };
       } catch (error) {
+        if (v3 && activeDispatchId && getExecutionLedger(v3.runId)?.agentAdmissions.find(item=>item.requestId === activeDispatchId)?.status === "admitted") recordAgentAdmissionOutcome(v3.runId,activeDispatchId,"provider_error");
         snapshot.status = "failed";
         publish(true);
         throw error;
@@ -816,7 +913,8 @@ export class ModelGateway implements ModelClient {
 
   async execute(request: ModelRequest): Promise<AIResult<ModelResponse>> {
     const transport = this.inferenceTransport({ runId: request.runId, modelId: request.modelId,
-      purpose: request.purpose ?? request.responseFormat, parentCallId: request.parentToolCallId },
+      purpose: request.purpose ?? request.responseFormat, parentCallId: request.parentToolCallId,
+      ...(request.taskType === "vision" ? { visionExtension: path.extname(request.attachment.filename) } : {}) },
       !["chat-result", "code-summary"].includes(request.responseFormat) || Boolean(request.responseSchema));
     let model: ModelRegistryEntry | undefined = this.resolveNextEndpoint(request.modelId);
     if (!model) {
@@ -952,9 +1050,10 @@ export class ModelGateway implements ModelClient {
     // separately at the local renderer's bounded resolution.
     const textMessages = isVision ? messagesPayload.map(message => ({ ...message, content: Array.isArray(message.content)
       ? message.content.filter(part => part.type === "text") : message.content })) : messagesPayload;
-    const estimatedInputTokens = countTokens(JSON.stringify(textMessages)) + (isVision ? (visionParts?.length ?? 0) * estimateVisionTokens(1024, 1024) : 0);
+    const v3 = agentV3Scope();
+    const estimatedInputTokens = v3 ? 0 : countTokens(JSON.stringify(textMessages)) + (isVision ? (visionParts?.length ?? 0) * estimateVisionTokens(1024, 1024) : 0);
     const maxAllowedTokens = Math.max(128, contextLimit - estimatedInputTokens - safetyMargin);
-    const maxTokens = Math.min(requestedMaxTokens, maxAllowedTokens);
+    const maxTokens = v3 ? Math.min(requestedMaxTokens, 2048) : Math.min(requestedMaxTokens, maxAllowedTokens);
     const defaultTemperature = (isLocal && (request.taskType === "code" || request.taskType === "vision")) ? 0.0 : 0.2;
     const effectiveTemperature = request.temperature ?? defaultTemperature;
     const requestPayload: Record<string, any> = {
@@ -966,6 +1065,8 @@ export class ModelGateway implements ModelClient {
     if (responseFormatPayload !== undefined) {
       requestPayload.response_format = responseFormatPayload;
     }
+    const reasoningControl = resolveReasoningControl();
+    Object.assign(requestPayload, reasoningControl.params);
     if (request.reasoningEffort !== undefined) {
       requestPayload.reasoning_effort = request.reasoningEffort;
     }
@@ -1162,10 +1263,15 @@ export class ModelGateway implements ModelClient {
         if (finishReason === "length") {
           throw new Error("Intent classifier exhausted its output budget before completing JSON. Check the model's reasoning control.");
         }
-        if (typeof extractedContent !== "string" || !extractedContent.trim()) {
+        const rawClassification = typeof extractedContent === "string" && extractedContent.trim()
+          ? extractedContent
+          : typeof reasoning === "string" && reasoning.trim().startsWith("{") && reasoning.trim().endsWith("}")
+            ? reasoning
+            : extractedContent;
+        if (typeof rawClassification !== "string" || !rawClassification.trim()) {
           throw new Error("Intent classifier returned no final JSON. The provider may have spent its output budget on reasoning.");
         }
-        parsedJson = parseProviderContent(extractedContent);
+        parsedJson = parseProviderContent(rawClassification, reasoning);
       } else if (request.responseFormat === "chat-result" || request.responseFormat === "code-summary") {
         if (typeof extractedContent === "string" && extractedContent.trim().length > 0) {
           const trimmed = extractedContent.trim();
@@ -1189,7 +1295,7 @@ export class ModelGateway implements ModelClient {
         }
       } else {
         try {
-          parsedJson = parseProviderContent(extractedContent);
+          parsedJson = parseProviderContent(extractedContent, reasoning);
         } catch (e) {
           logGatewayError(request, "parseProviderContent failed (empty/invalid JSON)", e instanceof Error ? e.message : String(e));
           persistGatewayTrace(request.runId, request.requestId, { phase: "parse_error", taskType: request.taskType, error: e instanceof Error ? e.message : String(e), extractedContent, reasoning, rawText, envelope });
@@ -1301,7 +1407,7 @@ export class ModelGateway implements ModelClient {
         }
       }
 
-      return { ok: false, error: providerError(error, request) };
+      return { ok: false, error: error instanceof AgentAdmissionError ? { kind: "ai-error", code: "agent_admission_failed", message: error.message, retryable: false, runId: request.runId, requestId: request.requestId, modelId: request.modelId, taskType: request.taskType } : providerError(error, request) };
     }
   }
   async health(): Promise<ModelHealth[]>;
@@ -1440,6 +1546,69 @@ export class ModelGateway implements ModelClient {
     return model ? modelInferenceGroup(`${model.baseUrl}/chat/completions`, model.model) : undefined;
   }
 
+  /** Fixed setup generations contain no task data and never execute returned tools. */
+  async prepareAgentCountingProfiles(modelId: ModelId, options: { signal?: AbortSignal; assetsDir?: string } = {}): Promise<AgentCountingProfile[]> {
+    const model = this.registry.get(modelId);
+    if (!model) throw new AgentAdmissionError("The selected Agent model is unavailable.");
+    const seed = { model: model.model, messages: [{ role: "system", content: "Return only OK." }, { role: "user", content: "Counting setup." }], max_tokens: 8, stream: false };
+    const server = await countLMStudioPreparedRequest({ endpoint: model.baseUrl, payload: seed, signal: options.signal });
+    const modelsRoot = path.join(homedir(), ".lmstudio", "models");
+    const assetsDir = options.assetsDir ?? (() => {
+      const direct = resolveSafe(modelsRoot, server.modelPath);
+      if (existsSync(path.join(direct, "tokenizer.json"))) return direct;
+      try {
+        const manifestPath = resolveSafe(path.join(homedir(), ".lmstudio", "hub", "models"), path.join(server.modelPath, "manifest.json"));
+        const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { dependencies?: Array<{ sources?: Array<{ type?: string; user?: string; repo?: string }> }> };
+        const candidates = (manifest.dependencies ?? []).flatMap(dep => dep.sources ?? [])
+          .filter((src): src is { type: string; user: string; repo: string } => src.type === "huggingface" && typeof src.user === "string" && typeof src.repo === "string")
+          .map(src => resolveSafe(modelsRoot, path.join(src.user, src.repo)))
+          .filter(dir => existsSync(path.join(dir, "tokenizer.json")));
+        if (candidates.length === 1) return candidates[0];
+      } catch {}
+      return direct;
+    })();
+    const local = await countLocalAgentRequest({ assetsDir, payload: seed, includeTemplate: true, signal: options.signal });
+    if (!local.activeTemplate || local.renderedDigest !== server.renderedDigest || local.inputTokens !== server.inputTokens) throw new AgentAdmissionError("Local tokenizer assets do not match the loaded LM Studio model and template.");
+    const activeTemplate = local.activeTemplate;
+    const probeTools: AgentToolDefinition[] = [{ type: "function", function: { name: "read_file", description: "Read source", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } } }];
+    const probes = [
+      { name: "plain" as const, messages: seed.messages, tools: [] },
+      { name: "tools" as const, messages: seed.messages, tools: probeTools },
+      { name: "tool_result" as const, messages: [...seed.messages, { role: "assistant", content: "", tool_calls: [{ id: "setup-read", type: "function", function: { name: "read_file", arguments: '{"path":"setup.txt"}' } }] }, { role: "tool", content: "Setup source text.", tool_call_id: "setup-read" }], tools: probeTools },
+      { name: "unicode" as const, messages: [seed.messages[0], { role: "user", content: "检查修复 🛠️ café हिन्दी\n\tconst π = 3.14;" }], tools: [] },
+    ];
+    const profiles: AgentCountingProfile[] = [];
+    for (const selectedTransport of ["json", ...(server.supportsNativeTools && model.toolCallingFormat !== "json" ? ["native"] : [])] as Array<"native" | "json">) {
+      const binding = { endpoint: model.baseUrl, modelIdentity: server.instanceReference, providerModel: model.model, transport: selectedTransport, templateDigest: local.templateDigest, contextLimit: Math.min(8192, server.contextLimit) };
+      const cached = loadAgentCountingVerification(binding);
+      const prepared = probes.map(probe => ({ name: probe.name, payload: {
+        model: model.model, messages: selectedTransport === "native" ? formatMessagesForNativeTools(probe.messages) : probe.tools.length ? formatJSONToolMessages(probe.messages, probe.tools, false, true) : formatMessagesForFallback(probe.messages, ""),
+        ...(selectedTransport === "native" && probe.tools.length ? { tools: probe.tools, tool_choice: "auto" } : {}),
+        ...(selectedTransport === "json" ? { response_format: probe.tools.length ? agentJSONResponseFormat(probe.tools) : { type: "text" } } : {}), max_tokens: 8, temperature: 0, stream: false,
+      } }));
+      if (cached && JSON.stringify(cached.binding) === JSON.stringify(binding) && JSON.stringify(cached.assetDigests) === JSON.stringify(local.assetDigests) && prepared.every(probe => cached.probes.some(saved => saved.name === probe.name && saved.requestDigest === preparedRequestDigest(probe.payload)))) {
+        profiles.push({ assetsDir, activeTemplate, verification: cached }); continue;
+      }
+      const verification = await verifyLocalAgentCounter({ binding, assetsDir, activeTemplate, probes: prepared, signal: options.signal,
+        providerProbe: async payload => {
+          options.signal?.throwIfAborted(); assertRuntimeActive();
+          const [observed, actual] = await Promise.all([
+            countLocalAgentRequest({ assetsDir, activeTemplate, payload, signal: options.signal }),
+            countLMStudioPreparedRequest({ endpoint: model.baseUrl, payload, signal: options.signal }),
+          ]);
+          if (actual.instanceReference !== binding.modelIdentity || actual.renderedDigest !== observed.renderedDigest || actual.inputTokens !== observed.inputTokens) throw new AgentAdmissionError("LM Studio changed its model or template during counting setup.");
+          const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
+          const response = await localInferenceScheduler.run("agent", () => this.transport.request(`${model.baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify(payload), signal: options.signal, redirect: "error" }, 60000), options.signal, modelInferenceGroup(`${model.baseUrl}/chat/completions`, model.model));
+          const body = await response.text();
+          if (response.status < 200 || response.status >= 300) throw new AgentAdmissionError(`Counting setup failed with provider status ${response.status}. ${body.slice(0, 300)}`);
+          return { inputTokens: parseProviderUsage(JSON.parse(body).usage).promptTokens };
+        } });
+      saveAgentCountingVerification(verification);
+      profiles.push({ assetsDir, activeTemplate, verification });
+    }
+    return profiles;
+  }
+
   async chatWithTools(
     modelId: ModelId,
     messages: Array<{ role: string; content: any; tool_calls?: any[]; tool_call_id?: string; [key: string]: any }>,
@@ -1481,10 +1650,13 @@ export class ModelGateway implements ModelClient {
       model.runtime === "llama-server";
 
     const endpointKey = `${model.baseUrl}:${model.model}`;
-    const knownSupportsTools = model.toolCallingFormat !== "json" && (this.toolParamCapabilities.get(endpointKey) ?? true);
+    const profiles = agentV3Scope()?.agentCountingProfiles;
+    const matchingProfiles = profiles?.filter(profile => profile.verification.binding.providerModel === model.model && profile.verification.binding.endpoint === model.baseUrl);
+    const v3JSONOnly = matchingProfiles?.some(profile => profile.verification.binding.transport === "json") && !matchingProfiles.some(profile => profile.verification.binding.transport === "native");
+    const knownSupportsTools = !v3JSONOnly && model.toolCallingFormat !== "json" && (this.toolParamCapabilities.get(endpointKey) ?? true);
     const effectiveTimeout = Math.max(options?.timeoutMs ?? 0, model.requestTimeoutMs ?? 0, 60000);
     const requestedMaxTokens = options?.maxTokens ?? model.maxOutputTokens ?? 4096;
-    const effectiveMaxTokens = isLocal ? Math.min(requestedMaxTokens, 4096) : requestedMaxTokens;
+    const effectiveMaxTokens = agentV3Scope() ? Math.min(requestedMaxTokens, 2048) : isLocal ? Math.min(requestedMaxTokens, 4096) : requestedMaxTokens;
     const effectiveTemperature = options?.temperature ?? 0.2;
 
     const runId = options?.runId ?? "run-agent-loop";
@@ -1588,8 +1760,15 @@ export class ModelGateway implements ModelClient {
             }
           }
 
-          let content = typeof msg?.content === "string" ? withoutInlineReasoning(msg.content) || null : null;
-          if (parsedCalls.length === 0 && content) {
+          const rawNativeReasoning = typeof (msg?.reasoning_content ?? msg?.reasoning) === "string"
+            ? (msg.reasoning_content ?? msg.reasoning).trim()
+            : "";
+          let content = typeof msg?.content === "string" && msg.content.trim()
+            ? withoutInlineReasoning(msg.content) || null
+            : options?.responseSchema && rawNativeReasoning.startsWith("{") && rawNativeReasoning.endsWith("}")
+              ? rawNativeReasoning
+              : null;
+          if (!agentV3Scope() && parsedCalls.length === 0 && content) {
             const embedded = extractEmbeddedToolCalls(content);
             if (embedded.toolCalls.length > 0) {
               parsedCalls.push(...embedded.toolCalls);
@@ -1656,6 +1835,7 @@ export class ModelGateway implements ModelClient {
           };
         }
       } catch (err: any) {
+        if (err instanceof AgentAdmissionError) return { ok: false, error: { kind: "ai-error", code: err instanceof AgentRequestTooLargeError ? "agent_context_limit" : "agent_admission_failed", message: err.message, retryable: false, modelId, requestId, runId } };
         if (!/tools/i.test(err?.message ?? "")) {
           return {
             ok: false,
@@ -1677,20 +1857,13 @@ export class ModelGateway implements ModelClient {
     // A line array avoids deeply escaped code/document strings on small local
     // models. Decode it losslessly back to the canonical tool string at ingress.
     const fallbackTransport = this.inferenceTransport({ runId, modelId, purpose: options?.purpose ?? "working_turn" }, true);
-    const transportSchema = (field: any): any => {
-      if (field.format === "multiline") return { type: "array", items: { type: "string" }, description: `${field.description} One raw string per line; retain indentation. Blank lines are empty strings.` };
-      return { ...field,
-        ...(field.properties ? { properties: Object.fromEntries(Object.entries(field.properties).map(([key, value]) => [key, transportSchema(value)])) } : {}),
-        ...(field.items ? { items: transportSchema(field.items) } : {}),
-      };
-    };
-    const jsonTools = tools.map(tool => ({ ...tool, function: { ...tool.function, parameters: transportSchema(tool.function.parameters) } }));
-    const toolDescriptions = jsonTools
-      .map((t) => `- ${t.function.name}: ${t.function.description}\n  Arguments schema: ${JSON.stringify(t.function.parameters)}`)
-      .join("\n\n");
-
-    const fallbackSystemPromptAddition = `\n\nAVAILABLE TOOLS:\n${toolDescriptions}\n\nReturn JSON: {"tool_calls":[{"name": <available tool name>, "arguments": <schema fields>}], "content":""}. Emit each operation once. Multiline arguments are arrays of raw lines; preserve indentation, use empty strings for blank lines, and do not add newline escapes. ${options?.toolChoice === "required" ? "A required operation remains incomplete. Call its tool now." : "If no operation is needed, tool_calls is [] and content is your final response."}`;
-    const fallbackMessages = formatMessagesForFallback(messages, fallbackSystemPromptAddition);
+    // With one required operation, its identity is already host-bound. Ask the
+    // JSON model for arguments only; native calling keeps its normal envelope.
+    const argumentTool = agentV3Scope() && tools.length === 1 && options?.toolChoice === "required" ? tools[0] : undefined;
+    const fallbackMessages = argumentTool
+      ? formatMessagesForFallback(messages, `\n\nReturn ONE bare JSON object containing the arguments for ${argumentTool.function.name}. The host selected the operation. Match the supplied JSON schema. No tool-name envelope, Markdown, or prose.`)
+      : agentV3Scope() && !tools.length ? formatMessagesForFallback(messages, "")
+      : formatJSONToolMessages(messages, tools, options?.toolChoice === "required", !!agentV3Scope());
 
     try {
       const fallbackBody = JSON.stringify({
@@ -1698,7 +1871,7 @@ export class ModelGateway implements ModelClient {
         messages: fallbackMessages,
         temperature: effectiveTemperature,
         max_tokens: effectiveMaxTokens,
-        response_format: isLocal ? { type: "text" } : undefined,
+        response_format: argumentTool ? {type:"json_schema",json_schema:{name:"agent_tool_arguments",strict:true,schema:jsonToolParameterSchema(argumentTool.function.parameters)}} : agentV3Scope() && tools.length ? agentJSONResponseFormat(tools,options?.toolChoice === "required") : isLocal ? { type: "text" } : undefined,
         ...resolveReasoningControl().params,
       });
 
@@ -1752,20 +1925,32 @@ export class ModelGateway implements ModelClient {
       if (response.status >= 200 && response.status < 300) {
         const envelope = JSON.parse(rawText);
         const choice = envelope.choices?.[0];
-        const rawContent = typeof choice?.message?.content === "string" ? withoutInlineReasoning(choice.message.content) : choice?.message?.content;
+        const rawReasoning = typeof (choice?.message?.reasoning_content ?? choice?.message?.reasoning) === "string"
+          ? (choice.message.reasoning_content ?? choice.message.reasoning).trim()
+          : "";
+        const rawMessageContent = typeof choice?.message?.content === "string" && choice.message.content.trim()
+          ? choice.message.content
+          : rawReasoning.startsWith("{") && rawReasoning.endsWith("}")
+            ? rawReasoning
+            : choice?.message?.content;
+        const rawContent = typeof rawMessageContent === "string" ? withoutInlineReasoning(rawMessageContent) : rawMessageContent;
         let parsedJson: any = null;
+        let parsedArguments = false;
 
         if (typeof rawContent === "string") {
           try {
-            const stripped = rawContent.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+            const stripped = agentV3Scope() ? rawContent.trim() : rawContent.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
             parsedJson = parseStructuredData(stripped);
+            parsedArguments = parsedJson !== null && typeof parsedJson === "object" && !Array.isArray(parsedJson);
           } catch {
             parsedJson = { content: rawContent, tool_calls: null };
           }
         }
 
         const toolCalls: AgentToolCall[] = [];
-        if (Array.isArray(parsedJson?.tool_calls)) {
+        if(argumentTool && parsedArguments) {
+          toolCalls.push({id:randomUUID(),name:argumentTool.function.name,arguments:parseToolCallArguments(parsedJson)});
+        } else if (!argumentTool && Array.isArray(parsedJson?.tool_calls)) {
           for (const tc of parsedJson.tool_calls) {
             if (!tc || typeof tc !== "object") continue;
             const callName = tc.name || tc.function?.name;
@@ -1779,8 +1964,8 @@ export class ModelGateway implements ModelClient {
           }
         }
 
-        let finalContent = typeof parsedJson?.content === "string" ? parsedJson.content : toolCalls.length ? null : (typeof rawContent === "string" ? rawContent : null);
-        if (toolCalls.length === 0 && finalContent && tools.length > 0) {
+        let finalContent = argumentTool && parsedArguments ? null : typeof parsedJson?.content === "string" ? parsedJson.content : toolCalls.length ? null : (typeof rawContent === "string" ? rawContent : null);
+        if (!agentV3Scope() && toolCalls.length === 0 && finalContent && tools.length > 0) {
           const embedded = extractEmbeddedToolCalls(finalContent, true);
           if (embedded.toolCalls.length > 0) {
             toolCalls.push(...embedded.toolCalls);
@@ -1856,7 +2041,7 @@ export class ModelGateway implements ModelClient {
         ok: false,
         error: {
           kind: "ai-error",
-          code: "model_unavailable",
+          code: err instanceof AgentRequestTooLargeError ? "agent_context_limit" : err instanceof AgentAdmissionError ? "agent_admission_failed" : "model_unavailable",
           message: err instanceof Error ? err.message : String(err),
           retryable: false,
           modelId,

@@ -238,7 +238,7 @@ interface WorkbenchBridge {
   setSetting: (key: string, value: unknown) => Promise<void>;
   selectSourcePages: (input:{runId:string;selectionId:string;sourceDigest:string;pages:number[]})=>Promise<void>;
   getRunSnapshot: (input:{chatId?:string;runId?:string}) => Promise<RunSnapshot | undefined>;
-  startRun: (input: { userText: string; userMessageId?: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string; selectedModel?: string; mode?: "chat" | "work" | "agent"; workspaceIdentity?: WorkspaceInfo; workspaceReferences?: WorkspaceReference[] }) => Promise<{ runId: string }>;
+  startRun: (input: { agentTaskIntent?: "continue" | "new"; userText: string; userMessageId?: string; attachmentToken?: string; attachmentTokens?: string[]; runId?: string; chatId?: string; temperature?: number; groundingEnabled?: boolean; preferredRoute?: string; selectedModel?: string; mode?: "chat" | "work" | "agent"; workspaceIdentity?: WorkspaceInfo; workspaceReferences?: WorkspaceReference[] }) => Promise<{ runId: string }>;
   resumeRun: (input: { runId: string; largerGenerationAllowance?: boolean }) => Promise<{ runId: string }>;
   registerAttachment: (input: {
     chatId?: string;
