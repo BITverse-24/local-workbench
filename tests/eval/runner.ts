@@ -67,7 +67,7 @@ function copyDirRecursive(src: string, dest: string) {
 function fileManifest(dir: string, base = dir): Map<string, string> {
   const map = new Map<string, string>();
   for (const entry of readdirSync(dir)) {
-    if (entry === "node_modules" || entry === ".git" || entry === "__pycache__" || entry.endsWith(".pyc")) continue;
+    if (entry === "node_modules" || entry === ".git" || entry === "__pycache__" || entry === ".harness_backups" || entry.endsWith(".pyc")) continue;
     const full = path.join(dir, entry);
     if (statSync(full).isDirectory()) {
       for (const [k, v] of fileManifest(full, base)) map.set(k, v);
