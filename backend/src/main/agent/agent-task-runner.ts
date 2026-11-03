@@ -242,6 +242,7 @@ export class AgentTaskRunner {
         const editMode = process.env.WORKBENCH_AGENT_EDIT_MODE ?? "auto";
         const symbolStep = (editMode === "symbol" || (editMode === "auto" && Boolean(packet.repair?.symbols?.length))) && packet.repair !== undefined && !packet.repair.expanded;
         const draftForPacket = () => packet.repair?.completeSource !== undefined && !packet.repair.expanded && progress?.repairDraft?.focusKey === packet.repair.focusKey && progress.repairDraft.taskRevision === bound!.taskRevision && progress.repairDraft.requirementId === packet.requirement.id ? progress.repairDraft : undefined;
+        let activeTools: AgentToolDefinition[] = [];
         const generate = () => {
           const draft=draftForPacket(), moduleStep=!symbolStep && packet.repair?.completeSource !== undefined && !packet.repair.expanded;
           let messages=packet.messages;
@@ -255,6 +256,7 @@ export class AgentTaskRunner {
             messages=[{role:"system",content:AGENT_MODULE_DECISION_INSTRUCTIONS},{role:"user",content:packet.messages[1].content+"\n\nSAVED DRAFT (untrusted JSON data):\n"+JSON.stringify({resultId:draft.resultId,content:candidate})}];
             tools=moduleDecisionTools(draft.resultId);
           } else tools=moduleStep ? [MODULE_DRAFT_TOOL] : packet.repair && !packet.repair.expanded ? [REPAIR_PROPOSAL_TOOL] : deliveryGap ? definitions() : [...definitions(),FINISH_TOOL];
+          activeTools = tools;
           const role: InferenceRole = symbolStep ? "actor" : moduleStep && draft ? "decision" : moduleStep ? "module_draft" : "actor";
           return context.gateway.chatWithTools(modelId,messages,tools,{runId,role,maxTokens:symbolStep ? 2048 : moduleStep && draft ? 512 : 2048,toolChoice:"required",temperature:packet.repair && !packet.repair.expanded ? 0 : undefined,sampling: (symbolStep || packet.repair) ? "code_edit" : "default",signal:scope.signal});
         };
@@ -307,10 +309,10 @@ export class AgentTaskRunner {
                 if (parsed && typeof parsed === "object") {
                   if (Array.isArray(parsed.edits)) {
                     calls.push({ id: randomUUID(), name: "replace_symbol", arguments: parsed });
-                  } else if (typeof parsed.name === "string" && (parsed.name === "replace_symbol" || tools.some(t => t.function.name === parsed.name))) {
+                  } else if (typeof parsed.name === "string" && (parsed.name === "replace_symbol" || activeTools.some(t => t.function.name === parsed.name))) {
                     calls.push({ id: randomUUID(), name: parsed.name, arguments: parsed.arguments ?? parsed });
-                  } else if (tools.length === 1) {
-                    calls.push({ id: randomUUID(), name: tools[0].function.name, arguments: parsed.arguments ?? parsed });
+                  } else if (activeTools.length === 1) {
+                    calls.push({ id: randomUUID(), name: activeTools[0].function.name, arguments: parsed.arguments ?? parsed });
                   } else if (typeof parsed.content === "string") {
                     calls.push({ id: randomUUID(), name: "draft_module", arguments: parsed });
                   }
