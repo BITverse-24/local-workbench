@@ -1624,6 +1624,7 @@ export class ModelGateway implements ModelClient {
       role?: InferenceRole;
       responseSchema?: { name: string; schema: Record<string, unknown> };
       toolChoice?: "auto" | "required";
+      sampling?: "default" | "code_edit";
     },
   ): Promise<AIResult<AgentTurnResponse>> {
     const transport = this.inferenceTransport({ runId: options?.runId ?? "run-agent-loop", modelId,
@@ -1658,7 +1659,7 @@ export class ModelGateway implements ModelClient {
     const effectiveTimeout = Math.max(options?.timeoutMs ?? 0, model.requestTimeoutMs ?? 0, 60000);
     const requestedMaxTokens = options?.maxTokens ?? model.maxOutputTokens ?? 4096;
     const effectiveMaxTokens = agentV3Scope() ? Math.min(requestedMaxTokens, 2048) : isLocal ? Math.min(requestedMaxTokens, 4096) : requestedMaxTokens;
-    const effectiveTemperature = options?.temperature ?? 0.2;
+    const effectiveTemperature = options?.temperature ?? (options?.sampling === "code_edit" ? 0 : 0.2);
 
     const runId = options?.runId ?? "run-agent-loop";
     const requestId = randomUUID();
@@ -1671,7 +1672,7 @@ export class ModelGateway implements ModelClient {
         messages: nativeMessages,
         temperature: effectiveTemperature,
         max_tokens: effectiveMaxTokens,
-        presence_penalty: 0.1,
+        presence_penalty: options?.sampling === "code_edit" ? 0 : 0.1,
       };
       if (options?.responseSchema && tools.length === 0) payload.response_format = { type: "json_schema", json_schema: options.responseSchema };
       const reasoningControl = resolveReasoningControl();

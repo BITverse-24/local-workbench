@@ -7,7 +7,7 @@ import type { AgentTask, AgentToolCall, AgentToolDefinition, CapabilityGroup, Ru
 import type { ToolExecutionContext } from "../tools/types.js";
 import { getDb } from "../persistence/db.js";
 import { bindAgentTaskRun, getAgentTask, getAgentTaskBinding, ingestAgentTaskMessage, setAgentTaskStatus } from "../run/agent-task-store.js";
-import { bindAgentExecutionLedger, configureExecutionLedger, getExecutionLedger, initializeAgentInterpretationBudget, initializeExecutionLedger, prepareAgentTaskInterpretation, takeAgentProtocolCorrection, updateAgentProgress } from "../run/execution-ledger.js";
+import { advanceAgentEscalation, bindAgentExecutionLedger, configureExecutionLedger, getExecutionLedger, initializeAgentInterpretationBudget, initializeExecutionLedger, prepareAgentTaskInterpretation, takeAgentProtocolCorrection, updateAgentProgress } from "../run/execution-ledger.js";
 import { getRunContract, persistRunContract } from "../run/contract.js";
 import { currentRuntimeScope, assertRuntimeActive } from "../run/runtime-scope.js";
 import { ToolDispatcher } from "./tool-dispatcher.js";
@@ -248,7 +248,7 @@ export class AgentTaskRunner {
             tools=moduleDecisionTools(draft.resultId);
           } else tools=moduleStep ? [MODULE_DRAFT_TOOL] : packet.repair && !packet.repair.expanded ? [REPAIR_PROPOSAL_TOOL] : deliveryGap ? definitions() : [...definitions(),FINISH_TOOL];
           const role: InferenceRole = symbolStep ? "actor" : moduleStep && draft ? "decision" : moduleStep ? "module_draft" : "actor";
-          return context.gateway.chatWithTools(modelId,messages,tools,{runId,role,maxTokens:symbolStep ? 2048 : moduleStep && draft ? 512 : 2048,toolChoice:"required",temperature:packet.repair && !packet.repair.expanded ? 0 : undefined,signal:scope.signal});
+          return context.gateway.chatWithTools(modelId,messages,tools,{runId,role,maxTokens:symbolStep ? 2048 : moduleStep && draft ? 512 : 2048,toolChoice:"required",temperature:packet.repair && !packet.repair.expanded ? 0 : undefined,sampling: (symbolStep || packet.repair) ? "code_edit" : "default",signal:scope.signal});
         };
         let response = await generate();
         // Admission rejects before dispatch and call consumption. Remove whole optional pages,
@@ -260,9 +260,27 @@ export class AgentTaskRunner {
           response = await generate();
         }
         assertRuntimeActive();
-        if (!response.ok) return response.error.code === "agent_context_limit"
-          ? stop("context_limit",`The required task state and minimum evidence still do not fit. Narrow the task or split its remaining work. ${response.error.message}`)
-          : stop("model_generation_unavailable", response.error.message);
+        if (!response.ok) {
+          if (response.error.code === "agent_context_limit") {
+            const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION === "on";
+            if (escalationEnabled) {
+              const escalation = advanceAgentEscalation(runId, "context_limit");
+              if (escalation.action === "symbol_slices_only") {
+                packet = buildAgentContextPacket(task, context, selected, { additionalSourceChars: 0, latestSourceBytes: 500 });
+                response = await generate();
+                if (!response.ok) {
+                  return stop("context_limit", `The required task state and minimum evidence still do not fit. Narrow the task or split its remaining work. ${response.error.message}`);
+                }
+              } else {
+                return stop("context_limit", `The required task state and minimum evidence still do not fit. Narrow the task or split its remaining work. ${response.error.message}`);
+              }
+            } else {
+              return stop("context_limit", `The required task state and minimum evidence still do not fit. Narrow the task or split its remaining work. ${response.error.message}`);
+            }
+          } else {
+            return stop("model_generation_unavailable", response.error.message);
+          }
+        }
         const admission = getExecutionLedger(runId)?.agentAdmissions.at(-1);
         if (admission?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push(...packet.observedSources.map(source=>({...source,requestId:admission.requestId}))); });
         let call: AgentToolCall, selectedDraftId:string|undefined;
@@ -319,7 +337,20 @@ export class AgentTaskRunner {
               // of the project and cannot make a repeated request productive.
               const evidence=[...new Set(records.filter(record=>record.origin === "execution" && record.producer.tool !== "agent_operation_approval" || record.origin === "source_extracted" && record.producer.tool !== "read_file").map(record=>record.storage.sha256))].sort();
               const key=hash([packet.repair.focusKey,observed,evidence]);
-              if(progress?.actions.some(action=>action.operation === "request_context" && action.hash === key))return stop("repeated_context_request","The same module requested more context without new source or execution evidence.");
+              if (progress?.actions.some(action => action.operation === "request_context" && action.hash === key)) {
+                const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION === "on";
+                if (escalationEnabled) {
+                  const escalation = advanceAgentEscalation(runId, "repeated_context_request");
+                  if (escalation.action === "supply_neighbor_symbols") {
+                    updateAgentProgress(runId, state => {
+                      state.expandedToolFocus = undefined;
+                      state.feedback = "Context request was repeated. Observed file source and neighbor symbols are provided in your packet.";
+                    });
+                    continue;
+                  }
+                }
+                return stop("repeated_context_request", "The same module requested more context without new source or execution evidence.");
+              }
               const id=randomUUID(),record=context.resultStore.registerResult({type:"structured",status:"complete",origin:"model_derived",producer:{tool:"agent_repair_context_request",callId:id},summary:"Module draft requests context; no operation executed",payload:{taskId:task.taskId,taskRevision:bound.taskRevision,requirementId:context.agentRequirementId,path:packet.repair.path,reason:proposal.contextNeeded},sources:[]});
               updateAgentProgress(runId,state=>{state.actions.push({id,hash:key,requirementId:context.agentRequirementId!,operation:"request_context",status:"completed",resultId:record.resultId});state.expandedToolFocus=packet.repair!.focusKey;state.feedback=proposal.contextNeeded;});
               continue;
@@ -339,8 +370,23 @@ export class AgentTaskRunner {
           }
         } catch (error) {
           context.resultStore.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_rejected_response", callId: randomUUID() }, summary: "Rejected action format; no operation executed", payload: { response: response.value.content ?? "", toolCalls: response.value.tool_calls ?? [], reason: String(error) }, sources: [] });
-          if (!takeAgentProtocolCorrection(runId)) return stop("malformed_action", String(error));
-          updateAgentProgress(runId, state => { state.feedback = `Return one valid action. ${String(error).slice(0, 1000)}`; }); continue;
+          const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION === "on";
+          if (escalationEnabled) {
+            const escalation = advanceAgentEscalation(runId, "malformed_action");
+            if (escalation.action === "correction" && takeAgentProtocolCorrection(runId)) {
+              updateAgentProgress(runId, state => { state.feedback = `Return one valid action. ${String(error).slice(0, 1000)}`; });
+              continue;
+            }
+            if (escalation.action === "constrained_transport") {
+              updateAgentProgress(runId, state => { state.feedback = `Return one bare JSON action object matching the tool parameters schema. ${String(error).slice(0, 1000)}`; });
+              continue;
+            }
+          } else {
+            if (!takeAgentProtocolCorrection(runId)) return stop("malformed_action", String(error));
+            updateAgentProgress(runId, state => { state.feedback = `Return one valid action. ${String(error).slice(0, 1000)}`; });
+            continue;
+          }
+          return stop("malformed_action", String(error));
         }
         context.agentChangeReason = response.value.content?.slice(0, 1000) || selected.description;
         // A command result contains fresh timing and result IDs even when the
@@ -349,7 +395,33 @@ export class AgentTaskRunner {
         const repeated = call.name === "run_command"
           ? hash([call.name,call.arguments,captureCommandWorkspaceDigest(context.workspaceRoot),agentTestEnvironmentKey(context.workspaceRoot)])
           : hash([call.name, call.arguments, this.sourceVersion(context, call.arguments), progress?.latestResultId ? context.resultStore!.getResult(progress.latestResultId).storage.sha256 : null]);
-        if (progress?.actions.some(item => item.hash === repeated)) return stop("repeated_action", "The same action was proposed without new source or evidence. Pending requirements remain saved.");
+        if (progress?.actions.some(item => item.hash === repeated)) {
+          const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION === "on";
+          if (escalationEnabled && call.name !== "finish") {
+            const escalation = advanceAgentEscalation(runId, "repeated_action");
+            if (escalation.action === "expand_context") {
+              updateAgentProgress(runId, state => {
+                state.feedback = "The proposed action was already attempted without effect. Review surrounding context before proposing another change.";
+                state.expandedToolFocus = packet.repair?.focusKey;
+              });
+              continue;
+            }
+            if (escalation.action === "switch_edit_mode") {
+              updateAgentProgress(runId, state => {
+                state.feedback = "Repeated action detected. Switch to a broader edit strategy or different replacement range.";
+                state.expandedToolFocus = packet.repair?.focusKey;
+              });
+              continue;
+            }
+            if (escalation.action === "resample_t0.5") {
+              updateAgentProgress(runId, state => {
+                state.feedback = "Repeated action detected. Retrying with alternate variation.";
+              });
+              continue;
+            }
+          }
+          return stop("repeated_action", "The same action was proposed without new source or evidence. Pending requirements remain saved.");
+        }
         context.resultStore!.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_proposal", callId: call.id }, summary: context.agentChangeReason, payload: { taskId: task.taskId, taskRevision: bound.taskRevision, requirementId: context.agentRequirementId, reason: context.agentChangeReason, operation: call.name, arguments: call.arguments, ...(selectedDraftId ? {draftResultId:selectedDraftId} : {}) }, sources: selectedDraftId ? [{resultId:selectedDraftId,relation:"source"}] : [] });
         updateAgentProgress(runId, state => { state.actions.push({ id: call.id, hash: repeated, requirementId: context.agentRequirementId!, operation: call.name, status: "proposed" }); });
         if (call.name === "finish") {

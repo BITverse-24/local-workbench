@@ -8,6 +8,7 @@ import { currentRuntimeScope } from "./runtime-scope.js";
 import { getAgentTask } from "./agent-task-store.js";
 import { agentFileScopeSchema } from "../agent/file-scope.js";
 import type { InferenceRole } from "../gateway/telemetry.js";
+import { type StuckKind, type EscalationResult, nextEscalation } from "../agent/escalation.js";
 
 
 export const verificationCheckSchema = z.object({
@@ -67,6 +68,7 @@ const agentProgressSchema = z.object({
   scopeCorrectionUsed: z.boolean().default(false),
   baseline: z.object({ status: z.string(), detail: z.string(), environmentKey: z.string(), reason:z.string().optional() }).optional(),
   stopReason: z.string().optional(), fullSuite: z.boolean().default(false),
+  escalations: z.record(z.string(), z.number().int().nonnegative()).default({}),
 });
 const ledgerSchema = z.object({
   schemaVersion: z.literal(1), runId: z.string().uuid(), contract: z.object({ runId: z.string().uuid(), schemaVersion: z.literal(1) }),
@@ -102,6 +104,20 @@ export function updateAgentProgress(runId: string, update: (state: AgentRunProgr
     const state = agentProgressSchema.parse(ledger.agentProgress ?? {});
     update(state); ledger.agentProgress = agentProgressSchema.parse(state); save(ledger);
     return ledger.agentProgress;
+  }).immediate();
+}
+
+export function advanceAgentEscalation(runId: string, kind: StuckKind): EscalationResult {
+  return getDb().transaction(() => {
+    const ledger = getExecutionLedger(runId);
+    if (!ledger?.agentTask) throw new Error("Agent escalation requires a durable run budget.");
+    const progress = agentProgressSchema.parse(ledger.agentProgress ?? {});
+    const current = progress.escalations[kind] ?? 0;
+    const result = nextEscalation(kind, current);
+    progress.escalations[kind] = current + 1;
+    ledger.agentProgress = progress;
+    save(ledger);
+    return result;
   }).immediate();
 }
 
