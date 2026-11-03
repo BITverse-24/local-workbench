@@ -1,0 +1,14 @@
+{
+  "id": "py-pricing-tax-negative",
+  "base": "py-pricing",
+  "mutation": "missing_check",
+  "prompt": "calculate_tax returns negative tax on negative amounts instead of 0.0. Fix pricing.py so tests pass.",
+  "expectChangedFiles": [
+    "pricing.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_pricing.py",
+    "mustPass": true
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "py-pricing-invoice-total",
+  "base": "py-pricing",
+  "mutation": "wrong_operator",
+  "prompt": "calculate_final_invoice subtracts tax instead of adding it. Fix pricing.py so tests pass.",
+  "expectChangedFiles": [
+    "pricing.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_pricing.py",
+    "mustPass": true
+  }
+}

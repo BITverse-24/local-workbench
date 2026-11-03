@@ -1,0 +1,14 @@
+{
+  "id": "js-calc-stddev-sqrt",
+  "base": "js-calculator",
+  "mutation": "missing_operation",
+  "prompt": "standardDeviation returns variance instead of standard deviation. Fix src/math.js so tests pass.",
+  "expectChangedFiles": [
+    "src/math.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/math.test.js",
+    "mustPass": true
+  }
+}

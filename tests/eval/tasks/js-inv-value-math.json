@@ -1,0 +1,14 @@
+{
+  "id": "js-inv-value-math",
+  "base": "js-inventory",
+  "mutation": "wrong_operator",
+  "prompt": "totalInventoryValue adds cost and quantity instead of multiplying. Fix src/inventory.js so tests pass.",
+  "expectChangedFiles": [
+    "src/inventory.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/inventory.test.js",
+    "mustPass": true
+  }
+}

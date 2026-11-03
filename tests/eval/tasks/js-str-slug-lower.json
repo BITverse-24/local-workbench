@@ -1,0 +1,14 @@
+{
+  "id": "js-str-slug-lower",
+  "base": "js-strings",
+  "mutation": "missing_case_conversion",
+  "prompt": "toSlug retains uppercase letters. Fix src/formatter.js so it lowercases the text and tests pass.",
+  "expectChangedFiles": [
+    "src/formatter.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/formatter.test.js",
+    "mustPass": true
+  }
+}

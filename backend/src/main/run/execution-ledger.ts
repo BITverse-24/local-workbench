@@ -7,6 +7,7 @@ import { BUILD_IDENTITY } from "../build-identity.js";
 import { currentRuntimeScope } from "./runtime-scope.js";
 import { getAgentTask } from "./agent-task-store.js";
 import { agentFileScopeSchema } from "../agent/file-scope.js";
+import type { InferenceRole } from "../gateway/telemetry.js";
 
 
 export const verificationCheckSchema = z.object({
@@ -79,7 +80,8 @@ const ledgerSchema = z.object({
   agentProgress: agentProgressSchema.optional(),
   agentTask: z.object({ taskId: z.string().uuid().optional(), taskRevision: z.number().int().positive().optional(),
     preparation: z.object({taskId:z.string().uuid(),taskRevision:z.number().int().positive(),messageId:z.string().uuid()}).strict().optional(),
-    modelCalls: z.number().int().min(0).max(40), protocolCorrections: z.number().int().min(0).max(1) }).strict().optional(),
+    modelCalls: z.number().int().min(0).max(40), protocolCorrections: z.number().int().min(0).max(1),
+    callsByRole: z.record(z.string(), z.number().int().min(0)).optional() }).strict().optional(),
   agentAdmissions: z.array(z.object({ requestId: z.string().uuid(), taskId: z.string().uuid().optional(), taskRevision: z.number().int().positive().optional(), phase: z.enum(["requirements", "actions"]).default("actions"),
     buildIdentity: z.string().min(1),
     requestDigest: z.string().regex(/^[a-f0-9]{64}$/), renderedDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), modelIdentity: z.string().min(1),
@@ -195,11 +197,15 @@ function agentLedger(runId: string): RunExecutionLedger & { agentTask: NonNullab
 }
 
 /** Consume immediately before every generation dispatch, including fallback and resume. */
-export function consumeAgentModelCall(runId: string, admission?: { requestId: string; receipt: AgentAdmissionReceipt | AgentVisionAdmissionReceipt }): number {
+export function consumeAgentModelCall(runId: string, admission?: { requestId: string; receipt: AgentAdmissionReceipt | AgentVisionAdmissionReceipt }, role?: InferenceRole): number {
   return getDb().transaction(() => {
     const ledger = agentLedger(runId);
     if (ledger.agentTask.modelCalls >= 40) throw new Error("Agent reached its 40 model-call limit for this run.");
     ledger.agentTask.modelCalls++;
+    if (role) {
+      ledger.agentTask.callsByRole ??= {};
+      ledger.agentTask.callsByRole[role] = (ledger.agentTask.callsByRole[role] ?? 0) + 1;
+    }
     if (admission) {
       const receipt = admission.receipt;
       ledger.agentAdmissions.push({ requestId: admission.requestId, taskId: ledger.agentTask.taskId ?? ledger.agentTask.preparation?.taskId, taskRevision: ledger.agentTask.taskRevision ?? ledger.agentTask.preparation?.taskRevision,

@@ -1,0 +1,14 @@
+{
+  "id": "js-inv-categorize-key",
+  "base": "js-inventory",
+  "mutation": "wrong_property",
+  "prompt": "categorizeInventory groups items incorrectly. Fix the grouping property in src/inventory.js so tests pass.",
+  "expectChangedFiles": [
+    "src/inventory.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/inventory.test.js",
+    "mustPass": true
+  }
+}

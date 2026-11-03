@@ -47,7 +47,7 @@ import {
 import { readCompletionStream, withoutInlineReasoning, type StreamActivity } from "./completion-stream.js";
 import { countTokens } from "../agent/context-manager.js";
 import { StreamingTagFilter } from "../agent/streaming-filter.js";
-import { parseProviderUsage, recordInference, resolveReasoningControl, type InferencePurpose } from "./telemetry.js";
+import { parseProviderUsage, recordInference, resolveReasoningControl, type InferencePurpose, type InferenceRole } from "./telemetry.js";
 
 export interface DelegatedInvocationTelemetry {
   runId: string;
@@ -644,7 +644,7 @@ export class ModelGateway implements ModelClient {
 
   /** Observe every inference, including specialist calls and JSON tool fallbacks. */
   private inferenceTransport(
-    metadata: Pick<ModelProgressEvent, "runId" | "modelId" | "purpose" | "parentCallId"> & { visionExtension?: string },
+    metadata: Pick<ModelProgressEvent, "runId" | "modelId" | "purpose" | "parentCallId"> & { visionExtension?: string; role?: InferenceRole },
     structured: boolean,
     signal?: AbortSignal,
   ): GatewayTransport {
@@ -729,7 +729,7 @@ export class ModelGateway implements ModelClient {
           }
           if (v3 && receipt) {
             assertRuntimeActive();
-            consumeAgentModelCall(v3.runId, { requestId: dispatchId, receipt });
+            consumeAgentModelCall(v3.runId, { requestId: dispatchId, receipt }, metadata.role);
             activeDispatchId = dispatchId;
             v3.observe?.({ modelCallCount: 1, [receipt.countingMethod === "exact" ? "admittedInputTokens" : "estimatedVisionInputTokens"]: receipt.inputTokens });
           }
@@ -1621,12 +1621,13 @@ export class ModelGateway implements ModelClient {
       onChunk?: (delta: string) => void;
       signal?: AbortSignal;
       purpose?: InferencePurpose;
+      role?: InferenceRole;
       responseSchema?: { name: string; schema: Record<string, unknown> };
       toolChoice?: "auto" | "required";
     },
   ): Promise<AIResult<AgentTurnResponse>> {
     const transport = this.inferenceTransport({ runId: options?.runId ?? "run-agent-loop", modelId,
-      purpose: options?.purpose ?? "working_turn" }, Boolean(options?.responseSchema), options?.signal);
+      purpose: options?.purpose ?? "working_turn", role: options?.role }, Boolean(options?.responseSchema), options?.signal);
     const model = this.resolveNextEndpoint(modelId);
     if (!model) {
       return {
@@ -1786,7 +1787,7 @@ export class ModelGateway implements ModelClient {
             const toolChars = parsedCalls.reduce((n, c) => n + JSON.stringify(c.arguments).length, 0);
             recordInference({
               requestId, runId: options.runId, startedAt: new Date(t0).toISOString(),
-              purpose: options.purpose ?? "working_turn", modelId, providerModel: model.model,
+              purpose: options.purpose ?? "working_turn", role: options.role, modelId, providerModel: model.model,
               streamed: Boolean(payload.stream), messageCount: nativeMessages.length, requestBodyChars: body.length,
               toolSchema: { count: tools.length, serializedChars: JSON.stringify(tools).length, estimatedTokens: Math.ceil(JSON.stringify(tools).length / 4), estimated: true },
               reasoningControl, ttftMs, durationMs, status: response.status,
@@ -1988,7 +1989,7 @@ export class ModelGateway implements ModelClient {
           const toolChars = toolCalls.reduce((n, c) => n + JSON.stringify(c.arguments).length, 0);
           recordInference({
             requestId, runId: options.runId, startedAt: new Date(t0).toISOString(),
-            purpose: options.purpose ?? "working_turn", modelId, providerModel: model.model,
+            purpose: options.purpose ?? "working_turn", role: options.role, modelId, providerModel: model.model,
             streamed: Boolean(fallbackTransport.streamRequest && this.progressListeners.size), messageCount: fallbackMessages.length, requestBodyChars: fallbackBody.length,
             toolSchema: { count: tools.length, serializedChars: JSON.stringify(tools).length, estimatedTokens: Math.ceil(JSON.stringify(tools).length / 4), estimated: true },
             reasoningControl: resolveReasoningControl(), ttftMs: null, durationMs, status: response.status,

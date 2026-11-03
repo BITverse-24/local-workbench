@@ -1,0 +1,14 @@
+{
+  "id": "py-stats-cumsum-reset",
+  "base": "py-stats",
+  "mutation": "missing_accumulation",
+  "prompt": "cumulative_sum returns each item instead of running total. Fix stats.py so tests pass.",
+  "expectChangedFiles": [
+    "stats.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_stats.py",
+    "mustPass": true
+  }
+}

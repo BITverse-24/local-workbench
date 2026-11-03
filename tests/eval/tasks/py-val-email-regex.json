@@ -1,0 +1,14 @@
+{
+  "id": "py-val-email-regex",
+  "base": "py-validator",
+  "mutation": "inverted_return",
+  "prompt": "is_valid_email returns False for valid emails. Fix validator.py so tests pass.",
+  "expectChangedFiles": [
+    "validator.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_validator.py",
+    "mustPass": true
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "js-calc-mean-sum",
+  "base": "js-calculator",
+  "mutation": "wrong_operator",
+  "prompt": "calculateMean returns incorrect averages. Fix the calculation in src/math.js so tests pass.",
+  "expectChangedFiles": [
+    "src/math.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/math.test.js",
+    "mustPass": true
+  }
+}

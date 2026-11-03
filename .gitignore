@@ -33,3 +33,7 @@ tests/profiles/*.local.json
 blog
 
 docs/evidence
+tests/eval/*.local.json
+tests/eval/runs/
+__pycache__/
+*.pyc

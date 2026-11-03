@@ -1,0 +1,14 @@
+{
+  "id": "js-inv-restock-diff",
+  "base": "js-inventory",
+  "mutation": "swapped_operands",
+  "prompt": "restockNeeds calculates negative needed quantities. Fix the subtraction order in src/inventory.js so tests pass.",
+  "expectChangedFiles": [
+    "src/inventory.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/inventory.test.js",
+    "mustPass": true
+  }
+}

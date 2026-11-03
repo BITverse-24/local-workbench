@@ -1,0 +1,14 @@
+{
+  "id": "py-pricing-exempt-check",
+  "base": "py-pricing",
+  "mutation": "inverted_condition",
+  "prompt": "is_tax_exempt inverts the tax exemption status. Fix pricing.py so tests pass.",
+  "expectChangedFiles": [
+    "pricing.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_pricing.py",
+    "mustPass": true
+  }
+}

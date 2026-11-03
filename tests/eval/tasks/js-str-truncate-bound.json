@@ -1,0 +1,14 @@
+{
+  "id": "js-str-truncate-bound",
+  "base": "js-strings",
+  "mutation": "wrong_operator",
+  "prompt": "truncate inverts the length condition and cuts short strings. Fix src/formatter.js so tests pass.",
+  "expectChangedFiles": [
+    "src/formatter.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/formatter.test.js",
+    "mustPass": true
+  }
+}

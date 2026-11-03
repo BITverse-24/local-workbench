@@ -1,0 +1,14 @@
+{
+  "id": "py-queue-complete-status",
+  "base": "py-queue",
+  "mutation": "wrong_return",
+  "prompt": "complete returns False even when task is found. Fix task_queue.py so tests pass.",
+  "expectChangedFiles": [
+    "task_queue.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_task_queue.py",
+    "mustPass": true
+  }
+}

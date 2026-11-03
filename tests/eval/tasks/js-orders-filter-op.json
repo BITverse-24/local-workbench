@@ -1,0 +1,14 @@
+{
+  "id": "js-orders-filter-op",
+  "base": "js-orders",
+  "mutation": "inverted_filter",
+  "prompt": "filterOrdersByStatus is returning the wrong orders. Fix the condition in src/orders.js so tests pass.",
+  "expectChangedFiles": [
+    "src/orders.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/orders.test.js",
+    "mustPass": true
+  }
+}

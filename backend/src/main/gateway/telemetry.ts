@@ -14,6 +14,19 @@ import { createRunDirectories, runRoot } from "../run/filesystem.js";
 
 export type InferencePurpose = "working_turn" | "delegated" | "classification";
 
+export type InferenceRole =
+  | "interpretation"
+  | "scope_judge"
+  | "file_scope_judge"
+  | "artifact_judge"
+  | "coverage_judge"
+  | "actor"
+  | "module_draft"
+  | "decision"
+  | "delivery"
+  | "status"
+  | "other";
+
 export interface ProviderUsage {
   source: "provider" | "partial" | "unavailable";
   promptTokens?: number;
@@ -26,6 +39,7 @@ export interface InferenceTelemetryRecord {
   runId: string;
   startedAt: string;
   purpose: InferencePurpose;
+  role?: InferenceRole;
   modelId: string;
   providerModel: string;
   streamed: boolean;
@@ -119,9 +133,10 @@ export interface RunTelemetrySummary {
   outcome: string;
   totalDurationMs: number | null;
   calls: { workingTurns: number; delegated: number; classification: number; total: number };
+  byRole?: Record<string, { calls: number; totalMs: number; inputTokens: number; outputTokens: number }>;
   inferenceDurationMs: number;
   tokens: { source: "provider" | "partial" | "unavailable"; prompt: number | null; completion: number | null; reasoning: number | null; reasoningShareOfCompletion: number | null };
-  perCall: Array<Pick<InferenceTelemetryRecord, "purpose" | "durationMs" | "ttftMs" | "finishReason" | "usage" | "toolCallNames">>;
+  perCall: Array<Pick<InferenceTelemetryRecord, "purpose" | "role" | "durationMs" | "ttftMs" | "finishReason" | "usage" | "toolCallNames">>;
 }
 
 export function summarizeRunTelemetry(runId: string, outcome: string): RunTelemetrySummary {
@@ -135,6 +150,15 @@ export function summarizeRunTelemetry(runId: string, outcome: string): RunTeleme
   const prompt = total("promptTokens");
   const completion = total("completionTokens");
   const reasoning = total("reasoningTokens");
+  const byRole: Record<string, { calls: number; totalMs: number; inputTokens: number; outputTokens: number }> = {};
+  for (const r of records) {
+    const roleKey = r.role ?? "other";
+    const entry = byRole[roleKey] ??= { calls: 0, totalMs: 0, inputTokens: 0, outputTokens: 0 };
+    entry.calls++;
+    entry.totalMs += r.durationMs;
+    if (typeof r.usage.promptTokens === "number") entry.inputTokens += r.usage.promptTokens;
+    if (typeof r.usage.completionTokens === "number") entry.outputTokens += r.usage.completionTokens;
+  }
   return {
     runId,
     outcome,
@@ -145,13 +169,14 @@ export function summarizeRunTelemetry(runId: string, outcome: string): RunTeleme
       classification: records.filter((r) => r.purpose === "classification").length,
       total: records.length,
     },
+    byRole,
     inferenceDurationMs: records.reduce((a, r) => a + r.durationMs, 0),
     tokens: {
       source: records.length === 0 || withUsage.length === 0 ? "unavailable" : withUsage.length === records.length && withUsage.every((r) => r.usage.source === "provider") ? "provider" : "partial",
       prompt, completion, reasoning,
       reasoningShareOfCompletion: completion !== null && reasoning !== null && completion > 0 ? reasoning / completion : null,
     },
-    perCall: records.map((r) => ({ purpose: r.purpose, durationMs: r.durationMs, ttftMs: r.ttftMs, finishReason: r.finishReason, usage: r.usage, toolCallNames: r.toolCallNames })),
+    perCall: records.map((r) => ({ purpose: r.purpose, role: r.role, durationMs: r.durationMs, ttftMs: r.ttftMs, finishReason: r.finishReason, usage: r.usage, toolCallNames: r.toolCallNames })),
   };
 }
 

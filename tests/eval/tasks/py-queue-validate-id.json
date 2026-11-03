@@ -1,0 +1,14 @@
+{
+  "id": "py-queue-validate-id",
+  "base": "py-queue",
+  "mutation": "missing_validation",
+  "prompt": "push allows empty string task_ids. Reject empty task_ids with ValueError in task_queue.py so tests pass.",
+  "expectChangedFiles": [
+    "task_queue.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_task_queue.py",
+    "mustPass": true
+  }
+}

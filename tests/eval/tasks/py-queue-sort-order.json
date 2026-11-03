@@ -1,0 +1,14 @@
+{
+  "id": "py-queue-sort-order",
+  "base": "py-queue",
+  "mutation": "inverted_order",
+  "prompt": "PriorityTaskQueue pops lowest priority tasks first. Fix sort order in task_queue.py so tests pass.",
+  "expectChangedFiles": [
+    "task_queue.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_task_queue.py",
+    "mustPass": true
+  }
+}

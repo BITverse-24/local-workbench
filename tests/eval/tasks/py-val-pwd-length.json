@@ -1,0 +1,14 @@
+{
+  "id": "py-val-pwd-length",
+  "base": "py-validator",
+  "mutation": "off_by_one",
+  "prompt": "validate_password_strength requires 12 characters instead of 8. Fix validator.py so tests pass.",
+  "expectChangedFiles": [
+    "validator.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_validator.py",
+    "mustPass": true
+  }
+}

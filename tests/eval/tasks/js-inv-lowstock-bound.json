@@ -1,0 +1,14 @@
+{
+  "id": "js-inv-lowstock-bound",
+  "base": "js-inventory",
+  "mutation": "off_by_one",
+  "prompt": "getLowStockItems misses items exactly at the threshold. Fix the comparison in src/inventory.js so tests pass.",
+  "expectChangedFiles": [
+    "src/inventory.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/inventory.test.js",
+    "mustPass": true
+  }
+}

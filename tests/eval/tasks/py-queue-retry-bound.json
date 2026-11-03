@@ -1,0 +1,14 @@
+{
+  "id": "py-queue-retry-bound",
+  "base": "py-queue",
+  "mutation": "off_by_one",
+  "prompt": "fail dead-letters tasks earlier than max_retries. Fix task_queue.py comparison so tests pass.",
+  "expectChangedFiles": [
+    "task_queue.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_task_queue.py",
+    "mustPass": true
+  }
+}
