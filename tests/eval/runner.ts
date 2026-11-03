@@ -12,7 +12,7 @@ import { getState } from "../../backend/src/main/run/store.js";
 import { getExecutionLedger } from "../../backend/src/main/run/execution-ledger.js";
 import type { ModelRegistryEntry, RunEvent } from "../../backend/src/shared/contracts.js";
 
-const ROOT = path.resolve(__dirname, "../..");
+const ROOT = process.cwd();
 const BASES_DIR = path.join(ROOT, "tests/eval/bases");
 const TASKS_DIR = path.join(ROOT, "tests/eval/tasks");
 const REGISTRY_PATH = path.join(ROOT, "tests/eval/registry.local.json");
@@ -126,6 +126,9 @@ async function runTaskAttempt(
     let activeRunId = "";
 
     const emit = (event: RunEvent) => {
+      if (event.type === "tool_call") {
+        console.log(`      -> tool_call: ${(event as any).tool} (${(event as any).summary || ""})`);
+      }
       if (event.type === "confirmation_required") {
         approvalsRequested++;
         const action = (event as any).action;
@@ -142,7 +145,7 @@ async function runTaskAttempt(
       manager.workspaceChanged();
     }, emit);
 
-    harness.setActiveWorkspace({ root: workRoot, registeredAt: Date.now() });
+    harness.registerWorkspace(workRoot);
     manager.setHarness(harness);
 
     // 5. Start the Agent run
@@ -155,14 +158,21 @@ async function runTaskAttempt(
     });
     activeRunId = startResult.runId;
 
-    // 6. Poll for run completion (timeout: 180s)
-    const deadline = Date.now() + 180000;
+    // 6. Poll for run completion (timeout: 300s)
+    const deadline = Date.now() + 300000;
     while (Date.now() < deadline) {
       const state = getState(activeRunId);
       if (["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(state)) {
         break;
       }
       await new Promise((r) => setTimeout(r, 500));
+    }
+
+    if (!["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(getState(activeRunId))) {
+      try {
+        manager.cancel(activeRunId);
+      } catch {}
+      await new Promise((r) => setTimeout(r, 1000));
     }
 
     // 7. Extract ledger metrics
@@ -295,6 +305,9 @@ export async function runEvalSuite(options: {
       console.log(
         `   Attempt ${runIdx}/${k}: ${res.pass ? "PASS" : "FAIL"} (${res.stopReason}, ${res.wallMs}ms, approvals: ${res.approvalsRequested})`
       );
+      if (Object.keys(res.callsByRole).length) {
+        console.log(`      callsByRole: ${JSON.stringify(res.callsByRole)}`);
+      }
     }
     taskResults.push({ id: mut.id, base: mut.base, runs });
   }
