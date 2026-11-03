@@ -15,9 +15,12 @@ const configuredRegistry = JSON.parse(fs.readFileSync(path.join(ROOT, "config/mo
 // The demo CLI is a local-model preflight. When onboarding has not saved a
 // registry yet, use the documented LM Studio profile; the app config itself
 // stays empty and unchanged.
+const exampleModelPath = fs.existsSync(path.join(ROOT, "config/models.v3.example.json"))
+  ? path.join(ROOT, "config/models.v3.example.json")
+  : path.join(ROOT, "config/models.v0.example.json");
 const REGISTRY = configuredRegistry.length
   ? configuredRegistry
-  : JSON.parse(fs.readFileSync(path.join(ROOT, "config/models.v0.example.json"), "utf8")).models;
+  : JSON.parse(fs.readFileSync(exampleModelPath, "utf8")).models;
 
 const EMBEDDING = {
   baseUrl: "http://127.0.0.1:1234/v1",
