@@ -213,7 +213,7 @@ function indexJsTsSymbols(filePath: string, bytes: Buffer): SymbolRange[] {
           endLine: decl.loc!.end.line,
           exported: true
         });
-        indexClassMembers(decl, className, true);
+        indexClassMembers(decl, className, false);
       } else if (decl.type === "VariableDeclaration") {
         for (const declarator of decl.declarations) {
           if (
@@ -258,15 +258,15 @@ function indexJsTsSymbols(filePath: string, bytes: Buffer): SymbolRange[] {
           endLine: decl.loc!.end.line,
           exported: true
         });
-        indexClassMembers(decl, className, true);
+        indexClassMembers(decl, className, false);
       } else if (decl.type === "ArrowFunctionExpression" || decl.type === "FunctionExpression") {
         symbols.push({
           name: "default",
           kind: "variable_function",
-          startByte: toByte(decl.start!),
-          endByte: toByte(decl.end!),
-          startLine: decl.loc!.start.line,
-          endLine: decl.loc!.end.line,
+          startByte: toByte(node.start!),
+          endByte: toByte(node.end!),
+          startLine: node.loc!.start.line,
+          endLine: node.loc!.end.line,
           exported: true
         });
       }

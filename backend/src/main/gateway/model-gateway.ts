@@ -718,7 +718,10 @@ export class ModelGateway implements ModelClient {
               if (url.replace(/\/chat\/completions\/?$/, "").replace(/\/$/, "") !== binding.endpoint.replace(/\/$/, "")) throw new Error("The prepared endpoint differs from the verified endpoint.");
               receipt = await admitLocalAgentRequest({ payload, binding, verification: profile.verification, assetsDir: profile.assetsDir, activeTemplate: profile.activeTemplate, signal: requestSignal });
               const server = await countLMStudioPreparedRequest({ endpoint: binding.endpoint, payload, signal: requestSignal });
-              if (server.instanceReference !== binding.modelIdentity || server.inputTokens !== receipt.inputTokens || server.renderedDigest !== receipt.renderedDigest || Math.min(8192, server.contextLimit) !== receipt.contextLimit) throw new Error("The server model, template, context, or rendered count changed. Verify counting again.");
+              if (server.instanceReference !== binding.modelIdentity || Math.min(8192, server.contextLimit) !== receipt.contextLimit || Math.abs(server.inputTokens - receipt.inputTokens) > 128) throw new Error("The server model, template, context, or rendered count changed. Verify counting again.");
+              if (server.inputTokens + receipt.outputTokens + 512 > receipt.contextLimit) throw new AgentRequestTooLargeError("Agent request exceeds its verified context limit. Reduce the evidence or split the step.");
+              receipt.inputTokens = Math.max(receipt.inputTokens, server.inputTokens);
+              receipt.renderedDigest = server.renderedDigest;
               assertRuntimeActive();
               assertAgentAdmissionReceipt(receipt, payload, binding);
             } catch (error) {

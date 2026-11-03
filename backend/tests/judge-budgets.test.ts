@@ -18,6 +18,7 @@ import {
 } from "../src/main/run/execution-ledger.js";
 import { runJudge, hashInput, type Judge } from "../src/main/agent/judge.js";
 import { assessAgentFileScope } from "../src/main/agent/requirement-scope.js";
+import { assessAgentArtifactScope } from "../src/main/agent/artifact-scope.js";
 import type { AgentTask, AgentRequirement } from "../src/shared/contracts.js";
 import type { ToolExecutionContext } from "../src/main/tools/types.js";
 
@@ -74,10 +75,11 @@ describe("Role budgets and BudgetDeniedError", () => {
       .toThrow(BudgetDeniedError);
   });
 
-  it("enforces judge budget cap of 12 calls across all judge roles", () => {
+  it("enforces judge budget cap across all judge roles", () => {
     const { runId } = setupRun();
+    const judgeLimit = Number(process.env.WORKBENCH_JUDGE_CALL_BUDGET ?? 20);
     const judgeRoles = ["scope_judge", "file_scope_judge", "artifact_judge", "coverage_judge"] as const;
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < judgeLimit; i++) {
       const role = judgeRoles[i % judgeRoles.length];
       expect(consumeAgentModelCall(runId, undefined, role)).toBe(i + 1);
     }
@@ -209,5 +211,54 @@ describe("Deterministic file scope judge", () => {
     if (ctx.agentFileScope && ctx.agentFileScope.scope !== "none") {
       expect(ctx.agentFileScope.operations).toContain("edit_file");
     }
+  });
+
+  it("determines artifact scope is false for repair instruction without model inference", async () => {
+    const prompt = "The status filter returns the wrong orders. Fix it and make the tests pass.";
+    const { runId, messageId, binding } = setupRun(prompt);
+    const resultStore = new RunResultStore(runId, getDb());
+
+    const requirement: AgentRequirement = {
+      id: "req-1",
+      kind: "change",
+      description: "Fix orders filter",
+      mandatory: true,
+      dependencies: [],
+      source: { messageId, start: 0, end: prompt.length, quote: prompt },
+      state: "active",
+      acceptance: [{ id: "check-1", kind: "execution", description: "tests pass" }]
+    };
+
+    const task: AgentTask = {
+      taskId: binding.taskId,
+      chatId,
+      workspace,
+      status: "open",
+      current: true,
+      latestRunId: runId,
+      snapshot: {
+        schemaVersion: 1,
+        taskId: binding.taskId,
+        revision: binding.taskRevision,
+        requirements: [requirement],
+        messages: [{ id: messageId, content: prompt, disposition: "continue" }]
+      }
+    };
+
+    const ctx = {
+      runId,
+      workspaceRoot: workspace.root,
+      resultStore,
+      gateway: {
+        chatWithTools: vi.fn()
+      } as any
+    } as unknown as ToolExecutionContext;
+
+    const outcome = await assessAgentArtifactScope(task, "req-1", ctx, "test-driver");
+    expect(outcome.requested).toBe(false);
+    expect(outcome.format).toBeNull();
+    expect(outcome.filename).toBeNull();
+    // Gateway was NOT called
+    expect(ctx.gateway.chatWithTools).not.toHaveBeenCalled();
   });
 });

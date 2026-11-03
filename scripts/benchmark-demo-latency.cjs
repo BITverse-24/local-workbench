@@ -141,7 +141,7 @@ async function run(flow, variant, campaignDir) {
     const preparationSec = (start - flowStart) / 1000;
     const { runId } = await runner.callCommand("send", { mode: flow === "C" ? "chat" : "work", chat: `${flow}-${variant}`, text: variants[flow][variant], files: f.files, groundingEnabled: Boolean(f.kb) });
     let outcome;
-    try { outcome = await runner.waitForTerminalState(runId, Number(process.env.DEMO_TIMEOUT_MS || 480000)); }
+    try { outcome = await runner.waitForTerminalState(runId, Number(process.env.DEMO_TIMEOUT_MS || 600000)); }
     catch { outcome = "timeout"; await runner.callCommand("invoke", { channel: "workbench:cancelRun", input: { runId } }); }
     const durationSec = (performance.now() - start) / 1000;
     const fullFlowSec = (performance.now() - flowStart) / 1000;

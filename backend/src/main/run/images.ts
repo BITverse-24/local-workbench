@@ -260,7 +260,8 @@ export async function openVisualDocument(raw: Buffer, extension: string): Promis
         views.push({page,location:overview?'overview':`pixels ${x},${y},${width},${height} at source resolution`,buffer:view.toBuffer('image/jpeg',{quality:0.9})});
       };
       add(0,0,size.width,size.height,true);
-      if(Math.max(size.width,size.height)>MAX_EDGE_PX)for(const y of offsets(size.height))for(const x of offsets(size.width))add(x,y,Math.min(MAX_EDGE_PX,size.width),Math.min(MAX_EDGE_PX,size.height));
+      const enableTiling = !pdf || process.env.WORKBENCH_PDF_TILING === '1';
+      if(enableTiling && Math.max(size.width,size.height)>MAX_EDGE_PX)for(const y of offsets(size.height))for(const x of offsets(size.width))add(x,y,Math.min(MAX_EDGE_PX,size.width),Math.min(MAX_EDGE_PX,size.height));
       const sizeBytes=views.reduce((sum,view)=>sum+view.buffer.length,0);
       if(sizeBytes<=16*1024*1024){
         while(sourceViewCacheBytes+sizeBytes>16*1024*1024&&sourceViewCache.size){const first=sourceViewCache.keys().next().value!;sourceViewCacheBytes-=sourceViewCache.get(first)!.reduce((sum,view)=>sum+view.buffer.length,0);sourceViewCache.delete(first);}

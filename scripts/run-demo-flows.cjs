@@ -78,6 +78,7 @@ class FlowRunner {
           ELECTRON_RUN_AS_NODE: "1",
           WORKBENCH_AGENT_V2: "true",
           WORKBENCH_AGENT_V3: "true",
+          WORKBENCH_REASONING_MODE: process.env.WORKBENCH_REASONING_MODE || "effort_none",
         },
         stdio: ["pipe", "pipe", "pipe"],
       });

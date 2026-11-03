@@ -381,7 +381,12 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
         if (/(?:^|[/\\])(?:coverage|\.pytest_cache|\.cache|__pycache__|dist|build)(?:[/\\]|$)/.test(name)) continue;
         try {
           const target = resolveSafe(work, name);
-          const expected = artifact && name.split(path.sep).join("/") === artifact.targetPath ? artifact.artifactDigest : file.hash;
+          const overlayItem = overlays?.find(o => o.path.split("/").join(path.sep) === name || o.path === name);
+          const expected = artifact && name.split(path.sep).join("/") === artifact.targetPath
+            ? artifact.artifactDigest
+            : overlayItem
+              ? overlayItem.digest
+              : file.hash;
           if (!lstatSync(target).isFile() || digest(readFileSync(target)) !== expected) { evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command changed an input file: ${name}.`; break; }
         } catch { evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command removed or replaced an input file: ${name}.`; break; }
       }

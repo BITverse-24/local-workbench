@@ -1,9 +1,10 @@
-// src/storage.js
-function sanitizeData(data) {
-  return data.filter(item => item && typeof item === 'object' && !isNaN(item.id));
+export const STORAGE_KEY = "fieldops.workOrders";
+
+export function loadWorkOrders(storage, fallback) {
+  const saved = storage.getItem(STORAGE_KEY);
+  return saved === null ? fallback : JSON.parse(saved);
 }
 
-function saveWorkOrders(orders) {
-  const sanitized = sanitizeData(orders);
-  // Save sanitized data
+export function saveWorkOrders(storage, workOrders) {
+  storage.setItem(STORAGE_KEY, JSON.stringify(workOrders));
 }

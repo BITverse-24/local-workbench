@@ -230,13 +230,15 @@ export async function bindSymbolEdit(
   }
 
   const args = symbolEditCallSchema.parse(call.arguments);
-  if (args.blocked_reason) {
+  if (args.blocked_reason && (!args.edits || args.edits.length === 0)) {
     return { blocked: args.blocked_reason };
   }
-  if (args.context_needed) {
+  if (args.context_needed && (!args.edits || args.edits.length === 0)) {
     return { contextNeeded: args.context_needed };
   }
   if (!args.edits || args.edits.length === 0) {
+    if (args.blocked_reason) return { blocked: args.blocked_reason };
+    if (args.context_needed) return { contextNeeded: args.context_needed };
     throw new Error("replace_symbol requires at least one edit, context_needed, or blocked_reason.");
   }
 
@@ -265,6 +267,10 @@ export async function bindSymbolEdit(
     } else {
       validateJsTsSymbolSource(source.path, matched, edit.new_source);
       finalNewSource = cleanSourceString(edit.new_source);
+      const oldSlice = bytes.subarray(matched.startByte, matched.endByte).toString("utf8");
+      if (!/^\s*export\b/.test(oldSlice) && /^\s*export\b/.test(finalNewSource)) {
+        finalNewSource = finalNewSource.replace(/^\s*export\s+(?:default\s+)?/, "");
+      }
     }
 
     const old = bytes.subarray(matched.startByte, matched.endByte).toString("utf8");

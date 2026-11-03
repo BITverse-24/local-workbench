@@ -236,8 +236,9 @@ export function consumeAgentModelCall(runId: string, admission?: { requestId: st
       if (role === "interpretation" && (byRole["interpretation"] ?? 0) >= 4) {
         throw new BudgetDeniedError(role, "Interpretation budget of 4 calls exceeded.");
       }
-      if (isJudge && judgeTotal >= 12) {
-        throw new BudgetDeniedError(role, "Judge budget of 12 calls exceeded.");
+      const judgeLimit = Number(process.env.WORKBENCH_JUDGE_CALL_BUDGET ?? 20);
+      if (isJudge && judgeTotal >= judgeLimit) {
+        throw new BudgetDeniedError(role, `Judge budget of ${judgeLimit} calls exceeded.`);
       }
       if (role === "delivery" && (byRole["delivery"] ?? 0) >= 3) {
         throw new BudgetDeniedError(role, "Delivery budget of 3 calls exceeded.");

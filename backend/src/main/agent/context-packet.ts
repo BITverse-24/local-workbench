@@ -94,9 +94,10 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
   // A recently requested supporting file must not precede the module that the
   // model is drafting. Keep all admitted pages, but make their roles explicit.
   if(repair)providedPages.sort((a,b)=>Number(b.path===repair.path && b.digest===repair.digest)-Number(a.path===repair.path && a.digest===repair.digest));
-  if(repair && focus?.complete && focus.sizeBytes > 0 && focus.sizeBytes <= 2000 && /\.[cm]?[jt]sx?$/i.test(repair.path) && sourcePageIsCurrent(context,focus) && observedRange(providedPages,repair.path,repair.digest,0,focus.sizeBytes))repair.completeSource=focus.content;
-  if(repair && focus?.content) {
-    const symbols = indexSymbolsSync(repair.path, Buffer.from(focus.content, "utf8"));
+  const activeFocus = (focus?.content ? focus : providedPages.find(p => p.path === repair?.path && p.digest === repair?.digest)) as AgentSourcePage | undefined;
+  if(repair && activeFocus?.complete && activeFocus.sizeBytes > 0 && activeFocus.sizeBytes <= 2000 && /\.[cm]?[jt]sx?$/i.test(repair.path) && sourcePageIsCurrent(context,activeFocus) && observedRange(providedPages,repair.path,repair.digest,0,activeFocus.sizeBytes))repair.completeSource=activeFocus.content;
+  if(repair && activeFocus?.content) {
+    const symbols = indexSymbolsSync(repair.path, Buffer.from(activeFocus.content, "utf8"));
     if(symbols.length > 0) repair.symbols = symbols.map(s => ({ name: s.name, kind: s.kind, startLine: s.startLine, endLine: s.endLine }));
   }
   const observedSources=providedPages.map(sourcePageReceipt);

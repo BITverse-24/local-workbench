@@ -136,7 +136,7 @@ export class AgentTaskRunner {
       context.agentPreservePublicInterface = preservesPublicInterface(task);
       const granted: string[] = [];
       const clearApprovals = () => { context.policyGuard!.revokeScopes(granted.splice(0)); context.agentOperationDigest = undefined; context.agentCommandApproval = undefined; context.agentArtifactScope = undefined; };
-      const authorize = async (calls: AgentToolCall[]) => {
+      const authorize = async (calls: AgentToolCall[], silent = false) => {
         for (const call of calls) {
           assertRuntimeActive();
           const commandApproval = call.name === "run_command" ? { workspaceDigest: captureCommandWorkspaceDigest(context.workspaceRoot), ...(context.agentVerification?.artifact ? {artifact:context.agentVerification.artifact} : {}) } : undefined;
@@ -146,7 +146,7 @@ export class AgentTaskRunner {
             operation: call.name, arguments: call.arguments, ...(commandApproval ? { sourceRevision: commandApproval.workspaceDigest, ...(commandApproval.artifact ? {testArtifact:commandApproval.artifact} : {}) } : {}) };
           const preview = JSON.stringify(previewData, null, 2) + (call.name === "run_command" ? `\n\n${COMMAND_FALLBACK_DISCLOSURE}` : "");
           const before = fileMutations.has(call.name) ? this.sourceVersion(context, call.arguments) : undefined;
-          if (!await input.approve(preview)) return false;
+          if (!silent && !await input.approve(preview)) return false;
           assertRuntimeActive();
           if (before !== undefined && before !== this.sourceVersion(context, call.arguments)) throw new Error("The proposed source changed while approval was pending. Read it again and request a new approval.");
           if (commandApproval && commandApproval.workspaceDigest !== captureCommandWorkspaceDigest(context.workspaceRoot)) throw new Error("The command workspace changed while approval was pending. Propose it again for the current source.");
@@ -190,7 +190,15 @@ export class AgentTaskRunner {
         // does not need to select finish or rediscover an already known test call.
         const failureStep = selectAgentFailureStep(context);
         const beforeCheck = getExecutionLedger(runId)!;
-        if (failureStep?.phase === "check_changes" && beforeCheck.agentProgress?.failure?.targets.some(target => target.role === "implementation") && !beforeCheck.verification?.userSkip) {
+        const currentManifest = captureAgentVerificationManifest(context.workspaceRoot).sha256;
+        const failureChanged = beforeCheck.agentProgress?.failure && (
+          failureStep?.phase === "check_changes" ||
+          currentManifest !== beforeCheck.agentProgress.failure.revision ||
+          beforeCheck.agentProgress.failure.targets.some(t => {
+            try { return fileDigest(readAgentSourceBytes(context.workspaceRoot, t.path)) !== t.digest; } catch { return true; }
+          })
+        );
+        if (failureChanged && beforeCheck.agentProgress?.failure?.targets.some(target => target.role === "implementation") && !beforeCheck.verification?.userSkip) {
           const checked = await verifyChanges();
           if (checked.action === "repair") continue;
           if (checked.action !== "passed") return stop("checks_unavailable", checked.detail, checked.action === "cancelled" ? "cancelled" : "partial");
@@ -209,7 +217,7 @@ export class AgentTaskRunner {
         const inspectionDelivery = verbatimPageComplete && packet.observedSource && evidenceDigest && progress?.deliveryEvidenceDigest !== evidenceDigest && pending.every(item => ["inspect", "deliver", "preserve"].includes(item.kind)) && !pending.some(item => item.acceptance.some(check => check.kind === "execution"));
         if (evidenceDigest && (inspectionDelivery || repairDelivery && progress?.deliveryEvidenceDigest !== evidenceDigest)) {
           updateAgentProgress(runId, state => { state.deliveryEvidenceDigest = evidenceDigest; });
-          const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: repairDelivery ? "The host has verified the saved repair with the listed existing tests. All appliedOperations are saved and acceptance:validate-written-code passed (baseline:project-tests records the initial pre-repair failure reproduction). Propose the requested explanation from the supplied requirements, changes, and evidence: state what was inspected, how the failing baseline tests were reproduced, the cause and applied fix in each modified module, and that the existing test suite passed while preserving the current design/public behavior and adding no dependencies. Do not request tools in this delivery step or list completed repairs/tests as unresolved. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing explanation with no Analysis or Drafting sections." : "The host has obtained source evidence. Propose the requested answer from the supplied requirements and observed content. Do not request or perform more tools in this delivery step. For verbatim_source checks, output ONLY a fenced code block (```\\n<exact content>```) containing the exact observed source content with its exact whitespace and line endings and no extra blank lines inside the fence. Do not claim complete coverage beyond the supplied evidence. The host will review every requirement separately. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing answer with no Analysis or Drafting sections." }, packet.messages[1]], [], { runId, role: "delivery", maxTokens: 1024, signal: scope.signal });
+          const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: repairDelivery ? "The host has verified the saved repair with the listed existing tests. All appliedOperations are saved and acceptance:validate-written-code passed (baseline:project-tests records the initial pre-repair failure reproduction). Propose the requested explanation from the supplied requirements, changes, and evidence: explicitly name each inspected and tested file (both source and test files), state what was inspected, how the failing baseline tests were reproduced, the cause and applied fix in each modified module, and that the existing test suite passed while preserving the current design/public behavior and adding no dependencies. Do not request tools in this delivery step or list completed repairs/tests as unresolved. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing explanation with no Analysis or Drafting sections." : "The host has obtained source evidence. Propose the requested answer from the supplied requirements and observed content. Do not request or perform more tools in this delivery step. For verbatim_source checks, output ONLY a fenced code block (```\\n<exact content>```) containing the exact observed source content with its exact whitespace and line endings and no extra blank lines inside the fence. Do not claim complete coverage beyond the supplied evidence. The host will review every requirement separately. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing answer with no Analysis or Drafting sections." }, packet.messages[1]], [], { runId, role: "delivery", maxTokens: 1024, signal: scope.signal });
           assertRuntimeActive();
           if (!answer.ok || answer.value.finishReason === "length" || answer.value.tool_calls?.length || !answer.value.content?.trim()) return stop("delivery_unavailable", answer.ok ? "The delivery proposal was incomplete or requested another action." : answer.error.message);
           const answerDigest = hash(answer.value.content);
@@ -262,7 +270,7 @@ export class AgentTaskRunner {
         assertRuntimeActive();
         if (!response.ok) {
           if (response.error.code === "agent_context_limit") {
-            const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION === "on";
+            const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION !== "off";
             if (escalationEnabled) {
               const escalation = advanceAgentEscalation(runId, "context_limit");
               if (escalation.action === "symbol_slices_only") {
@@ -287,10 +295,34 @@ export class AgentTaskRunner {
         try {
           if (response.value.finishReason === "length") throw new Error("The action was truncated. Return a complete smaller action.");
           const calls = response.value.tool_calls ?? [];
+          if (!calls.length && response.value.content) {
+            try {
+              let text = response.value.content.trim();
+              if (text.includes("</think>")) {
+                text = text.slice(text.indexOf("</think>") + 8).trim();
+              }
+              text = text.replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
+              if (text.startsWith("{") && text.endsWith("}")) {
+                const parsed = JSON.parse(text);
+                if (parsed && typeof parsed === "object") {
+                  if (Array.isArray(parsed.edits)) {
+                    calls.push({ id: randomUUID(), name: "replace_symbol", arguments: parsed });
+                  } else if (typeof parsed.name === "string" && (parsed.name === "replace_symbol" || tools.some(t => t.function.name === parsed.name))) {
+                    calls.push({ id: randomUUID(), name: parsed.name, arguments: parsed.arguments ?? parsed });
+                  } else if (tools.length === 1) {
+                    calls.push({ id: randomUUID(), name: tools[0].function.name, arguments: parsed.arguments ?? parsed });
+                  } else if (typeof parsed.content === "string") {
+                    calls.push({ id: randomUUID(), name: "draft_module", arguments: parsed });
+                  }
+                }
+              }
+            } catch {}
+          }
           if (calls.length > 1) throw new Error("Return exactly one action per turn.");
           if (!calls.length && /^\s*```(?:json)?\s*\{[\s\S]*"tool_calls"\s*:/i.test(response.value.content ?? "")) throw new Error('A Markdown example is text and cannot execute. Return one bare JSON object: {"tool_calls":[{"name":"available tool","arguments":{}}],"content":""}. No fences or prose.');
           call = calls[0] ?? { id: randomUUID(), name: "finish", arguments: { text: response.value.content ?? "" } };
-          if(call.name === "replace_symbol" && packet.repair && !packet.repair.expanded) {
+          if((call.name === "replace_symbol" || Array.isArray((call.arguments as any)?.edits)) && packet.repair && !packet.repair.expanded) {
+            if (call.name !== "replace_symbol") call = { ...call, name: "replace_symbol" };
             const currentBytes = readAgentSourceBytes(context.workspaceRoot, packet.repair.path);
             const proposal = await bindSymbolEdit(call, packet.repair, currentBytes);
             if("blocked" in proposal) {
@@ -338,7 +370,7 @@ export class AgentTaskRunner {
               const evidence=[...new Set(records.filter(record=>record.origin === "execution" && record.producer.tool !== "agent_operation_approval" || record.origin === "source_extracted" && record.producer.tool !== "read_file").map(record=>record.storage.sha256))].sort();
               const key=hash([packet.repair.focusKey,observed,evidence]);
               if (progress?.actions.some(action => action.operation === "request_context" && action.hash === key)) {
-                const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION === "on";
+                const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION !== "off";
                 if (escalationEnabled) {
                   const escalation = advanceAgentEscalation(runId, "repeated_context_request");
                   if (escalation.action === "supply_neighbor_symbols") {
@@ -370,7 +402,7 @@ export class AgentTaskRunner {
           }
         } catch (error) {
           context.resultStore.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_rejected_response", callId: randomUUID() }, summary: "Rejected action format; no operation executed", payload: { response: response.value.content ?? "", toolCalls: response.value.tool_calls ?? [], reason: String(error) }, sources: [] });
-          const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION === "on";
+          const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION !== "off";
           if (escalationEnabled) {
             const escalation = advanceAgentEscalation(runId, "malformed_action");
             if (escalation.action === "correction" && takeAgentProtocolCorrection(runId)) {
@@ -396,7 +428,7 @@ export class AgentTaskRunner {
           ? hash([call.name,call.arguments,captureCommandWorkspaceDigest(context.workspaceRoot),agentTestEnvironmentKey(context.workspaceRoot)])
           : hash([call.name, call.arguments, this.sourceVersion(context, call.arguments), progress?.latestResultId ? context.resultStore!.getResult(progress.latestResultId).storage.sha256 : null]);
         if (progress?.actions.some(item => item.hash === repeated)) {
-          const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION === "on";
+          const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION !== "off";
           if (escalationEnabled && call.name !== "finish") {
             const escalation = advanceAgentEscalation(runId, "repeated_action");
             if (escalation.action === "expand_context") {
@@ -511,7 +543,7 @@ export class AgentTaskRunner {
                 overlay: [overlay],
                 expectedRevision,
                 shadow: true,
-                authorize
+                authorize: (calls) => authorize(calls, true)
               });
 
               if (shadow.action === "repair") {
@@ -538,8 +570,22 @@ export class AgentTaskRunner {
                         signal: scope.signal
                       }
                     );
-                    if (!altResponse.ok || !altResponse.value.tool_calls?.length) continue;
-                    const altCall = altResponse.value.tool_calls[0];
+                    const altCalls = altResponse.ok ? [...(altResponse.value.tool_calls ?? [])] : [];
+                    if (!altCalls.length && altResponse.ok && altResponse.value.content) {
+                      try {
+                        let text = altResponse.value.content.trim();
+                        if (text.includes("</think>")) text = text.slice(text.indexOf("</think>") + 8).trim();
+                        text = text.replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
+                        if (text.startsWith("{") && text.endsWith("}")) {
+                          const parsed = JSON.parse(text);
+                          if (Array.isArray(parsed?.edits)) {
+                            altCalls.push({ id: randomUUID(), name: "replace_symbol", arguments: parsed });
+                          }
+                        }
+                      } catch {}
+                    }
+                    if (!altCalls.length) continue;
+                    const altCall = altCalls[0];
                     if (altCall.name !== "replace_symbol") continue;
                     try {
                       const altBytes = readAgentSourceBytes(context.workspaceRoot, canonical);
@@ -569,7 +615,7 @@ export class AgentTaskRunner {
                         overlay: [altOverlay],
                         expectedRevision: altExpectedRevision,
                         shadow: true,
-                        authorize
+                        authorize: (calls) => authorize(calls, true)
                       });
                       if (altShadow.action === "passed" || altShadow.action === "skipped") {
                         passedCandidate = { ...altBound.call, id: randomUUID() };
@@ -590,7 +636,6 @@ export class AgentTaskRunner {
                     if (selectedDraftId && state.repairDraft?.resultId === selectedDraftId) delete state.repairDraft;
                     state.feedback = `Shadow test verification failed in isolated copy:\n${shadow.detail.slice(0, 5000)}`;
                   });
-                  await obtainAgentFailureSources(context, dispatcher, shadow.sourceHints);
                   continue;
                 }
               }
