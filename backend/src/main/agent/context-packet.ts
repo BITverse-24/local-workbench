@@ -7,7 +7,8 @@ import { getExecutionLedger } from "../run/execution-ledger.js";
 import { z } from "zod";
 import { CAPABILITY_GROUPS } from "../tools/capabilities.js";
 import { loadAgentSourcePage, selectAgentSourcePages, sliceAgentSourcePage, sourcePageIsCurrent, sourcePageReceipt, selectAgentFailureStep, type AgentSourcePage } from "./source-evidence.js";
-import { AGENT_MODULE_REPAIR_INSTRUCTIONS, AGENT_REPAIR_INSTRUCTIONS, type AgentRepairSource } from "./repair-proposal.js";
+import { AGENT_MODULE_REPAIR_INSTRUCTIONS, AGENT_REPAIR_INSTRUCTIONS, AGENT_SYMBOL_REPAIR_INSTRUCTIONS, type AgentRepairSource } from "./repair-proposal.js";
+import { indexSymbolsSync } from "./symbol-index.js";
 import { canonicalSourcePath } from "./workspace-actions.js";
 import { fileDigest, observedRange, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 
@@ -94,6 +95,10 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
   // model is drafting. Keep all admitted pages, but make their roles explicit.
   if(repair)providedPages.sort((a,b)=>Number(b.path===repair.path && b.digest===repair.digest)-Number(a.path===repair.path && a.digest===repair.digest));
   if(repair && focus?.complete && focus.sizeBytes > 0 && focus.sizeBytes <= 2000 && /\.[cm]?[jt]sx?$/i.test(repair.path) && sourcePageIsCurrent(context,focus) && observedRange(providedPages,repair.path,repair.digest,0,focus.sizeBytes))repair.completeSource=focus.content;
+  if(repair && focus?.content) {
+    const symbols = indexSymbolsSync(repair.path, Buffer.from(focus.content, "utf8"));
+    if(symbols.length > 0) repair.symbols = symbols.map(s => ({ name: s.name, kind: s.kind, startLine: s.startLine, endLine: s.endLine }));
+  }
   const observedSources=providedPages.map(sourcePageReceipt);
   const source = task.snapshot.messages.find(message => message.id === requirement.source.messageId);
   const directory = [...(progress?.actions ?? [])].reverse().find(action=>action.operation === "list_dir" && action.status === "completed" && action.resultId);
@@ -191,10 +196,14 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
       availableCapabilities:context.envelope?.permittedCapabilities.map(capability=>({name:capability,tools:CAPABILITY_GROUPS[capability].tools})),
       toolView:repair.expanded ? "Full registered tools for one action; normal approvals still apply." : repair.completeSource !== undefined ? "A separate decision after the saved draft can request the full registered tools for one action." : "Use propose_repair to request the full registered tool view for one action.",
     };
-    const moduleStep=repair.completeSource !== undefined && !repair.expanded;
-    const packetState=moduleStep ? {taskId:state.taskId,taskRevision:state.taskRevision,currentStep:state.currentStep,currentRequirement:state.currentRequirement,constraints:state.constraints,unresolvedRequirementIds:state.unresolvedRequirementIds,obligations:focused.obligations,selectedSources:focused.selectedSources,latestResult:focused.latestResult,checkEvidence:state.checkEvidence,feedback:state.feedback,contextRule:"The next decision can request registered tools for one action; no capability or requirement is removed."} : focused;
+    const editMode = process.env.WORKBENCH_AGENT_EDIT_MODE ?? "auto";
+    const symbolStep = (editMode === "symbol" || (editMode === "auto" && Boolean(repair.symbols?.length))) && !repair.expanded;
+    const moduleStep = !symbolStep && repair.completeSource !== undefined && !repair.expanded;
+    const packetState = symbolStep
+      ? { taskId: state.taskId, taskRevision: state.taskRevision, currentStep: state.currentStep, currentRequirement: state.currentRequirement, constraints: state.constraints, unresolvedRequirementIds: state.unresolvedRequirementIds, obligations: focused.obligations, selectedSources: focused.selectedSources, latestResult: focused.latestResult, checkEvidence: state.checkEvidence, feedback: state.feedback, targetSymbols: repair.symbols, contextRule: "Provide replacement code for only the failing or modified symbol(s) via replace_symbol." }
+      : moduleStep ? {taskId:state.taskId,taskRevision:state.taskRevision,currentStep:state.currentStep,currentRequirement:state.currentRequirement,constraints:state.constraints,unresolvedRequirementIds:state.unresolvedRequirementIds,obligations:focused.obligations,selectedSources:focused.selectedSources,latestResult:focused.latestResult,checkEvidence:state.checkEvidence,feedback:state.feedback,contextRule:"The next decision can request registered tools for one action; no capability or requirement is removed."} : focused;
     const literal=providedPages.map(page=>`\n\nOBSERVED SOURCE ${page.path}\nRole: ${page.path === repair.path && page.digest === repair.digest ? "CURRENT REPAIR TARGET" : "SUPPORTING CONTEXT; do not replace the target with this file"}\nDigest: ${page.digest}; bytes ${page.startByte}-${page.endByte} of ${page.sizeBytes}; complete file: ${page.complete}; result: ${page.resultId}\n<source>\n${page.content}\n</source>`).join("");
-    messages=[{role:"system",content:repair.expanded ? AGENT_COMMON_INSTRUCTIONS : moduleStep ? AGENT_MODULE_REPAIR_INSTRUCTIONS : AGENT_REPAIR_INSTRUCTIONS},{role:"user",content:JSON.stringify(packetState)+literal}];
+    messages=[{role:"system",content:repair.expanded ? AGENT_COMMON_INSTRUCTIONS : symbolStep ? AGENT_SYMBOL_REPAIR_INSTRUCTIONS : moduleStep ? AGENT_MODULE_REPAIR_INSTRUCTIONS : AGENT_REPAIR_INSTRUCTIONS},{role:"user",content:JSON.stringify(packetState)+literal}];
   }
   return {messages,observedSource,observedSources,requirement,readPaths,repair};
 }

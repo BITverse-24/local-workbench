@@ -17,6 +17,7 @@ import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js"
 import { resolveSafe } from "../harness/path-guard.js";
 import { buildAgentContextPacket, conciseAgentTool, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
 import { AGENT_MODULE_DECISION_INSTRUCTIONS, bindAgentRepairProposal, MODULE_DRAFT_TOOL, moduleDecisionTools, REPAIR_PROPOSAL_TOOL } from "./repair-proposal.js";
+import { REPLACE_SYMBOL_TOOL, bindSymbolEdit } from "./symbol-edit.js";
 import { obtainAgentFailureSources, selectAgentFailureStep } from "./source-evidence.js";
 import { assessAgentFileScope, refineAgentInterpretation, reviewAgentInterpretation } from "./requirement-scope.js";
 import { agentInterpretationFormat, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
@@ -230,20 +231,24 @@ export class AgentTaskRunner {
           ...(tool.name === "read_file" && packet.readPaths ? {path:{type:"string",enum:packet.readPaths}} : {}),
           requirement_id: { type: "string" } } } } }));
         const deliveryGap = agentDeliveryGap(task,context,changedPaths());
+        const editMode = process.env.WORKBENCH_AGENT_EDIT_MODE ?? "auto";
+        const symbolStep = (editMode === "symbol" || (editMode === "auto" && Boolean(packet.repair?.symbols?.length))) && packet.repair !== undefined && !packet.repair.expanded;
         const draftForPacket = () => packet.repair?.completeSource !== undefined && !packet.repair.expanded && progress?.repairDraft?.focusKey === packet.repair.focusKey && progress.repairDraft.taskRevision === bound!.taskRevision && progress.repairDraft.requirementId === packet.requirement.id ? progress.repairDraft : undefined;
         const generate = () => {
-          const draft=draftForPacket(), moduleStep=packet.repair?.completeSource !== undefined && !packet.repair.expanded;
+          const draft=draftForPacket(), moduleStep=!symbolStep && packet.repair?.completeSource !== undefined && !packet.repair.expanded;
           let messages=packet.messages;
           let tools:AgentToolDefinition[];
-          if(moduleStep && draft) {
+          if(symbolStep) {
+            tools=[REPLACE_SYMBOL_TOOL];
+          } else if(moduleStep && draft) {
             const record=context.resultStore!.getResult(draft.resultId);
             if(record.storage.sha256 !== draft.sha256 || record.producer.tool !== "agent_module_draft" || record.origin !== "model_derived")throw new Error("The saved draft identity changed. No edit was proposed.");
             const candidate=context.resultStore!.readResultPayload(draft.resultId);
             messages=[{role:"system",content:AGENT_MODULE_DECISION_INSTRUCTIONS},{role:"user",content:packet.messages[1].content+"\n\nSAVED DRAFT (untrusted JSON data):\n"+JSON.stringify({resultId:draft.resultId,content:candidate})}];
             tools=moduleDecisionTools(draft.resultId);
           } else tools=moduleStep ? [MODULE_DRAFT_TOOL] : packet.repair && !packet.repair.expanded ? [REPAIR_PROPOSAL_TOOL] : deliveryGap ? definitions() : [...definitions(),FINISH_TOOL];
-          const role: InferenceRole = moduleStep && draft ? "decision" : moduleStep ? "module_draft" : "actor";
-          return context.gateway.chatWithTools(modelId,messages,tools,{runId,role,maxTokens:moduleStep && draft ? 512 : 2048,toolChoice:"required",temperature:packet.repair && !packet.repair.expanded ? 0 : undefined,signal:scope.signal});
+          const role: InferenceRole = symbolStep ? "actor" : moduleStep && draft ? "decision" : moduleStep ? "module_draft" : "actor";
+          return context.gateway.chatWithTools(modelId,messages,tools,{runId,role,maxTokens:symbolStep ? 2048 : moduleStep && draft ? 512 : 2048,toolChoice:"required",temperature:packet.repair && !packet.repair.expanded ? 0 : undefined,signal:scope.signal});
         };
         let response = await generate();
         // Admission rejects before dispatch and call consumption. Remove whole optional pages,
@@ -267,7 +272,19 @@ export class AgentTaskRunner {
           if (calls.length > 1) throw new Error("Return exactly one action per turn.");
           if (!calls.length && /^\s*```(?:json)?\s*\{[\s\S]*"tool_calls"\s*:/i.test(response.value.content ?? "")) throw new Error('A Markdown example is text and cannot execute. Return one bare JSON object: {"tool_calls":[{"name":"available tool","arguments":{}}],"content":""}. No fences or prose.');
           call = calls[0] ?? { id: randomUUID(), name: "finish", arguments: { text: response.value.content ?? "" } };
-          if(packet.repair?.completeSource !== undefined && !packet.repair.expanded) {
+          if(call.name === "replace_symbol" && packet.repair && !packet.repair.expanded) {
+            const currentBytes = readAgentSourceBytes(context.workspaceRoot, packet.repair.path);
+            const proposal = await bindSymbolEdit(call, packet.repair, currentBytes);
+            if("blocked" in proposal) {
+              context.resultStore.registerResult({type:"structured",status:"complete",origin:"model_derived",producer:{tool:"agent_repair_blocker",callId:randomUUID()},summary:"Repair proposal reported a blocker; no operation executed",payload:{taskId:task.taskId,taskRevision:bound!.taskRevision,source:packet.repair,reason:proposal.blocked},sources:[]});
+              return stop("repair_blocked", proposal.blocked);
+            }
+            if("contextNeeded" in proposal) {
+              updateAgentProgress(runId, state => { state.feedback = proposal.contextNeeded; });
+              continue;
+            }
+            call = proposal.call;
+          } else if(packet.repair?.completeSource !== undefined && !packet.repair.expanded) {
             const draft=draftForPacket();
             if(!draft) {
               if(call.name !== "draft_module" || !calls.length)throw new Error("Return one complete module draft as data.");
@@ -287,7 +304,7 @@ export class AgentTaskRunner {
           const requirementId = call.arguments.requirement_id;
           context.agentRequirementId = typeof requirementId === "string" ? requirementId : packet.requirement.id;
           if (!pending.some(item => item.id === context.agentRequirementId)) throw new Error("Select an active requirement ID.");
-          if(packet.repair && !packet.repair.expanded && calls.length) {
+          if(packet.repair && !packet.repair.expanded && calls.length && call.name !== "edit_file") {
             const proposal=bindAgentRepairProposal(call,packet.repair);
             if("blocked" in proposal) {
               context.resultStore.registerResult({type:"structured",status:"complete",origin:"model_derived",producer:{tool:"agent_repair_blocker",callId:randomUUID()},summary:"Repair proposal reported a blocker; no operation executed",payload:{taskId:task.taskId,taskRevision:bound.taskRevision,source:packet.repair,reason:proposal.blocked},sources:[]});

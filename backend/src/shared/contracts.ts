@@ -527,6 +527,7 @@ export interface FunctionToolParameterProperty {
   additionalProperties?: boolean;
   format?: "multiline";
   minItems?: number;
+  maxItems?: number;
   type: string;
   description?: string;
   enum?: readonly string[] | string[];
