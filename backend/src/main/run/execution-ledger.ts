@@ -196,11 +196,42 @@ function agentLedger(runId: string): RunExecutionLedger & { agentTask: NonNullab
   return ledger as RunExecutionLedger & { agentTask: NonNullable<RunExecutionLedger["agentTask"]> };
 }
 
+export class BudgetDeniedError extends Error {
+  readonly role: InferenceRole;
+  constructor(role: InferenceRole, reason: string) {
+    super(reason);
+    this.name = "BudgetDeniedError";
+    this.role = role;
+  }
+}
+
 /** Consume immediately before every generation dispatch, including fallback and resume. */
 export function consumeAgentModelCall(runId: string, admission?: { requestId: string; receipt: AgentAdmissionReceipt | AgentVisionAdmissionReceipt }, role?: InferenceRole): number {
   return getDb().transaction(() => {
     const ledger = agentLedger(runId);
     if (ledger.agentTask.modelCalls >= 40) throw new Error("Agent reached its 40 model-call limit for this run.");
+
+    const enforceBudgets = (process.env.WORKBENCH_AGENT_CALL_BUDGETS ?? "on") !== "off";
+    if (enforceBudgets && role) {
+      const byRole = ledger.agentTask.callsByRole ?? {};
+      const isJudge = ["scope_judge", "file_scope_judge", "artifact_judge", "coverage_judge"].includes(role);
+      const judgeTotal = ["scope_judge", "file_scope_judge", "artifact_judge", "coverage_judge"].reduce((acc, r) => acc + (byRole[r] ?? 0), 0);
+
+      if (role === "interpretation" && (byRole["interpretation"] ?? 0) >= 4) {
+        throw new BudgetDeniedError(role, "Interpretation budget of 4 calls exceeded.");
+      }
+      if (isJudge && judgeTotal >= 12) {
+        throw new BudgetDeniedError(role, "Judge budget of 12 calls exceeded.");
+      }
+      if (role === "delivery" && (byRole["delivery"] ?? 0) >= 3) {
+        throw new BudgetDeniedError(role, "Delivery budget of 3 calls exceeded.");
+      }
+      const remainingTotal = 40 - ledger.agentTask.modelCalls;
+      if (role !== "actor" && role !== "module_draft" && remainingTotal <= 16) {
+        throw new BudgetDeniedError(role, `Model calls reserved for actor (${remainingTotal} remaining).`);
+      }
+    }
+
     ledger.agentTask.modelCalls++;
     if (role) {
       ledger.agentTask.callsByRole ??= {};

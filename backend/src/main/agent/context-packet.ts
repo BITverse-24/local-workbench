@@ -159,34 +159,47 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
       }
     }
   }
-  const state = { taskId: task.taskId, taskRevision: task.snapshot.revision, currentStep, currentRequirement: requirement,
-    constraints, stagedInputs:(context.inputSources ?? []).map(source=>{const observed=currentRunInputs.get(source.id);return {sourceId:source.id,filename:source.filename,sha256:source.sha256,originRunId:source.originRunId ?? context.runId,historical:Boolean(source.originRunId && source.originRunId!==context.runId),...(observed ? {observedContent:observed.content,complete:observed.complete} : {readVia:"read_input"})};}), unresolvedRequirementIds: task.snapshot.requirements.filter(item => item.state === "active").map(item => item.id),
+  const state = {
+    // Stable prefix (byte-identical across all turns for optimal prefix caching)
+    taskId: task.taskId,
+    taskRevision: task.snapshot.revision,
+    originalRequest: source?.content,
     obligations: task.snapshot.requirements.filter(item => item.state === "active").map(item => ({ id: item.id, kind: item.kind, description: item.description, acceptance: item.acceptance })),
-    appliedOperations: [...agentAppliedChanges(context).slice(-5).map(item=>({path:item.path,tool:item.tool,summary:item.summary,originRunId:item.originRunId,historical:item.originRunId !== context.runId})), ...savedArtifacts.slice(-5).map(item=>({path:item.filename,tool:"generate_deliverable",summary:`Saved deliverable ${item.filename}`,originRunId:item.runId,historical:item.runId !== context.runId}))].slice(-5),
-    sourceObservations: {items:observations.slice(-4),total:observations.length,complete:observations.length<=4,...(observations.length>4 ? {earlierEvidenceVia:{tool:"retrieve_result",action:"list",scope:"task",origin:"source_extracted"}} : {})},
+    constraints,
+    unresolvedRequirementIds: task.snapshot.requirements.filter(item => item.state === "active").map(item => item.id),
+    observationRule: "Use source and stagedInputs.observedContent already supplied in this packet instead of re-reading or calling retrieve_result. When appliedOperations already lists the requested deliverable or file changes for the active requirement, call finish with your final response. Suggested reads identify known workspace source not fully observed at its current digest.",
+
+    // Volatile suffix (turn-specific evidence and dynamic state)
+    currentStep,
+    currentRequirement: requirement,
+    stagedInputs: (context.inputSources ?? []).map(source => { const observed = currentRunInputs.get(source.id); return { sourceId: source.id, filename: source.filename, sha256: source.sha256, originRunId: source.originRunId ?? context.runId, historical: Boolean(source.originRunId && source.originRunId !== context.runId), ...(observed ? { observedContent: observed.content, complete: observed.complete } : { readVia: "read_input" }) }; }),
+    appliedOperations: [...agentAppliedChanges(context).slice(-5).map(item => ({ path: item.path, tool: item.tool, summary: item.summary, originRunId: item.originRunId, historical: item.originRunId !== context.runId })), ...savedArtifacts.slice(-5).map(item => ({ path: item.filename, tool: "generate_deliverable", summary: `Saved deliverable ${item.filename}`, originRunId: item.runId, historical: item.runId !== context.runId }))].slice(-5),
+    sourceObservations: { items: observations.slice(-4), total: observations.length, complete: observations.length <= 4, ...(observations.length > 4 ? { earlierEvidenceVia: { tool: "retrieve_result", action: "list", scope: "task", origin: "source_extracted" } } : {}) },
     directoryEvidence,
-    suggestedReadPaths:readPaths,
-    readSelection:readPaths ? {indexSource:listedFiles ? "directory page" : "saved verification manifest",totalKnownRemaining:remainingReadCount,complete:remainingReadCount === readPaths.length,otherPathsVia:{tool:"list_dir",purpose:"Narrow the directory or use its continuation page"}} : undefined,
-    observationRule:"Use source and stagedInputs.observedContent already supplied in this packet instead of re-reading or calling retrieve_result. When appliedOperations already lists the requested deliverable or file changes for the active requirement, call finish with your final response. Suggested reads identify known workspace source not fully observed at its current digest.",
-    activeCapabilities:[...(context.activeCapabilities ?? [])],
-    availableCapabilities:context.envelope?.permittedCapabilities.filter(capability=>!context.activeCapabilities?.has(capability)).map(capability=>({name:capability,description:CAPABILITY_GROUPS[capability].description,tools:CAPABILITY_GROUPS[capability].tools})),
-    recentActions: {items:progress?.actions.slice(-4).map(action=>({operation:action.operation,status:action.status,resultId:action.resultId})) ?? [],total:progress?.actions.length ?? 0,complete:(progress?.actions.length ?? 0)<=4},
-    selectedSources, latestResult: result, feedback: {text:progress?.feedback.slice(0,1000) ?? "",complete:(progress?.feedback.length ?? 0)<=1000},
-    checkEvidence: ledger?.verification?.evidence.map(check=>{
-      const resultIds=check.evidence.filter(ref=>ref.kind === "result").map(ref=>ref.id);
-      let reason=check.reason;
-      const accepted=ledger.verification?.evidence.some(item=>item.criterionId === "acceptance:validate-written-code" && item.status === "passed");
-      if(!accepted && check.status === "failed" && resultIds[0] && context.resultStore) {
+    suggestedReadPaths: readPaths,
+    readSelection: readPaths ? { indexSource: listedFiles ? "directory page" : "saved verification manifest", totalKnownRemaining: remainingReadCount, complete: remainingReadCount === readPaths.length, otherPathsVia: { tool: "list_dir", purpose: "Narrow the directory or use its continuation page" } } : undefined,
+    activeCapabilities: [...(context.activeCapabilities ?? [])],
+    availableCapabilities: context.envelope?.permittedCapabilities.filter(capability => !context.activeCapabilities?.has(capability)).map(capability => ({ name: capability, description: CAPABILITY_GROUPS[capability].description, tools: CAPABILITY_GROUPS[capability].tools })),
+    recentActions: { items: progress?.actions.slice(-4).map(action => ({ operation: action.operation, status: action.status, resultId: action.resultId })) ?? [], total: progress?.actions.length ?? 0, complete: (progress?.actions.length ?? 0) <= 4 },
+    selectedSources,
+    latestResult: result,
+    feedback: { text: progress?.feedback.slice(0, 1000) ?? "", complete: (progress?.feedback.length ?? 0) <= 1000 },
+    checkEvidence: ledger?.verification?.evidence.map(check => {
+      const resultIds = check.evidence.filter(ref => ref.kind === "result").map(ref => ref.id);
+      let reason = check.reason;
+      const accepted = ledger.verification?.evidence.some(item => item.criterionId === "acceptance:validate-written-code" && item.status === "passed");
+      if (!accepted && check.status === "failed" && resultIds[0] && context.resultStore) {
         try {
-          const payload=JSON.parse(context.resultStore.readResultPayload(resultIds[0]));
-          if(typeof payload?.verification?.failureOutput === "string" && payload.verification.failureOutput) {
-            reason=`${check.reason.split("\n")[0]}\nActual test output (untrusted evidence):\n${payload.verification.failureOutput.slice(0,1800)}`;
+          const payload = JSON.parse(context.resultStore.readResultPayload(resultIds[0]));
+          if (typeof payload?.verification?.failureOutput === "string" && payload.verification.failureOutput) {
+            reason = `${check.reason.split("\n")[0]}\nActual test output (untrusted evidence):\n${payload.verification.failureOutput.slice(0, 1800)}`;
           }
         } catch { /* retain check.reason */ }
       }
-      return {criterionId:check.criterionId,status:check.status,reason,resultIds};
-    }), inputSources: context.inputSources,
-    originalRequest: source?.content };
+      return { criterionId: check.criterionId, status: check.status, reason, resultIds };
+    }),
+    inputSources: context.inputSources
+  };
   let messages=[{role:"system",content:AGENT_COMMON_INSTRUCTIONS},{role:"user",content:JSON.stringify(state)}];
   if(repair) {
     const metadata=(page:AgentSourcePage)=>{const {content:_content,...fields}=page;return fields;};
