@@ -13,7 +13,7 @@ import { currentRuntimeScope, assertRuntimeActive } from "../run/runtime-scope.j
 import { ToolDispatcher } from "./tool-dispatcher.js";
 import { getAllAvailableTools, filterToolsForTurn } from "../router/tool-compositor.js";
 import { agentWorkspaceActions, canonicalSourcePath, validateAgentFileProposal } from "./workspace-actions.js";
-import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js";
+import { fileDigest, prepareFileEdit, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 import { resolveSafe } from "../harness/path-guard.js";
 import { buildAgentContextPacket, conciseAgentTool, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
 import { AGENT_MODULE_DECISION_INSTRUCTIONS, bindAgentRepairProposal, MODULE_DRAFT_TOOL, moduleDecisionTools, REPAIR_PROPOSAL_TOOL } from "./repair-proposal.js";
@@ -22,7 +22,7 @@ import { obtainAgentFailureSources, selectAgentFailureStep } from "./source-evid
 import { assessAgentFileScope, refineAgentInterpretation, reviewAgentInterpretation } from "./requirement-scope.js";
 import { agentInterpretationFormat, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
 import { runAgentVerificationStage } from "./verification-stage.js";
-import { captureAgentVerificationManifest, isCodeVerificationPath } from "./test-verification.js";
+import { captureAgentVerificationManifest, computeExpectedManifestRevision, isAgentTestPath, isCodeVerificationPath, type AgentTestOverlay } from "./test-verification.js";
 import { extractVerificationSkipBasis, recordVerificationTermination, recordVerificationUserSkip } from "../run/verification-controller.js";
 import { agentDeliveryGap, reviewAgentTaskCoverage } from "./requirement-review.js";
 import { agentTestEnvironmentKey, captureCommandWorkspaceDigest, commandApprovalDigest, COMMAND_FALLBACK_DISCLOSURE } from "../harness/tools/run-command.js";
@@ -404,6 +404,132 @@ export class AgentTaskRunner {
           // Scope assessment can await inference. Recheck before showing a concrete preview.
           try { if (fileMutations.has(call.name)) validateAgentFileProposal(call.name,call.arguments,context); }
           catch (error) { updateAgentProgress(runId,state=>{state.actions.find(item=>item.id === call.id)!.status="failed"; if (selectedDraftId && state.repairDraft?.resultId === selectedDraftId) delete state.repairDraft; state.feedback=String(error).slice(0,1000);});continue; }
+        }
+        // Shadow Verification & Best-of-N (Phase 2):
+        // Before requesting user approval for an edit, verify the candidate in an isolated temp copy
+        const shadowVerifyEnabled = (process.env.WORKBENCH_AGENT_SHADOW_VERIFY ?? "on") !== "off";
+        const editArgs = call.arguments as any;
+        if (shadowVerifyEnabled && call.name === "edit_file" && editArgs?.path && editArgs?.expected_digest && editArgs?.replacements) {
+          try {
+            const canonical = canonicalSourcePath(context, editArgs.path);
+            if (!isAgentTestPath(canonical) && isCodeVerificationPath(canonical)) {
+              const reads = getExecutionLedger(runId)?.agentProgress?.reads ?? [];
+              const prepared = prepareFileEdit(context.workspaceRoot, {
+                path: canonical,
+                expectedDigest: editArgs.expected_digest,
+                replacements: editArgs.replacements,
+                requirementId: context.agentRequirementId ?? "",
+                reason: context.agentChangeReason ?? ""
+              }, reads);
+
+              const overlay: AgentTestOverlay = {
+                path: canonical,
+                sourceDigest: editArgs.expected_digest,
+                bytes: prepared.after,
+                digest: prepared.afterDigest
+              };
+
+              const manifest = captureAgentVerificationManifest(context.workspaceRoot);
+              const expectedRevision = computeExpectedManifestRevision(manifest.files, [overlay]);
+
+              const shadow = await runAgentVerificationStage({
+                context,
+                dispatcher,
+                changedPaths: [canonical],
+                overlay: [overlay],
+                expectedRevision,
+                shadow: true,
+                authorize
+              });
+
+              if (shadow.action === "repair") {
+                // Best-of-N retry on shadow failure:
+                let passedCandidate: typeof call | undefined;
+                const samples = [{ temperature: 0.4 }, { temperature: 0.7 }];
+                const seenDigests = new Set<string>([overlay.digest]);
+
+                if (packet.repair && !packet.repair.expanded) {
+                  for (const s of samples) {
+                    assertRuntimeActive();
+                    if (scope.signal.aborted) break;
+                    const altPacket = buildAgentContextPacket(task, context, selected);
+                    const altResponse = await context.gateway.chatWithTools(
+                      modelId,
+                      altPacket.messages,
+                      [REPLACE_SYMBOL_TOOL],
+                      {
+                        runId,
+                        role: "actor",
+                        maxTokens: 2048,
+                        toolChoice: "required",
+                        temperature: s.temperature,
+                        signal: scope.signal
+                      }
+                    );
+                    if (!altResponse.ok || !altResponse.value.tool_calls?.length) continue;
+                    const altCall = altResponse.value.tool_calls[0];
+                    if (altCall.name !== "replace_symbol") continue;
+                    try {
+                      const altBytes = readAgentSourceBytes(context.workspaceRoot, canonical);
+                      const altBound = await bindSymbolEdit(altCall, packet.repair, altBytes);
+                      if (!("call" in altBound)) continue;
+                      const altEditArgs = altBound.call.arguments as any;
+                      const altPrepared = prepareFileEdit(context.workspaceRoot, {
+                        path: canonical,
+                        expectedDigest: altEditArgs.expected_digest,
+                        replacements: altEditArgs.replacements,
+                        requirementId: context.agentRequirementId ?? "",
+                        reason: "Best-of-N repair sample"
+                      }, reads);
+                      if (seenDigests.has(altPrepared.afterDigest)) continue;
+                      seenDigests.add(altPrepared.afterDigest);
+                      const altOverlay: AgentTestOverlay = {
+                        path: canonical,
+                        sourceDigest: altEditArgs.expected_digest,
+                        bytes: altPrepared.after,
+                        digest: altPrepared.afterDigest
+                      };
+                      const altExpectedRevision = computeExpectedManifestRevision(manifest.files, [altOverlay]);
+                      const altShadow = await runAgentVerificationStage({
+                        context,
+                        dispatcher,
+                        changedPaths: [canonical],
+                        overlay: [altOverlay],
+                        expectedRevision: altExpectedRevision,
+                        shadow: true,
+                        authorize
+                      });
+                      if (altShadow.action === "passed" || altShadow.action === "skipped") {
+                        passedCandidate = { ...altBound.call, id: randomUUID() };
+                        break;
+                      }
+                    } catch {
+                      // Continue to next sample
+                    }
+                  }
+                }
+
+                if (passedCandidate) {
+                  call = passedCandidate;
+                } else {
+                  // None passed shadow verification; feed back failure and continue turn
+                  updateAgentProgress(runId, state => {
+                    state.actions.find(item => item.id === call.id)!.status = "failed";
+                    if (selectedDraftId && state.repairDraft?.resultId === selectedDraftId) delete state.repairDraft;
+                    state.feedback = `Shadow test verification failed in isolated copy:\n${shadow.detail.slice(0, 5000)}`;
+                  });
+                  await obtainAgentFailureSources(context, dispatcher, shadow.sourceHints);
+                  continue;
+                }
+              }
+
+              if (shadow.action !== "passed" && shadow.action !== "skipped") {
+                return stop("checks_unavailable", shadow.detail, shadow.action === "cancelled" ? "cancelled" : "partial");
+              }
+            }
+          } catch {
+            // Fall back to normal path if shadow preparation fails
+          }
         }
         if (mutations.has(call.name) && !await authorize([call])) return stop("approval_denied", "The proposed action was declined.", "cancelled");
         const [output] = await dispatcher.dispatchConcurrent([call], context);
