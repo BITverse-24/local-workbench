@@ -79,8 +79,8 @@ Evaluated against `qwen/qwen3.5-9b` hosted on LM Studio:
 ## Configuration & Environment Flags
 
 - `WORKBENCH_AGENT_EXEC`:
-  - `off` (default): Native tool calling for all observe steps.
-  - `observe`: Enables Code Mode in the observe step.
+  - `observe` (default): Enables Code Mode in the observe step.
+  - `off`: Disables Code Mode, reverting to sequential native tool schemas.
 - `WORKBENCH_AGENT_EXEC_TRANSPORT`:
   - `toolcall` (default): Emits single `exec` tool call with JSON schema.
   - `fenced`: Emits fenced ` ```ts ` code block without tool schemas.
