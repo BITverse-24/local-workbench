@@ -23,6 +23,8 @@ import { retrieveResultTool } from "../backend/src/main/tools/result-retrieval.j
 import { MutationPolicyGuard } from "../backend/src/main/harness/policy-guard.js";
 import { captureCommandWorkspaceDigest, commandApprovalDigest, getCommandCapability, runCommand } from "../backend/src/main/harness/tools/run-command.js";
 import { createAgentVerificationRequest, discoverAgentTestPlans } from "../backend/src/main/agent/test-verification.js";
+import { runSandboxedScript } from "../backend/src/main/agent/exec/sandbox.js";
+import { createReadFacade } from "../backend/src/main/agent/exec/facade.js";
 
 async function smoke() {
   const root = mkdtempSync(path.join(os.tmpdir(), "workbench-package-smoke-"));
@@ -51,6 +53,21 @@ async function smoke() {
       assert.equal(retrieved.result.ok, true, retrieved.result.output);
       assert.ok(retrieved.result.output.includes(source.trim()));
       assert.equal(resultStore.verifyIntegrity(id).valid, true);
+
+      // Verify Code Mode read-only QuickJS WASM sandbox execution in packaged environment
+      const facade = createReadFacade(dispatcher, context, {
+        parentExecId: "smoke-exec",
+        requirementId: "smoke-req",
+      });
+      const execResult = await runSandboxedScript(
+        `const file = await readFile("source.md"); text(file.content.toUpperCase());`,
+        facade,
+        { timeoutMs: 5000 },
+      );
+      assert.equal(execResult.ok, true, execResult.error?.message);
+      assert.ok(execResult.output.includes("A REAL FILE READ FROM THE PACKAGED AGENT BACKEND"));
+      assert.equal(execResult.calledText, true);
+
       const capabilities = await getCommandCapability();
       assert.notEqual(capabilities.status, "unavailable", capabilities.message);
       // Force the macOS fallback as well. Linux uses its actual host capability.

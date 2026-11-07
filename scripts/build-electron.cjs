@@ -16,7 +16,16 @@ const shared = {
   platform: "node",
   target: "node18",
   logLevel: "info",
-  external: ["electron", "better-sqlite3", "canvas", "@huggingface/transformers", "pdfjs-dist", "pdfjs-dist/*"],
+  external: [
+    "electron",
+    "better-sqlite3",
+    "canvas",
+    "@huggingface/transformers",
+    "pdfjs-dist",
+    "pdfjs-dist/*",
+    "quickjs-emscripten",
+    "@jitl/*",
+  ],
 };
 
 function build() {
