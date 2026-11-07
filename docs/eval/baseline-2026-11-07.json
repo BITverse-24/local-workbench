@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "timestamp": "2026-11-07T10:32:30.392Z",
+  "tier": "smoke",
+  "k": 1,
+  "model": "qwen/qwen3.5-9b",
+  "stats": {
+    "totalTasks": 8,
+    "totalRuns": 8,
+    "passedRuns": 7,
+    "passRate": 87.5
+  },
+  "tasks": [
+    {
+      "id": "js-orders-filter-op",
+      "base": "js-orders",
+      "runs": [
+        {
+          "taskId": "js-orders-filter-op",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "requirements_satisfied",
+          "wallMs": 143677,
+          "callsByRole": {
+            "actor": 1,
+            "delivery": 1,
+            "coverage_judge": 1,
+            "scope_judge": 2
+          },
+          "finishReasons": {},
+          "approvalsRequested": 3,
+          "changedFiles": [
+            "src/orders.js"
+          ],
+          "oracleOutput": "✔ filterOrdersByStatus filters correctly (0.56875ms)\n✔ calculateOrderTotal sums item prices times quantities (0.058583ms)\n✔ applyDiscount calculates percentage discounts properly (0.048209ms)\n✔ isEligibleForFreeShipping checks threshold boundary (0.043958ms)\n✔ findOrderById returns order or null (0.558625ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 66.098209\n"
+        }
+      ]
+    },
+    {
+      "id": "js-calc-mean-sum",
+      "base": "js-calculator",
+      "runs": [
+        {
+          "taskId": "js-calc-mean-sum",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "requirements_satisfied",
+          "wallMs": 148179,
+          "callsByRole": {
+            "actor": 1,
+            "delivery": 1,
+            "coverage_judge": 1,
+            "scope_judge": 2
+          },
+          "finishReasons": {},
+          "approvalsRequested": 3,
+          "changedFiles": [
+            "src/math.js"
+          ],
+          "oracleOutput": "✔ calculateMean computes average correctly (0.590834ms)\n✔ calculateMedian handles odd and even arrays (0.076792ms)\n✔ clamp keeps values within bounds (0.048791ms)\n✔ standardDeviation computes population std dev (0.074875ms)\n✔ factorial computes products (0.050333ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 68.486333\n"
+        }
+      ]
+    },
+    {
+      "id": "js-inv-lowstock-bound",
+      "base": "js-inventory",
+      "runs": [
+        {
+          "taskId": "js-inv-lowstock-bound",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "requirements_satisfied",
+          "wallMs": 127618,
+          "callsByRole": {
+            "actor": 1,
+            "delivery": 1,
+            "coverage_judge": 1,
+            "scope_judge": 2
+          },
+          "finishReasons": {},
+          "approvalsRequested": 3,
+          "changedFiles": [
+            "src/inventory.js"
+          ],
+          "oracleOutput": "✔ getLowStockItems returns items below or at threshold (0.596917ms)\n✔ adjustStock updates quantity or throws on negative (0.17975ms)\n✔ totalInventoryValue calculates aggregate cost (0.05625ms)\n✔ categorizeInventory groups by category (0.059291ms)\n✔ restockNeeds computes quantity deficits (0.593666ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 67.712958\n"
+        }
+      ]
+    },
+    {
+      "id": "js-str-slug-lower",
+      "base": "js-strings",
+      "runs": [
+        {
+          "taskId": "js-str-slug-lower",
+          "runIndex": 1,
+          "pass": false,
+          "stopReason": "malformed_action",
+          "wallMs": 154725,
+          "callsByRole": {
+            "actor": 3
+          },
+          "finishReasons": {},
+          "approvalsRequested": 1,
+          "changedFiles": [],
+          "oracleOutput": "✖ toSlug creates URL-friendly slugs (1.181459ms)\n✔ truncate shortens long strings with suffix (0.109625ms)\n✔ camelToKebab converts casing (0.063083ms)\n✔ capitalizeWords capitalizes each word (0.061875ms)\n✔ renderTemplate substitutes variables (0.070333ms)\nℹ tests 5\nℹ suites 0\nℹ pass 4\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 71.991791\n\n✖ failing tests:\n\ntest at test/formatter.test.js:11:1\n✖ toSlug creates URL-friendly slugs (1.181459ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  + actual - expected\n  \n  + 'Hello-World-2026'\n  - 'hello-world-2026'\n  \n      at TestContext.<anonymous> (file:///private/var/folders/03/5w29bdms4js64v94yn0p_myh0000gn/T/eval-work-js-str-slug-lower-1-dM551j/test/formatter.test.js:12:10)\n      at Test.runInAsyncScope (node:async_hooks:228:14)\n      at Test.run (node:internal/test_runner/test:1118:25)\n      at Test.start (node:internal/test_runner/test:1015:17)\n      at startSubtestAfterBootstrap (node:internal/test"
+        }
+      ]
+    },
+    {
+      "id": "py-pricing-subtotal-math",
+      "base": "py-pricing",
+      "runs": [
+        {
+          "taskId": "py-pricing-subtotal-math",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "cancelled",
+          "wallMs": 301613,
+          "callsByRole": {
+            "actor": 5
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "pricing.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "py-val-email-regex",
+      "base": "py-validator",
+      "runs": [
+        {
+          "taskId": "py-val-email-regex",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "cancelled",
+          "wallMs": 301198,
+          "callsByRole": {
+            "actor": 7
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "validator.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "py-stats-ma-window",
+      "base": "py-stats",
+      "runs": [
+        {
+          "taskId": "py-stats-ma-window",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "cancelled",
+          "wallMs": 301442,
+          "callsByRole": {
+            "actor": 5
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "stats.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "py-queue-sort-order",
+      "base": "py-queue",
+      "runs": [
+        {
+          "taskId": "py-queue-sort-order",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "cancelled",
+          "wallMs": 301217,
+          "callsByRole": {
+            "actor": 8
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "task_queue.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    }
+  ]
+}
