@@ -33,6 +33,8 @@ import { bindTaskInputs } from "./task-inputs.js";
 import { agentArtifactOutcomes } from "./artifact-evidence.js";
 import { bindArtifactTests } from "./artifact-test-plan.js";
 import { preservesPublicInterface } from "./export-preservation.js";
+import { defaultExecObserveState, nextObserveState } from "./exec/exec-policy.js";
+import { runExecTurn } from "./exec/exec-step.js";
 import type { InferenceRole } from "../gateway/telemetry.js";
 
 type RunnerInput = { context: ToolExecutionContext; modelId: string; chatId: string; messageId: string; workspace: AgentTask["workspace"]; intent?: "continue" | "new"; predecessorRunId?: string;
@@ -242,9 +244,41 @@ export class AgentTaskRunner {
         const editMode = process.env.WORKBENCH_AGENT_EDIT_MODE ?? "auto";
         const symbolStep = (editMode === "symbol" || (editMode === "auto" && Boolean(packet.repair?.symbols?.length))) && packet.repair !== undefined && !packet.repair.expanded;
         const draftForPacket = () => packet.repair?.completeSource !== undefined && !packet.repair.expanded && progress?.repairDraft?.focusKey === packet.repair.focusKey && progress.repairDraft.taskRevision === bound!.taskRevision && progress.repairDraft.requirementId === packet.requirement.id ? progress.repairDraft : undefined;
+        const moduleStep = !symbolStep && packet.repair?.completeSource !== undefined && !packet.repair.expanded;
+
+        const execEnabled = (process.env.WORKBENCH_AGENT_EXEC ?? "off") === "observe";
+        const observeState = progress?.observe ?? defaultExecObserveState(execEnabled ? "exec" : "native");
+        if (execEnabled && !symbolStep && !moduleStep && (!packet.repair || packet.repair.expanded) && observeState.mode === "exec") {
+          const execTurn = await runExecTurn({
+            task,
+            context,
+            packet,
+            modelId,
+            dispatcher,
+            scope,
+            state: observeState,
+          });
+          assertRuntimeActive();
+          const nextState = nextObserveState(observeState, execTurn.outcome);
+          updateAgentProgress(runId, state => {
+            state.observe = nextState;
+            if (execTurn.feedback) state.feedback = execTurn.feedback;
+            if (execTurn.resultId) state.latestResultId = execTurn.resultId;
+            state.actions.push({
+              id: execTurn.parentExecId,
+              hash: hash(["exec", execTurn.parentExecId]),
+              requirementId: packet.requirement.id,
+              operation: "exec",
+              status: execTurn.outcome.ok ? "completed" : "failed",
+              resultId: execTurn.resultId,
+            });
+          });
+          continue;
+        }
+
         let activeTools: AgentToolDefinition[] = [];
         const generate = () => {
-          const draft=draftForPacket(), moduleStep=!symbolStep && packet.repair?.completeSource !== undefined && !packet.repair.expanded;
+          const draft=draftForPacket();
           let messages=packet.messages;
           let tools:AgentToolDefinition[];
           if(symbolStep) {

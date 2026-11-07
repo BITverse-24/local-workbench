@@ -144,6 +144,12 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
   const constraints = required.filter(item => item.kind === "preserve");
   const checks = ledger.verification?.evidence.map(check => ({ criterionId: check.criterionId, status: check.status, ...(check.criterionId === "baseline:project-tests" && check.status === "failed" ? { baselineFailuresReproduced: true } : {}), revision: check.revision, reason: check.reason, evidence: check.evidence })) ?? [];
   for (const requirement of required) {
+    if (requirement.kind === "preserve" && changed.length === 0 && !ledger.operationAttempts.some(op => op.mutating)) {
+      const reviewed = { id: requirement.id, satisfied: true, reason: "Workspace remained unchanged as required." };
+      context.resultStore!.registerResult({ type: "structured", status: "complete", origin: "execution", producer: { tool: "agent_requirement_review", callId: randomUUID() }, summary: "Deterministic preserve constraint assessment; host verified zero workspace modifications", payload: { taskId: task.taskId, taskRevision: task.snapshot.revision, covered: true, missing: [], requirements: [reviewed] }, sources: [] });
+      reviewedRequirements.push(reviewed);
+      continue;
+    }
     const requiredFiles=requiredArtifacts.get(requirement.id);
     let partReview:Awaited<ReturnType<typeof reviewArtifactParts>>|undefined;
     if(requiredFiles?.length && requiredFiles.every(artifact=>artifact.text.length>1800)) {

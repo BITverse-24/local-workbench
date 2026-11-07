@@ -54,6 +54,7 @@
     "jsonschema": "1.5.0",
     "jszip": "^3.10.2",
     "pdfjs-dist": "^6.3.289",
+    "quickjs-emscripten": "0.32.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "saxes": "^6.0.0",
