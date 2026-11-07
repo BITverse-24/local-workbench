@@ -8,6 +8,7 @@ import {
   retrieveKnowledgeTool,
   executePythonTool,
   generateDeliverableTool,
+  workExecTool,
 } from "../tools/specialist-tools.js";
 import {
   requestCapabilityTool,
@@ -35,6 +36,7 @@ export function getAllAvailableTools(_driverModelId: ModelId, _isSingleModel = t
     ...workspaceTools,
     executePythonTool,
     generateDeliverableTool,
+    workExecTool,
     retrieveResultTool,
     retrieveKnowledgeTool,
     extractDocumentTool,

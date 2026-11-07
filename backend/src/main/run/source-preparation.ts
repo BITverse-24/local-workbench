@@ -60,7 +60,10 @@ export async function prepareSources(attachments: AttachmentReference[], text: s
     context.sourceReferences??=[];context.sourceReferences.push(...pages.map(page=>({filename:attachment.filename,page})));
     const budget=Math.max(1000,Math.floor(limit/Math.max(attachments.length,1)));
     if(context.resultStore){context.resultStore.registerResult({type:'document',status:'complete',origin:'source_extracted',producer:{tool:'extract_document',callId:key},summary:`Read ${attachment.filename}`,payload:{sourceText:content},sources:[{filename:attachment.filename,page:1,relation:'source'}]});}
-    parts.push(`--- ATTACHED FILE: ${attachment.filename} ---\nSource ID: ${attachment.attachmentId}\n${selectExcerpts(content,text,budget)}\n--- END ATTACHED FILE: ${attachment.filename} ---`);
+    const tableNote = ['csv', 'xlsx'].includes(ext)
+      ? `[TABULAR DATA: "${attachment.filename}" contains structured records. To query, filter, or aggregate this full table without truncation or token limits, call work_exec with await readTable("${attachment.filename}") or getTableSchema("${attachment.filename}")]\n`
+      : '';
+    parts.push(`--- ATTACHED FILE: ${attachment.filename} ---\nSource ID: ${attachment.attachmentId}\n${tableNote}${selectExcerpts(content,text,budget)}\n--- END ATTACHED FILE: ${attachment.filename} ---`);
   }
   currentRuntimeScope()?.signal.throwIfAborted();
   return parts.join('\n\n');

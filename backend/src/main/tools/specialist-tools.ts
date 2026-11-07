@@ -28,6 +28,7 @@ import type {
 } from "../../shared/contracts.js";
 import { extractDocxText, extractPdfText } from "./document-reader.js";
 import { extractSvgText } from "../run/images.js";
+import { workExecTool } from "../run/work-exec/work-exec-tool.js";
 
 function inferArtifactKind(filename: string): ArtifactKind {
   const ext = path.extname(filename).toLowerCase();
@@ -960,6 +961,8 @@ function observeGeneration(tool: AgentTool, stage: "repair_generation" | "draft_
   }) };
 }
 
+export { workExecTool };
+
 export const specialistTools: AgentTool[] = [
   extractDocumentTool,
   generateCodeTool,
@@ -967,4 +970,5 @@ export const specialistTools: AgentTool[] = [
   retrieveKnowledgeTool,
   executePythonTool,
   generateDeliverableTool,
+  workExecTool,
 ];
