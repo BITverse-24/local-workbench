@@ -16,12 +16,14 @@ let tier = "smoke";
 let k = 1;
 let model = "qwen/qwen3.5-9b";
 let output = null;
+let taskId = null;
 
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--tier" && argv[i + 1]) tier = argv[++i];
   else if (argv[i] === "--k" && argv[i + 1]) k = parseInt(argv[++i], 10);
   else if (argv[i] === "--model" && argv[i + 1]) model = argv[++i];
   else if (argv[i] === "--output" && argv[i + 1]) output = argv[++i];
+  else if (argv[i] === "--task" && argv[i + 1]) taskId = argv[++i];
 }
 
 console.log(`Bundling eval runner (${ENTRY_TS} -> ${OUT_CJS})...`);
@@ -45,7 +47,8 @@ runEvalSuite({
   tier: ${JSON.stringify(tier)},
   k: ${k},
   modelId: ${JSON.stringify(model)},
-  outputFile: ${JSON.stringify(output)}
+  outputFile: ${JSON.stringify(output)},
+  taskId: ${JSON.stringify(taskId)}
 }).catch(err => {
   console.error("Eval suite failed:", err);
   process.exit(1);

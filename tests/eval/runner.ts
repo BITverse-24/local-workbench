@@ -24,7 +24,7 @@ interface TaskSpec {
   prompt: string;
   expectChangedFiles: string[];
   preserveExports: boolean;
-  oracle: {
+  oracle: string | {
     command: string;
     mustPass: boolean;
   };
@@ -196,13 +196,16 @@ async function runTaskAttempt(
     }
 
     let oraclePassed = false;
+    const oracleCmd = typeof task.oracle === "string" ? task.oracle : task.oracle.command;
     try {
-      const out = execSync(task.oracle.command, { cwd: workRoot, stdio: "pipe" });
+      const out = execSync(oracleCmd, { cwd: workRoot, stdio: "pipe" });
       oraclePassed = true;
       oracleOutput = out.toString();
     } catch (err: any) {
       oraclePassed = false;
-      oracleOutput = (err.stdout?.toString() || "") + "\n" + (err.stderr?.toString() || "");
+      const stdout = err.stdout?.toString() || "";
+      const stderr = err.stderr?.toString() || "";
+      oracleOutput = (stdout + "\n" + stderr).trim() || String(err?.message || err);
     }
 
     // Check scope: only expectChangedFiles changed
@@ -245,8 +248,9 @@ export async function runEvalSuite(options: {
   k: number;
   modelId: string;
   outputFile?: string;
+  taskId?: string;
 }) {
-  const { tier, k, modelId } = options;
+  const { tier, k, modelId, taskId } = options;
   console.log(`\n=======================================================`);
   console.log(`AGENT EVAL SUITE — Tier: ${tier.toUpperCase()} (k=${k}, model: ${modelId})`);
   console.log(`=======================================================`);
@@ -263,7 +267,12 @@ export async function runEvalSuite(options: {
   const allMutations = JSON.parse(readFileSync(manifestPath, "utf8")) as MutationManifestItem[];
 
   let selectedMutations: MutationManifestItem[] = [];
-  if (tier === "smoke") {
+  if (taskId) {
+    selectedMutations = allMutations.filter((m) => m.id === taskId);
+    if (selectedMutations.length === 0) {
+      throw new Error(`Task ID "${taskId}" not found in manifest.`);
+    }
+  } else if (tier === "smoke") {
     // 8 tasks: 1 from each base repo
     const seenBases = new Set<string>();
     for (const m of allMutations) {
