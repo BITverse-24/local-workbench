@@ -177,7 +177,7 @@ async function runTaskAttempt(
 
     // 7. Extract ledger metrics
     const ledger = getExecutionLedger(activeRunId);
-    stopReason = ledger?.termination?.stopReason || getState(activeRunId) || "timeout";
+    stopReason = ledger?.agentProgress?.stopReason || getState(activeRunId) || "timeout";
     if (ledger?.agentTask?.callsByRole) {
       Object.assign(callsByRole, ledger.agentTask.callsByRole);
     }

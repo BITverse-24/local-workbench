@@ -78,6 +78,7 @@ export interface ExecTurnResult {
   observation?: string;
   code?: string;
   parentExecId: string;
+  resultId?: string;
 }
 
 export async function runExecTurn(input: ExecTurnInput): Promise<ExecTurnResult> {

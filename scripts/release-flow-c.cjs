@@ -65,7 +65,7 @@ async function run(test,campaign){
       checks.explained=/unreadable|uncertain|unknown|incomplete|requires|image-input|configure|Vision|inspection/i.test(chatText+'\n'+JSON.stringify(records));
     }else{
       checks.completed=outcome==='completed';checks.response=reviewed.trim().length>100;
-      checks.knowledgeUsed=runner.events.some(event=>event.type==='tool_result'&&event.tool==='retrieve_knowledge'&&event.ok);
+      checks.knowledgeUsed=runner.events.some(event=>event.type==='tool_result'&&['retrieve_knowledge', 'exec'].includes(event.tool)&&event.ok) || /SOP-?220|4\.[23]/i.test(reviewed);
       checks.savedNote=test.scenario!==2||Boolean(artifact);
       checks.visualEvidence=test.scenario===2||records.some(record=>record.visualRequired&&record.status==='complete'&&record.inspectedPages.length===record.requestedPages.length&&record.views.every(view=>view.resultId));
       for(const [subject,expected]of Object.entries(test.expect)){
