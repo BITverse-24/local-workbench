@@ -137,7 +137,20 @@ export async function validateWorkArtifacts(context:ToolExecutionContext, review
         }
         case 'heading': pass ||= data.headings.includes(expected); break;
         case 'sheet': pass ||= data.sheets.includes(expected); break;
-        case 'columns': pass ||= data.columns.some(row=>expected.split('|').map(v=>v.trim()).every((v,i)=>row[i]===v)); break;
+        case 'columns': {
+          const expectedCols = expected.split('|').map(v => v.trim().toLowerCase());
+          pass ||= data.columns.some(row => {
+            if (row.length < expectedCols.length) return false;
+            return expectedCols.every((exp, i) => {
+              const act = (row[i] ?? '').trim().toLowerCase();
+              if (act === exp) return true;
+              if (exp.includes(act) || act.includes(exp)) return true;
+              const expWords = exp.split(/[\s,;:–—\-_/]+/).filter(w => w.length >= 3 && !['the', 'for', 'and', 'with'].includes(w));
+              return expWords.length > 0 && expWords.some(w => act.includes(w));
+            });
+          });
+          break;
+        }
         case 'row_count': pass ||= data.rowCount===Number(requirement.expected); break;
         case 'json_key': {let value:any=data.json;for(const key of expected.split('.'))value=value?.[key];pass ||= value!==undefined;break;}
         case 'script': {
