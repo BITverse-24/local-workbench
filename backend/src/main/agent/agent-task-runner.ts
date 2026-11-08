@@ -246,9 +246,10 @@ export class AgentTaskRunner {
         const draftForPacket = () => packet.repair?.completeSource !== undefined && !packet.repair.expanded && progress?.repairDraft?.focusKey === packet.repair.focusKey && progress.repairDraft.taskRevision === bound!.taskRevision && progress.repairDraft.requirementId === packet.requirement.id ? progress.repairDraft : undefined;
         const moduleStep = !symbolStep && packet.repair?.completeSource !== undefined && !packet.repair.expanded;
 
-        const execEnabled = (process.env.WORKBENCH_AGENT_EXEC ?? "observe") === "observe";
+        const execEnv = (process.env.WORKBENCH_AGENT_EXEC ?? "observe").toLowerCase();
+        const execEnabled = !["off", "false", "0", "disabled"].includes(execEnv);
         const observeState = progress?.observe ?? defaultExecObserveState(execEnabled ? "exec" : "native");
-        if (execEnabled && !symbolStep && !moduleStep && (!packet.repair || packet.repair.expanded) && observeState.mode === "exec") {
+        if (execEnabled && !symbolStep && !moduleStep && observeState.mode === "exec") {
           const execTurn = await runExecTurn({
             task,
             context,
