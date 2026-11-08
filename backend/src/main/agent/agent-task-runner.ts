@@ -18,7 +18,7 @@ import { resolveSafe } from "../harness/path-guard.js";
 import { buildAgentContextPacket, conciseAgentTool, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
 import { estimateMessageTokens } from "./context-manager.js";
 import { AGENT_MODULE_DECISION_INSTRUCTIONS, bindAgentRepairProposal, MODULE_DRAFT_TOOL, moduleDecisionTools, REPAIR_PROPOSAL_TOOL } from "./repair-proposal.js";
-import { REPLACE_SYMBOL_TOOL, bindSymbolEdit } from "./symbol-edit.js";
+import { REPLACE_SYMBOL_TOOL, bindSymbolEdit, parseJsonWithEscapedCode } from "./symbol-edit.js";
 import { obtainAgentFailureSources, selectAgentFailureStep } from "./source-evidence.js";
 import { assessAgentFileScope, refineAgentInterpretation, reviewAgentInterpretation } from "./requirement-scope.js";
 import { agentInterpretationFormat, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
@@ -401,7 +401,13 @@ export class AgentTaskRunner {
           if (calls.length > 1) throw new Error("Return exactly one action per turn.");
           if (!calls.length && /^\s*```(?:json)?\s*\{[\s\S]*"tool_calls"\s*:/i.test(response.value.content ?? "")) throw new Error('A Markdown example is text and cannot execute. Return one bare JSON object: {"tool_calls":[{"name":"available tool","arguments":{}}],"content":""}. No fences or prose.');
           call = calls[0] ?? { id: randomUUID(), name: "finish", arguments: { text: response.value.content ?? "" } };
-          if((call.name === "replace_symbol" || Array.isArray((call.arguments as any)?.edits)) && packet.repair && !packet.repair.expanded) {
+          if (call.arguments && typeof (call.arguments as any).edits === "string") {
+            const parsed = parseJsonWithEscapedCode((call.arguments as any).edits);
+            if (Array.isArray(parsed)) {
+              (call.arguments as any).edits = parsed;
+            }
+          }
+          if((call.name === "replace_symbol" || Array.isArray((call.arguments as any)?.edits) || typeof (call.arguments as any)?.edits === "string") && packet.repair && !packet.repair.expanded) {
             if (call.name !== "replace_symbol") call = { ...call, name: "replace_symbol" };
             const currentBytes = readAgentSourceBytes(context.workspaceRoot, packet.repair.path);
             const proposal = await bindSymbolEdit(call, packet.repair, currentBytes);

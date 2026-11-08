@@ -55,6 +55,48 @@ export class OrderManager {
     expect(args.replacements[0].new).toBe("function calculateTax(amount, rate) {\n  return amount * (rate + 0.01);\n}");
   });
 
+  it("unwraps stringified JSON edits array seamlessly", async () => {
+    const call: AgentToolCall = {
+      id: "call-str-1",
+      name: "replace_symbol",
+      arguments: {
+        edits: JSON.stringify([
+          {
+            symbol: "calculateTax",
+            new_source: "function calculateTax(amount, rate) {\n  return amount * (rate + 0.05);\n}"
+          }
+        ])
+      }
+    };
+
+    const res = await bindSymbolEdit(call, jsRepairSource, jsBytes);
+    expect("call" in res).toBe(true);
+    if (!("call" in res)) return;
+
+    expect(res.call.name).toBe("edit_file");
+    const args = res.call.arguments as any;
+    expect(args.replacements[0].new).toBe("function calculateTax(amount, rate) {\n  return amount * (rate + 0.05);\n}");
+  });
+
+  it("unwraps stringified JSON edits with unescaped regex backslashes", async () => {
+    const rawEdits = '[{"symbol": "calculateTax", "new_source": "function calculateTax(amount, rate) {\\n  const pattern = /[^\\w\\\\s-]/g;\\n  return amount * (rate + 0.05);\\n}"}]';
+    const call: AgentToolCall = {
+      id: "call-str-regex",
+      name: "replace_symbol",
+      arguments: {
+        edits: rawEdits
+      }
+    };
+
+    const res = await bindSymbolEdit(call, jsRepairSource, jsBytes);
+    expect("call" in res).toBe(true);
+    if (!("call" in res)) return;
+
+    expect(res.call.name).toBe("edit_file");
+    const args = res.call.arguments as any;
+    expect(args.replacements[0].new).toContain("const pattern = /[^\\w\\s-]/g;");
+  });
+
   it("lowers valid JS class method replacement to edit_file", async () => {
     const call: AgentToolCall = {
       id: "call-2",

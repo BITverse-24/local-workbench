@@ -2,9 +2,31 @@ import type { AgentToolCall, AgentToolDefinition } from "../../shared/contracts.
 import { z } from "zod";
 import { parse } from "@babel/parser";
 import { spawnSync } from "node:child_process";
+import JSON5 from "json5";
 import { getPythonExecutable } from "../tools/python-runtime.js";
 import { indexSymbols, SymbolRange } from "./symbol-index.js";
 import type { AgentRepairSource } from "./repair-proposal.js";
+
+export function parseJsonWithEscapedCode(str: string): unknown {
+  try {
+    return JSON.parse(str);
+  } catch {
+    try {
+      const sanitized = str.replace(/\\(.)/g, (match, char) => {
+        if (['"', "\\", "/", "b", "f", "n", "r", "t"].includes(char)) return match;
+        if (char === "u") return match;
+        return "\\\\" + char;
+      });
+      return JSON.parse(sanitized);
+    } catch {
+      try {
+        return JSON5.parse(str);
+      } catch {
+        return str;
+      }
+    }
+  }
+}
 
 export const REPLACE_SYMBOL_TOOL: AgentToolDefinition = {
   type: "function",
@@ -38,10 +60,16 @@ export const REPLACE_SYMBOL_TOOL: AgentToolDefinition = {
 };
 
 const symbolEditCallSchema = z.object({
-  edits: z.array(z.object({
+  edits: z.preprocess((val) => {
+    if (typeof val === "string") {
+      const parsed = parseJsonWithEscapedCode(val);
+      return Array.isArray(parsed) ? parsed : val;
+    }
+    return val;
+  }, z.array(z.object({
     symbol: z.string().min(1),
     new_source: z.string().min(1).max(12000)
-  }).strict()).min(1).max(3).optional(),
+  }).strict()).min(1).max(3)).optional(),
   context_needed: z.string().min(1).optional(),
   blocked_reason: z.string().min(1).optional(),
   requirement_id: z.string().optional()

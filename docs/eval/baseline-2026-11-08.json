@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "timestamp": "2026-11-08T18:36:42.488Z",
+  "timestamp": "2026-11-08T20:27:17.733Z",
   "tier": "smoke",
   "k": 1,
   "model": "qwen/qwen3.5-9b",
@@ -12,15 +12,15 @@
   },
   "tasks": [
     {
-      "id": "js-orders-filter-op",
-      "base": "js-orders",
+      "id": "js-str-slug-lower",
+      "base": "js-strings",
       "runs": [
         {
-          "taskId": "js-orders-filter-op",
+          "taskId": "js-str-slug-lower",
           "runIndex": 1,
           "pass": true,
           "stopReason": "requirements_satisfied",
-          "wallMs": 136665,
+          "wallMs": 127130,
           "callsByRole": {
             "actor": 1,
             "delivery": 1,
@@ -30,9 +30,9 @@
           "finishReasons": {},
           "approvalsRequested": 3,
           "changedFiles": [
-            "src/orders.js"
+            "src/formatter.js"
           ],
-          "oracleOutput": "✔ filterOrdersByStatus filters correctly (0.548958ms)\n✔ calculateOrderTotal sums item prices times quantities (0.057167ms)\n✔ applyDiscount calculates percentage discounts properly (0.044334ms)\n✔ isEligibleForFreeShipping checks threshold boundary (0.045083ms)\n✔ findOrderById returns order or null (0.529792ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 64.330834\n"
+          "oracleOutput": "✔ toSlug creates URL-friendly slugs (0.608583ms)\n✔ truncate shortens long strings with suffix (0.056ms)\n✔ camelToKebab converts casing (0.065834ms)\n✔ capitalizeWords capitalizes each word (0.05825ms)\n✔ renderTemplate substitutes variables (0.070833ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 65.511708\n"
         }
       ]
     }

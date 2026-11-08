@@ -41,7 +41,7 @@ beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), "workbench-onboarding-test-"));
   initDb(path.join(dir, "workbench.db"));
   copyFileSync(
-    path.resolve(process.cwd(), "config", "models.v0.example.json"),
+    path.resolve(process.cwd(), "config", "models.v3.example.json"),
     path.join(dir, "models.json"),
   );
   // These tests exercise a configured fallback profile. Use an explicit test
