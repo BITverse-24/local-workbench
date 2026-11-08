@@ -10,7 +10,7 @@ export const workExecTool: AgentTool = {
     function: {
       name: "work_exec",
       description:
-        "Execute an in-memory sandboxed JavaScript script (QuickJS-WASM) to inspect, filter, query, or aggregate attached data (CSV, XLSX, JSON, DOCX), or deterministically synthesize deliverables without token limits or arithmetic errors. APIs: readTable(filename, options), readJson(filename), readText(filename), readDocument(filename), getTableSchema(filename), emitDeliverable(options), and text(output).",
+        "Execute an in-memory sandboxed JavaScript script (QuickJS-WASM) to inspect, filter, query, or aggregate attached data (CSV, XLSX, JSON, DOCX), or deterministically synthesize deliverables without token limits or arithmetic errors. APIs: readTable, readJson, readText, readDocument, getTableSchema, emitDeliverable, text(output), and built-in data helpers (parseCSV, toCSV, groupBy, sum, avg, min, max, sortBy, unique, round, lines, grep).",
       parameters: {
         type: "object",
         properties: {

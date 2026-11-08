@@ -218,4 +218,49 @@ describe("Work Mode Code Mode: WorkFacade & Sandbox", () => {
     expect(execResult?.origin).toBe("execution");
     expect(execResult?.status).toBe("complete");
   });
+
+  it("leverages preloaded analysis helpers (groupBy, sum, round, smartTruncate) in work_exec", async () => {
+    const inputDir = path.join(runRoot(runId), "input");
+    mkdirSync(inputDir, { recursive: true });
+
+    const csvContent = [
+      "item,category,qty,unit_price",
+      "Apple,Fruit,10,1.50",
+      "Banana,Fruit,25,0.80",
+      "Carrot,Vegetable,15,0.95",
+      "Broccoli,Vegetable,8,2.20"
+    ].join("\n");
+    writeFileSync(path.join(inputDir, "inventory.csv"), csvContent);
+
+    const context: ToolExecutionContext = {
+      runId,
+      workspaceRoot: runRoot(runId),
+      gateway,
+      inputSources: [
+        {
+          id: "src-inv",
+          filename: "inventory.csv",
+          relativePath: `runs/${runId}/input/inventory.csv`,
+          sha256: "0".repeat(64),
+        },
+      ],
+    };
+
+    const script = `
+      const rows = await readTable("inventory.csv");
+      const byCat = groupBy(rows, "category");
+      const fruitValue = sum(byCat["Fruit"], r => Number(r.qty) * Number(r.unit_price));
+      const vegValue = sum(byCat["Vegetable"], r => Number(r.qty) * Number(r.unit_price));
+      const total = round(fruitValue + vegValue, 2);
+      text(JSON.stringify({ fruitValue, vegValue, total }));
+    `;
+
+    const facade = createWorkFacade(context);
+    const result = await runWorkScript(script, facade);
+    expect(result.ok).toBe(true);
+    const summary = JSON.parse(result.output);
+    expect(summary.fruitValue).toBe(35); // 15 + 20
+    expect(summary.vegValue).toBe(31.85); // 14.25 + 17.6
+    expect(summary.total).toBe(66.85);
+  });
 });

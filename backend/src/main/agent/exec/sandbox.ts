@@ -2,6 +2,8 @@ import { getQuickJS, type QuickJSContext, type QuickJSDeferredPromise } from "qu
 import type { ReadFacade } from "./facade.js";
 import type { ExecOutcome } from "./exec-policy.js";
 import type { ExecutedToolOutput } from "../tool-dispatcher.js";
+import { SANDBOX_PRELUDE_CODE } from "./sandbox-prelude.js";
+import { smartTruncate } from "./smart-truncate.js";
 
 export interface SandboxedScriptOptions {
   timeoutMs?: number;
@@ -91,21 +93,15 @@ export async function runSandboxedScript(
   });
 
   try {
-    // 1. Expose text(...) function
+    // 1. Expose text(...) function with smart truncation
     const textFn = vm.newFunction("text", (valHandle) => {
-      let raw: string;
+      let dumped: unknown;
       try {
-        const dumped = vm.dump(valHandle);
-        raw = typeof dumped === "string" ? dumped : JSON.stringify(dumped, null, 2);
+        dumped = vm.dump(valHandle);
       } catch {
-        raw = "[unserializable value]";
+        dumped = "[unserializable value]";
       }
-
-      if (raw.length > maxOutputChars) {
-        const omitted = raw.length - maxOutputChars;
-        raw = `${raw.slice(0, maxOutputChars)}\n[truncated: ${omitted} chars omitted]`;
-      }
-      state.textOutput = raw;
+      state.textOutput = smartTruncate(dumped, { maxChars: maxOutputChars });
     });
     vm.setProp(vm.global, "text", textFn);
     textFn.dispose();
@@ -262,7 +258,15 @@ export async function runSandboxedScript(
     vm.setProp(vm.global, "tools", toolsObj);
     toolsObj.dispose();
 
-    // 5. Wrap script in async IIFE and execute
+    // 5. Inject built-in analysis and data prelude utilities
+    const preludeRes = vm.evalCode(SANDBOX_PRELUDE_CODE);
+    if (preludeRes.error) {
+      preludeRes.error.dispose();
+    } else {
+      preludeRes.value.dispose();
+    }
+
+    // 6. Wrap script in async IIFE and execute
     const wrappedCode = `(async () => {
 ${code}
 })().then(() => {

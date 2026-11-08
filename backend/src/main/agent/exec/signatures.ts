@@ -14,11 +14,11 @@ export function renderReadSignatures(options: RenderSignaturesOptions = {}): str
   const lines: string[] = [
     "// Read-Only Tool Execution Interface",
     "declare const tools: {",
-    "  /** Read text file (fetches complete file content by default). Returns {content, complete, digest, totalBytes} */",
-    "  readFile(path: string, options?: { startLine?: number; maxBytes?: number; cursor?: string; all?: boolean }): Promise<{ content: string; complete: boolean; nextCursor?: string; digest: string; totalBytes: number }>;",
-    "  /** Search workspace for text or regex patterns. Returns [{path, line, text}] */",
+    "  /** Read file content. Returns {content, complete, digest, totalBytes} */",
+    "  readFile(path: string, options?: { startLine?: number; maxBytes?: number; all?: boolean }): Promise<{ content: string; complete: boolean; digest: string; totalBytes: number }>;",
+    "  /** Search workspace for pattern. Returns [{path, line, text}] */",
     "  search(query: string, options?: { path?: string; maxResults?: number }): Promise<Array<{ path: string; line: number; text: string }>>;",
-    "  /** List filenames and subdirectories at workspace path. Returns string[] */",
+    "  /** List entries at workspace path. Returns string[] */",
     "  listDir(path: string, options?: { maxEntries?: number }): Promise<string[]>;"
   ];
 
@@ -55,7 +55,8 @@ export function renderReadSignatures(options: RenderSignaturesOptions = {}): str
     "/** Call text(...) once with final distilled observation (max ~1500 tokens). */",
     "declare function text(value: unknown): void;",
     "/** Escalate to native tool calling if programmatic execution is insufficient. */",
-    "declare function escalate(reason: string): never;"
+    "declare function escalate(reason: string): never;",
+    "// Helpers: parseCSV, toCSV, groupBy, sum, avg, min, max, sortBy, unique, round, lines, grep"
   );
 
   if (options.allowedPaths && options.allowedPaths.length > 0) {

@@ -1,6 +1,8 @@
 import { getQuickJS, type QuickJSContext, type QuickJSDeferredPromise } from "quickjs-emscripten";
 import type { WorkFacade } from "./work-facade.js";
 import type { ParsedFile } from "../../tools/file-worker.js";
+import { SANDBOX_PRELUDE_CODE } from "../../agent/exec/sandbox-prelude.js";
+import { smartTruncate } from "../../agent/exec/smart-truncate.js";
 
 export interface WorkSandboxOptions {
   timeoutMs?: number;
@@ -91,20 +93,15 @@ export async function runWorkScript(
   });
 
   try {
-    // 1. Expose text(...) function
+    // 1. Expose text(...) function with smart truncation
     const textFn = vm.newFunction("text", (valHandle) => {
-      let raw: string;
+      let dumped: unknown;
       try {
-        const dumped = vm.dump(valHandle);
-        raw = typeof dumped === "string" ? dumped : JSON.stringify(dumped, null, 2);
+        dumped = vm.dump(valHandle);
       } catch {
-        raw = "[unserializable value]";
+        dumped = "[unserializable value]";
       }
-      if (raw.length > maxOutputChars) {
-        const omitted = raw.length - maxOutputChars;
-        raw = `${raw.slice(0, maxOutputChars)}\n[truncated: ${omitted} chars omitted]`;
-      }
-      facade.text(raw);
+      facade.text(smartTruncate(dumped, { maxChars: maxOutputChars }));
     });
     vm.setProp(vm.global, "text", textFn);
     textFn.dispose();
@@ -189,7 +186,15 @@ export async function runWorkScript(
     registerAsyncTool("getTableSchema", (f) => facade.getTableSchema(f));
     registerAsyncTool("emitDeliverable", (o) => facade.emitDeliverable(o));
 
-    // 5. Execute script wrapped in async IIFE
+    // 5. Inject built-in analysis and data prelude utilities
+    const preludeRes = vm.evalCode(SANDBOX_PRELUDE_CODE);
+    if (preludeRes.error) {
+      preludeRes.error.dispose();
+    } else {
+      preludeRes.value.dispose();
+    }
+
+    // 6. Execute script wrapped in async IIFE
     const wrappedCode = `(async () => {
   try {
 ${code}
@@ -308,22 +313,8 @@ export async function runScriptVerification(
     vm.setProp(vm.global, "artifact", artifactHandle);
     artifactHandle.dispose();
 
-    // 2. Inject helper assertion functions directly in JavaScript
-    const helpersCode = `
-      function assert(cond, msg) {
-        if (!cond) throw new Error(msg || "Assertion failed");
-      }
-      function assertEqual(a, b, msg) {
-        if (a !== b) throw new Error((msg ? msg + ": " : "") + "Expected " + JSON.stringify(b) + ", received " + JSON.stringify(a));
-      }
-      function assertApprox(a, b, tol, msg) {
-        const t = tol !== undefined ? Number(tol) : 0.001;
-        if (Math.abs(Number(a) - Number(b)) > t) {
-          throw new Error((msg ? msg + ": " : "") + "Value " + a + " differs from " + b + " by more than tolerance " + t);
-        }
-      }
-    `;
-    const helperResult = vm.evalCode(helpersCode);
+    // 2. Inject assertion and prelude utilities into verification runtime
+    const helperResult = vm.evalCode(SANDBOX_PRELUDE_CODE);
     if (helperResult.error) {
       helperResult.error.dispose();
     } else {
