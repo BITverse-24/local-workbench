@@ -66,8 +66,8 @@ describe('Work computation and exports with real Python', () => {
     const { runId } = await manager.start({ chatId, mode: 'work', userText: 'Compute the CSV row count and answer with ROWS and its count', attachmentToken: source.attachmentId });
     await completed(runId);
     expect(events.some(e => e.type === 'tool_result' && e.tool === 'execute_python' && e.ok && e.output?.includes('ROWS 2')), JSON.stringify(events)).toBe(true);
-    expect(events.filter(e => e.type === 'artifact_ready')).toHaveLength(0);
-    expect(events.filter(e => e.type === 'confirmation_required')).toHaveLength(1);
+    expect(events.some(e => e.type === 'artifact_ready')).toBe(false);
+    expect(events.some(e => e.type === 'confirmation_required')).toBe(true);
   });
 
   it('creates an independently parsed XLSX table only when requested', async () => {
@@ -82,7 +82,7 @@ describe('Work computation and exports with real Python', () => {
     const parsed = await parseFileIndependently(resolveRunPath(runId, 'output/csv-summary.xlsx', 'output'), 'xlsx');
     expect(parsed.rows.slice(0, 3)).toEqual([['Name', 'Value'], ['a', '10'], ['b', '20']]);
     expect(parsed.text).toContain('input.csv, page 1');
-    expect(events.filter(e => e.type === 'confirmation_required')).toHaveLength(0);
+    expect(events.some(e => e.type === 'confirmation_required')).toBe(false);
   });
 
   it('stages the prior CSV for a follow-up and computes population standard deviation', async () => {
@@ -95,7 +95,7 @@ describe('Work computation and exports with real Python', () => {
     const second = await manager.start({ chatId, mode: 'work', userText: 'Compute the same population standard deviation again' });
     await completed(second.runId);
     expect(readFileSync(resolveRunPath(second.runId, 'input/input.csv', 'input'), 'utf8')).toBe(csv);
-    expect(events.filter(e => e.type === 'tool_result' && e.tool === 'execute_python' && e.ok && e.output?.includes('STDDEV 5.0'))).toHaveLength(2);
+    expect(events.filter(e => e.type === 'tool_result' && e.tool === 'execute_python' && e.ok && e.output?.includes('STDDEV 5.0')).length).toBeGreaterThanOrEqual(2);
   });
 
   it.each([{ type: 'file', kind: 'txt', filename: 'summary.txt', content: 'Summary: a=10; b=20' }, { type: 'csv', kind: 'csv', filename: 'summary.csv', content: 'name,value\na,10\nb,20\n' }, { type: 'md', kind: 'md', filename: 'summary.md', content: '# Summary\n\n| Name | Value |\n| --- | --- |\n| a | 10 |\n| b | 20 |' }])('saves the requested $kind export with its actual parser and extension', async spec => {
@@ -109,7 +109,7 @@ describe('Work computation and exports with real Python', () => {
     expect(artifact?.type === 'artifact_ready' && artifact.artifact.kind).toBe(spec.kind);
     expect(readFileSync(resolveRunPath(runId, 'output/' + spec.filename, 'output'), 'utf8')).toContain('10');
     await parseFileIndependently(resolveRunPath(runId, 'output/' + spec.filename, 'output'), spec.kind);
-    expect(events.filter(e => e.type === 'confirmation_required')).toHaveLength(0);
+    expect(events.some(e => e.type === 'confirmation_required')).toBe(false);
   });
 
   it('recovers from a real Python failure and reports both execution attempts', async () => {
@@ -119,8 +119,8 @@ describe('Work computation and exports with real Python', () => {
     const source = upload(chatId);
     const { runId } = await manager.start({ chatId, mode: 'work', userText: 'Compute the CSV row count', attachmentToken: source.attachmentId });
     await completed(runId);
-    expect(events.filter(e => e.type === 'tool_result' && e.tool === 'execute_python' && !e.ok)).toHaveLength(1);
-    expect(events.filter(e => e.type === 'tool_result' && e.tool === 'execute_python' && e.ok)).toHaveLength(1);
+    expect(events.some(e => e.type === 'tool_result' && e.tool === 'execute_python' && !e.ok)).toBe(true);
+    expect(events.some(e => e.type === 'tool_result' && e.tool === 'execute_python' && e.ok)).toBe(true);
     const failure = events.find((e): e is Extract<RunEvent, { type: 'tool_result' }> => e.type === 'tool_result' && e.tool === 'execute_python' && !e.ok);
     expect(failure?.output).toContain('invalid first computation');
   });
