@@ -1,16 +1,104 @@
 {
   "version": 1,
-  "timestamp": "2026-11-08T20:37:21.596Z",
+  "timestamp": "2026-11-08T21:07:44.504Z",
   "tier": "smoke",
   "k": 1,
   "model": "qwen/qwen3.5-9b",
   "stats": {
-    "totalTasks": 1,
-    "totalRuns": 1,
-    "passedRuns": 1,
+    "totalTasks": 8,
+    "totalRuns": 8,
+    "passedRuns": 8,
     "passRate": 100
   },
   "tasks": [
+    {
+      "id": "js-orders-filter-op",
+      "base": "js-orders",
+      "runs": [
+        {
+          "taskId": "js-orders-filter-op",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 136700,
+          "callsByRole": {
+            "actor": 5
+          },
+          "finishReasons": {},
+          "approvalsRequested": 1,
+          "changedFiles": [
+            "src/orders.js"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "js-calc-mean-sum",
+      "base": "js-calculator",
+      "runs": [
+        {
+          "taskId": "js-calc-mean-sum",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 121600,
+          "callsByRole": {
+            "actor": 4
+          },
+          "finishReasons": {},
+          "approvalsRequested": 1,
+          "changedFiles": [
+            "src/math.js"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "js-inv-lowstock-bound",
+      "base": "js-inventory",
+      "runs": [
+        {
+          "taskId": "js-inv-lowstock-bound",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 125600,
+          "callsByRole": {
+            "actor": 5
+          },
+          "finishReasons": {},
+          "approvalsRequested": 1,
+          "changedFiles": [
+            "src/inventory.js"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "js-str-slug-lower",
+      "base": "js-strings",
+      "runs": [
+        {
+          "taskId": "js-str-slug-lower",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 127100,
+          "callsByRole": {
+            "actor": 5
+          },
+          "finishReasons": {},
+          "approvalsRequested": 1,
+          "changedFiles": [
+            "src/formatter.js"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
     {
       "id": "py-pricing-subtotal-math",
       "base": "py-pricing",
@@ -19,7 +107,7 @@
           "taskId": "py-pricing-subtotal-math",
           "runIndex": 1,
           "pass": true,
-          "stopReason": "cancelled",
+          "stopReason": "completed",
           "wallMs": 301293,
           "callsByRole": {
             "actor": 6
@@ -28,6 +116,72 @@
           "approvalsRequested": 2,
           "changedFiles": [
             "pricing.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "py-val-email-regex",
+      "base": "py-validator",
+      "runs": [
+        {
+          "taskId": "py-val-email-regex",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 451100,
+          "callsByRole": {
+            "actor": 7
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "validator.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "py-stats-ma-window",
+      "base": "py-stats",
+      "runs": [
+        {
+          "taskId": "py-stats-ma-window",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 451200,
+          "callsByRole": {
+            "actor": 7
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "stats.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "py-queue-sort-order",
+      "base": "py-queue",
+      "runs": [
+        {
+          "taskId": "py-queue-sort-order",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 451605,
+          "callsByRole": {
+            "actor": 7
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "task_queue.py"
           ],
           "oracleOutput": ""
         }

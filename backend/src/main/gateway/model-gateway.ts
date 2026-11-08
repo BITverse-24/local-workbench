@@ -846,8 +846,12 @@ export class ModelGateway implements ModelClient {
           if (v3 && receipt) {
             if (response.status >= 200 && response.status < 300) {
               const usage = (() => { try { return parseProviderUsage(JSON.parse(responseBody).usage).promptTokens; } catch { return undefined; } })();
+              if (receipt.countingMethod === "vision_estimate") {
+                recordAgentAdmissionOutcome(v3.runId, dispatchId, "estimate_used", usage);
+                return { status: response.status, text: async () => responseBody };
+              }
               const isCloudTest = process.env.WORKBENCH_ALLOW_TEST_CLOUD_MODELS === "1" || !isAllowedLocalModelHost(new URL(url).hostname);
-              if (receipt.countingMethod === "vision_estimate" || isCloudTest) {
+              if (isCloudTest) {
                 recordAgentAdmissionOutcome(v3.runId, dispatchId, "usage_verified", usage);
                 return { status: response.status, text: async () => responseBody };
               }

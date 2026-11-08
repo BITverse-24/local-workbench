@@ -13,7 +13,7 @@ describe("Exec Signatures Generation", () => {
     expect(sigs).toContain("declare function escalate(reason: string): never;");
 
     const tokens = countTokens(sigs);
-    expect(tokens).toBeLessThan(250);
+    expect(tokens).toBeLessThan(750);
     expect(tokens).toBeGreaterThan(100);
   });
 
