@@ -84,3 +84,38 @@ Evaluated against `qwen/qwen3.5-9b` hosted on LM Studio:
 - `WORKBENCH_AGENT_EXEC_TRANSPORT`:
   - `toolcall` (default): Emits single `exec` tool call with JSON schema.
   - `fenced`: Emits fenced ` ```ts ` code block without tool schemas.
+
+---
+
+## Work Mode Code Mode (`work_exec`)
+
+Work Mode provides a specialized Code Mode tool, `work_exec`, enabling autonomous document computation, financial ledger audits, sensor telemetry statistical profiling, and structured file generation in isolated QuickJS sandboxes.
+
+### Key Features:
+- **`createWorkFacade`**: Bridges the QuickJS runtime with run-scoped input and output storage (`runs/<runId>/input/`, `runs/<runId>/output/`).
+- **`readTable(filename, options)`**: Ingests tabular data from CSV, TSV, or Excel spreadsheets with auto-casting and column projection.
+- **`emitDeliverable(options, content)`**: Emits verified deliverable artifacts (`.csv`, `.xlsx`, `.docx`, `.md`, `.json`, `.txt`) into run output storage, checking persisted run contract authorization.
+- **Automatic TDZ & Async Repair**: Auto-repairs temporal dead zones, variable shadowing, and un-awaited top-level async functions/IIFEs before execution.
+
+---
+
+## Route 3: Preloaded Analysis Utilities
+
+To eliminate model arithmetic hallucinations and excessive LLM token overhead during data processing, Route 3 preloads high-performance pure JavaScript data analysis routines directly into the QuickJS guest context (`backend/src/main/agent/exec/sandbox-prelude.ts`):
+
+1. **`parseCSV(text, options)` & `RowProxy`**:
+   - RFC 4180 compliant CSV parser with quoted field preservation and automatic type coercion.
+   - Wraps row objects in a dynamic `RowProxy` supporting casing-insensitive and punctuation-insensitive attribute access (`row["Actual Spend"]`, `row.actual_spend`, `row.actualSpend`).
+2. **`toCSV(records, headers)`**:
+   - High-speed array-of-objects serialization with proper delimiter escaping.
+3. **`groupBy(records, keyFn, aggregator)`**:
+   - Multi-key hierarchical grouping with method chaining (`.map()`, `.entries()`, `.values()`, `.reduce()`).
+4. **`join(leftRecords, rightRecords, keyMatcher, mergeFn)`**:
+   - Hash-based relational inner/left join supporting composite keys and outer defaults.
+5. **Statistical Suite**:
+   - `avg(values)`: Arithmetic mean.
+   - `stdDev(values, sample)`: Bessel-corrected sample standard deviation.
+   - `median(values)`: 50th percentile rank.
+   - `pctDiff(base, target)`: Percentage variance calculation.
+   - `round(value, decimals)`: Exact decimal rounding without IEEE-754 drift.
+
