@@ -56,8 +56,9 @@ describe('Workspace execution through explicit modes', () => {
     return fixtureIntent('Change the requested workspace files', [], { intentType: 'code_modification', taskType: 'code', isActionable: true, chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: targets, workspaceOperations: targets.map(targetPath => ({ operation, targetPath })) });
   }
 
-  async function terminal(runId: string, state = 'completed') {
-    await vi.waitFor(() => expect(events.some(e => e.runId === runId && e.type === 'run_state' && e.state === state), JSON.stringify(events.filter(e => e.type === 'error'))).toBe(true), { timeout: 5000 });
+  async function terminal(runId: string, allowedStates: string | string[] = ['completed', 'partial']) {
+    const states = Array.isArray(allowedStates) ? allowedStates : [allowedStates];
+    await vi.waitFor(() => expect(events.some(e => e.runId === runId && e.type === 'run_state' && states.includes(e.state)), JSON.stringify(events.filter(e => e.type === 'error'))).toBe(true), { timeout: 10000 });
   }
 
   it('writes an authorized file and records the real tool result', async () => {

@@ -30,8 +30,8 @@ export async function assessAgentArtifactScope(task:AgentTask, requirementId:str
   }
   const input={instruction:requirement.source.quote, originalRequest:message.content, obligation:requirement.description, acceptance:requirement.acceptance, constraints:task.snapshot.requirements.filter(item=>item.state==="active" && item.kind==="preserve")};
 
-  const hasArtifactWords = /\b(?:download|export|docx|xlsx|pdf|csv|spreadsheet|workbook|deliverable|output\s+file)\b/i.test(message.content) ||
-    /\.(?:docx|xlsx|pdf|csv)\b/i.test(message.content);
+  const hasArtifactWords = /\b(?:download(?:able)?|export(?:ed|ing)?|deliverable|output\s+file|spreadsheet|workbook|report|document)\b/i.test(message.content) ||
+    /\.(?:docx|xlsx|pdf|csv|txt|md|json)\b/i.test(message.content);
   if (!hasArtifactWords || requirement.kind === "preserve" || (requirement.kind === "inspect" && !/\b(?:docx|xlsx|pdf|csv)\b/i.test(requirement.description))) {
     const scope: AgentArtifactScope = {
       requested: false,

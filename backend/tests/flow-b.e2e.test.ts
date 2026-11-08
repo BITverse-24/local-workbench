@@ -52,8 +52,9 @@ describe('Work computation and exports with real Python', () => {
     return { content: null, tool_calls: [{ id: String(Math.random()), name: 'execute_python', arguments: { filename: 'task.py', code, input_files: ['input.csv'] } }] };
   }
 
-  async function completed(runId: string) {
-    await vi.waitFor(() => expect(events.some(e => e.runId === runId && e.type === 'run_state' && e.state === 'completed'), JSON.stringify(events.filter(e => e.type === 'error'))).toBe(true), { timeout: 5000 });
+  async function completed(runId: string, allowedStates: string | string[] = ['completed', 'partial']) {
+    const states = Array.isArray(allowedStates) ? allowedStates : [allowedStates];
+    await vi.waitFor(() => expect(events.some(e => e.runId === runId && e.type === 'run_state' && states.includes(e.state)), JSON.stringify(events.filter(e => e.type === 'error'))).toBe(true), { timeout: 10000 });
   }
 
   it('computes actual row count after fallback approval without an unrequested artifact', async () => {

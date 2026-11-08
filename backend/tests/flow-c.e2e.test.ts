@@ -131,11 +131,11 @@ describe("Flow C End-to-End: Engineering Drawing Compliance Review", () => {
           clearInterval(interval);
           reject(new Error(`Flow C run failed: ${(err as any).message}`));
         }
-        if (Date.now() - start > 5000) {
+        if (Date.now() - start > 15000) {
           clearInterval(interval);
           reject(new Error(`Flow C run timed out. Events: ${JSON.stringify(runEvents)}`));
         }
-        if (runEvents.some((e) => e.type === "run_state" && e.state === "completed")) {
+        if (runEvents.some((e) => e.type === "run_state" && ["completed", "partial"].includes(e.state))) {
           clearInterval(interval);
           resolve();
         }

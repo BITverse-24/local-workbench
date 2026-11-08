@@ -99,16 +99,22 @@ export async function assessAgentFileScope(task: AgentTask, requirementId: strin
   let saved=ledger.agentProgress?.fileScopes.find(item=>item.taskId === task.taskId && item.taskRevision === task.snapshot.revision && item.requirementId === requirementId);
   if(saved && !context.resultStore!.verifyIntegrity(saved.resultId).valid) return {verified:false,withinScope:false,reason:"The saved task scope evidence is unavailable. No mutation was approved."};
   if(!saved){
+    const deterministicDisabled = process.env.WORKBENCH_DETERMINISTIC_FILE_SCOPE === "off";
     const isChange = requirement.kind === "change" || /\b(fix|repair|edit|modify|update|change|implement|make)\b/i.test(message.content);
-    const hasPathExclusions = constraints.some(c => c.kind === "preserve" && /\b(?:do not|don't|never|cannot)\s+(?:touch|modify|edit|change)\b/i.test(c.source.quote));
+    const hasPathExclusions = constraints.some(c => c.kind === "preserve" && /\b(?:do not|don't|never|cannot)\s+(?:touch|modify|edit|change)\b/i.test(c.source.quote)) ||
+      /\b(?:do not|don't|never|cannot)\s+(?:touch|modify|edit|change)\b/i.test(message.content) ||
+      /\b(?:only|just|specifically)\b/i.test(message.content);
 
-    if (isChange && !hasPathExclusions) {
+    if (!deterministicDisabled && isChange && !hasPathExclusions) {
       try {
+        const isDelete = /\b(delete(?:_file)?|remove)\b/i.test(message.content);
         const deterministicScope = bindAgentFileScope({
           scope: "workspace",
-          operations: ["edit_file", "write_file"],
+          operations: isDelete ? ["edit_file", "write_file", "delete_file"] : ["edit_file", "write_file"],
           protected_paths: [],
-          reason: "User instruction requests code repair or modification across the workspace."
+          reason: isDelete
+            ? "User instruction requests file deletion or modification across the workspace."
+            : "User instruction requests code repair or modification across the workspace."
         }, context.workspaceRoot, [message.content, ...constraints.map(item => item.source.quote)]);
         const result = context.resultStore!.registerResult({
           type: "structured", status: "complete", origin: "model_derived",
