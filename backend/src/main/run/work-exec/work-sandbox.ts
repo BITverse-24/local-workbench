@@ -44,8 +44,14 @@ function toQuickJSValue(vm: QuickJSContext, value: unknown) {
 
 export function cleanScriptCode(code: string): string {
   let cleaned = code.trim();
-  cleaned = cleaned.replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];?/gm, "");
-  cleaned = cleaned.replace(/^(?:const|let|var)\s+[\s\S]*?=\s*require\([^)]+\);?/gm, "");
+  // Strip dynamic module imports: const ... = await import(...); or import(...);
+  cleaned = cleaned.replace(/^\s*(?:const|let|var)\s+[\s\S]*?=\s*(?:await\s+)?import\s*\([^)]+\);?/gm, "");
+  cleaned = cleaned.replace(/^\s*(?:await\s+)?import\s*\([^)]+\);?/gm, "");
+  // Strip standard ES module imports and requires
+  cleaned = cleaned.replace(/^\s*import\s+[\s\S]*?from\s+['"][^'"]+['"];?/gm, "");
+  cleaned = cleaned.replace(/^\s*(?:const|let|var)\s+[\s\S]*?=\s*require\([^)]+\);?/gm, "");
+  cleaned = cleaned.replace(/\\`([^`\n]*?)\\`/g, '`$1`');
+  cleaned = cleaned.replace(/\\\$\{/g, '${');
   return cleaned.trim();
 }
 
@@ -126,6 +132,19 @@ export async function runWorkScript(
     vm.setProp(vm.global, "__scriptSettled", scriptSettledFn);
     scriptSettledFn.dispose();
 
+    const captureReturnFn = vm.newFunction("__captureReturn", (retHandle) => {
+      if (facade.getTextOutput() !== null) return;
+      try {
+        const val = vm.dump(retHandle);
+        if (val !== undefined && val !== null) {
+          const formatted = typeof val === "object" ? JSON.stringify(val, null, 2) : String(val);
+          facade.text(smartTruncate(formatted, { maxChars: maxOutputChars }));
+        }
+      } catch {}
+    });
+    vm.setProp(vm.global, "__captureReturn", captureReturnFn);
+    captureReturnFn.dispose();
+
     // 3. Expose console.log
     const capturedLogs: string[] = [];
     const consoleObj = vm.newObject();
@@ -146,7 +165,7 @@ export async function runWorkScript(
     consoleObj.dispose();
 
     // 4. Register async Facade tools
-    const registerAsyncTool = (name: string, fn: (...args: any[]) => Promise<any>) => {
+    const registerAsyncTool = (name: string, fn: (...args: any[]) => Promise<any>, targetObj = vm.global) => {
       const toolFn = vm.newFunction(name, (...argHandles) => {
         const jsArgs = argHandles.map((h) => {
           try {
@@ -162,20 +181,30 @@ export async function runWorkScript(
         (async () => {
           try {
             const res = await fn(...jsArgs);
+            if (!vm.alive) return;
             const val = toQuickJSValue(vm, res);
+            if (!deferred.alive) {
+              try { val.dispose(); } catch {}
+              return;
+            }
             deferred.resolve(val);
-            val.dispose();
+            try { val.dispose(); } catch {}
           } catch (err: any) {
-            const errVal = vm.newError(String(err?.message || err));
-            deferred.reject(errVal);
-            errVal.dispose();
+            if (!vm.alive) return;
+            try {
+              if (deferred.alive) {
+                const errVal = vm.newError(String(err?.message || err));
+                deferred.reject(errVal);
+                try { errVal.dispose(); } catch {}
+              }
+            } catch {}
           }
-        })();
+        })().catch(() => {});
 
         return deferred.handle;
       });
 
-      vm.setProp(vm.global, name, toolFn);
+      vm.setProp(targetObj, name, toolFn);
       toolFn.dispose();
     };
 
@@ -184,7 +213,37 @@ export async function runWorkScript(
     registerAsyncTool("readText", (f, o) => facade.readText(f, o));
     registerAsyncTool("readDocument", (f) => facade.readDocument(f));
     registerAsyncTool("getTableSchema", (f) => facade.getTableSchema(f));
-    registerAsyncTool("emitDeliverable", (o) => facade.emitDeliverable(o));
+    registerAsyncTool("emitDeliverable", (o, c) => facade.emitDeliverable(o, c));
+
+    // Synchronous readTextSync, readFileSync, readLines
+    const readTextSyncFn = vm.newFunction("readTextSync", (pathHandle) => {
+      try {
+        const p = vm.dump(pathHandle);
+        const text = facade.readTextSync(String(p));
+        return vm.newString(text);
+      } catch (err: any) {
+        return vm.newString("");
+      }
+    });
+    vm.setProp(vm.global, "readTextSync", readTextSyncFn);
+    vm.setProp(vm.global, "readFileSync", readTextSyncFn);
+    readTextSyncFn.dispose();
+
+    // Compatibility aliases on tools.*
+    const toolsObj = vm.newObject();
+    registerAsyncTool(
+      "readFile",
+      async (f, o) => {
+        const content = await facade.readText(f, o);
+        return { content, complete: true, digest: "", totalBytes: content.length };
+      },
+      toolsObj,
+    );
+    registerAsyncTool("readTable", (f, o) => facade.readTable(f, o), toolsObj);
+    registerAsyncTool("readJson", (f) => facade.readJson(f), toolsObj);
+    registerAsyncTool("readText", (f, o) => facade.readText(f, o), toolsObj);
+    vm.setProp(vm.global, "tools", toolsObj);
+    toolsObj.dispose();
 
     // 5. Inject built-in analysis and data prelude utilities
     const preludeRes = vm.evalCode(SANDBOX_PRELUDE_CODE);
@@ -194,10 +253,37 @@ export async function runWorkScript(
       preludeRes.value.dispose();
     }
 
+    // 5.5 Normalize un-awaited top-level async invocations and IIFEs
+    let normalizedCode = code;
+    normalizedCode = normalizedCode.replace(/(?<!await\s+)(\(\s*async\s*(?:\([^)]*\)|[a-zA-Z_$][a-zA-Z0-9_$]*|\s*function\s*\(?[^)]*\)?)\s*=>|\(\s*async\s+function\b)/g, 'await $1');
+    const asyncFns = [...normalizedCode.matchAll(/async\s+function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g)].map((m) => m[1]);
+    for (const fn of asyncFns) {
+      normalizedCode = normalizedCode.replace(new RegExp(`(?<!await\\s+|function\\s+)\\b(${fn})\\s*\\(`, 'g'), 'await $1(');
+    }
+
+    // Return last top-level expression so that returned values/summaries are captured
+    const codeLines = normalizedCode.split('\n');
+    let lastIdx = codeLines.length - 1;
+    while (lastIdx >= 0 && !codeLines[lastIdx].trim()) lastIdx--;
+    if (lastIdx >= 0) {
+      const lastLine = codeLines[lastIdx].trim();
+      const reservedKeywords = /^(?:return|const|let|var|function|async\s+function|class|for|while|if|else|try|catch|finally|switch|case|break|continue|throw|import|export)\b/;
+      const isOnlyClosingTokens = /^\s*[})\]]+;?\s*$/.test(lastLine);
+      if (!/\btext\s*\(/.test(normalizedCode) && !reservedKeywords.test(lastLine) && !isOnlyClosingTokens && !lastLine.endsWith('{') && !lastLine.endsWith('}')) {
+        codeLines[lastIdx] = codeLines[lastIdx].replace(/^(\s*)(?!return\b)/, '$1return ');
+        normalizedCode = codeLines.join('\n');
+      }
+    }
+
     // 6. Execute script wrapped in async IIFE
     const wrappedCode = `(async () => {
   try {
-${code}
+    const __ret = await (async () => {
+${normalizedCode}
+    })();
+    if (__ret !== undefined) {
+      __captureReturn(__ret);
+    }
   } catch (err) {
     __reportError(err && err.message ? err.message : String(err), err && err.stack ? err.stack : undefined);
   } finally {
@@ -259,7 +345,11 @@ ${code}
       };
     }
 
-    const output = facade.getTextOutput() ?? (capturedLogs.length > 0 ? capturedLogs.join("\n") : "Execution complete with 0 output.");
+    const executedFiles = facade.getExecutedDeliverables().map((d) => d.filename).join(", ");
+    const defaultOutput = executedFiles.length > 0
+      ? `Execution succeeded. Generated deliverable(s): ${executedFiles}.`
+      : "Execution complete with 0 output.";
+    const output = facade.getTextOutput() ?? (capturedLogs.length > 0 ? capturedLogs.join("\n") : defaultOutput);
     return {
       ok: true,
       output,
@@ -270,10 +360,12 @@ ${code}
   } finally {
     for (const d of deferreds) {
       try {
-        d.dispose();
+        if (d.alive) d.dispose();
       } catch {}
     }
-    vm.dispose();
+    try {
+      if (vm.alive) vm.dispose();
+    } catch {}
   }
 }
 

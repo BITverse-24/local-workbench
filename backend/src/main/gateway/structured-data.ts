@@ -30,11 +30,61 @@ function stripHashComments(raw: string): string {
   return output;
 }
 
+function extractOutermostJson(str: string): string {
+  let text = str.trim();
+  if (text.startsWith("```")) return text;
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  const firstBracket = text.indexOf("[");
+  const lastBracket = text.lastIndexOf("]");
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket) && lastBrace > firstBrace) {
+    return text.slice(firstBrace, lastBrace + 1);
+  }
+  if (firstBracket !== -1 && lastBracket > firstBracket) {
+    return text.slice(firstBracket, lastBracket + 1);
+  }
+  return text;
+}
+
 /** Decode a complete data value without evaluating code or changing string escapes. */
 export function parseStructuredData(raw: string): unknown {
+  const parseWithRepairs = (text: string): unknown => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      try {
+        return JSON5.parse(text);
+      } catch {
+        try {
+          return JSON5.parse(stripHashComments(text));
+        } catch {
+          const repaired = text
+            .replace(/\}\]\}\]\}\],/g, "}]}],")
+            .replace(/\}\}\],/g, "}],");
+          try {
+            return JSON5.parse(repaired);
+          } catch {
+            return JSON5.parse(stripHashComments(repaired));
+          }
+        }
+      }
+    }
+  };
+
   let value: unknown;
-  try { value = JSON.parse(raw); } catch {
-    try { value = JSON5.parse(raw); } catch { value = JSON5.parse(stripHashComments(raw)); }
+  try {
+    value = parseWithRepairs(raw);
+  } catch (originalErr) {
+    const extracted = extractOutermostJson(raw);
+    if (extracted !== raw.trim()) {
+      try {
+        value = parseWithRepairs(extracted);
+      } catch {
+        throw originalErr;
+      }
+    } else {
+      throw originalErr;
+    }
   }
   const check = (item: unknown): void => {
     if (typeof item === "number" && !Number.isFinite(item)) throw new Error("Non-finite JSON value");

@@ -1,0 +1,10 @@
+{
+  "scenario": "E-2 multi-station telemetry statistical profiling & anomaly register",
+  "expected": [
+    "Identified exactly 6 anomaly readings across the stations.",
+    "Exported anomaly-register.csv with timestamp, station_id, temperature_c, pressure_psi, vibration_g, and reason.",
+    "STATION-B recorded the highest peak temperature (91.2°C).",
+    "Calculated station averages, medians, and min/max ranges."
+  ],
+  "requiredTerms": ["STATION-A", "STATION-B", "STATION-C", "STATION-D", "6", "91.2"]
+}

@@ -1,0 +1,16 @@
+sku,warehouse,current_stock
+SKU-101,WH-East,15
+SKU-101,WH-West,10
+SKU-101,WH-Central,10
+SKU-102,WH-East,40
+SKU-102,WH-West,40
+SKU-102,WH-Central,30
+SKU-201,WH-East,10
+SKU-201,WH-West,7
+SKU-201,WH-Central,5
+SKU-202,WH-East,15
+SKU-202,WH-West,15
+SKU-202,WH-Central,15
+SKU-301,WH-East,15
+SKU-301,WH-West,15
+SKU-301,WH-Central,10

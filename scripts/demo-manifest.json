@@ -43,6 +43,15 @@
         "node-built-in-tests"
       ]
     },
+    "flowE": {
+      "scenarioRoot": "flow_e",
+      "focus": "heavy-csv-math-numerical-and-structured-work",
+      "sourceTypes": [
+        "csv",
+        "json",
+        "tabular-data"
+      ]
+    },
     "additionalScenarios": [
       "flow_a/scenario-2: gauge calibration release review",
       "flow_a/scenario-3: exchanger repair close-out review",
@@ -50,7 +59,10 @@
       "flow_b/scenario-3: Agent-mode Python codebase boundary fix",
       "flow_c/scenario-2: relief-valve register review",
       "flow_c/scenario-3: utility-manifold drawing review",
-      "flow_d: Agent-mode FieldOps web app repair"
+      "flow_d: Agent-mode FieldOps web app repair",
+      "flow_e/scenario-1: financial ledger variance & expense audit",
+      "flow_e/scenario-2: multi-station telemetry statistical profiling & anomaly register",
+      "flow_e/scenario-3: multi-table inventory stockout risk & regional sales pivot"
     ]
   },
   "files": {

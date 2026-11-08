@@ -1,0 +1,9 @@
+{
+  "scenario": "E-3 multi-table inventory stockout risk & regional sales pivot",
+  "expected": [
+    "Identified exactly 3 at-risk SKUs: SKU-101 (deficit 15), SKU-201 (deficit 18), and SKU-301 (deficit 20).",
+    "Total inventory deficit is 53 units.",
+    "Aggregated sales by category and region across North America, Europe, and Asia-Pacific."
+  ],
+  "requiredTerms": ["SKU-101", "SKU-201", "SKU-301", "53"]
+}

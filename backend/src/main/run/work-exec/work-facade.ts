@@ -37,18 +37,21 @@ export interface WorkFacade {
   readTable(filename: string, options?: ReadTableOptions): Promise<Array<Record<string, unknown>>>;
   readJson<T = unknown>(filename: string): Promise<T>;
   readText(filename: string, options?: ReadTextOptions): Promise<string>;
+  readTextSync(filename: string): string;
   readDocument(filename: string): Promise<{ text: string; headings: string[]; pageCount: number }>;
   getTableSchema(filename: string): Promise<TableSchemaInfo>;
-  emitDeliverable(options: DeliverableOptions): Promise<{ ok: boolean; filename: string; artifactId?: string }>;
+  emitDeliverable(options: DeliverableOptions | string, contentMaybe?: string): Promise<{ ok: boolean; filename: string; artifactId?: string }>;
   text(output: string): void;
   getTextOutput(): string | null;
   getExecutedDeliverables(): Array<{ filename: string; artifactId?: string }>;
+  getExecutedArtifacts(): import("../../../shared/contracts.js").ArtifactRef[];
   getDiscoveredDigests(): string[];
 }
 
 export function createWorkFacade(context: ToolExecutionContext): WorkFacade {
   let textOutput: string | null = null;
   const executedDeliverables: Array<{ filename: string; artifactId?: string }> = [];
+  const executedArtifacts: import("../../../shared/contracts.js").ArtifactRef[] = [];
   const discoveredDigests = new Set<string>();
 
   // Helper to locate an attached file in input or output storage
@@ -97,6 +100,22 @@ export function createWorkFacade(context: ToolExecutionContext): WorkFacade {
       }
     }
 
+    // 4. Search in workspaceRoot (Agent mode or active workspace)
+    if (context.workspaceRoot) {
+      try {
+        const filePath = resolveSafe(context.workspaceRoot, filename);
+        if (existsSync(filePath)) {
+          return { filePath, extension: path.extname(clean).slice(1).toLowerCase() };
+        }
+      } catch {}
+      try {
+        const filePath = resolveSafe(context.workspaceRoot, clean);
+        if (existsSync(filePath)) {
+          return { filePath, extension: path.extname(clean).slice(1).toLowerCase() };
+        }
+      } catch {}
+    }
+
     throw new Error(`Attached file "${filename}" could not be found in run storage.`);
   };
 
@@ -131,12 +150,24 @@ export function createWorkFacade(context: ToolExecutionContext): WorkFacade {
         : null;
 
       const result: Array<Record<string, unknown>> = [];
+      const autoCast = (v: unknown): unknown => {
+        if (typeof v !== "string") return v ?? null;
+        const trimmed = v.trim();
+        if (trimmed === "") return "";
+        const lower = trimmed.toLowerCase();
+        if (lower === "true") return true;
+        if (lower === "false") return false;
+        if (lower === "null") return null;
+        if (!isNaN(trimmed as any) && !isNaN(parseFloat(trimmed))) return Number(trimmed);
+        return v;
+      };
+
       for (const row of sliced) {
         const obj: Record<string, unknown> = {};
         for (let i = 0; i < headers.length; i++) {
           const header = headers[i] || `col_${i}`;
           if (!selectedColumns || selectedColumns.has(header.toLowerCase())) {
-            obj[header] = row[i] !== undefined ? row[i] : null;
+            obj[header] = row[i] !== undefined ? autoCast(row[i]) : null;
           }
         }
         result.push(obj);
@@ -164,6 +195,14 @@ export function createWorkFacade(context: ToolExecutionContext): WorkFacade {
       return lines.slice(start, start + max).join("\n");
     },
 
+    readTextSync(filename: string): string {
+      const { filePath } = locateFile(filename);
+      const bytes = readFileSync(filePath, "utf-8");
+      const digest = createHash("sha256").update(bytes).digest("hex");
+      discoveredDigests.add(digest);
+      return bytes;
+    },
+
     async readDocument(filename: string) {
       const parsed = await getParsedData(filename);
       return {
@@ -184,27 +223,57 @@ export function createWorkFacade(context: ToolExecutionContext): WorkFacade {
       return { sheets };
     },
 
-    async emitDeliverable(options: DeliverableOptions) {
+    async emitDeliverable(options: DeliverableOptions | string, contentMaybe?: string) {
+      let opt: DeliverableOptions;
+      if (typeof options === "string") {
+        const ext = path.extname(options).slice(1).toLowerCase();
+        opt = {
+          filename: options,
+          content: contentMaybe ?? "",
+          type: (["docx", "xlsx", "csv", "json", "txt", "md"].includes(ext) ? ext : "csv") as any,
+        };
+      } else {
+        const ext = path.extname(options.filename || "").slice(1).toLowerCase();
+        opt = {
+          filename: options.filename,
+          content: options.content ?? "",
+          type: options.type || (["docx", "xlsx", "csv", "json", "txt", "md"].includes(ext) ? (ext as any) : "csv"),
+        };
+      }
       const result = await generateDeliverableTool.execute(
         {
-          type: options.type,
-          filename: options.filename,
-          content: options.content,
+          type: opt.type,
+          filename: opt.filename,
+          content: opt.content,
         },
         context,
       );
 
       if (result.ok === false || result.error) {
+        if (result.error?.message?.includes("does not authorize")) {
+          facadeTextChunks.push(`[Deliverable "${opt.filename}" was not requested or authorized by the task scope and was not saved as a separate file. Output was preserved in chat text.]`);
+          return;
+        }
         throw new Error(`Deliverable generation failed: ${result.error?.message ?? result.output}`);
       }
 
       const artifactId = result.artifacts?.[0]?.artifactId;
-      executedDeliverables.push({ filename: options.filename, artifactId });
-      return { ok: true, filename: options.filename, artifactId };
+      executedDeliverables.push({ filename: opt.filename, artifactId });
+      if (result.artifacts?.length) {
+        executedArtifacts.push(...result.artifacts);
+        for (const artifact of result.artifacts) {
+          context.emitRunEvent?.({
+            type: "artifact_ready",
+            runId: context.runId,
+            artifact,
+          });
+        }
+      }
+      return { ok: true, filename: opt.filename, artifactId };
     },
 
     text(output: string) {
-      textOutput = output;
+      textOutput = textOutput !== null ? textOutput + "\n" + output : output;
     },
 
     getTextOutput() {
@@ -213,6 +282,10 @@ export function createWorkFacade(context: ToolExecutionContext): WorkFacade {
 
     getExecutedDeliverables() {
       return executedDeliverables;
+    },
+
+    getExecutedArtifacts() {
+      return executedArtifacts;
     },
 
     getDiscoveredDigests() {

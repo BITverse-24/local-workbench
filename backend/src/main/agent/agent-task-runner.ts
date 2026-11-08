@@ -16,6 +16,7 @@ import { agentWorkspaceActions, canonicalSourcePath, validateAgentFileProposal }
 import { fileDigest, prepareFileEdit, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 import { resolveSafe } from "../harness/path-guard.js";
 import { buildAgentContextPacket, conciseAgentTool, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
+import { estimateMessageTokens } from "./context-manager.js";
 import { AGENT_MODULE_DECISION_INSTRUCTIONS, bindAgentRepairProposal, MODULE_DRAFT_TOOL, moduleDecisionTools, REPAIR_PROPOSAL_TOOL } from "./repair-proposal.js";
 import { REPLACE_SYMBOL_TOOL, bindSymbolEdit } from "./symbol-edit.js";
 import { obtainAgentFailureSources, selectAgentFailureStep } from "./source-evidence.js";
@@ -215,23 +216,65 @@ export class AgentTaskRunner {
         const currentTests = getExecutionLedger(runId)?.verification?.evidence.find(check => check.criterionId === "acceptance:validate-written-code" && check.status === "passed");
         const repairDelivery = !!progress?.failure && changedPaths().length > 0 && !agentDeliveryGap(task, context, changedPaths()) && currentTests?.revision === captureAgentVerificationManifest(context.workspaceRoot).sha256 && currentTests.evidence.length > 0 && currentTests.evidence.every(ref => ref.kind === "result" && context.resultStore!.verifyIntegrity(ref.id).valid);
         const evidenceDigest = repairDelivery ? hash([currentTests!.revision, currentTests!.evidence]) : progress?.latestResultId ? context.resultStore.getResult(progress.latestResultId).storage.sha256 : undefined;
+        const hasExecOutput = (() => {
+          try {
+            const rec = progress?.latestResultId ? context.resultStore?.getResult(progress.latestResultId) : undefined;
+            return Boolean(rec && rec.producer.tool === "agent_exec_output" && rec.status === "complete");
+          } catch {
+            return false;
+          }
+        })();
+        const lastAction = progress?.actions.at(-1);
+        const lastActionFailedExec = lastAction?.operation === "exec" && lastAction?.status === "failed";
+        const hasFreshObservation = Boolean((packet.observedSource && !lastActionFailedExec) || hasExecOutput);
         const verbatimPageComplete = !pending.some(item => item.acceptance.some(check => check.operation === "verbatim_source")) || packet.observedSource?.endByte === packet.observedSource?.sizeBytes;
-        const inspectionDelivery = verbatimPageComplete && packet.observedSource && evidenceDigest && progress?.deliveryEvidenceDigest !== evidenceDigest && pending.every(item => ["inspect", "deliver", "preserve"].includes(item.kind)) && !pending.some(item => item.acceptance.some(check => check.kind === "execution"));
+        const inspectionDelivery = !lastActionFailedExec && verbatimPageComplete && hasFreshObservation && evidenceDigest && progress?.deliveryEvidenceDigest !== evidenceDigest && pending.every(item => ["inspect", "deliver", "preserve"].includes(item.kind)) && !pending.some(item => item.acceptance.some(check => check.kind === "execution"));
         if (evidenceDigest && (inspectionDelivery || repairDelivery && progress?.deliveryEvidenceDigest !== evidenceDigest)) {
           updateAgentProgress(runId, state => { state.deliveryEvidenceDigest = evidenceDigest; });
-          const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: repairDelivery ? "The host has verified the saved repair with the listed existing tests. All appliedOperations are saved and acceptance:validate-written-code passed (baseline:project-tests records the initial pre-repair failure reproduction). Propose the requested explanation from the supplied requirements, changes, and evidence: explicitly name each inspected and tested file (both source and test files), state what was inspected, how the failing baseline tests were reproduced, the cause and applied fix in each modified module, and that the existing test suite passed while preserving the current design/public behavior and adding no dependencies. Do not request tools in this delivery step or list completed repairs/tests as unresolved. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing explanation with no Analysis or Drafting sections." : "The host has obtained source evidence. Propose the requested answer from the supplied requirements and observed content. Do not request or perform more tools in this delivery step. For verbatim_source checks, output ONLY a fenced code block (```\\n<exact content>```) containing the exact observed source content with its exact whitespace and line endings and no extra blank lines inside the fence. Do not claim complete coverage beyond the supplied evidence. The host will review every requirement separately. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing answer with no Analysis or Drafting sections." }, packet.messages[1]], [], { runId, role: "delivery", maxTokens: 1024, signal: scope.signal });
-          assertRuntimeActive();
-          if (!answer.ok || answer.value.finishReason === "length" || answer.value.tool_calls?.length || !answer.value.content?.trim()) return stop("delivery_unavailable", answer.ok ? "The delivery proposal was incomplete or requested another action." : answer.error.message);
+          let answer: Awaited<ReturnType<typeof context.gateway.chatWithTools>> | undefined;
+          let deliveryPacket = packet;
+          for (const packing of [
+            undefined,
+            { additionalSourceChars: 0 },
+            { additionalSourceChars: 0, latestSourceBytes: 2000 },
+            { additionalSourceChars: 0, latestSourceBytes: 1000 },
+            { additionalSourceChars: 0, latestSourceBytes: 500 },
+          ]) {
+            if (packing) {
+              deliveryPacket = buildAgentContextPacket(task, context, selected, packing);
+            }
+            const deliveryMessages: any[] = [
+              {
+                role: "system",
+                content: repairDelivery
+                  ? "The host has verified the saved repair with the listed existing tests. All appliedOperations are saved and acceptance:validate-written-code passed (baseline:project-tests records the initial pre-repair failure reproduction). Propose the requested explanation from the supplied requirements, changes, and evidence: explicitly name each inspected and tested file (both source and test files), state what was inspected, how the failing baseline tests were reproduced, the cause and applied fix in each modified module, and that the existing test suite passed while preserving the current design/public behavior and adding no dependencies. Do not request tools in this delivery step or list completed repairs/tests as unresolved. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing explanation with no Analysis or Drafting sections."
+                  : `The host has obtained source evidence${hasExecOutput ? " and completed code execution (see latestResult.executionOutput for the exact computed values, tables, and totals)" : ""}. Propose the complete requested answer covering ALL requirements from the original requests and observed content. Address every deliverable and reporting obligation (include all lists, tables, calculations, totals, and deficits asked by the user). Do not request or perform more tools in this delivery step. Be concise, direct, and complete (under 800 words; do not re-list all raw rows). For verbatim_source checks, output ONLY a fenced code block (\`\`\`\\n<exact content>\`\`\`) containing the exact observed source content with its exact whitespace and line endings and no extra blank lines inside the fence. Do not claim complete coverage beyond the supplied evidence. The host will review every requirement separately. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing answer with no Analysis or Drafting sections.`,
+              },
+              deliveryPacket.messages[1],
+            ];
+            const estDeliveryTokens = estimateMessageTokens(deliveryMessages as any);
+            const deliveryMaxTokens = Math.min(2048, Math.max(256, 8192 - 640 - estDeliveryTokens));
+            answer = await context.gateway.chatWithTools(modelId, deliveryMessages, [], { runId, role: "delivery", maxTokens: deliveryMaxTokens, signal: scope.signal });
+            assertRuntimeActive();
+            if (answer.ok || answer.error.code !== "agent_context_limit") break;
+          }
+          if (!answer || !answer.ok || answer.value.tool_calls?.length || !answer.value.content?.trim()) return stop("delivery_unavailable", !answer ? "The delivery proposal could not be generated." : answer.ok ? "The delivery proposal was incomplete or requested another action." : answer.error.message);
           const answerDigest = hash(answer.value.content);
           if (progress?.deliveryAttempts.some(attempt => attempt.evidenceDigest === evidenceDigest && attempt.answerDigest === answerDigest)) return stop("repeated_delivery", "The same answer was proposed for unchanged source evidence. Remaining requirements stay saved.");
           updateAgentProgress(runId, state => { state.deliveryAttempts.push({ evidenceDigest, answerDigest }); });
           const admitted = getExecutionLedger(runId)?.agentAdmissions.at(-1);
-          if (admitted?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push(...packet.observedSources.map(source=>({...source,requestId:admitted.requestId}))); });
+          if (admitted?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push(...deliveryPacket.observedSources.map(source=>({...source,requestId:admitted.requestId}))); });
           context.resultStore.registerResult({ type: "text", status: "complete", origin: "model_derived", producer: { tool: "agent_delivery_proposal", callId: randomUUID() }, summary: "Proposed answer from observed evidence", payload: answer.value.content, sources: [] });
           const reviewed = await reviewAgentTaskCoverage(task, context, modelId, repairDelivery ? changedPaths() : [], answer.value.content);
           assertRuntimeActive();
           if (reviewed.ok) { const completed = stop("requirements_satisfied", "", "completed"); return { ...completed, text: `${answer.value.content}\n\n${completed.text}` }; }
-          updateAgentProgress(runId, state => { state.feedback = reviewed.detail; if (reviewed.next === "delivery") state.deliveryEvidenceDigest = undefined; });
+          if (answer.value.finishReason === "length") return stop("delivery_unavailable", "The delivery proposal was truncated by model output token limit.");
+          updateAgentProgress(runId, state => {
+            state.feedback = reviewed.detail;
+            if (reviewed.next === "delivery" || (hasExecOutput && (state.deliveryAttempts?.length ?? 0) < 3)) {
+              state.deliveryEvidenceDigest = undefined;
+            }
+          });
           continue;
         }
         const inactiveCapabilities = context.envelope.permittedCapabilities.filter(capability=>!context.activeCapabilities!.has(capability));

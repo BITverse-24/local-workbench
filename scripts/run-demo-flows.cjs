@@ -8,8 +8,52 @@ const { spawn } = require("node:child_process");
 const electronPath = require("electron");
 
 const ROOT = path.resolve(__dirname, "..");
+try { require("dotenv").config({ path: path.join(ROOT, ".env") }); } catch {}
 const WORKER_BUNDLE = path.join(ROOT, "tests/.runtime/build/worker.cjs");
 const SCHEMA_PATH = path.join(ROOT, "backend/src/main/persistence/schema.sql");
+
+const useCloud = process.env.USE_OPENROUTER !== "0" && (
+  process.env.USE_OPENROUTER === "1" || process.env.TEST_CLOUD_MODELS === "1" || process.argv.includes("--cloud")
+);
+const openRouterKey = process.env.OPENROUTER_API_KEY || "";
+if (useCloud) {
+  process.env.WORKBENCH_ALLOW_TEST_CLOUD_MODELS = "1";
+  process.env.OPENROUTER_API_KEY = openRouterKey;
+}
+
+const cloudModelName = process.env.CLOUD_MODEL || "cohere/north-mini-code:free";
+const cloudRegistry = [
+  {
+    id: "primary-model",
+    runtime: "openrouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    model: cloudModelName,
+    apiKey: openRouterKey,
+    apiKeyEnv: "OPENROUTER_API_KEY",
+    capabilities: ["text", "image-input", "structured-output", "code-generation"],
+    requestTimeoutMs: 300000,
+    healthPath: "/models",
+    enabled: true,
+    maxOutputTokens: 4096,
+    toolCallingFormat: "native",
+    temperature: 0,
+  },
+  {
+    id: "vision-fallback",
+    runtime: "openrouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    model: cloudModelName,
+    apiKey: openRouterKey,
+    apiKeyEnv: "OPENROUTER_API_KEY",
+    capabilities: ["text", "image-input", "structured-output"],
+    requestTimeoutMs: 300000,
+    healthPath: "/models",
+    enabled: true,
+    fallbackOnly: true,
+    maxOutputTokens: 4096,
+    temperature: 0,
+  },
+];
 
 const configuredRegistry = JSON.parse(fs.readFileSync(path.join(ROOT, "config/models.json"), "utf8")).models;
 // The demo CLI is a local-model preflight. When onboarding has not saved a
@@ -18,9 +62,11 @@ const configuredRegistry = JSON.parse(fs.readFileSync(path.join(ROOT, "config/mo
 const exampleModelPath = fs.existsSync(path.join(ROOT, "config/models.v3.example.json"))
   ? path.join(ROOT, "config/models.v3.example.json")
   : path.join(ROOT, "config/models.v0.example.json");
-const REGISTRY = configuredRegistry.length
-  ? configuredRegistry
-  : JSON.parse(fs.readFileSync(exampleModelPath, "utf8")).models;
+const REGISTRY = useCloud
+  ? cloudRegistry
+  : (configuredRegistry.length
+    ? configuredRegistry
+    : JSON.parse(fs.readFileSync(exampleModelPath, "utf8")).models);
 
 const EMBEDDING = {
   baseUrl: "http://127.0.0.1:1234/v1",
@@ -79,6 +125,10 @@ class FlowRunner {
           WORKBENCH_AGENT_V2: "true",
           WORKBENCH_AGENT_V3: "true",
           WORKBENCH_REASONING_MODE: process.env.WORKBENCH_REASONING_MODE || "effort_none",
+          WORKBENCH_ALLOW_TEST_CLOUD_MODELS: process.env.WORKBENCH_ALLOW_TEST_CLOUD_MODELS || (useCloud ? "1" : "0"),
+          TEST_CLOUD_MODELS: process.env.TEST_CLOUD_MODELS || (useCloud ? "1" : "0"),
+          WORKBENCH_AGENT_CALL_BUDGETS: process.env.WORKBENCH_AGENT_CALL_BUDGETS || "off",
+          OPENROUTER_API_KEY: openRouterKey,
         },
         stdio: ["pipe", "pipe", "pipe"],
       });

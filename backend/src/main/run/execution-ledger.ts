@@ -237,7 +237,7 @@ export function consumeAgentModelCall(runId: string, admission?: { requestId: st
       if (role === "interpretation" && (byRole["interpretation"] ?? 0) >= 4) {
         throw new BudgetDeniedError(role, "Interpretation budget of 4 calls exceeded.");
       }
-      const judgeLimit = Number(process.env.WORKBENCH_JUDGE_CALL_BUDGET ?? 20);
+      const judgeLimit = Number(process.env.WORKBENCH_JUDGE_CALL_BUDGET ?? 28);
       if (isJudge && judgeTotal >= judgeLimit) {
         throw new BudgetDeniedError(role, `Judge budget of ${judgeLimit} calls exceeded.`);
       }
@@ -245,7 +245,8 @@ export function consumeAgentModelCall(runId: string, admission?: { requestId: st
         throw new BudgetDeniedError(role, "Delivery budget of 3 calls exceeded.");
       }
       const remainingTotal = 40 - ledger.agentTask.modelCalls;
-      if (role !== "actor" && role !== "module_draft" && remainingTotal <= 16) {
+      const allowedRolesWhenLowBudget: InferenceRole[] = ["actor", "module_draft", "decision", "delivery", "coverage_judge", "artifact_judge", "file_scope_judge", "scope_judge"];
+      if (!allowedRolesWhenLowBudget.includes(role) && remainingTotal <= 4) {
         throw new BudgetDeniedError(role, `Model calls reserved for actor (${remainingTotal} remaining).`);
       }
     }
@@ -355,7 +356,7 @@ export function recordAuthorizationDecision(runId: string): void {
   save(ledger);
 }
 
-const MUTATING_TOOLS = new Set(["write_file", "edit_file", "delete_file", "run_command", "execute_python", "generate_deliverable"]);
+const MUTATING_TOOLS = new Set(["write_file", "edit_file", "delete_file", "run_command", "execute_python", "generate_deliverable", "work_exec"]);
 export function recordExecutionToolStarted(input: { runId: string; callId: string; tool: string; args: Record<string, unknown>; summary: string }): void {
   const ledger = getExecutionLedger(input.runId);
   if (!ledger || (!MEANINGFUL_TOOLS.has(input.tool) && !MUTATING_TOOLS.has(input.tool))) return;
@@ -451,7 +452,7 @@ function addBlocker(ledger: RunExecutionLedger, message: string) {
   ledger.blockers = ledger.blockers.slice(-20);
 }
 
-const MEANINGFUL_TOOLS = new Set(["read_file", "read_input", "extract_document", "ocr_extract", "retrieve_knowledge", "retrieve_result", "execute_python", "run_command", "write_file", "delete_file", "generate_deliverable", "inspect_drawing"]);
+const MEANINGFUL_TOOLS = new Set(["read_file", "read_input", "extract_document", "ocr_extract", "retrieve_knowledge", "retrieve_result", "execute_python", "run_command", "write_file", "delete_file", "generate_deliverable", "work_exec", "inspect_drawing"]);
 export function recordExecutionToolOutcome(input: {
   runId: string; callId: string; tool: string; args: Record<string, unknown>; summary: string; ok: boolean;
   error?: string; resultId?: string; artifacts?: ArtifactRef[];

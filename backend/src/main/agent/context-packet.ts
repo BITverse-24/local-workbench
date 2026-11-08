@@ -39,15 +39,21 @@ export interface AgentContextPacket {
 /** Unwrap complete structured evidence once. Avoid nested JSON strings in small-model requests. */
 export function agentEvidenceSlice(context: ToolExecutionContext, resultId: string, maxChars = 1800): unknown {
   const store = agentEvidenceStore(context,resultId), record = store.getResult(resultId);
-  const first = store.retrieveResultSlice(resultId, { mode: "text", maxChars: Math.min(3000, maxChars) });
+  const isExec = record.producer.tool === "agent_exec_output" || record.producer.tool === "work_exec";
+  const effectiveMax = isExec ? Math.max(maxChars, 12000) : maxChars;
+  const first = store.retrieveResultSlice(resultId, { mode: "text", maxChars: Math.min(3000, effectiveMax) });
   let content = first.content, offset = first.nextOffset;
-  if (first.totalChars <= maxChars) {
+  if (first.totalChars <= effectiveMax) {
     while (offset !== undefined) { const next = store.retrieveResultSlice(resultId, { mode: "text", offset, maxChars: 3000 }); content += next.content; offset = next.nextOffset; }
     if (record.storage.encoding === "json") {
       const value = JSON.parse(content);
       if (record.producer.tool === "read_file" && value.sourcePage === true) return { resultId, kind: "source", path: value.path, sourceText: value.content, completeFile: value.complete, digest: value.digest, byteRange: [value.startByte, value.endByte] };
+      if (record.producer.tool === "agent_exec_output" && value.output !== undefined) {
+        return { resultId, originRunId: record.runId, historical: record.runId !== context.runId, tool: record.producer.tool, completeResult: true, executionOutput: value.output, code: value.code };
+      }
       return { resultId, originRunId:record.runId, historical:record.runId !== context.runId, tool: record.producer.tool, completeResult: true, value };
     }
+    return { resultId, originRunId:record.runId, historical:record.runId !== context.runId, tool: record.producer.tool, completeResult: true, content };
   }
   return { resultId, originRunId:record.runId, historical:record.runId !== context.runId, tool: record.producer.tool, content, completeResult: offset === undefined, nextOffset: offset };
 }

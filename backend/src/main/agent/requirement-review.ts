@@ -156,16 +156,17 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
       try { partReview=await reviewArtifactParts(requiredFiles[0],requirement,constraints,context,modelId); }
       catch(error) { assertRuntimeActive();return {ok:false,detail:`${requirement.id}: Artifact content remains unverified. ${String(error)}`}; }
     }
-    const relevant = results.filter(item => ["read_file", "read_input", "extract_document", "retrieve_knowledge", "run_command", "edit_file", "write_file", "delete_file"].includes(item.producer.tool)).map((record, index) => {
+    const relevant = results.filter(item => ["read_file", "read_input", "extract_document", "retrieve_knowledge", "run_command", "edit_file", "write_file", "delete_file", "agent_exec_output", "work_exec"].includes(item.producer.tool)).map((record, index) => {
       const action = ledger.agentProgress?.actions.find(action => action.resultId === record.resultId);
       const page = loadAgentSourcePage(context, record.resultId);
       const explicit = page && (requirement.source.quote.includes(page.path) || requirement.description.includes(page.path) || requirement.acceptance.some(check => check.path === page.path));
-      return { record, page, index, score: (explicit ? 8 : 0) + (action?.requirementId === requirement.id ? 4 : 0) + (requirement.kind === "inspect" && ["read_file", "read_input", "extract_document", "retrieve_knowledge"].includes(record.producer.tool) ? 6 : 0) };
+      return { record, page, index, score: (explicit ? 8 : 0) + (action?.requirementId === requirement.id ? 4 : 0) + (requirement.kind === "inspect" && ["read_file", "read_input", "extract_document", "retrieve_knowledge", "agent_exec_output", "work_exec"].includes(record.producer.tool) ? 6 : 0) };
     }).sort((a, b) => b.score - a.score || b.index - a.index);
     const generate = (maxBytes: number) => {
       const evidenceSlices = relevant.slice(0, 3).map(({record, page}) => {
         if (!page) {
-          const slice = agentEvidenceSlice(context, record.resultId, Math.min(maxBytes, 1800));
+          const isExec = ["agent_exec_output", "work_exec"].includes(record.producer.tool);
+          const slice = agentEvidenceSlice(context, record.resultId, isExec ? 12000 : Math.min(maxBytes, 1800));
           const edit = z.object({ completeResult: z.literal(true), tool: z.enum(["edit_file", "write_file"]), value: z.object({ written: z.string(), afterDigest: z.string() }).passthrough() }).safeParse(slice);
           if (edit.success && changedDigests.get(edit.data.value.written) === edit.data.value.afterDigest) {
             try {
@@ -245,7 +246,7 @@ export async function reviewAgentTaskCoverage(task: AgentTask, context: ToolExec
     const page = loadAgentSourcePage(context, record.resultId);
     if (page && reviewSources.has(page.path) && !changedDigests.has(page.path) && reviewSources.get(page.path) !== page.digest && !results.some(other => { const current = loadAgentSourcePage(context, other.resultId); return current?.path === page.path && current.digest === reviewSources.get(page.path); })) return { ok: false, detail: `Source evidence is stale for ${page.path}. Read its current bytes before delivery.`, next: "source" };
   }
-  if (required.some(item => item.kind === "inspect") && !results.some(item => ["read_file", "read_input", "extract_document", "retrieve_knowledge"].includes(item.producer.tool))) return { ok: false, detail: "Inspection needs saved source evidence." };
+  if (required.some(item => item.kind === "inspect") && !results.some(item => ["read_file", "read_input", "extract_document", "retrieve_knowledge", "agent_exec_output", "work_exec"].includes(item.producer.tool))) return { ok: false, detail: "Inspection needs saved source evidence." };
   for (const [path, digest] of changedDigests) {
     const change=changes.find(item=>item.path === path)!;
     const current=currentAgentChange(context,change,results);

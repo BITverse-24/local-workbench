@@ -1,0 +1,188 @@
+transaction_id,date,department,category,amount_usd,status
+TX-1060,2026-10-06,Marketing,Advertising,1833.41,CLEARED
+TX-1004,2026-10-04,Engineering,Cloud Infrastructure,2680.21,CLEARED
+TX-1152,2026-10-08,Operations,Supplies,398.95,CLEARED
+TX-1178,2026-10-16,Engineering,Cloud Infrastructure,1362.16,DISPUTED
+TX-1072,2026-10-28,Marketing,Advertising,1803.3,CLEARED
+TX-1094,2026-10-04,Marketing,Content,441.42,CLEARED
+TX-1159,2026-10-15,Operations,Supplies,415.99,CLEARED
+TX-1047,2026-10-11,Engineering,Hardware,1224.76,CLEARED
+TX-1075,2026-10-03,Marketing,Events,1154.63,CLEARED
+TX-1142,2026-10-16,Operations,Logistics,917.69,CLEARED
+TX-1168,2026-10-06,Engineering,Software Licenses,818.86,DISPUTED
+TX-1059,2026-10-05,Marketing,Advertising,2203.27,CLEARED
+TX-1029,2026-10-11,Engineering,Software Licenses,661.63,CLEARED
+TX-1144,2026-10-28,Operations,Logistics,1095.83,CLEARED
+TX-1066,2026-10-12,Marketing,Advertising,2159.2,CLEARED
+TX-1111,2026-10-03,Operations,Facilities,1460.84,CLEARED
+TX-1155,2026-10-11,Operations,Supplies,352.68,CLEARED
+TX-1025,2026-10-07,Engineering,Software Licenses,680.17,CLEARED
+TX-1093,2026-10-03,Marketing,Content,529.79,CLEARED
+TX-1186,2026-10-24,Engineering,Cloud Infrastructure,2205.38,DISPUTED
+TX-1132,2026-10-06,Operations,Logistics,880.25,CLEARED
+TX-1052,2026-10-16,Engineering,Hardware,1392.62,CLEARED
+TX-1038,2026-10-02,Engineering,Hardware,1502.87,CLEARED
+TX-1069,2026-10-15,Marketing,Advertising,2344.18,CLEARED
+TX-1122,2026-10-14,Operations,Facilities,1849.89,CLEARED
+TX-1008,2026-10-08,Engineering,Cloud Infrastructure,2515.92,CLEARED
+TX-1095,2026-10-05,Marketing,Content,432.17,CLEARED
+TX-1030,2026-10-12,Engineering,Software Licenses,898.54,CLEARED
+TX-1187,2026-10-25,Marketing,Events,4669.33,PENDING
+TX-1112,2026-10-04,Operations,Facilities,1701.95,CLEARED
+TX-1182,2026-10-20,Operations,Facilities,727.65,DISPUTED
+TX-1184,2026-10-22,Engineering,Cloud Infrastructure,2328.86,DISPUTED
+TX-1042,2026-10-06,Engineering,Hardware,1517.77,CLEARED
+TX-1140,2026-10-14,Operations,Logistics,1266.32,CLEARED
+TX-1050,2026-10-14,Engineering,Hardware,1341.47,CLEARED
+TX-1126,2026-10-28,Operations,Facilities,1141.74,CLEARED
+TX-1022,2026-10-04,Engineering,Software Licenses,885.39,CLEARED
+TX-1165,2026-10-03,Operations,Supplies,1535.52,PENDING
+TX-1116,2026-10-08,Operations,Facilities,1903.57,CLEARED
+TX-1046,2026-10-10,Engineering,Hardware,1348.19,CLEARED
+TX-1089,2026-10-17,Marketing,Events,1253.02,CLEARED
+TX-1151,2026-10-07,Operations,Supplies,314.59,CLEARED
+TX-1073,2026-10-01,Marketing,Events,1209.19,CLEARED
+TX-1110,2026-10-02,Operations,Facilities,1634.94,CLEARED
+TX-1180,2026-10-18,Engineering,Software Licenses,2581.83,DISPUTED
+TX-1090,2026-10-28,Marketing,Events,1268.91,CLEARED
+TX-1080,2026-10-08,Marketing,Events,1251.06,CLEARED
+TX-1054,2026-10-28,Engineering,Hardware,2268.77,CLEARED
+TX-1083,2026-10-11,Marketing,Events,1182.77,CLEARED
+TX-1138,2026-10-12,Operations,Logistics,1015.31,CLEARED
+TX-1173,2026-10-11,Engineering,Hardware,2439.73,PENDING
+TX-1115,2026-10-07,Operations,Facilities,1581.29,CLEARED
+TX-1099,2026-10-09,Marketing,Content,511.35,CLEARED
+TX-1023,2026-10-05,Engineering,Software Licenses,851.41,CLEARED
+TX-1157,2026-10-13,Operations,Supplies,305.71,CLEARED
+TX-1177,2026-10-15,Operations,Logistics,4102.67,PENDING
+TX-1051,2026-10-15,Engineering,Hardware,1552.12,CLEARED
+TX-1058,2026-10-04,Marketing,Advertising,2236.12,CLEARED
+TX-1024,2026-10-06,Engineering,Software Licenses,738.48,CLEARED
+TX-1148,2026-10-04,Operations,Supplies,295.61,CLEARED
+TX-1147,2026-10-03,Operations,Supplies,384.14,CLEARED
+TX-1124,2026-10-16,Operations,Facilities,1700.66,CLEARED
+TX-1028,2026-10-10,Engineering,Software Licenses,660.38,CLEARED
+TX-1163,2026-10-01,Operations,Logistics,1044.52,PENDING
+TX-1121,2026-10-13,Operations,Facilities,1877.03,CLEARED
+TX-1005,2026-10-05,Engineering,Cloud Infrastructure,3298.97,CLEARED
+TX-1098,2026-10-08,Marketing,Content,589.44,CLEARED
+TX-1010,2026-10-10,Engineering,Cloud Infrastructure,2447.03,CLEARED
+TX-1100,2026-10-10,Marketing,Content,435.64,CLEARED
+TX-1185,2026-10-23,Marketing,Advertising,4390.93,PENDING
+TX-1166,2026-10-04,Engineering,Cloud Infrastructure,819.47,DISPUTED
+TX-1097,2026-10-07,Marketing,Content,554.69,CLEARED
+TX-1133,2026-10-07,Operations,Logistics,1022.63,CLEARED
+TX-1119,2026-10-11,Operations,Facilities,1611.49,CLEARED
+TX-1087,2026-10-15,Marketing,Events,1349.73,CLEARED
+TX-1017,2026-10-17,Engineering,Cloud Infrastructure,2676.87,CLEARED
+TX-1043,2026-10-07,Engineering,Hardware,1592.69,CLEARED
+TX-1001,2026-10-01,Engineering,Cloud Infrastructure,3181.98,CLEARED
+TX-1006,2026-10-06,Engineering,Cloud Infrastructure,3226.91,CLEARED
+TX-1036,2026-10-28,Engineering,Software Licenses,509.44,CLEARED
+TX-1130,2026-10-04,Operations,Logistics,1222.6,CLEARED
+TX-1012,2026-10-12,Engineering,Cloud Infrastructure,3020.35,CLEARED
+TX-1007,2026-10-07,Engineering,Cloud Infrastructure,3486.68,CLEARED
+TX-1033,2026-10-15,Engineering,Software Licenses,861.38,CLEARED
+TX-1063,2026-10-09,Marketing,Advertising,2009.32,CLEARED
+TX-1065,2026-10-11,Marketing,Advertising,2229.33,CLEARED
+TX-1101,2026-10-11,Marketing,Content,502.79,CLEARED
+TX-1082,2026-10-10,Marketing,Events,1284.07,CLEARED
+TX-1088,2026-10-16,Marketing,Events,1513.31,CLEARED
+TX-1092,2026-10-02,Marketing,Content,632.82,CLEARED
+TX-1044,2026-10-08,Engineering,Hardware,1204.76,CLEARED
+TX-1027,2026-10-09,Engineering,Software Licenses,737.33,CLEARED
+TX-1078,2026-10-06,Marketing,Events,1208.78,CLEARED
+TX-1127,2026-10-01,Operations,Logistics,947.25,CLEARED
+TX-1035,2026-10-17,Engineering,Software Licenses,938.18,CLEARED
+TX-1020,2026-10-02,Engineering,Software Licenses,886.53,CLEARED
+TX-1106,2026-10-16,Marketing,Content,424.65,CLEARED
+TX-1096,2026-10-06,Marketing,Content,445.37,CLEARED
+TX-1103,2026-10-13,Marketing,Content,533.93,CLEARED
+TX-1164,2026-10-02,Engineering,Cloud Infrastructure,2021.39,DISPUTED
+TX-1128,2026-10-02,Operations,Logistics,1215.5,CLEARED
+TX-1158,2026-10-14,Operations,Supplies,321.07,CLEARED
+TX-1014,2026-10-14,Engineering,Cloud Infrastructure,2650.82,CLEARED
+TX-1085,2026-10-13,Marketing,Events,1337.61,CLEARED
+TX-1114,2026-10-06,Operations,Facilities,1569.07,CLEARED
+TX-1071,2026-10-17,Marketing,Advertising,1715.99,CLEARED
+TX-1105,2026-10-15,Marketing,Content,603.94,CLEARED
+TX-1086,2026-10-14,Marketing,Events,1181.66,CLEARED
+TX-1002,2026-10-02,Engineering,Cloud Infrastructure,2441.26,CLEARED
+TX-1167,2026-10-05,Operations,Facilities,1530.24,PENDING
+TX-1084,2026-10-12,Marketing,Events,1173.24,CLEARED
+TX-1156,2026-10-12,Operations,Supplies,379.15,CLEARED
+TX-1079,2026-10-07,Marketing,Events,1386.73,CLEARED
+TX-1039,2026-10-03,Engineering,Hardware,1666.2,CLEARED
+TX-1091,2026-10-01,Marketing,Content,468.53,CLEARED
+TX-1070,2026-10-16,Marketing,Advertising,1882.31,CLEARED
+TX-1107,2026-10-17,Marketing,Content,574.38,CLEARED
+TX-1057,2026-10-03,Marketing,Advertising,2479.84,CLEARED
+TX-1169,2026-10-07,Engineering,Software Licenses,3510.4,PENDING
+TX-1037,2026-10-01,Engineering,Hardware,1400.69,CLEARED
+TX-1161,2026-10-17,Operations,Supplies,338.62,CLEARED
+TX-1032,2026-10-14,Engineering,Software Licenses,885.81,CLEARED
+TX-1181,2026-10-19,Engineering,Software Licenses,4136.1,PENDING
+TX-1009,2026-10-09,Engineering,Cloud Infrastructure,2919.76,CLEARED
+TX-1113,2026-10-05,Operations,Facilities,1360.78,CLEARED
+TX-1045,2026-10-09,Engineering,Hardware,1311.98,CLEARED
+TX-1120,2026-10-12,Operations,Facilities,1404.02,CLEARED
+TX-1174,2026-10-12,Marketing,Events,2601.61,DISPUTED
+TX-1141,2026-10-15,Operations,Logistics,1296.66,CLEARED
+TX-1055,2026-10-01,Marketing,Advertising,1865.8,CLEARED
+TX-1135,2026-10-09,Operations,Logistics,1288.8,CLEARED
+TX-1026,2026-10-08,Engineering,Software Licenses,933.17,CLEARED
+TX-1137,2026-10-11,Operations,Logistics,1245.93,CLEARED
+TX-1003,2026-10-03,Engineering,Cloud Infrastructure,2742.68,CLEARED
+TX-1019,2026-10-01,Engineering,Software Licenses,817.06,CLEARED
+TX-1183,2026-10-21,Operations,Facilities,4860.48,PENDING
+TX-1118,2026-10-10,Operations,Facilities,1458.63,CLEARED
+TX-1077,2026-10-05,Marketing,Events,1502.11,CLEARED
+TX-1034,2026-10-16,Engineering,Software Licenses,800.32,CLEARED
+TX-1102,2026-10-12,Marketing,Content,632.52,CLEARED
+TX-1068,2026-10-14,Marketing,Advertising,2400.63,CLEARED
+TX-1062,2026-10-08,Marketing,Advertising,1826.87,CLEARED
+TX-1154,2026-10-10,Operations,Supplies,307.19,CLEARED
+TX-1053,2026-10-17,Engineering,Hardware,1395.77,CLEARED
+TX-1067,2026-10-13,Marketing,Advertising,2267.01,CLEARED
+TX-1172,2026-10-10,Marketing,Events,1356.84,DISPUTED
+TX-1134,2026-10-08,Operations,Logistics,888.57,CLEARED
+TX-1145,2026-10-01,Operations,Supplies,287.39,CLEARED
+TX-1108,2026-10-28,Marketing,Content,559.34,CLEARED
+TX-1162,2026-10-28,Operations,Supplies,362.99,CLEARED
+TX-1011,2026-10-11,Engineering,Cloud Infrastructure,2674.69,CLEARED
+TX-1175,2026-10-13,Operations,Facilities,3530.14,PENDING
+TX-1064,2026-10-10,Marketing,Advertising,2524.49,CLEARED
+TX-1146,2026-10-02,Operations,Supplies,383.41,CLEARED
+TX-1031,2026-10-13,Engineering,Software Licenses,821.62,CLEARED
+TX-1104,2026-10-14,Marketing,Content,627.23,CLEARED
+TX-1061,2026-10-07,Marketing,Advertising,2304.59,CLEARED
+TX-1160,2026-10-16,Operations,Supplies,368.04,CLEARED
+TX-1153,2026-10-09,Operations,Supplies,336.54,CLEARED
+TX-1018,2026-10-28,Engineering,Cloud Infrastructure,5580.12,CLEARED
+TX-1048,2026-10-12,Engineering,Hardware,1314.86,CLEARED
+TX-1021,2026-10-03,Engineering,Software Licenses,633.16,CLEARED
+TX-1131,2026-10-05,Operations,Logistics,1113.36,CLEARED
+TX-1171,2026-10-09,Operations,Supplies,2627.02,PENDING
+TX-1041,2026-10-05,Engineering,Hardware,1685.22,CLEARED
+TX-1136,2026-10-10,Operations,Logistics,1266.64,CLEARED
+TX-1129,2026-10-03,Operations,Logistics,1117.33,CLEARED
+TX-1123,2026-10-15,Operations,Facilities,1481.22,CLEARED
+TX-1150,2026-10-06,Operations,Supplies,354.14,CLEARED
+TX-1013,2026-10-13,Engineering,Cloud Infrastructure,2443.1,CLEARED
+TX-1176,2026-10-14,Operations,Facilities,772.76,DISPUTED
+TX-1081,2026-10-09,Marketing,Events,1522.05,CLEARED
+TX-1016,2026-10-16,Engineering,Cloud Infrastructure,3068.07,CLEARED
+TX-1139,2026-10-13,Operations,Logistics,905.49,CLEARED
+TX-1149,2026-10-05,Operations,Supplies,343.79,CLEARED
+TX-1015,2026-10-15,Engineering,Cloud Infrastructure,3194.58,CLEARED
+TX-1056,2026-10-02,Marketing,Advertising,1914.34,CLEARED
+TX-1076,2026-10-04,Marketing,Events,1536.86,CLEARED
+TX-1049,2026-10-13,Engineering,Hardware,1237.25,CLEARED
+TX-1040,2026-10-04,Engineering,Hardware,1542.01,CLEARED
+TX-1125,2026-10-17,Operations,Facilities,1681.34,CLEARED
+TX-1170,2026-10-08,Engineering,Hardware,1095.4,DISPUTED
+TX-1143,2026-10-17,Operations,Logistics,1093.84,CLEARED
+TX-1179,2026-10-17,Operations,Logistics,1130.82,PENDING
+TX-1109,2026-10-01,Operations,Facilities,1728.21,CLEARED
+TX-1074,2026-10-02,Marketing,Events,1184.27,CLEARED
+TX-1117,2026-10-09,Operations,Facilities,1853.33,CLEARED

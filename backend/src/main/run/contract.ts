@@ -60,7 +60,7 @@ export function normalizeRunContract(runId: string, intent: SemanticIntent, opti
       if (!operations.some((op) => op.targetPath === targetPath)) operations.push({ id: `workspace-${operations.length + 1}`, operation: "mutate", targetPath });
     }
   }
-  if (!chatOnly && intent.isActionable && intent.intentType === "command_execution" && !operations.some((op) => op.operation === "execute")) {
+  if (options.mode !== "work" && !chatOnly && intent.isActionable && intent.intentType === "command_execution" && !operations.some((op) => op.operation === "execute")) {
     operations.push({ id: `workspace-${operations.length + 1}`, operation: "execute" });
   }
   if (requested && operations.length === 0) operations.push({ id: "workspace-1", operation: "mutate" });

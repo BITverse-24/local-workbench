@@ -63,7 +63,14 @@ export async function prepareSources(attachments: AttachmentReference[], text: s
     const tableNote = ['csv', 'xlsx'].includes(ext)
       ? `[TABULAR DATA: "${attachment.filename}" contains structured records. To query, filter, or aggregate this full table without truncation or token limits, call work_exec with await readTable("${attachment.filename}") or getTableSchema("${attachment.filename}")]\n`
       : '';
-    parts.push(`--- ATTACHED FILE: ${attachment.filename} ---\nSource ID: ${attachment.attachmentId}\n${tableNote}${selectExcerpts(content,text,budget)}\n--- END ATTACHED FILE: ${attachment.filename} ---`);
+    let fileExcerpt = selectExcerpts(content, text, budget);
+    if (['csv', 'xlsx'].includes(ext)) {
+      const lines = content.trim().split(/\r?\n/);
+      if (lines.length > 12) {
+        fileExcerpt = `${lines.slice(0, 10).join('\n')}\n... [${lines.length - 10} additional rows in storage; use await readTable("${attachment.filename}") in work_exec to access full data]`;
+      }
+    }
+    parts.push(`--- ATTACHED FILE: ${attachment.filename} ---\nSource ID: ${attachment.attachmentId}\n${tableNote}${fileExcerpt}\n--- END ATTACHED FILE: ${attachment.filename} ---`);
   }
   currentRuntimeScope()?.signal.throwIfAborted();
   return parts.join('\n\n');

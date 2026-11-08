@@ -1,0 +1,6 @@
+sku,name,category,unit_cost,reorder_threshold
+SKU-101,Ultra Router,Networking,120.0,50
+SKU-102,Mesh Pod,Networking,65.0,80
+SKU-201,4K Webcam,Video,85.0,40
+SKU-202,Studio Mic,Audio,110.0,30
+SKU-301,Ergo Stand,Accessories,45.0,60

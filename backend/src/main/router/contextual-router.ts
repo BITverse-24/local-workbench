@@ -198,11 +198,13 @@ export function validateAndNormalizeIntent(
         chatResponseOnly: value.chatResponseOnly === true || (!value.workspaceMutationRequested && !inspection),
         ...(value.requestedAction === "draft" ? { requestedAction: value.workspaceMutationRequested ? "modify_software" : "explain" } : {}) };
     }
-    const outputName = context.userPrompt.match(/\b(?:as|named|to|create|generate|write|return|export|save)\s+[`"']?([\w./-]+\.([a-z0-9]{1,10}))\b/i);
-    if (!workspaceOnly && outputRequest && value.expectedDeliverables?.length === 1 && outputName) {
+    const outputName = context.userPrompt.match(/\b(?:as|named|to|create|generate|write|return|export|save)\s+(?:(?:a|an|the)\s+)?(?:(?:deliverable|output)\s+)?(?:(?:file|document|report|artifact)\s+)?[`"']?([\w./-]+\.([a-z0-9]{1,10}))\b/i);
+    if (!workspaceOnly && outputRequest && outputName) {
       const extension = outputName[2].toLowerCase();
-      value = { ...value, expectedDeliverables: [{ ...value.expectedDeliverables[0], filename: outputName[1], filenameRequired: true,
-        type: ["docx", "xlsx", "csv", "pdf", "md", "json"].includes(extension) ? extension : "file" }] };
+      const type = ["docx", "xlsx", "csv", "pdf", "md", "json"].includes(extension) ? extension : "file";
+      const existing = Array.isArray(value.expectedDeliverables) && value.expectedDeliverables.length === 1 ? value.expectedDeliverables[0] : {};
+      value = { ...value, responseMode: value.responseMode === "chat" ? "document" : value.responseMode,
+        expectedDeliverables: [{ ...existing, filename: outputName[1], filenameRequired: true, type }] };
     }
     const requestedFormat = context.userPrompt.match(/\b(?:as|in|into|to|create|generate|export|make)\s+(?:an?\s+)?(word|docx|excel|xlsx|csv|json|pdf|markdown|md)\b|\b(word|docx|excel|xlsx|csv|json|pdf|markdown|md)\s+(?:artifacts?|files?|documents?|reports?|workbooks?|spreadsheets?)\b/i);
     if (!workspaceOnly && outputRequest && !outputName && value.expectedDeliverables?.length === 1 && requestedFormat) {

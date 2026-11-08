@@ -1,9 +1,10 @@
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { z } from "zod";
 import type { ChatHistoryData, ChatMessageData, LLMTool } from "@lmstudio/sdk";
-import { isAllowedLocalModelEndpoint } from "../../shared/local-network.js";
+import { isAllowedLocalModelEndpoint, isAllowedLocalModelHost } from "../../shared/local-network.js";
 import { abortError } from "../run/runtime-scope.js";
 
 const callSchema = z.object({ id: z.string(), type: z.literal("function"), function: z.object({ name: z.string().min(1), arguments: z.string() }).strict() }).strict();
@@ -68,6 +69,20 @@ const {createHash}=require('node:crypto');
 
 /** Count the server's rendered prompt, without generation, model loading, or task side effects. */
 export async function countLMStudioPreparedRequest(options: { endpoint: string; payload: Record<string, unknown>; signal?: AbortSignal }): Promise<LMStudioPromptCount> {
+  if (process.env.WORKBENCH_ALLOW_TEST_CLOUD_MODELS === "1" || process.env.TEST_CLOUD_MODELS === "1" || !isAllowedLocalModelHost(new URL(options.endpoint).hostname)) {
+    const rawText = JSON.stringify(options.payload);
+    const estTokens = Math.max(1, Math.ceil(rawText.length / 3.5));
+    const digest = createHash("sha256").update(rawText).digest("hex");
+    return {
+      inputTokens: estTokens,
+      renderedDigest: digest,
+      instanceReference: String(options.payload.model ?? "cloud-model"),
+      modelPath: String(options.payload.model ?? "cloud-model"),
+      contextLimit: 32768,
+      counterIdentity: "lmstudio-sdk-1.5.0",
+      supportsNativeTools: true,
+    };
+  }
   if (!isAllowedLocalModelEndpoint(options.endpoint)) throw new Error("Counting requires a local or private model endpoint.");
   const endpoint = new URL(options.endpoint);
   if (endpoint.search || endpoint.hash || !["", "/", "/v1", "/v1/"].includes(endpoint.pathname)) throw new Error("Select an LM Studio server root or /v1 endpoint for counting.");

@@ -183,4 +183,31 @@ describe("QuickJS Sandbox Execution", () => {
     expect(res.ok).toBe(true);
     expect(res.output).toContain("Found entry: index.ts");
   });
+
+  it("handles multi-line text(JSON.stringify({...}, null, 2)) without syntax error", async () => {
+    const facade = createMockFacade();
+    const script = `
+      const inventoryRows = parseCSV("sku,current_stock\\nSKU-101,35\\nSKU-201,22");
+      const stockBySku = groupBy(inventoryRows, row => row.sku);
+      const summedStock = Object.keys(stockBySku).map(sku => {
+        const skuRows = stockBySku[sku];
+        const totalStock = skuRows.reduce((sum, row) => sum + (Number(row.stock) || 0), 0);
+        return { sku, totalStock };
+      });
+
+      text(JSON.stringify({
+        inventorySummary: summedStock,
+        totalRows: inventoryRows.length
+      }, null, 2));
+    `;
+
+    const res = await runSandboxedScript(script, facade);
+    expect(res.ok).toBe(true);
+    const parsed = JSON.parse(res.output);
+    expect(parsed.totalRows).toBe(2);
+    expect(parsed.inventorySummary).toEqual([
+      { sku: "SKU-101", totalStock: 35 },
+      { sku: "SKU-201", totalStock: 22 }
+    ]);
+  });
 });

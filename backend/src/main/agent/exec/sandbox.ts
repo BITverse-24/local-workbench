@@ -101,7 +101,8 @@ export async function runSandboxedScript(
       } catch {
         dumped = "[unserializable value]";
       }
-      state.textOutput = smartTruncate(dumped, { maxChars: maxOutputChars });
+      const truncated = smartTruncate(dumped, { maxChars: maxOutputChars });
+      state.textOutput = state.textOutput !== null ? state.textOutput + "\n" + truncated : truncated;
     });
     vm.setProp(vm.global, "text", textFn);
     textFn.dispose();
@@ -139,6 +140,19 @@ export async function runSandboxedScript(
     });
     vm.setProp(vm.global, "__scriptSettled", scriptSettledFn);
     scriptSettledFn.dispose();
+
+    const captureReturnFn = vm.newFunction("__captureReturn", (retHandle) => {
+      if (state.textOutput !== null) return;
+      try {
+        const val = vm.dump(retHandle);
+        if (val !== undefined && val !== null) {
+          const formatted = typeof val === "object" ? JSON.stringify(val, null, 2) : String(val);
+          state.textOutput = smartTruncate(formatted, { maxChars: maxOutputChars });
+        }
+      } catch {}
+    });
+    vm.setProp(vm.global, "__captureReturn", captureReturnFn);
+    captureReturnFn.dispose();
 
     // 4. Expose console object with captured logs fallback
     const capturedLogs: string[] = [];
@@ -194,18 +208,20 @@ export async function runSandboxedScript(
         (async () => {
           try {
             const res = await fn(...jsArgs);
-            if (!vm.alive) return;
+            if (!vm.alive || !deferred.alive) return;
             const qjsVal = toQuickJSValue(vm, res);
             deferred.resolve(qjsVal);
-            qjsVal.dispose();
+            try { qjsVal.dispose(); } catch {}
           } catch (err) {
-            if (!vm.alive) return;
-            const msg = err instanceof Error ? err.message : String(err);
-            const errVal = vm.newError(msg);
-            deferred.reject(errVal);
-            errVal.dispose();
+            if (!vm.alive || !deferred.alive) return;
+            try {
+              const msg = err instanceof Error ? err.message : String(err);
+              const errVal = vm.newError(msg);
+              deferred.reject(errVal);
+              try { errVal.dispose(); } catch {}
+            } catch {}
           }
-        })();
+        })().catch(() => {});
 
         return deferred.handle;
       });
@@ -227,18 +243,20 @@ export async function runSandboxedScript(
         (async () => {
           try {
             const res = await fn(...jsArgs);
-            if (!vm.alive) return;
+            if (!vm.alive || !deferred.alive) return;
             const qjsVal = toQuickJSValue(vm, res);
             deferred.resolve(qjsVal);
-            qjsVal.dispose();
+            try { qjsVal.dispose(); } catch {}
           } catch (err) {
-            if (!vm.alive) return;
-            const msg = err instanceof Error ? err.message : String(err);
-            const errVal = vm.newError(msg);
-            deferred.reject(errVal);
-            errVal.dispose();
+            if (!vm.alive || !deferred.alive) return;
+            try {
+              const msg = err instanceof Error ? err.message : String(err);
+              const errVal = vm.newError(msg);
+              deferred.reject(errVal);
+              try { errVal.dispose(); } catch {}
+            } catch {}
           }
-        })();
+        })().catch(() => {});
 
         return deferred.handle;
       });
@@ -266,9 +284,36 @@ export async function runSandboxedScript(
       preludeRes.value.dispose();
     }
 
+    // 5.5 Normalize un-awaited top-level async invocations and IIFEs
+    let normalizedCode = code;
+    normalizedCode = normalizedCode.replace(/(?<!await\s+)(\(\s*async\s*(?:\([^)]*\)|[a-zA-Z_$][a-zA-Z0-9_$]*|\s*function\s*\(?[^)]*\)?)\s*=>|\(\s*async\s+function\b)/g, 'await $1');
+    const asyncFns = [...normalizedCode.matchAll(/async\s+function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g)].map((m) => m[1]);
+    for (const fn of asyncFns) {
+      normalizedCode = normalizedCode.replace(new RegExp(`(?<!await\\s+|function\\s+)\\b(${fn})\\s*\\(`, 'g'), 'await $1(');
+    }
+
+    // Return last top-level expression so that returned values/summaries are captured
+    const codeLines = normalizedCode.split('\n');
+    let lastIdx = codeLines.length - 1;
+    while (lastIdx >= 0 && !codeLines[lastIdx].trim()) lastIdx--;
+    if (lastIdx >= 0) {
+      const lastLine = codeLines[lastIdx].trim();
+      const reservedKeywords = /^(?:return|const|let|var|function|async\s+function|class|for|while|if|else|try|catch|finally|switch|case|break|continue|throw|import|export)\b/;
+      const isOnlyClosingTokens = /^\s*[})\]]+;?\s*$/.test(lastLine);
+      if (!/\btext\s*\(/.test(normalizedCode) && !reservedKeywords.test(lastLine) && !isOnlyClosingTokens && !lastLine.endsWith('{') && !lastLine.endsWith('}')) {
+        codeLines[lastIdx] = codeLines[lastIdx].replace(/^(\s*)(?!return\b)/, '$1return ');
+        normalizedCode = codeLines.join('\n');
+      }
+    }
+
     // 6. Wrap script in async IIFE and execute
     const wrappedCode = `(async () => {
-${code}
+  const __ret = await (async () => {
+${normalizedCode}
+  })();
+  if (__ret !== undefined) {
+    __captureReturn(__ret);
+  }
 })().then(() => {
   __scriptSettled();
 }).catch(__err => {
@@ -280,11 +325,11 @@ ${code}
       const errDump = vm.dump(evalRes.error) as { message?: string; line?: number } | string;
       evalRes.error.dispose();
       const message = typeof errDump === "object" ? errDump.message || "Syntax error" : String(errDump);
-      const line = typeof errDump === "object" ? errDump.line : undefined;
+      const line = typeof errDump === "object" && typeof errDump.line === "number" ? errDump.line : undefined;
       return {
         ok: false,
         output: "",
-        error: { kind: "syntax", message, line },
+        error: { kind: "syntax", message, ...(line !== undefined ? { line } : {}) },
         toolCalls: facade.getExecutedTools(),
         durationMs: Date.now() - t0,
         newSourceDigests: facade.getDiscoveredDigests(),
