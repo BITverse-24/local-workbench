@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "timestamp": "2026-11-08T21:28:36.419Z",
+  "timestamp": "2026-11-08T21:31:22.121Z",
   "tier": "evaluation",
   "k": 1,
   "model": "qwen/qwen3.5-9b",
   "stats": {
-    "totalTasks": 9,
-    "totalRuns": 9,
-    "passedRuns": 9,
+    "totalTasks": 10,
+    "totalRuns": 10,
+    "passedRuns": 10,
     "passRate": 100
   },
   "tasks": [
@@ -209,6 +209,31 @@
             "src/orders.js"
           ],
           "oracleOutput": "✔ filterOrdersByStatus filters correctly (0.555375ms)\n✔ calculateOrderTotal sums item prices times quantities (0.058417ms)\n✔ applyDiscount calculates percentage discounts properly (0.045916ms)\n✔ isEligibleForFreeShipping checks threshold boundary (0.045042ms)\n✔ findOrderById returns order or null (0.539584ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 63.839958\n"
+        }
+      ]
+    },
+    {
+      "id": "js-calc-median-even",
+      "base": "js-calculator",
+      "runs": [
+        {
+          "taskId": "js-calc-median-even",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "requirements_satisfied",
+          "wallMs": 130623,
+          "callsByRole": {
+            "actor": 1,
+            "delivery": 1,
+            "coverage_judge": 1,
+            "scope_judge": 2
+          },
+          "finishReasons": {},
+          "approvalsRequested": 3,
+          "changedFiles": [
+            "src/math.js"
+          ],
+          "oracleOutput": "✔ calculateMean computes average correctly (0.55275ms)\n✔ calculateMedian handles odd and even arrays (0.069208ms)\n✔ clamp keeps values within bounds (0.046917ms)\n✔ standardDeviation computes population std dev (0.0705ms)\n✔ factorial computes products (0.044875ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 65.196666\n"
         }
       ]
     }
