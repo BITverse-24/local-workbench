@@ -158,8 +158,9 @@ async function runTaskAttempt(
     });
     activeRunId = startResult.runId;
 
-    // 6. Poll for run completion (timeout: 300s)
-    const deadline = Date.now() + 300000;
+    // 6. Poll for run completion (timeout: 450s default, configurable)
+    const timeoutMs = parseInt(process.env.EVAL_TASK_TIMEOUT_MS || "450000", 10);
+    const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const state = getState(activeRunId);
       if (["completed", "partial", "failed", "cancelled", "limit_exceeded"].includes(state)) {

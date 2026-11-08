@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "timestamp": "2026-11-08T20:27:17.733Z",
+  "timestamp": "2026-11-08T20:37:21.596Z",
   "tier": "smoke",
   "k": 1,
   "model": "qwen/qwen3.5-9b",
@@ -12,27 +12,24 @@
   },
   "tasks": [
     {
-      "id": "js-str-slug-lower",
-      "base": "js-strings",
+      "id": "py-pricing-subtotal-math",
+      "base": "py-pricing",
       "runs": [
         {
-          "taskId": "js-str-slug-lower",
+          "taskId": "py-pricing-subtotal-math",
           "runIndex": 1,
           "pass": true,
-          "stopReason": "requirements_satisfied",
-          "wallMs": 127130,
+          "stopReason": "cancelled",
+          "wallMs": 301293,
           "callsByRole": {
-            "actor": 1,
-            "delivery": 1,
-            "coverage_judge": 1,
-            "scope_judge": 2
+            "actor": 6
           },
           "finishReasons": {},
-          "approvalsRequested": 3,
+          "approvalsRequested": 2,
           "changedFiles": [
-            "src/formatter.js"
+            "pricing.py"
           ],
-          "oracleOutput": "✔ toSlug creates URL-friendly slugs (0.608583ms)\n✔ truncate shortens long strings with suffix (0.056ms)\n✔ camelToKebab converts casing (0.065834ms)\n✔ capitalizeWords capitalizes each word (0.05825ms)\n✔ renderTemplate substitutes variables (0.070833ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 65.511708\n"
+          "oracleOutput": ""
         }
       ]
     }
