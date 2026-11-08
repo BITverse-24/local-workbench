@@ -7,6 +7,7 @@ import { parseFileIndependently } from "./file-worker.js";
 import { withTaskProgress } from "../run/task-progress.js";
 import { createHash, randomUUID } from "node:crypto";
 import { matchesContractDeliverable } from "../run/contract.js";
+import { getDb } from "../persistence/db.js";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from 'zod';

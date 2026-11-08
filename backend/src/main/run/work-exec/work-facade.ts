@@ -251,8 +251,9 @@ export function createWorkFacade(context: ToolExecutionContext): WorkFacade {
 
       if (result.ok === false || result.error) {
         if (result.error?.message?.includes("does not authorize")) {
-          facadeTextChunks.push(`[Deliverable "${opt.filename}" was not requested or authorized by the task scope and was not saved as a separate file. Output was preserved in chat text.]`);
-          return;
+          const notice = `[Deliverable "${opt.filename}" was not requested or authorized by the task scope and was not saved as a separate file. Output was preserved in chat text.]`;
+          textOutput = textOutput !== null ? textOutput + "\n" + notice : notice;
+          return { ok: false, filename: opt.filename };
         }
         throw new Error(`Deliverable generation failed: ${result.error?.message ?? result.output}`);
       }

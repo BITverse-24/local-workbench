@@ -46,7 +46,7 @@ export const workExecTool: AgentTool = {
         ok: false,
         output: "work_exec executes JavaScript (QuickJS-WASM), NOT Python. Do not use Python 'import', 'def', or 'with open()'. Use JavaScript syntax:\nconst rows = await readTable('filename.csv'); // returns array of row objects\nconst total = sum(rows, 'column_name'); // or use rows.reduce(...)\ntext(`Result: ${total}`); // record findings\n(Do NOT call emitDeliverable unless an output file was explicitly requested).",
         summary: "work_exec failed: python syntax in javascript sandbox",
-        error: { code: "invalid_syntax", message: "work_exec requires JavaScript, not Python", retryable: true },
+        error: { code: "invalid_arguments", message: "work_exec requires JavaScript, not Python", retryable: true },
       };
     }
 

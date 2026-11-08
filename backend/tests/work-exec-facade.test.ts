@@ -371,7 +371,7 @@ describe("Work Mode Code Mode: WorkFacade & Sandbox", () => {
       mode: "work",
       modelId: "primary-model",
       hasWorkspace: false,
-      attachments: [{ filename: "general-ledger.csv" }, { filename: "budget-targets.json" }],
+      attachments: [{ filename: "general-ledger.csv" }, { filename: "budget-targets.json" }] as any,
       hasKnowledgeBaseDocs: false,
       computationRequested: true,
       deliverableRequested: true,
@@ -545,7 +545,7 @@ describe("Work Mode Code Mode: WorkFacade & Sandbox", () => {
   });
 
   it("supports groupBy chaining (.map, .entries, .values) and proxy property access", async () => {
-    const facade = createWorkFacade({ runId: "test-run", workspaceRoot: "/tmp" });
+    const facade = createWorkFacade({ runId: "test-run", workspaceRoot: "/tmp" } as any);
     const script = `
       const rows = [
         { sku: "SKU-101", region: "NA", sales: 100 },
@@ -593,7 +593,7 @@ describe("Work Mode Code Mode: WorkFacade & Sandbox", () => {
   });
 
   it("supports join() and unit_price aliases across relational datasets", async () => {
-    const facade = createWorkFacade({ runId: "test-run-join", workspaceRoot: "/tmp" });
+    const facade = createWorkFacade({ runId: "test-run-join", workspaceRoot: "/tmp" } as any);
     const script = `
       const catalog = [
         { sku: "SKU-101", category: "Electronics", reorder_threshold: 50 },
