@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "timestamp": "2026-11-08T21:31:22.121Z",
+  "timestamp": "2026-11-08T21:39:51.139Z",
   "tier": "evaluation",
   "k": 1,
   "model": "qwen/qwen3.5-9b",
   "stats": {
-    "totalTasks": 10,
-    "totalRuns": 10,
-    "passedRuns": 10,
+    "totalTasks": 11,
+    "totalRuns": 11,
+    "passedRuns": 11,
     "passRate": 100
   },
   "tasks": [
@@ -234,6 +234,31 @@
             "src/math.js"
           ],
           "oracleOutput": "✔ calculateMean computes average correctly (0.55275ms)\n✔ calculateMedian handles odd and even arrays (0.069208ms)\n✔ clamp keeps values within bounds (0.046917ms)\n✔ standardDeviation computes population std dev (0.0705ms)\n✔ factorial computes products (0.044875ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 65.196666\n"
+        }
+      ]
+    },
+    {
+      "id": "js-inv-adjust-stock",
+      "base": "js-inventory",
+      "runs": [
+        {
+          "taskId": "js-inv-adjust-stock",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "cancelled",
+          "wallMs": 451245,
+          "callsByRole": {
+            "actor": 5,
+            "delivery": 1,
+            "coverage_judge": 2,
+            "scope_judge": 2
+          },
+          "finishReasons": {},
+          "approvalsRequested": 3,
+          "changedFiles": [
+            "src/inventory.js"
+          ],
+          "oracleOutput": "✔ getLowStockItems returns items below or at threshold (0.585834ms)\n✔ adjustStock updates quantity or throws on negative (0.18775ms)\n✔ totalInventoryValue calculates aggregate cost (0.055041ms)\n✔ categorizeInventory groups by category (0.061417ms)\n✔ restockNeeds computes quantity deficits (0.566375ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 66.215958\n"
         }
       ]
     }
