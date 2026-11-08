@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "timestamp": "2026-11-08T21:59:24.729Z",
+  "timestamp": "2026-11-08T22:07:21.204Z",
   "tier": "evaluation",
   "k": 1,
   "model": "qwen/qwen3.5-9b",
   "stats": {
-    "totalTasks": 14,
-    "totalRuns": 14,
-    "passedRuns": 14,
+    "totalTasks": 15,
+    "totalRuns": 15,
+    "passedRuns": 15,
     "passRate": 100
   },
   "tasks": [
@@ -326,6 +326,28 @@
           "approvalsRequested": 2,
           "changedFiles": [
             "validator.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "py-stats-outliers-factor",
+      "base": "py-stats",
+      "runs": [
+        {
+          "taskId": "py-stats-outliers-factor",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "cancelled",
+          "wallMs": 451167,
+          "callsByRole": {
+            "actor": 8
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "stats.py"
           ],
           "oracleOutput": ""
         }
