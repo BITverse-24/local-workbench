@@ -80,6 +80,7 @@ The `prepackage` and `prepackage:dir` hooks run `scripts/reset-dev-defaults.cjs`
 - **Model Roles**: Separate Vision, Coding, Draft, and Embeddings endpoints are supported. Draft is the default model selector choice; duplicate endpoints are consolidated.
 - **Local RAG & Vector**: Embedded local vector index (`vectra` `LocalIndex`) + SQLite FTS5 (full-text keyword search with Porter stemmer) with Reciprocal Rank Fusion (RRF), local embedding endpoints (`/v1/embeddings`, e.g. `nomic-embed-text`)
 - **Document & Data Processing**: `pdfjs-dist`, `canvas`, `docx`, `exceljs`, `jszip`
+- **Code Execution Sandbox**: `quickjs-emscripten` (WASM sandboxed execution for Agent Code Mode and Work Mode `work_exec`)
 - **Testing & Verification**: Vitest 3, custom behavioral and scenario evaluation harnesses (`scripts/behavioral.cjs`, `scripts/certify-v0.cjs`, `tests/acceptance.ts`)
 
 ---
@@ -134,7 +135,9 @@ agent/
 │   │       │       ├── facade.ts         # Read-only broker facade wrapping ToolDispatcher
 │   │       │       ├── signatures.ts     # Compact TypeScript signature block generator
 │   │       │       ├── exec-policy.ts    # Two-strike failure & sticky native transition policy
-│   │       │       └── exec-step.ts      # Agent observe phase turn coordinator
+│   │       │       ├── exec-step.ts      # Agent observe phase turn coordinator
+│   │       │       ├── sandbox-prelude.ts# Preloaded analysis utilities (parseCSV, groupBy, join, sum, avg, round, toCSV, RowProxy)
+│   │       │       └── smart-truncate.ts # Token-aware smart truncation for sandboxed output
 │   │       ├── ipc/               # IPC registration, channel constants, and validators
 │   │       │   ├── channels.ts           # Channel constant definitions (IPC_CHAT, IPC_RUN, IPC_WORKSPACE, etc.)
 │   │       │   ├── handlers.ts           # Chat, Run, and Workspace IPC handlers
@@ -160,7 +163,11 @@ agent/
 │   │       │   ├── task-progress.ts      # Runtime task progress tracking
 │   │       │   ├── verification.ts       # Deliverable file verification (parsers, digests, checks)
 │   │       │   ├── partial-result.ts     # Partial execution summaries
-│   │       │   └── images.ts             # PDF/SVG/Image rendering and vision token estimation
+│   │       │   ├── images.ts             # PDF/SVG/Image rendering and vision token estimation
+│   │       │   └── work-exec/            # Work Mode sandboxed execution tool (work_exec)
+│   │       │       ├── work-exec-tool.ts # Tool definition and dispatch handler
+│   │       │       ├── work-facade.ts    # Read-only Work environment facade (readTable, readJson, emitDeliverable)
+│   │       │       └── work-sandbox.ts   # Dedicated QuickJS sandbox runner for Work Mode
 │   │       ├── gateway/           # Model communication and inference abstraction
 │   │       │   ├── inference-scheduler.ts# Shared inference admission, file and Python slots
 │   │       │   ├── model-gateway.ts      # Gateway client (OpenAI-compatible REST, chatWithTools)
