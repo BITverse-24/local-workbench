@@ -1,0 +1,14 @@
+{
+  "id": "py-stats-norm-equal",
+  "base": "py-stats",
+  "mutation": "missing_zero_check",
+  "prompt": "normalize_min_max causes ZeroDivisionError when all elements are identical. Fix stats.py so tests pass.",
+  "expectChangedFiles": [
+    "stats.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_stats.py",
+    "mustPass": true
+  }
+}

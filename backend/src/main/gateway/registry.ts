@@ -5,7 +5,25 @@ import type { ModelConfigRow, ModelId, ModelRegistryEntry } from "../../shared/c
 import { isAllowedLocalModelEndpoint, isAllowedLocalModelHost } from "../../shared/local-network.js";
 import { getSetting } from "../persistence/settings-store.js";
 
-const entry = z.object({ id: z.string().min(1), taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1).optional(), runtime: z.enum(["mlx-lm", "llama-server", "ollama"]), baseUrl: z.string().url().refine(isAllowedLocalModelEndpoint, "Model endpoint must use localhost or a private IP address"), model: z.string().min(1), capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])), requestTimeoutMs: z.number().int().positive().max(600000), healthPath: z.literal("/models"), enabled: z.boolean(), fallbackOnly: z.boolean().optional(), toolCallingFormat: z.enum(["native", "json"]).optional(), temperature: z.number().min(0).max(2).optional(), contextLength: z.number().int().positive().max(128000).optional(), maxOutputTokens: z.number().int().positive().max(128000).optional(), concurrencyLimit: z.number().int().min(1).max(32).optional() }).strict();
+const entry = z.object({
+  id: z.string().min(1),
+  taskTypes: z.array(z.enum(["vision", "draft", "code"])).min(1).optional(),
+  runtime: z.enum(["mlx-lm", "llama-server", "ollama", "openrouter", "cloud"] as const),
+  baseUrl: z.string().url().refine(isAllowedLocalModelEndpoint, "Model endpoint must use localhost or a private IP address"),
+  model: z.string().min(1),
+  apiKey: z.string().optional(),
+  apiKeyEnv: z.string().optional(),
+  capabilities: z.array(z.enum(["text", "image-input", "structured-output", "code-generation"])),
+  requestTimeoutMs: z.number().int().positive().max(600000),
+  healthPath: z.string().optional().default("/models"),
+  enabled: z.boolean(),
+  fallbackOnly: z.boolean().optional(),
+  toolCallingFormat: z.enum(["native", "json"]).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  contextLength: z.number().int().positive().max(128000).optional(),
+  maxOutputTokens: z.number().int().positive().max(128000).optional(),
+  concurrencyLimit: z.number().int().min(1).max(32).optional(),
+}).strict();
 const config = z.object({ $comment: z.string().optional(), models: z.array(entry) }).strict();
 
 

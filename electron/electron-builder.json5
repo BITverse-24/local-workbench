@@ -13,7 +13,8 @@
     "output": "release/${version}"
   },
   "asarUnpack": [
-    "**/*.node"
+    "**/*.node",
+    "**/*.wasm"
   ],
   "files": [
     "frontend/dist/**/*",

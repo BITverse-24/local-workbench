@@ -1,0 +1,14 @@
+{
+  "id": "js-orders-shipping-bound",
+  "base": "js-orders",
+  "mutation": "off_by_one",
+  "prompt": "Orders exactly at the free shipping threshold are denied free shipping. Fix the boundary comparison in src/orders.js so tests pass.",
+  "expectChangedFiles": [
+    "src/orders.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/orders.test.js",
+    "mustPass": true
+  }
+}

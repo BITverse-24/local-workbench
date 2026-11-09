@@ -11,7 +11,7 @@ import { resolveSafe, PermissionError } from "../path-guard.js";
 import { writeFile } from "./write-file.js";
 import { deleteFile } from "./delete-file.js";
 import type { MutationPolicyGuard } from "../policy-guard.js";
-import { agentManifestDigest, agentRuntimeProbeCommand, captureAgentVerificationManifest, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, parseAgentTestReport, type AgentTestArtifact, type AgentTestExecutionEvidence, type AgentTestExecutionRequest } from "../../agent/test-verification.js";
+import { agentManifestDigest, agentRuntimeProbeCommand, captureAgentVerificationManifest, isAgentTestPath, isCodeVerificationPath, NODE_EXISTING_TEST_REPORTER, parseAgentTestReport, type AgentTestArtifact, type AgentTestExecutionEvidence, type AgentTestExecutionRequest } from "../../agent/test-verification.js";
 
 export interface CommandResult {
   stdout: string;
@@ -291,6 +291,23 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
       if (!original || original.linkTarget || original.hash !== artifact.sourceDigest || verification.sourceManifest[artifact.targetPath] !== artifact.sourceDigest) throw new PermissionError("The test artifact target is stale or invalid.");
       writeFileSync(target, artifactCurrent());
     }
+    const overlays = verification?.overlay;
+    if (overlays?.length) {
+      if (overlays.length > 3) throw new PermissionError("Maximum 3 overlay files allowed.");
+      let totalBytes = 0;
+      for (const item of overlays) {
+        totalBytes += item.bytes.length;
+        if (totalBytes > 1024 * 1024) throw new PermissionError("Total overlay size exceeds 1 MiB limit.");
+        const original = before.get(item.path.split("/").join(path.sep));
+        if (!original || original.linkTarget || original.hash !== item.sourceDigest) {
+          throw new PermissionError("Overlay target is stale or invalid.");
+        }
+        if (isAgentTestPath(item.path)) {
+          throw new PermissionError("Overlay target cannot be a test file.");
+        }
+        writeFileSync(resolveSafe(work, item.path), item.bytes);
+      }
+    }
     const { launch } = selected;
     currentRuntimeScope()?.observe?.({ commandIsolationStatus: selected.status,
       isolationStatus: selected.status === "os_isolated" ? "os_isolated" : "approved_uncontained" });
@@ -335,6 +352,7 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
         manifestSha256: verification.workspaceManifestSha256, sourceManifest: beforeFiles, exitCode, timedOut, executed: 0, failed: 0, skipped: 0,
         testFiles: [], isolationStatus: selected.status, ...(runtimeProbes.length ? {runtimeProbes} : {}),
         ...(artifact ? {artifact:{targetPath:artifact.targetPath,sourceDigest:artifact.sourceDigest,artifactDigest:artifact.artifactDigest}} : {}),
+        ...(overlays ? {overlay: overlays.map(o => ({ path: o.path, sourceDigest: o.sourceDigest, overlayDigest: o.digest }))} : {}),
         ...(verification.successMarker ? { successMarker: verification.successMarker, successMarkerObserved: stdout.split(/\r?\n/).some(line => line.trim() === verification.successMarker) } : {}) };
       result.verification = evidence;
       try {
@@ -363,7 +381,12 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
         if (/(?:^|[/\\])(?:coverage|\.pytest_cache|\.cache|__pycache__|dist|build)(?:[/\\]|$)/.test(name)) continue;
         try {
           const target = resolveSafe(work, name);
-          const expected = artifact && name.split(path.sep).join("/") === artifact.targetPath ? artifact.artifactDigest : file.hash;
+          const overlayItem = overlays?.find(o => o.path.split("/").join(path.sep) === name || o.path === name);
+          const expected = artifact && name.split(path.sep).join("/") === artifact.targetPath
+            ? artifact.artifactDigest
+            : overlayItem
+              ? overlayItem.digest
+              : file.hash;
           if (!lstatSync(target).isFile() || digest(readFileSync(target)) !== expected) { evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command changed an input file: ${name}.`; break; }
         } catch { evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command removed or replaced an input file: ${name}.`; break; }
       }

@@ -1,0 +1,14 @@
+{
+  "id": "js-str-template-key",
+  "base": "js-strings",
+  "mutation": "wrong_return",
+  "prompt": "renderTemplate returns empty string instead of rendered template. Fix src/formatter.js so tests pass.",
+  "expectChangedFiles": [
+    "src/formatter.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/formatter.test.js",
+    "mustPass": true
+  }
+}

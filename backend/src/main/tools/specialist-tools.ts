@@ -7,6 +7,7 @@ import { parseFileIndependently } from "./file-worker.js";
 import { withTaskProgress } from "../run/task-progress.js";
 import { createHash, randomUUID } from "node:crypto";
 import { matchesContractDeliverable } from "../run/contract.js";
+import { getDb } from "../persistence/db.js";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from 'zod';
@@ -28,6 +29,7 @@ import type {
 } from "../../shared/contracts.js";
 import { extractDocxText, extractPdfText } from "./document-reader.js";
 import { extractSvgText } from "../run/images.js";
+import { workExecTool } from "../run/work-exec/work-exec-tool.js";
 
 function inferArtifactKind(filename: string): ArtifactKind {
   const ext = path.extname(filename).toLowerCase();
@@ -745,7 +747,11 @@ export const generateDeliverableTool: AgentTool = {
     }
 
     if (context.runContract && contractDeliverables.length > 0 && !matchesContractDeliverable(context.runContract, filename, type)) {
-      throw { code: "invalid_arguments", retryable: true, message: `The persisted run contract does not request this deliverable: ${filename}.` };
+      const existing = getDb().prepare('SELECT filename FROM artifacts WHERE run_id=?').all(context.runId) as Array<{filename:string}>;
+      const allSatisfied = contractDeliverables.every(d => existing.some(a => matchesContractDeliverable(context.runContract!, a.filename)));
+      if (!allSatisfied && !['md', 'txt'].includes(type)) {
+        throw { code: "invalid_arguments", retryable: true, message: `The persisted run contract does not request this deliverable: ${filename}.` };
+      }
     }
     if (context.requestedArtifacts?.length && !context.requestedArtifacts.some((artifact) => artifact.filename === filename)) {
       const stemMatch = context.requestedArtifacts.find((artifact) =>
@@ -960,6 +966,8 @@ function observeGeneration(tool: AgentTool, stage: "repair_generation" | "draft_
   }) };
 }
 
+export { workExecTool };
+
 export const specialistTools: AgentTool[] = [
   extractDocumentTool,
   generateCodeTool,
@@ -967,4 +975,5 @@ export const specialistTools: AgentTool[] = [
   retrieveKnowledgeTool,
   executePythonTool,
   generateDeliverableTool,
+  workExecTool,
 ];

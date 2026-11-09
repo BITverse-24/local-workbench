@@ -30,8 +30,8 @@ describe("Agent Tools Suite", () => {
     }
   });
 
-  it("exports all 6 specialist tools with valid schemas", () => {
-    expect(specialistTools).toHaveLength(6);
+  it("exports all specialist tools with valid schemas", () => {
+    expect(specialistTools).toHaveLength(7);
     const names = specialistTools.map((t) => t.name);
     expect(names).toEqual([
       "extract_document",
@@ -40,6 +40,7 @@ describe("Agent Tools Suite", () => {
       "retrieve_knowledge",
       "execute_python",
       "generate_deliverable",
+      "work_exec",
     ]);
     for (const tool of specialistTools) {
       expect(tool.definition.type).toBe("function");

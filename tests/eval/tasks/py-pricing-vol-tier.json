@@ -1,0 +1,14 @@
+{
+  "id": "py-pricing-vol-tier",
+  "base": "py-pricing",
+  "mutation": "wrong_rate",
+  "prompt": "apply_volume_discount gives 30% discount at 100+ items instead of 20%. Fix the rate in pricing.py so tests pass.",
+  "expectChangedFiles": [
+    "pricing.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_pricing.py",
+    "mustPass": true
+  }
+}

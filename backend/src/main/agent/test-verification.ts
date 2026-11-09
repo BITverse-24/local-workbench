@@ -40,6 +40,9 @@ export type AgentTestRuntimeTool = "node" | "npm" | "pnpm" | "yarn" | "python3" 
 export interface AgentTestArtifact {
   artifactPath: string; artifactDigest: string; sourceDigest: string; targetPath: string;
 }
+export interface AgentTestOverlay {
+  path: string; sourceDigest: string; bytes: Buffer; digest: string;
+}
 /** Only the controller supplies this context. It is never a model tool argument. */
 export interface AgentTestExecutionRequest {
   planId: string; command: string; phase: AgentTestPhase; runner: AgentTestRunner; suiteRoot: string;
@@ -48,6 +51,7 @@ export interface AgentTestExecutionRequest {
   successMarker?: string;
   runtimeTools?: AgentTestRuntimeTool[];
   artifact?: AgentTestArtifact;
+  overlay?: AgentTestOverlay[];
 }
 export interface AgentTestExecutionEvidence {
   planId: string; command: string; phase: AgentTestPhase; runner: AgentTestRunner;
@@ -60,6 +64,7 @@ export interface AgentTestExecutionEvidence {
   successMarker?: string; successMarkerObserved?: boolean;
   runtimeProbes?: Array<{tool:AgentTestRuntimeTool;available:boolean;version?:string;detail?:string}>;
   artifact?: Omit<AgentTestArtifact, "artifactPath">;
+  overlay?: Array<{ path: string; sourceDigest: string; overlayDigest?: string; digest?: string }> | AgentTestOverlay[];
 }
 export interface AgentFailureLocation { path: string; line: number }
 export type AgentTestDiscovery = { ok: true; plans: AgentTestPlan[] } | { ok: false; reason: string; detail: string };
@@ -76,6 +81,13 @@ export const isAgentTestPath = (filename: string) => /\.(?:[cm]?[jt]sx?|py|java|
   /(?:^|\/)(?:__tests__|tests?|spec)(?:\/|$)|(?:^|\/)(?:test[_-][^/]+|[^/]+(?:[._-](?:test|spec)|_test))\.[^/]+$/i.test(filename);
 export function agentManifestDigest(files: Record<string, string>): string {
   return hash(JSON.stringify(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))));
+}
+export function computeExpectedManifestRevision(files: Record<string, string>, overlays: AgentTestOverlay[]): string {
+  const merged = { ...files };
+  for (const o of overlays) {
+    merged[o.path] = o.digest;
+  }
+  return agentManifestDigest(merged);
 }
 /** Match the command snapshot limits and input link rules. New files also change the digest. */
 export function captureAgentVerificationManifest(workspaceRoot: string): { sha256: string; files: Record<string, string> } {

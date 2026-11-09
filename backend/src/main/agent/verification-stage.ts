@@ -3,9 +3,9 @@ import type { AgentToolCall, VerificationCheck } from "../../shared/contracts.js
 import type { ToolExecutionContext } from "../tools/types.js";
 import type { ToolDispatcher } from "./tool-dispatcher.js";
 import {
-  appendVerificationSuccessMarker, assessAgentTestExecution, captureAgentVerificationManifest, createAgentVerificationCall,
+  appendVerificationSuccessMarker, assessAgentTestExecution, captureAgentVerificationManifest, computeExpectedManifestRevision, createAgentVerificationCall,
   createAgentVerificationRequest, discoverAgentTestPlans,
-  type AgentFailureLocation, type AgentTestArtifact,
+  type AgentFailureLocation, type AgentTestArtifact, type AgentTestOverlay,
 } from "./test-verification.js";
 import {
   finishVerificationAttempt, getRunVerificationState, recordVerificationEvidence,
@@ -20,6 +20,8 @@ export interface AgentVerificationStageResult {
   detail: string;
   reason?: string;
   sourceHints?: AgentFailureLocation[];
+  resultId?: string;
+  expectedRevision?: string;
 }
 
 /** A runtime stage. Model tool arguments cannot select this execution context. */
@@ -31,19 +33,25 @@ export async function runAgentVerificationStage(input: {
   successMarker?: string;
   baseline?: boolean;
   artifact?: { operation: AgentTestArtifact; criterionId: string; revision: string; assertCurrent: () => void };
+  overlay?: AgentTestOverlay[];
+  expectedRevision?: string;
+  shadow?: boolean;
   authorize: (calls: AgentToolCall[]) => Promise<boolean>;
 }): Promise<AgentVerificationStageResult> {
   const { context, dispatcher } = input;
   const runId = context.runId;
   const criterion = input.artifact?.criterionId ?? (input.baseline ? "baseline:project-tests" : CRITERION);
   const evidence = (status: VerificationCheck["status"], reason: string, extra: Partial<VerificationCheck> = {}) => {
+    if (input.shadow) return;
     recordVerificationEvidence(runId, [{ criterionId: criterion, requirement: "Run tests against the latest saved code", status,
       method: "execution_record", evidence: [], reason: reason.slice(0, 500), verifiedAt: new Date().toISOString(), mandatory: !input.baseline && !input.artifact, ...extra }]);
   };
   const stop = (reason: string, detail: string): AgentVerificationStageResult => {
-    evidence("unverified", detail);
-    recordVerificationTermination(runId, { reason, criterionIds: [criterion], detail });
-    context.refreshVerificationReport?.();
+    if (!input.shadow) {
+      evidence("unverified", detail);
+      recordVerificationTermination(runId, { reason, criterionIds: [criterion], detail });
+      context.refreshVerificationReport?.();
+    }
     return { action: "stop", detail, reason };
   };
   const state = getRunVerificationState(runId);
@@ -64,14 +72,14 @@ export async function runAgentVerificationStage(input: {
     try { manifest = captureAgentVerificationManifest(context.workspaceRoot); }
     catch (error) { activity.block("The test snapshot could not be prepared."); return stop("verification_environment_unavailable", String(error)); }
     try { input.artifact?.assertCurrent(); } catch (error) { return stop("stale_evidence", String(error)); }
-    const revision = input.artifact?.revision ?? manifest.sha256;
+    const revision = input.expectedRevision ?? (input.overlay ? computeExpectedManifestRevision(manifest.files, input.overlay) : (input.artifact?.revision ?? manifest.sha256));
     const prior = state?.evidence.find(check => check.criterionId === criterion && check.revision === revision);
-    if (prior?.status === "passed" && prior.evidence.length > 0 && prior.evidence.every(ref => ref.kind === "result" && resultStore.verifyIntegrity(ref.id).valid)) return { action: "passed", detail: prior.reason };
+    if (prior?.status === "passed" && prior.evidence.length > 0 && prior.evidence.every(ref => ref.kind === "result" && resultStore.verifyIntegrity(ref.id).valid)) return { action: "passed", detail: prior.reason, resultId: prior.evidence[0]?.id, expectedRevision: revision };
     if (prior?.status === "failed" && state?.termination?.reason === "repair_budget_exhausted") {
       return { action: "stop", detail: state.termination.detail };
     }
     if (prior?.status === "failed") {
-      return { action: "repair", detail: prior.reason };
+      return { action: "repair", detail: prior.reason, resultId: prior.evidence[0]?.id, expectedRevision: revision };
     }
     const discovery = discoverAgentTestPlans({ workspaceRoot: context.workspaceRoot, changedPaths: input.changedPaths, userCommand: input.userCommand });
     if (!discovery.ok) { activity.block(discovery.detail); return stop(discovery.reason, discovery.detail); }
@@ -82,11 +90,12 @@ export async function runAgentVerificationStage(input: {
       for (;;) {
         const request = createAgentVerificationRequest(plan, phase);
         if (input.artifact) request.artifact = input.artifact.operation;
+        if (input.overlay) request.overlay = input.overlay;
         if (input.successMarker) {
           try { request.command = appendVerificationSuccessMarker(request.command, input.successMarker); request.successMarker = input.successMarker; }
           catch (error) { return stop("unsupported_verification", String(error)); }
         }
-        const planId = createHash("sha256").update(input.baseline ? "baseline:" : "").update(plan.id).update(phase).update(revision).update(request.command).digest("hex");
+        const planId = createHash("sha256").update(input.shadow ? "shadow:" : input.baseline ? "baseline:" : "").update(plan.id).update(phase).update(revision).update(request.command).digest("hex");
         request.planId = planId;
         const latestState = getRunVerificationState(runId);
         const previous = latestState?.attempts.filter(attempt => attempt.planId === planId).at(-1);
@@ -95,8 +104,10 @@ export async function runAgentVerificationStage(input: {
           if (integrity.valid) { resultIds.push(previous.resultId); planIds.push(planId); break; }
         }
         if (phase === "related" && latestState?.fullSuiteRevisions.includes(`${revision}:${plan.id}`)) { phase = "full"; continue; }
-        registerVerificationPlan(runId, { id: planId, kind: "agent_tests", revision,
-          criterionIds: [criterion], command: request.command, targets: plan.changedPaths, runner: plan.runner });
+        if (!input.shadow) {
+          registerVerificationPlan(runId, { id: planId, kind: "agent_tests", revision,
+            criterionIds: [criterion], command: request.command, targets: plan.changedPaths, runner: plan.runner });
+        }
         const call = createAgentVerificationCall(request, randomUUID());
         context.agentVerification = request;
         let authorized: boolean;
@@ -151,18 +162,18 @@ export async function runAgentVerificationStage(input: {
             sourceManifest: manifest.files, evidence: resultId ? [{ kind: "result", id: resultId }] : [] });
           if (status === "failed") {
             const seen = new Set<string>();
-            const sourceHints = [...(testEvidence?.failureLocations ?? []),...(testEvidence?.testFiles ?? []).map(path=>({path,line:1}))]
-              .filter(location=>{if(seen.has(location.path))return false;seen.add(location.path);return true;}).slice(0,16);
-            if (input.baseline) return { action: "repair", detail: `Baseline failures were recorded. ${detail}`, sourceHints };
+            const hints = testEvidence?.failureLocations?.length ? testEvidence.failureLocations : (testEvidence?.testFiles ?? []).map(path => ({ path, line: 1 }));
+            const sourceHints = hints.filter(location => { if (seen.has(location.path)) return false; seen.add(location.path); return true; }).slice(0, 16);
+            if (input.baseline || input.shadow) return { action: "repair", detail: input.shadow ? detail : `Baseline failures were recorded. ${detail}`, sourceHints, resultId, expectedRevision: revision };
             activity.block(detail);
             if (takeAgentVerificationRepair(runId)) {
               context.refreshVerificationReport?.();
-              return { action: "repair", detail: `${detail}\nCorrect the saved code using the actual test failure. The runtime will run tests after the repair. Execution result: ${resultId}.`, sourceHints };
+              return { action: "repair", detail: `${detail}\nCorrect the saved code using the actual test failure. The runtime will run tests after the repair. Execution result: ${resultId}.`, sourceHints, resultId, expectedRevision: revision };
             }
             recordVerificationTermination(runId, { reason: "repair_budget_exhausted", criterionIds: [criterion], detail: `Tests still fail after two repair cycles. ${detail}` });
             return { action: "stop", detail: `Tests still fail after two repair cycles. ${detail}` };
           }
-          activity.block(detail);
+          if (!input.shadow) activity.block(detail);
           return stop(reason, detail);
         }
         resultIds.push(resultId!);
@@ -172,10 +183,12 @@ export async function runAgentVerificationStage(input: {
     }
     if (!resultIds.length) return stop("execution_evidence_unavailable", "No existing test suite produced saved execution evidence. A test pass cannot be claimed.");
     const detail = input.artifact ? "The selected existing tests passed against the exported file in the test copy." : "The selected existing tests passed against the latest saved code.";
-    evidence("passed", detail, { revision,
-      planId: planIds[0], sourceManifest: manifest.files,
-      evidence: resultIds.map(id => ({ kind: "result" as const, id })) });
-    context.refreshVerificationReport?.();
-    return { action: "passed", detail };
+    if (!input.shadow) {
+      evidence("passed", detail, { revision,
+        planId: planIds[0], sourceManifest: manifest.files,
+        evidence: resultIds.map(id => ({ kind: "result" as const, id })) });
+      context.refreshVerificationReport?.();
+    }
+    return { action: "passed", detail, resultId: resultIds[0], expectedRevision: revision };
   });
 }

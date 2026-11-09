@@ -1,0 +1,14 @@
+{
+  "id": "py-queue-empty-return",
+  "base": "py-queue",
+  "mutation": "wrong_fallback",
+  "prompt": "pop on an empty queue raises error instead of returning None. Fix task_queue.py so tests pass.",
+  "expectChangedFiles": [
+    "task_queue.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_task_queue.py",
+    "mustPass": true
+  }
+}

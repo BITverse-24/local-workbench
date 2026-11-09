@@ -1,0 +1,18 @@
+{
+  "date": "2026-11-06T21:21:17.584Z",
+  "toolCount": 8,
+  "tools": [
+    "request_capability",
+    "list_dir",
+    "read_file",
+    "search",
+    "run_command",
+    "retrieve_result",
+    "retrieve_knowledge",
+    "finish"
+  ],
+  "observeDefinitionsTokens": 651,
+  "signaturesTokens": 187,
+  "tokenSavingsPerObserveTurn": 464,
+  "percentageSavings": "71.3%"
+}

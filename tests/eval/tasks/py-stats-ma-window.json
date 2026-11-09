@@ -1,0 +1,14 @@
+{
+  "id": "py-stats-ma-window",
+  "base": "py-stats",
+  "mutation": "off_by_one",
+  "prompt": "moving_average computes one fewer window than expected. Fix the range boundary in stats.py so tests pass.",
+  "expectChangedFiles": [
+    "stats.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_stats.py",
+    "mustPass": true
+  }
+}

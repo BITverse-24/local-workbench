@@ -859,7 +859,7 @@ export class RunManager {
   }
   private persistAssistant(runId: string, text: string, modelId: string, existingMessageId?: string): string {
     const chatId = this.chatIdForRun(runId);
-    const { id } = addMessage({ id: existingMessageId, chat_id: chatId, role: "assistant", content: text, run_id: runId, model_id: modelId });
+    const { id } = addMessage({ id: existingMessageId, chat_id: chatId, role: "assistant", content: text || " ", run_id: runId, model_id: modelId });
     this.emit({ type: "assistant_message", runId, messageId: id, text, modelId: modelId as never });
     return id;
   }

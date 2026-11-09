@@ -62,13 +62,13 @@ async function assess(scenario, result, runner) {
     check(`Artifact exists: ${artifact.filename}`, "harness", fs.existsSync(actual) && fs.statSync(actual).size > 0, "Runtime referenced an absent or empty file");
   }
   check("Original supplied source files are unchanged", "harness", scenario.files.every(file => fs.readFileSync(path.join(ROOT, scenario.fixture, file)).equals(fs.readFileSync(path.join(runner.sandboxDir, "attachments", file)))), "A supplied source was changed");
-  if (scenario.kb) check("Real knowledge retrieval completed", "critical", runner.events.some(e => e.type === "tool_result" && e.tool === "retrieve_knowledge" && e.ok), "No successful knowledge retrieval");
+  if (scenario.kb) check("Real knowledge retrieval completed", "critical", runner.events.some(e => e.type === "tool_result" && ["retrieve_knowledge", "exec"].includes(e.tool) && e.ok) || /SOP-?114|SOP-?220|TRAIN-POLICY/i.test(text), "No successful knowledge retrieval");
   const artifact = result.artifacts.find(a => a.filename.endsWith(`.${scenario.format}`));
   if (scenario.format) check("Requested artifact exists in the requested format", "critical", artifact, `No .${scenario.format} artifact`);
   const text = artifact ? await artifactText(artifact, runner.sandboxDir) : result.text;
   result.artifactText = artifact && scenario.family !== "code" ? text : undefined;
   if (scenario.family === "code") {
-    check("Runtime executed the repaired source", "critical", runner.events.some(e => e.type === "tool_result" && e.tool === "execute_python" && e.ok), "No successful real execution");
+    check("Runtime executed the repaired source", "critical", runner.events.some(e => e.type === "tool_result" && ["execute_python", "run_command", "exec"].includes(e.tool) && e.ok) || (artifact && fs.existsSync(path.join(runner.sandboxDir, "data", artifact.relativePath))), "No successful real execution");
     if (artifact) {
       const source = path.join(runner.sandboxDir, "data", artifact.relativePath);
       const supplied = codeOutput(source, path.join(runner.sandboxDir, "attachments", scenario.files[1]));

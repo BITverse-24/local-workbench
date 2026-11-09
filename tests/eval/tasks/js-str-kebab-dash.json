@@ -1,0 +1,14 @@
+{
+  "id": "js-str-kebab-dash",
+  "base": "js-strings",
+  "mutation": "wrong_delimiter",
+  "prompt": "camelToKebab separates words with underscores instead of dashes. Fix src/formatter.js so tests pass.",
+  "expectChangedFiles": [
+    "src/formatter.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/formatter.test.js",
+    "mustPass": true
+  }
+}

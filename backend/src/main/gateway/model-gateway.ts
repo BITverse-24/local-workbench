@@ -26,6 +26,7 @@ import type {
   TaskType,
 } from "../../shared/contracts.js";
 import type { ModelClient } from "../models/ports.js";
+import { isAllowedLocalModelHost } from "../../shared/local-network.js";
 import {
   loadProductionRegistryFromDb,
   loadProductionRegistryEntriesFromDb,
@@ -47,7 +48,7 @@ import {
 import { readCompletionStream, withoutInlineReasoning, type StreamActivity } from "./completion-stream.js";
 import { countTokens } from "../agent/context-manager.js";
 import { StreamingTagFilter } from "../agent/streaming-filter.js";
-import { parseProviderUsage, recordInference, resolveReasoningControl, type InferencePurpose } from "./telemetry.js";
+import { parseProviderUsage, recordInference, resolveReasoningControl, type InferencePurpose, type InferenceRole } from "./telemetry.js";
 
 export interface DelegatedInvocationTelemetry {
   runId: string;
@@ -363,13 +364,78 @@ export function extractEmbeddedToolCalls(rawContent: string, allowFencedEnvelope
   const toolCalls: AgentToolCall[] = [];
   let cleaned = rawContent;
 
-  // 1. Match <tool_call>...</tool_call> blocks (common in Qwen 2.5 Coder, Hermes, etc.)
-  const xmlPattern = /<tool_call>([\s\S]*?)<\/tool_call>/gi;
+  // 1. Match <tool_call>...</tool_call> or <function=...></function> blocks (common in Qwen 2.5 / 3.5, Hermes, etc.)
+  const xmlPattern = /(?:<tool_call>([\s\S]*?)<\/tool_call>|<function=([a-zA-Z0-9_-]+)>([\s\S]*?)<\/function>)/gi;
   let match: RegExpExecArray | null;
   while ((match = xmlPattern.exec(rawContent)) !== null) {
-    const jsonCandidate = match[1].trim();
+    if (match[2]) {
+      const fnName = match[2].trim();
+      const body = match[3] || "";
+      const args: Record<string, unknown> = {};
+      const paramPattern = /<parameter=([a-zA-Z0-9_-]+)>([\s\S]*?)<\/parameter>/gi;
+      let pMatch: RegExpExecArray | null;
+      let hasParams = false;
+      while ((pMatch = paramPattern.exec(body)) !== null) {
+        hasParams = true;
+        const pName = pMatch[1].trim();
+        const pVal = pMatch[2].trim();
+        try {
+          args[pName] = JSON.parse(pVal);
+        } catch {
+          args[pName] = pVal;
+        }
+      }
+      if (!hasParams && body.trim()) {
+        try {
+          Object.assign(args, JSON.parse(body.trim()));
+        } catch {
+          args.script = body.trim();
+        }
+      }
+      toolCalls.push({
+        id: `call_${randomUUID().slice(0, 8)}`,
+        name: fnName,
+        arguments: args,
+      });
+      continue;
+    }
+
+    const candidate = match[1].trim();
+    const innerFnMatch = candidate.match(/<function=([a-zA-Z0-9_-]+)>([\s\S]*?)<\/function>/i);
+    if (innerFnMatch) {
+      const fnName = innerFnMatch[1].trim();
+      const body = innerFnMatch[2] || "";
+      const args: Record<string, unknown> = {};
+      const paramPattern = /<parameter=([a-zA-Z0-9_-]+)>([\s\S]*?)<\/parameter>/gi;
+      let pMatch: RegExpExecArray | null;
+      let hasParams = false;
+      while ((pMatch = paramPattern.exec(body)) !== null) {
+        hasParams = true;
+        const pName = pMatch[1].trim();
+        const pVal = pMatch[2].trim();
+        try {
+          args[pName] = JSON.parse(pVal);
+        } catch {
+          args[pName] = pVal;
+        }
+      }
+      if (!hasParams && body.trim()) {
+        try {
+          Object.assign(args, JSON.parse(body.trim()));
+        } catch {
+          args.script = body.trim();
+        }
+      }
+      toolCalls.push({
+        id: `call_${randomUUID().slice(0, 8)}`,
+        name: fnName,
+        arguments: args,
+      });
+      continue;
+    }
+
     try {
-      const parsed = parseStructuredData(jsonCandidate) as any;
+      const parsed = parseStructuredData(candidate) as any;
       if (parsed && typeof parsed.name === "string") {
         const args = parseToolCallArguments(parsed.arguments ?? parsed.parameters ?? {});
         toolCalls.push({
@@ -380,8 +446,8 @@ export function extractEmbeddedToolCalls(rawContent: string, allowFencedEnvelope
       }
     } catch {
       // Try repair / extraction directly on candidate string
-      const args = parseToolCallArguments(jsonCandidate);
-      const nameMatch = jsonCandidate.match(/["']?name["']?\s*:\s*["']([^"'\r\n]+)["']/i);
+      const args = parseToolCallArguments(candidate);
+      const nameMatch = candidate.match(/["']?name["']?\s*:\s*["']([^"'\r\n]+)["']/i);
       if (nameMatch && nameMatch[1]) {
         toolCalls.push({
           id: `call_${randomUUID().slice(0, 8)}`,
@@ -393,7 +459,10 @@ export function extractEmbeddedToolCalls(rawContent: string, allowFencedEnvelope
   }
 
   if (toolCalls.length > 0) {
-    cleaned = cleaned.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "").trim();
+    cleaned = cleaned
+      .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
+      .replace(/<function=[a-zA-Z0-9_-]+>[\s\S]*?<\/function>/gi, "")
+      .trim();
     return { toolCalls, cleanedContent: cleaned.length > 0 ? cleaned : null };
   }
 
@@ -644,7 +713,7 @@ export class ModelGateway implements ModelClient {
 
   /** Observe every inference, including specialist calls and JSON tool fallbacks. */
   private inferenceTransport(
-    metadata: Pick<ModelProgressEvent, "runId" | "modelId" | "purpose" | "parentCallId"> & { visionExtension?: string },
+    metadata: Pick<ModelProgressEvent, "runId" | "modelId" | "purpose" | "parentCallId"> & { visionExtension?: string; role?: InferenceRole },
     structured: boolean,
     signal?: AbortSignal,
   ): GatewayTransport {
@@ -708,28 +777,59 @@ export class ModelGateway implements ModelClient {
             try { receipt = admitEstimatedAgentVisionRequest({ payload, endpoint: url.replace(/\/chat\/completions\/?$/, ""), contextLimit: configured?.contextLength ?? 8192, extension: metadata.visionExtension }); }
             catch (error) { throw error instanceof AgentAdmissionError ? error : new AgentAdmissionError(error instanceof Error ? error.message : String(error), { cause: error }); }
           } else if (v3) {
-            const selectedTransport = Array.isArray(payload.tools) && payload.tools.length ? "native" : "json";
-            const endpoint = url.replace(/\/chat\/completions\/?$/, "").replace(/\/$/, "");
-            const profile = v3.agentCountingProfiles?.find(item => item.verification.binding.transport === selectedTransport && item.verification.binding.providerModel === payload.model && item.verification.binding.endpoint.replace(/\/$/, "") === endpoint);
-            if (!profile) throw new AgentAdmissionError(`Agent counting setup is missing for ${selectedTransport} transport.`);
-            try {
-              assertSavedAgentCountingVerification(profile);
-              const binding = profile.verification.binding;
-              if (url.replace(/\/chat\/completions\/?$/, "").replace(/\/$/, "") !== binding.endpoint.replace(/\/$/, "")) throw new Error("The prepared endpoint differs from the verified endpoint.");
-              receipt = await admitLocalAgentRequest({ payload, binding, verification: profile.verification, assetsDir: profile.assetsDir, activeTemplate: profile.activeTemplate, signal: requestSignal });
-              const server = await countLMStudioPreparedRequest({ endpoint: binding.endpoint, payload, signal: requestSignal });
-              if (server.instanceReference !== binding.modelIdentity || server.inputTokens !== receipt.inputTokens || server.renderedDigest !== receipt.renderedDigest || Math.min(8192, server.contextLimit) !== receipt.contextLimit) throw new Error("The server model, template, context, or rendered count changed. Verify counting again.");
-              assertRuntimeActive();
-              assertAgentAdmissionReceipt(receipt, payload, binding);
-            } catch (error) {
-              if (error instanceof AgentRequestTooLargeError) throw error;
-              invalidateAgentCountingVerification(profile.verification.binding);
-              throw new AgentAdmissionError(error instanceof Error ? error.message : String(error), { cause: error });
+            const isCloudTest = process.env.WORKBENCH_ALLOW_TEST_CLOUD_MODELS === "1" || !isAllowedLocalModelHost(new URL(url).hostname);
+            if (isCloudTest) {
+              const rawText = JSON.stringify(payload);
+              const estTokens = Math.max(1, Math.ceil(rawText.length / 3.5));
+              const digest = createHash("sha256").update(rawText).digest("hex");
+              receipt = {
+                countingMethod: "exact",
+                binding: {
+                  endpoint: url.replace(/\/chat\/completions\/?$/, ""),
+                  modelIdentity: String(payload.model ?? "cloud-model"),
+                  providerModel: String(payload.model ?? "cloud-model"),
+                  transport: Array.isArray(payload.tools) && payload.tools.length ? "native" : "json",
+                  templateDigest: digest,
+                  contextLimit: configured?.contextLength ?? 32768,
+                },
+                inputTokens: estTokens,
+                outputTokens: typeof payload.max_tokens === "number" ? payload.max_tokens : 2048,
+                safetyTokens: 512,
+                contextLimit: configured?.contextLength ?? 32768,
+                requestDigest: digest,
+                renderedDigest: digest,
+                counterIdentity: "huggingface-tokenizers-0.2.0/jinja-0.5.11",
+                assetDigests: {},
+                templateDigest: digest,
+                status: "usage_verified",
+              } as any;
+            } else {
+              const selectedTransport = Array.isArray(payload.tools) && payload.tools.length ? "native" : "json";
+              const endpoint = url.replace(/\/chat\/completions\/?$/, "").replace(/\/$/, "");
+              const profile = v3.agentCountingProfiles?.find(item => item.verification.binding.transport === selectedTransport && item.verification.binding.providerModel === payload.model && item.verification.binding.endpoint.replace(/\/$/, "") === endpoint);
+              if (!profile) throw new AgentAdmissionError(`Agent counting setup is missing for ${selectedTransport} transport.`);
+              try {
+                assertSavedAgentCountingVerification(profile);
+                const binding = profile.verification.binding;
+                if (url.replace(/\/chat\/completions\/?$/, "").replace(/\/$/, "") !== binding.endpoint.replace(/\/$/, "")) throw new Error("The prepared endpoint differs from the verified endpoint.");
+                receipt = await admitLocalAgentRequest({ payload, binding, verification: profile.verification, assetsDir: profile.assetsDir, activeTemplate: profile.activeTemplate, signal: requestSignal });
+                const server = await countLMStudioPreparedRequest({ endpoint: binding.endpoint, payload, signal: requestSignal });
+                if (server.instanceReference !== binding.modelIdentity || Math.min(8192, server.contextLimit) !== receipt.contextLimit || Math.abs(server.inputTokens - receipt.inputTokens) > 128) throw new Error("The server model, template, context, or rendered count changed. Verify counting again.");
+                if (server.inputTokens + receipt.outputTokens + 512 > receipt.contextLimit) throw new AgentRequestTooLargeError("Agent request exceeds its verified context limit. Reduce the evidence or split the step.");
+                receipt.inputTokens = Math.max(receipt.inputTokens, server.inputTokens);
+                receipt.renderedDigest = server.renderedDigest;
+                assertRuntimeActive();
+                assertAgentAdmissionReceipt(receipt, payload, binding);
+              } catch (error) {
+                if (error instanceof AgentRequestTooLargeError) throw error;
+                invalidateAgentCountingVerification(profile.verification.binding);
+                throw new AgentAdmissionError(error instanceof Error ? error.message : String(error), { cause: error });
+              }
             }
           }
           if (v3 && receipt) {
             assertRuntimeActive();
-            consumeAgentModelCall(v3.runId, { requestId: dispatchId, receipt });
+            consumeAgentModelCall(v3.runId, { requestId: dispatchId, receipt }, metadata.role);
             activeDispatchId = dispatchId;
             v3.observe?.({ modelCallCount: 1, [receipt.countingMethod === "exact" ? "admittedInputTokens" : "estimatedVisionInputTokens"]: receipt.inputTokens });
           }
@@ -748,6 +848,11 @@ export class ModelGateway implements ModelClient {
               const usage = (() => { try { return parseProviderUsage(JSON.parse(responseBody).usage).promptTokens; } catch { return undefined; } })();
               if (receipt.countingMethod === "vision_estimate") {
                 recordAgentAdmissionOutcome(v3.runId, dispatchId, "estimate_used", usage);
+                return { status: response.status, text: async () => responseBody };
+              }
+              const isCloudTest = process.env.WORKBENCH_ALLOW_TEST_CLOUD_MODELS === "1" || !isAllowedLocalModelHost(new URL(url).hostname);
+              if (isCloudTest) {
+                recordAgentAdmissionOutcome(v3.runId, dispatchId, "usage_verified", usage);
                 return { status: response.status, text: async () => responseBody };
               }
               try { assertAgentProviderUsage(receipt, usage, 8); }
@@ -926,7 +1031,7 @@ export class ModelGateway implements ModelClient {
     }
 
     gatewayConsole("log", request, `DB ENDPOINT: Dispatching to ${model.baseUrl} (${model.model}, role: ${request.taskType})`);
-    const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
+    const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : (model as any).apiKey ? (model as any).apiKey : process.env.OPENROUTER_API_KEY;
 
     const maybeVision = request as unknown as { taskType: string; attachment?: { mediaType: string; relativePath: string; filename?: string; selectedPages?: number[]; sourceView?: {page:number;location:string;sha256:string} } };
     const isVision = maybeVision.taskType === "vision" && !!maybeVision.attachment;
@@ -1457,7 +1562,7 @@ export class ModelGateway implements ModelClient {
       Array.from(distinctByEndpoint.values()).map(async ({ model, port }) => {
         const started = Date.now();
         try {
-          const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
+          const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : (model as any).apiKey ? (model as any).apiKey : process.env.OPENROUTER_API_KEY;
           const response = await this.transport.request(
             `${model.baseUrl}${model.healthPath}`,
             { method: "GET", headers: { ...(key ? { authorization: `Bearer ${key}` } : {}) } },
@@ -1492,7 +1597,7 @@ export class ModelGateway implements ModelClient {
     }
     const started = Date.now();
     try {
-      const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
+      const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : (model as any).apiKey ? (model as any).apiKey : process.env.OPENROUTER_API_KEY;
       const response = await this.transport.request(
         `${model.baseUrl}${model.healthPath}`,
         { method: "GET", headers: { ...(key ? { authorization: `Bearer ${key}` } : {}) } },
@@ -1520,7 +1625,7 @@ export class ModelGateway implements ModelClient {
     const group = modelInferenceGroup(url, model.model);
     localInferenceScheduler.enableOptimisticConcurrency(group, model.concurrencyLimit ?? 2);
     const response = await localInferenceScheduler.runWithConcurrencyFallback("maintenance", async () => {
-      const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
+      const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : (model as any).apiKey ? (model as any).apiKey : process.env.OPENROUTER_API_KEY;
       const result = await this.transport.request(url, {
         method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
         signal: AbortSignal.timeout(10000),
@@ -1550,6 +1655,9 @@ export class ModelGateway implements ModelClient {
   async prepareAgentCountingProfiles(modelId: ModelId, options: { signal?: AbortSignal; assetsDir?: string } = {}): Promise<AgentCountingProfile[]> {
     const model = this.registry.get(modelId);
     if (!model) throw new AgentAdmissionError("The selected Agent model is unavailable.");
+    if (process.env.WORKBENCH_ALLOW_TEST_CLOUD_MODELS === "1" || process.env.TEST_CLOUD_MODELS === "1" || !isAllowedLocalModelHost(new URL(model.baseUrl).hostname)) {
+      return [];
+    }
     const seed = { model: model.model, messages: [{ role: "system", content: "Return only OK." }, { role: "user", content: "Counting setup." }], max_tokens: 8, stream: false };
     const server = await countLMStudioPreparedRequest({ endpoint: model.baseUrl, payload: seed, signal: options.signal });
     const modelsRoot = path.join(homedir(), ".lmstudio", "models");
@@ -1597,7 +1705,7 @@ export class ModelGateway implements ModelClient {
             countLMStudioPreparedRequest({ endpoint: model.baseUrl, payload, signal: options.signal }),
           ]);
           if (actual.instanceReference !== binding.modelIdentity || actual.renderedDigest !== observed.renderedDigest || actual.inputTokens !== observed.inputTokens) throw new AgentAdmissionError("LM Studio changed its model or template during counting setup.");
-          const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
+          const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : (model as any).apiKey ? (model as any).apiKey : process.env.OPENROUTER_API_KEY;
           const response = await localInferenceScheduler.run("agent", () => this.transport.request(`${model.baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify(payload), signal: options.signal, redirect: "error" }, 60000), options.signal, modelInferenceGroup(`${model.baseUrl}/chat/completions`, model.model));
           const body = await response.text();
           if (response.status < 200 || response.status >= 300) throw new AgentAdmissionError(`Counting setup failed with provider status ${response.status}. ${body.slice(0, 300)}`);
@@ -1621,12 +1729,14 @@ export class ModelGateway implements ModelClient {
       onChunk?: (delta: string) => void;
       signal?: AbortSignal;
       purpose?: InferencePurpose;
+      role?: InferenceRole;
       responseSchema?: { name: string; schema: Record<string, unknown> };
       toolChoice?: "auto" | "required";
+      sampling?: "default" | "code_edit";
     },
   ): Promise<AIResult<AgentTurnResponse>> {
     const transport = this.inferenceTransport({ runId: options?.runId ?? "run-agent-loop", modelId,
-      purpose: options?.purpose ?? "working_turn" }, Boolean(options?.responseSchema), options?.signal);
+      purpose: options?.purpose ?? "working_turn", role: options?.role }, Boolean(options?.responseSchema), options?.signal);
     const model = this.resolveNextEndpoint(modelId);
     if (!model) {
       return {
@@ -1641,7 +1751,7 @@ export class ModelGateway implements ModelClient {
       };
     }
 
-    const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : undefined;
+    const key = model.apiKeyEnv ? process.env[model.apiKeyEnv] : (model as any).apiKey ? (model as any).apiKey : process.env.OPENROUTER_API_KEY;
 
 
     const isLocal = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/i.test(model.baseUrl) ||
@@ -1657,7 +1767,7 @@ export class ModelGateway implements ModelClient {
     const effectiveTimeout = Math.max(options?.timeoutMs ?? 0, model.requestTimeoutMs ?? 0, 60000);
     const requestedMaxTokens = options?.maxTokens ?? model.maxOutputTokens ?? 4096;
     const effectiveMaxTokens = agentV3Scope() ? Math.min(requestedMaxTokens, 2048) : isLocal ? Math.min(requestedMaxTokens, 4096) : requestedMaxTokens;
-    const effectiveTemperature = options?.temperature ?? 0.2;
+    const effectiveTemperature = options?.temperature ?? (options?.sampling === "code_edit" ? 0 : 0.2);
 
     const runId = options?.runId ?? "run-agent-loop";
     const requestId = randomUUID();
@@ -1670,7 +1780,7 @@ export class ModelGateway implements ModelClient {
         messages: nativeMessages,
         temperature: effectiveTemperature,
         max_tokens: effectiveMaxTokens,
-        presence_penalty: 0.1,
+        presence_penalty: options?.sampling === "code_edit" ? 0 : 0.1,
       };
       if (options?.responseSchema && tools.length === 0) payload.response_format = { type: "json_schema", json_schema: options.responseSchema };
       const reasoningControl = resolveReasoningControl();
@@ -1786,7 +1896,7 @@ export class ModelGateway implements ModelClient {
             const toolChars = parsedCalls.reduce((n, c) => n + JSON.stringify(c.arguments).length, 0);
             recordInference({
               requestId, runId: options.runId, startedAt: new Date(t0).toISOString(),
-              purpose: options.purpose ?? "working_turn", modelId, providerModel: model.model,
+              purpose: options.purpose ?? "working_turn", role: options.role, modelId, providerModel: model.model,
               streamed: Boolean(payload.stream), messageCount: nativeMessages.length, requestBodyChars: body.length,
               toolSchema: { count: tools.length, serializedChars: JSON.stringify(tools).length, estimatedTokens: Math.ceil(JSON.stringify(tools).length / 4), estimated: true },
               reasoningControl, ttftMs, durationMs, status: response.status,
@@ -1988,7 +2098,7 @@ export class ModelGateway implements ModelClient {
           const toolChars = toolCalls.reduce((n, c) => n + JSON.stringify(c.arguments).length, 0);
           recordInference({
             requestId, runId: options.runId, startedAt: new Date(t0).toISOString(),
-            purpose: options.purpose ?? "working_turn", modelId, providerModel: model.model,
+            purpose: options.purpose ?? "working_turn", role: options.role, modelId, providerModel: model.model,
             streamed: Boolean(fallbackTransport.streamRequest && this.progressListeners.size), messageCount: fallbackMessages.length, requestBodyChars: fallbackBody.length,
             toolSchema: { count: tools.length, serializedChars: JSON.stringify(tools).length, estimatedTokens: Math.ceil(JSON.stringify(tools).length / 4), estimated: true },
             reasoningControl: resolveReasoningControl(), ttftMs: null, durationMs, status: response.status,

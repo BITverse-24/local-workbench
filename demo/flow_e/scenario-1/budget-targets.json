@@ -1,0 +1,17 @@
+{
+  "Engineering": {
+    "Cloud Infrastructure": 50000,
+    "Software Licenses": 15000,
+    "Hardware": 25000
+  },
+  "Marketing": {
+    "Advertising": 40000,
+    "Events": 20000,
+    "Content": 10000
+  },
+  "Operations": {
+    "Facilities": 30000,
+    "Logistics": 18000,
+    "Supplies": 7000
+  }
+}

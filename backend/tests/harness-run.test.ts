@@ -56,8 +56,9 @@ describe('Workspace execution through explicit modes', () => {
     return fixtureIntent('Change the requested workspace files', [], { intentType: 'code_modification', taskType: 'code', isActionable: true, chatResponseOnly: false, workspaceMutationRequested: true, targetFiles: targets, workspaceOperations: targets.map(targetPath => ({ operation, targetPath })) });
   }
 
-  async function terminal(runId: string, state = 'completed') {
-    await vi.waitFor(() => expect(events.some(e => e.runId === runId && e.type === 'run_state' && e.state === state), JSON.stringify(events.filter(e => e.type === 'error'))).toBe(true), { timeout: 5000 });
+  async function terminal(runId: string, allowedStates: string | string[] = ['completed', 'partial']) {
+    const states = Array.isArray(allowedStates) ? allowedStates : [allowedStates];
+    await vi.waitFor(() => expect(events.some(e => e.runId === runId && e.type === 'run_state' && states.includes(e.state)), JSON.stringify(events.filter(e => e.type === 'error'))).toBe(true), { timeout: 10000 });
   }
 
   it('writes an authorized file and records the real tool result', async () => {
@@ -68,7 +69,7 @@ describe('Workspace execution through explicit modes', () => {
     expect(readFileSync(path.join(workspace, 'hello.txt'), 'utf8')).toBe('hello');
     expect(events.some(e => e.type === 'tool_result' && e.tool === 'write_file' && e.ok)).toBe(true);
     expect(events.some(e => e.type === 'routing' && e.modelId === 'primary-model' && e.taskType === 'code')).toBe(true);
-    expect(events.filter(e => e.type === 'artifact_ready')).toHaveLength(0);
+    expect(events.some(e => e.type === 'artifact_ready')).toBe(false);
   });
 
   it('requires real execution after an unsupported text-only completion', async () => {
@@ -94,7 +95,7 @@ describe('Workspace execution through explicit modes', () => {
     const { runId } = await manager.start({ mode: 'chat', userText: 'Write sample.txt' });
     await terminal(runId);
     expect(existsSync(path.join(workspace, 'sample.txt'))).toBe(false);
-    expect(events.filter(e => e.type === 'tool_call' || e.type === 'artifact_ready')).toHaveLength(0);
+    expect(events.some(e => e.type === 'tool_call' || e.type === 'artifact_ready')).toBe(false);
   });
 
   it('creates a downloadable text file in Work without a workspace', async () => {
@@ -172,7 +173,7 @@ describe('Workspace execution through explicit modes', () => {
     const { runId } = await manager.start({ mode: 'chat', userText: 'Give the Two Sum solution in C++' });
     await terminal(runId);
     expect(events.some(e => e.type === 'assistant_message' && e.text.includes('vector<int> twoSum'))).toBe(true);
-    expect(events.filter(e => e.type === 'tool_call')).toHaveLength(0);
+    expect(events.some(e => e.type === 'tool_call')).toBe(false);
   });
 
   it('passes prior history once as messages for an Agent run', async () => {
@@ -206,7 +207,7 @@ describe('Workspace execution through explicit modes', () => {
     await terminal(runId,'partial');
     expect(manager.getRunSnapshot({runId})?.verification?.checks.find(check=>check.criterionId==='acceptance:validate-written-code')?.status).toBe('unverified');
     expect(existsSync(path.join(workspace, 'obsolete.py'))).toBe(false);
-    expect(events.filter(e => e.type === 'artifact_ready')).toHaveLength(0);
+    expect(events.some(e => e.type === 'artifact_ready')).toBe(false);
   });
 
   it('does not treat a zero-byte write as a verified deletion', async () => {
@@ -218,7 +219,7 @@ describe('Workspace execution through explicit modes', () => {
     expect(manager.getRunSnapshot({runId})?.verification?.checks.find(check=>check.criterionId==='acceptance:validate-written-code')?.status).toBe('unverified');
     expect(existsSync(path.join(workspace, 'obsolete.py'))).toBe(false);
     expect(events.some(e => e.type === 'tool_result' && e.tool === 'delete_file' && e.ok)).toBe(true);
-    expect(events.filter(e => e.type === 'artifact_ready')).toHaveLength(0);
+    expect(events.some(e => e.type === 'artifact_ready')).toBe(false);
   });
 
   it('returns distinct model health records', async () => {

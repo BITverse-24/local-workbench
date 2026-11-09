@@ -1,0 +1,14 @@
+{
+  "id": "js-orders-find-empty",
+  "base": "js-orders",
+  "mutation": "wrong_fallback",
+  "prompt": "findOrderById returns undefined instead of null when an order is not found. Fix src/orders.js so tests pass.",
+  "expectChangedFiles": [
+    "src/orders.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/orders.test.js",
+    "mustPass": true
+  }
+}

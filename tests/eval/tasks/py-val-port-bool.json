@@ -1,0 +1,14 @@
+{
+  "id": "py-val-port-bool",
+  "base": "py-validator",
+  "mutation": "missing_type_check",
+  "prompt": "is_valid_port treats boolean True as port 1. Disallow booleans in validator.py so tests pass.",
+  "expectChangedFiles": [
+    "validator.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_validator.py",
+    "mustPass": true
+  }
+}

@@ -7,6 +7,8 @@ import { BUILD_IDENTITY } from "../build-identity.js";
 import { currentRuntimeScope } from "./runtime-scope.js";
 import { getAgentTask } from "./agent-task-store.js";
 import { agentFileScopeSchema } from "../agent/file-scope.js";
+import type { InferenceRole } from "../gateway/telemetry.js";
+import { type StuckKind, type EscalationResult, nextEscalation } from "../agent/escalation.js";
 
 
 export const verificationCheckSchema = z.object({
@@ -55,9 +57,10 @@ const agentProgressSchema = z.object({
   deliveryEvidenceDigest: z.string().optional(),
   deliveryAttempts: z.array(z.object({ evidenceDigest: z.string(), answerDigest: z.string() })).max(40).default([]),
   latestResultId: z.string().uuid().optional(), feedback: z.string().max(10000).default(""),
-  actions: z.array(z.object({ id: z.string().uuid(), hash: z.string(), requirementId: z.string(), operation: z.string(), status: z.enum(["proposed", "completed", "failed", "uncertain"]), resultId: z.string().uuid().optional() })).max(40).default([]),
+  actions: z.array(z.object({ id: z.string().uuid(), hash: z.string(), requirementId: z.string(), operation: z.string(), status: z.enum(["proposed", "completed", "failed", "uncertain"]), resultId: z.string().uuid().optional(), parentExecId: z.string().uuid().optional() })).max(100).default([]),
   reads: z.array(z.object({ path: z.string(), digest: z.string(), startByte: z.number().int().nonnegative(), endByte: z.number().int().nonnegative(), sizeBytes: z.number().int().nonnegative(), resultId: z.string().uuid(), requestId: z.string().uuid() })).max(200).default([]),
   sourceResultIds: z.array(z.string().uuid()).max(16).default([]),
+  observe: z.object({ mode: z.enum(["exec", "native"]), execTurns: z.number().int().nonnegative().default(0).optional(), failures: z.number().int().nonnegative().default(0), noProgress: z.number().int().nonnegative().default(0), reason: z.string().optional() }).strict().optional(),
   failure: z.object({ revision:z.string().regex(/^[a-f0-9]{64}$/), resultIds:z.array(z.string().uuid()).max(16),
     targets:z.array(z.object({path:z.string(),digest:z.string().regex(/^[a-f0-9]{64}$/),role:z.enum(["implementation","test","dependency"]),line:z.number().int().positive(),testPaths:z.array(z.string()).max(16),resultId:z.string().uuid().optional()})).max(16),
   }).strict().optional(),
@@ -66,6 +69,7 @@ const agentProgressSchema = z.object({
   scopeCorrectionUsed: z.boolean().default(false),
   baseline: z.object({ status: z.string(), detail: z.string(), environmentKey: z.string(), reason:z.string().optional() }).optional(),
   stopReason: z.string().optional(), fullSuite: z.boolean().default(false),
+  escalations: z.record(z.string(), z.number().int().nonnegative()).default({}),
 });
 const ledgerSchema = z.object({
   schemaVersion: z.literal(1), runId: z.string().uuid(), contract: z.object({ runId: z.string().uuid(), schemaVersion: z.literal(1) }),
@@ -79,7 +83,8 @@ const ledgerSchema = z.object({
   agentProgress: agentProgressSchema.optional(),
   agentTask: z.object({ taskId: z.string().uuid().optional(), taskRevision: z.number().int().positive().optional(),
     preparation: z.object({taskId:z.string().uuid(),taskRevision:z.number().int().positive(),messageId:z.string().uuid()}).strict().optional(),
-    modelCalls: z.number().int().min(0).max(40), protocolCorrections: z.number().int().min(0).max(1) }).strict().optional(),
+    modelCalls: z.number().int().min(0).max(40), protocolCorrections: z.number().int().min(0).max(1),
+    callsByRole: z.record(z.string(), z.number().int().min(0)).optional() }).strict().optional(),
   agentAdmissions: z.array(z.object({ requestId: z.string().uuid(), taskId: z.string().uuid().optional(), taskRevision: z.number().int().positive().optional(), phase: z.enum(["requirements", "actions"]).default("actions"),
     buildIdentity: z.string().min(1),
     requestDigest: z.string().regex(/^[a-f0-9]{64}$/), renderedDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), modelIdentity: z.string().min(1),
@@ -100,6 +105,20 @@ export function updateAgentProgress(runId: string, update: (state: AgentRunProgr
     const state = agentProgressSchema.parse(ledger.agentProgress ?? {});
     update(state); ledger.agentProgress = agentProgressSchema.parse(state); save(ledger);
     return ledger.agentProgress;
+  }).immediate();
+}
+
+export function advanceAgentEscalation(runId: string, kind: StuckKind): EscalationResult {
+  return getDb().transaction(() => {
+    const ledger = getExecutionLedger(runId);
+    if (!ledger?.agentTask) throw new Error("Agent escalation requires a durable run budget.");
+    const progress = agentProgressSchema.parse(ledger.agentProgress ?? {});
+    const current = progress.escalations[kind] ?? 0;
+    const result = nextEscalation(kind, current);
+    progress.escalations[kind] = current + 1;
+    ledger.agentProgress = progress;
+    save(ledger);
+    return result;
   }).immediate();
 }
 
@@ -194,12 +213,49 @@ function agentLedger(runId: string): RunExecutionLedger & { agentTask: NonNullab
   return ledger as RunExecutionLedger & { agentTask: NonNullable<RunExecutionLedger["agentTask"]> };
 }
 
+export class BudgetDeniedError extends Error {
+  readonly role: InferenceRole;
+  constructor(role: InferenceRole, reason: string) {
+    super(reason);
+    this.name = "BudgetDeniedError";
+    this.role = role;
+  }
+}
+
 /** Consume immediately before every generation dispatch, including fallback and resume. */
-export function consumeAgentModelCall(runId: string, admission?: { requestId: string; receipt: AgentAdmissionReceipt | AgentVisionAdmissionReceipt }): number {
+export function consumeAgentModelCall(runId: string, admission?: { requestId: string; receipt: AgentAdmissionReceipt | AgentVisionAdmissionReceipt }, role?: InferenceRole): number {
   return getDb().transaction(() => {
     const ledger = agentLedger(runId);
     if (ledger.agentTask.modelCalls >= 40) throw new Error("Agent reached its 40 model-call limit for this run.");
+
+    const enforceBudgets = (process.env.WORKBENCH_AGENT_CALL_BUDGETS ?? "on") !== "off";
+    if (enforceBudgets && role) {
+      const byRole = ledger.agentTask.callsByRole ?? {};
+      const isJudge = ["scope_judge", "file_scope_judge", "artifact_judge", "coverage_judge"].includes(role);
+      const judgeTotal = ["scope_judge", "file_scope_judge", "artifact_judge", "coverage_judge"].reduce((acc, r) => acc + (byRole[r] ?? 0), 0);
+
+      if (role === "interpretation" && (byRole["interpretation"] ?? 0) >= 4) {
+        throw new BudgetDeniedError(role, "Interpretation budget of 4 calls exceeded.");
+      }
+      const judgeLimit = Number(process.env.WORKBENCH_JUDGE_CALL_BUDGET ?? 28);
+      if (isJudge && judgeTotal >= judgeLimit) {
+        throw new BudgetDeniedError(role, `Judge budget of ${judgeLimit} calls exceeded.`);
+      }
+      if (role === "delivery" && (byRole["delivery"] ?? 0) >= 3) {
+        throw new BudgetDeniedError(role, "Delivery budget of 3 calls exceeded.");
+      }
+      const remainingTotal = 40 - ledger.agentTask.modelCalls;
+      const allowedRolesWhenLowBudget: InferenceRole[] = ["actor", "module_draft", "decision", "delivery", "coverage_judge", "artifact_judge", "file_scope_judge", "scope_judge"];
+      if (!allowedRolesWhenLowBudget.includes(role) && remainingTotal <= 4) {
+        throw new BudgetDeniedError(role, `Model calls reserved for actor (${remainingTotal} remaining).`);
+      }
+    }
+
     ledger.agentTask.modelCalls++;
+    if (role) {
+      ledger.agentTask.callsByRole ??= {};
+      ledger.agentTask.callsByRole[role] = (ledger.agentTask.callsByRole[role] ?? 0) + 1;
+    }
     if (admission) {
       const receipt = admission.receipt;
       ledger.agentAdmissions.push({ requestId: admission.requestId, taskId: ledger.agentTask.taskId ?? ledger.agentTask.preparation?.taskId, taskRevision: ledger.agentTask.taskRevision ?? ledger.agentTask.preparation?.taskRevision,
@@ -300,7 +356,7 @@ export function recordAuthorizationDecision(runId: string): void {
   save(ledger);
 }
 
-const MUTATING_TOOLS = new Set(["write_file", "edit_file", "delete_file", "run_command", "execute_python", "generate_deliverable"]);
+const MUTATING_TOOLS = new Set(["write_file", "edit_file", "delete_file", "run_command", "execute_python", "generate_deliverable", "work_exec"]);
 export function recordExecutionToolStarted(input: { runId: string; callId: string; tool: string; args: Record<string, unknown>; summary: string }): void {
   const ledger = getExecutionLedger(input.runId);
   if (!ledger || (!MEANINGFUL_TOOLS.has(input.tool) && !MUTATING_TOOLS.has(input.tool))) return;
@@ -396,7 +452,7 @@ function addBlocker(ledger: RunExecutionLedger, message: string) {
   ledger.blockers = ledger.blockers.slice(-20);
 }
 
-const MEANINGFUL_TOOLS = new Set(["read_file", "read_input", "extract_document", "ocr_extract", "retrieve_knowledge", "retrieve_result", "execute_python", "run_command", "write_file", "delete_file", "generate_deliverable", "inspect_drawing"]);
+const MEANINGFUL_TOOLS = new Set(["read_file", "read_input", "extract_document", "ocr_extract", "retrieve_knowledge", "retrieve_result", "execute_python", "run_command", "write_file", "delete_file", "generate_deliverable", "work_exec", "inspect_drawing"]);
 export function recordExecutionToolOutcome(input: {
   runId: string; callId: string; tool: string; args: Record<string, unknown>; summary: string; ok: boolean;
   error?: string; resultId?: string; artifacts?: ArtifactRef[];

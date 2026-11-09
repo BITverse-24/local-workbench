@@ -1,0 +1,14 @@
+{
+  "id": "js-str-capitalize-case",
+  "base": "js-strings",
+  "mutation": "wrong_case",
+  "prompt": "capitalizeWords lowercases words instead of capitalizing. Fix src/formatter.js so tests pass.",
+  "expectChangedFiles": [
+    "src/formatter.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/formatter.test.js",
+    "mustPass": true
+  }
+}

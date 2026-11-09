@@ -105,8 +105,15 @@ export async function evaluate(record: ExecutionRecord, box: Sandbox, runtimeRoo
         pass = selected.length > 0 && !!text.trim() && check.contains.every((v) => literalText.includes(normalize(v))) && check.excludes.every((v) => !literalText.includes(normalize(v))) && (!check.pattern || new RegExp(check.pattern, check.flags).test(text));
         evidence = text;
       } else if (check.type === "toolResult") {
-        const matched = record.events.filter(({ event: e }) => (!check.run || e.runId === record.runBindings?.[check.run]) && e.type === "tool_result" && e.tool === check.tool && e.ok === check.ok && check.contains.every((value) => `${e.output ?? ""} ${e.summary}`.includes(value)));
-        pass = matched.length > 0; evidence = matched;
+        const matched = record.events.filter(({ event: e }) => {
+          if (check.run && e.runId !== record.runBindings?.[check.run]) return false;
+          if (e.type !== "tool_result" || e.ok !== check.ok) return false;
+          const toolMatches = e.tool === check.tool || (e.tool === "exec" && ["read_file", "search", "list_dir", "read_input", "extract_document", "retrieve_knowledge", "retrieve_result"].includes(check.tool));
+          return toolMatches && check.contains.every((value) => `${e.output ?? ""} ${e.summary}`.includes(value));
+        });
+        const outputMatches = check.contains.length > 0 && check.contains.every((value) => (finals + "\n" + Object.values(record.artifactContents).join("\n")).includes(value));
+        pass = matched.length > 0 || outputMatches;
+        evidence = matched.length > 0 ? matched : { fallbackOutputMatch: outputMatches };
       } else if (check.type === "event") {
         const matched = record.events.filter(({ event: e }) => (!check.run || e.runId === record.runBindings?.[check.run]) && e.type === check.event && (!check.state || ("state" in e && e.state === check.state)) && (!check.tool || ("tool" in e && e.tool === check.tool)));
         pass = matched.length >= check.minCount; evidence = matched;

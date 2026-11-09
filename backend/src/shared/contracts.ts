@@ -159,8 +159,9 @@ export interface OutputExpectation {
 export interface ArtifactAcceptanceCheck {
   id: string;
   filename?: string;
-  kind: "contains_text" | "heading" | "columns" | "json_key" | "row_count" | "sheet" | "semantic";
+  kind: "contains_text" | "heading" | "columns" | "json_key" | "row_count" | "sheet" | "semantic" | "script";
   expected: string | number;
+  script?: string;
   mandatory: boolean;
   /** Exact request or source excerpt that establishes the requirement. */
   basis: string;
@@ -527,6 +528,7 @@ export interface FunctionToolParameterProperty {
   additionalProperties?: boolean;
   format?: "multiline";
   minItems?: number;
+  maxItems?: number;
   type: string;
   description?: string;
   enum?: readonly string[] | string[];

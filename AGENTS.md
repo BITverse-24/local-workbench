@@ -80,6 +80,7 @@ The `prepackage` and `prepackage:dir` hooks run `scripts/reset-dev-defaults.cjs`
 - **Model Roles**: Separate Vision, Coding, Draft, and Embeddings endpoints are supported. Draft is the default model selector choice; duplicate endpoints are consolidated.
 - **Local RAG & Vector**: Embedded local vector index (`vectra` `LocalIndex`) + SQLite FTS5 (full-text keyword search with Porter stemmer) with Reciprocal Rank Fusion (RRF), local embedding endpoints (`/v1/embeddings`, e.g. `nomic-embed-text`)
 - **Document & Data Processing**: `pdfjs-dist`, `canvas`, `docx`, `exceljs`, `jszip`
+- **Code Execution Sandbox**: `quickjs-emscripten` (WASM sandboxed execution for Agent Code Mode and Work Mode `work_exec`)
 - **Testing & Verification**: Vitest 3, custom behavioral and scenario evaluation harnesses (`scripts/behavioral.cjs`, `scripts/certify-v0.cjs`, `tests/acceptance.ts`)
 
 ---
@@ -118,12 +119,25 @@ agent/
 │   │       ├── index.ts           # initBackend() entry point
 │   │       ├── logger.ts          # Structured event and audit logger
 │   │       ├── agent/             # Unified agent loop execution
-│   │       │   ├── agent-loop.ts         # AgentLoop (turn driver, native tool calling, completion evaluation)
+│   │       │   ├── agent-loop.ts         # AgentLoop (turn driver, native tool calling, completion evaluation; frozen v2)
+│   │       │   ├── agent-task-runner.ts  # AgentTaskRunner (v3 ReAct driver, shadow verification, best-of-n sampling)
+│   │       │   ├── symbol-index.ts       # AST symbol indexer (JS/TS via Babel, Python via ast subprocess)
+│   │       │   ├── symbol-edit.ts        # replace_symbol tool, declaration validation, lowering to edit_file
+│   │       │   ├── judge.ts              # Judge framework: deterministic fast path, result cache, model fallback
+│   │       │   ├── escalation.ts         # Escalation ladder for stuck actions (context, edit mode, sampling, stop)
 │   │       │   ├── tool-dispatcher.ts    # ToolDispatcher (concurrent read / serial mutation dispatch, P1 store)
 │   │       │   ├── context-manager.ts    # Sliding-window context compaction, budget enforcement
 │   │       │   ├── code-extractor.ts     # Markdown code block / shell command extractors
 │   │       │   ├── source-review.ts      # Python / source review checklist validation
-│   │       │   └── streaming-filter.ts   # Reasoning tag <think> streaming filter
+│   │       │   ├── streaming-filter.ts   # Reasoning tag <think> streaming filter
+│   │       │   └── exec/                 # Code Mode (read-only execution) subsystem
+│   │       │       ├── sandbox.ts        # QuickJS-WASM sandbox driver (memory & timeout limits)
+│   │       │       ├── facade.ts         # Read-only broker facade wrapping ToolDispatcher
+│   │       │       ├── signatures.ts     # Compact TypeScript signature block generator
+│   │       │       ├── exec-policy.ts    # Two-strike failure & sticky native transition policy
+│   │       │       ├── exec-step.ts      # Agent observe phase turn coordinator
+│   │       │       ├── sandbox-prelude.ts# Preloaded analysis utilities (parseCSV, groupBy, join, sum, avg, round, toCSV, RowProxy)
+│   │       │       └── smart-truncate.ts # Token-aware smart truncation for sandboxed output
 │   │       ├── ipc/               # IPC registration, channel constants, and validators
 │   │       │   ├── channels.ts           # Channel constant definitions (IPC_CHAT, IPC_RUN, IPC_WORKSPACE, etc.)
 │   │       │   ├── handlers.ts           # Chat, Run, and Workspace IPC handlers
@@ -149,7 +163,11 @@ agent/
 │   │       │   ├── task-progress.ts      # Runtime task progress tracking
 │   │       │   ├── verification.ts       # Deliverable file verification (parsers, digests, checks)
 │   │       │   ├── partial-result.ts     # Partial execution summaries
-│   │       │   └── images.ts             # PDF/SVG/Image rendering and vision token estimation
+│   │       │   ├── images.ts             # PDF/SVG/Image rendering and vision token estimation
+│   │       │   └── work-exec/            # Work Mode sandboxed execution tool (work_exec)
+│   │       │       ├── work-exec-tool.ts # Tool definition and dispatch handler
+│   │       │       ├── work-facade.ts    # Read-only Work environment facade (readTable, readJson, emitDeliverable)
+│   │       │       └── work-sandbox.ts   # Dedicated QuickJS sandbox runner for Work Mode
 │   │       ├── gateway/           # Model communication and inference abstraction
 │   │       │   ├── inference-scheduler.ts# Shared inference admission, file and Python slots
 │   │       │   ├── model-gateway.ts      # Gateway client (OpenAI-compatible REST, chatWithTools)
@@ -340,12 +358,18 @@ agent/
 
 The backend coordinates the execution lifecycle, security enforcement, model gateway, tools, and local storage:
 
-1. **`agent/` (Agent mode loop)**:
-   - **`agent-loop.ts`**: Agent mode's iterative execution loop. Dispatches turns to the selected model with native tools or the configured JSON tool format. Enforces plan approval, per-turn mutation authorization, loop detection, and completion checks against the `RunContract`. Chat and Work use their own responders and do not run this loop.
+1. **`agent/` (Agent mode execution)**:
+   - **`agent-task-runner.ts`**: Active v3 agent turn driver. Orchestrates task agenda, single-call tool dispatch, symbol-level edits, shadow workspace pre-verification with Best-of-N candidate sampling, repair escalation ladder, and completion checks.
+   - **`symbol-index.ts`**: AST symbol indexer for JS/TS (via `@babel/parser`) and Python (via isolated `python -I -c ast` subprocess). Indexes declaration names, kinds, line spans, and exact byte ranges.
+   - **`symbol-edit.ts`**: Implements the `replace_symbol` tool. Validates single declaration syntax, name/kind match, export preservation, and indentation rebasing; lowers directly to `edit_file` with host-calculated byte anchors.
+   - **`judge.ts`**: Structured judge framework (`Judge<I, V>`). Employs a deterministic fast path, checks `ResultStore` caches, and falls back to schema-constrained model classification.
+   - **`escalation.ts`**: Progressive recovery ladder for stuck conditions (`repeated_action`, `malformed_action`, `context_limit`, `repeated_context_request`), advancing through context expansion, edit mode switching, and sampling variation before terminal stop.
+   - **`agent-loop.ts`**: Legacy v2 agent execution loop (frozen; bug fixes only).
    - **`tool-dispatcher.ts`**: Dispatches tool invocations concurrently for read-only tools (`Promise.all`), while strictly serializing workspace mutations via `MutationPolicyGuard.withMutationLock`. Integrates with `ResultStore` to register full intermediate outputs before tool results are published.
    - **`context-manager.ts`**: Sliding-window context compaction. Summarizes tool outputs older than 2 turns to protect local GPU context memory while strictly retaining stable result IDs and retrieval instructions. Enforces token budgets (`enforceContextBudget`).
    - **`source-review.ts`**: Verifies attached Python scripts and proposed code modifications against behavioral checklists prior to execution.
    - **`streaming-filter.ts`**: Filters provider reasoning blocks and inline `<think>` tags from live text chunks to maintain clean transcript streams.
+   - **`exec/` (Code Mode Read Facade)**: Sandboxed programmable execution interface for the Agent observe phase. Reduces tool definition bloat by 71% by replacing individual read tool schemas with a compact typed TypeScript signature block. Executes inside QuickJS-WASM with strict 32MB memory and 5s CPU deadline limits, routing reads through `ToolDispatcher`. Governed by a 2-strike sticky native fallback policy. Controlled via `WORKBENCH_AGENT_EXEC=observe|off` (default `observe`) and `WORKBENCH_AGENT_EXEC_TRANSPORT=toolcall|fenced` (default `toolcall`).
 
 2. **`run/` (Execution Lifecycle & Storage)**:
    - **`manager.ts`**: `RunManager` validates and persists the mode, then dispatches to Chat, Work, or Agent before mode-specific source preparation and intent classification. It owns run persistence, event routing, cancellation, and lifecycle coordination.
@@ -633,7 +657,21 @@ npm run demo
 
 # Package native desktop application (electron-builder)
 npm run package
+
+# Evaluation and cassette replay commands
+npm run eval:generate      # Generate & validate synthetic mutation task corpus
+npm run eval:smoke         # Smoke evaluation (8 tasks, k=1)
+npm run eval:full          # Full evaluation (40 tasks, k=3)
+npm run test:replay        # Deterministic engine logic verification via recorded cassettes
+node scripts/eval/compare.cjs <baseline.json> <results.json>  # Compare eval runs
 ```
+
+### Runtime Configuration Flags
+- `WORKBENCH_AGENT_EDIT_MODE`: `auto` (default) | `symbol` (symbol replacement only) | `module` (full module drafts)
+- `WORKBENCH_AGENT_SHADOW`: `on` (default) | `off` (pre-verify edits with overlays in isolated shadow workspace before operator approval)
+- `WORKBENCH_AGENT_CALL_BUDGETS`: `on` (default) | `off` (enforce per-role model call caps: interpretation=4, judges=12, delivery=3, reserveForActor=16)
+- `WORKBENCH_AGENT_ESCALATION`: `on` | `off` (default in tests; enables progressive recovery ladder for repeated, malformed, or context-stuck actions)
+- `WORKBENCH_AGENT_ACTION_TRANSPORT`: `native` (default) | `constrained` (strict JSON schema tool action transport)
 
 ### Key Rules for AI Coding Assistants
 1. **Full Workspace Write Access**: AI assistants have standard read and write permissions across the codebase (`backend/`, `frontend/`, `electron/`, `ai/`, `config/`, `scripts/`, `docs/`, `tests/`, etc.) to implement requested features and bug fixes.

@@ -7,7 +7,8 @@ import { getExecutionLedger } from "../run/execution-ledger.js";
 import { z } from "zod";
 import { CAPABILITY_GROUPS } from "../tools/capabilities.js";
 import { loadAgentSourcePage, selectAgentSourcePages, sliceAgentSourcePage, sourcePageIsCurrent, sourcePageReceipt, selectAgentFailureStep, type AgentSourcePage } from "./source-evidence.js";
-import { AGENT_MODULE_REPAIR_INSTRUCTIONS, AGENT_REPAIR_INSTRUCTIONS, type AgentRepairSource } from "./repair-proposal.js";
+import { AGENT_MODULE_REPAIR_INSTRUCTIONS, AGENT_REPAIR_INSTRUCTIONS, AGENT_SYMBOL_REPAIR_INSTRUCTIONS, type AgentRepairSource } from "./repair-proposal.js";
+import { indexSymbolsSync } from "./symbol-index.js";
 import { canonicalSourcePath } from "./workspace-actions.js";
 import { fileDigest, observedRange, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 
@@ -38,15 +39,21 @@ export interface AgentContextPacket {
 /** Unwrap complete structured evidence once. Avoid nested JSON strings in small-model requests. */
 export function agentEvidenceSlice(context: ToolExecutionContext, resultId: string, maxChars = 1800): unknown {
   const store = agentEvidenceStore(context,resultId), record = store.getResult(resultId);
-  const first = store.retrieveResultSlice(resultId, { mode: "text", maxChars: Math.min(3000, maxChars) });
+  const isExec = record.producer.tool === "agent_exec_output" || record.producer.tool === "work_exec";
+  const effectiveMax = isExec ? Math.max(maxChars, 12000) : maxChars;
+  const first = store.retrieveResultSlice(resultId, { mode: "text", maxChars: Math.min(3000, effectiveMax) });
   let content = first.content, offset = first.nextOffset;
-  if (first.totalChars <= maxChars) {
+  if (first.totalChars <= effectiveMax) {
     while (offset !== undefined) { const next = store.retrieveResultSlice(resultId, { mode: "text", offset, maxChars: 3000 }); content += next.content; offset = next.nextOffset; }
     if (record.storage.encoding === "json") {
       const value = JSON.parse(content);
       if (record.producer.tool === "read_file" && value.sourcePage === true) return { resultId, kind: "source", path: value.path, sourceText: value.content, completeFile: value.complete, digest: value.digest, byteRange: [value.startByte, value.endByte] };
+      if (record.producer.tool === "agent_exec_output" && value.output !== undefined) {
+        return { resultId, originRunId: record.runId, historical: record.runId !== context.runId, tool: record.producer.tool, completeResult: true, executionOutput: value.output, code: value.code };
+      }
       return { resultId, originRunId:record.runId, historical:record.runId !== context.runId, tool: record.producer.tool, completeResult: true, value };
     }
+    return { resultId, originRunId:record.runId, historical:record.runId !== context.runId, tool: record.producer.tool, completeResult: true, content };
   }
   return { resultId, originRunId:record.runId, historical:record.runId !== context.runId, tool: record.producer.tool, content, completeResult: offset === undefined, nextOffset: offset };
 }
@@ -93,7 +100,12 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
   // A recently requested supporting file must not precede the module that the
   // model is drafting. Keep all admitted pages, but make their roles explicit.
   if(repair)providedPages.sort((a,b)=>Number(b.path===repair.path && b.digest===repair.digest)-Number(a.path===repair.path && a.digest===repair.digest));
-  if(repair && focus?.complete && focus.sizeBytes > 0 && focus.sizeBytes <= 2000 && /\.[cm]?[jt]sx?$/i.test(repair.path) && sourcePageIsCurrent(context,focus) && observedRange(providedPages,repair.path,repair.digest,0,focus.sizeBytes))repair.completeSource=focus.content;
+  const activeFocus = (focus?.content ? focus : providedPages.find(p => p.path === repair?.path && p.digest === repair?.digest)) as AgentSourcePage | undefined;
+  if(repair && activeFocus?.complete && activeFocus.sizeBytes > 0 && activeFocus.sizeBytes <= 2000 && /\.[cm]?[jt]sx?$/i.test(repair.path) && sourcePageIsCurrent(context,activeFocus) && observedRange(providedPages,repair.path,repair.digest,0,activeFocus.sizeBytes))repair.completeSource=activeFocus.content;
+  if(repair && activeFocus?.content) {
+    const symbols = indexSymbolsSync(repair.path, Buffer.from(activeFocus.content, "utf8"));
+    if(symbols.length > 0) repair.symbols = symbols.map(s => ({ name: s.name, kind: s.kind, startLine: s.startLine, endLine: s.endLine }));
+  }
   const observedSources=providedPages.map(sourcePageReceipt);
   const source = task.snapshot.messages.find(message => message.id === requirement.source.messageId);
   const directory = [...(progress?.actions ?? [])].reverse().find(action=>action.operation === "list_dir" && action.status === "completed" && action.resultId);
@@ -154,34 +166,47 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
       }
     }
   }
-  const state = { taskId: task.taskId, taskRevision: task.snapshot.revision, currentStep, currentRequirement: requirement,
-    constraints, stagedInputs:(context.inputSources ?? []).map(source=>{const observed=currentRunInputs.get(source.id);return {sourceId:source.id,filename:source.filename,sha256:source.sha256,originRunId:source.originRunId ?? context.runId,historical:Boolean(source.originRunId && source.originRunId!==context.runId),...(observed ? {observedContent:observed.content,complete:observed.complete} : {readVia:"read_input"})};}), unresolvedRequirementIds: task.snapshot.requirements.filter(item => item.state === "active").map(item => item.id),
+  const state = {
+    // Stable prefix (byte-identical across all turns for optimal prefix caching)
+    taskId: task.taskId,
+    taskRevision: task.snapshot.revision,
+    originalRequest: source?.content,
     obligations: task.snapshot.requirements.filter(item => item.state === "active").map(item => ({ id: item.id, kind: item.kind, description: item.description, acceptance: item.acceptance })),
-    appliedOperations: [...agentAppliedChanges(context).slice(-5).map(item=>({path:item.path,tool:item.tool,summary:item.summary,originRunId:item.originRunId,historical:item.originRunId !== context.runId})), ...savedArtifacts.slice(-5).map(item=>({path:item.filename,tool:"generate_deliverable",summary:`Saved deliverable ${item.filename}`,originRunId:item.runId,historical:item.runId !== context.runId}))].slice(-5),
-    sourceObservations: {items:observations.slice(-4),total:observations.length,complete:observations.length<=4,...(observations.length>4 ? {earlierEvidenceVia:{tool:"retrieve_result",action:"list",scope:"task",origin:"source_extracted"}} : {})},
+    constraints,
+    unresolvedRequirementIds: task.snapshot.requirements.filter(item => item.state === "active").map(item => item.id),
+    observationRule: "Use source and stagedInputs.observedContent already supplied in this packet instead of re-reading or calling retrieve_result. When appliedOperations already lists the requested deliverable or file changes for the active requirement, call finish with your final response. Suggested reads identify known workspace source not fully observed at its current digest.",
+
+    // Volatile suffix (turn-specific evidence and dynamic state)
+    currentStep,
+    currentRequirement: requirement,
+    stagedInputs: (context.inputSources ?? []).map(source => { const observed = currentRunInputs.get(source.id); return { sourceId: source.id, filename: source.filename, sha256: source.sha256, originRunId: source.originRunId ?? context.runId, historical: Boolean(source.originRunId && source.originRunId !== context.runId), ...(observed ? { observedContent: observed.content, complete: observed.complete } : { readVia: "read_input" }) }; }),
+    appliedOperations: [...agentAppliedChanges(context).slice(-5).map(item => ({ path: item.path, tool: item.tool, summary: item.summary, originRunId: item.originRunId, historical: item.originRunId !== context.runId })), ...savedArtifacts.slice(-5).map(item => ({ path: item.filename, tool: "generate_deliverable", summary: `Saved deliverable ${item.filename}`, originRunId: item.runId, historical: item.runId !== context.runId }))].slice(-5),
+    sourceObservations: { items: observations.slice(-4), total: observations.length, complete: observations.length <= 4, ...(observations.length > 4 ? { earlierEvidenceVia: { tool: "retrieve_result", action: "list", scope: "task", origin: "source_extracted" } } : {}) },
     directoryEvidence,
-    suggestedReadPaths:readPaths,
-    readSelection:readPaths ? {indexSource:listedFiles ? "directory page" : "saved verification manifest",totalKnownRemaining:remainingReadCount,complete:remainingReadCount === readPaths.length,otherPathsVia:{tool:"list_dir",purpose:"Narrow the directory or use its continuation page"}} : undefined,
-    observationRule:"Use source and stagedInputs.observedContent already supplied in this packet instead of re-reading or calling retrieve_result. When appliedOperations already lists the requested deliverable or file changes for the active requirement, call finish with your final response. Suggested reads identify known workspace source not fully observed at its current digest.",
-    activeCapabilities:[...(context.activeCapabilities ?? [])],
-    availableCapabilities:context.envelope?.permittedCapabilities.filter(capability=>!context.activeCapabilities?.has(capability)).map(capability=>({name:capability,description:CAPABILITY_GROUPS[capability].description,tools:CAPABILITY_GROUPS[capability].tools})),
-    recentActions: {items:progress?.actions.slice(-4).map(action=>({operation:action.operation,status:action.status,resultId:action.resultId})) ?? [],total:progress?.actions.length ?? 0,complete:(progress?.actions.length ?? 0)<=4},
-    selectedSources, latestResult: result, feedback: {text:progress?.feedback.slice(0,1000) ?? "",complete:(progress?.feedback.length ?? 0)<=1000},
-    checkEvidence: ledger?.verification?.evidence.map(check=>{
-      const resultIds=check.evidence.filter(ref=>ref.kind === "result").map(ref=>ref.id);
-      let reason=check.reason;
-      const accepted=ledger.verification?.evidence.some(item=>item.criterionId === "acceptance:validate-written-code" && item.status === "passed");
-      if(!accepted && check.status === "failed" && resultIds[0] && context.resultStore) {
+    suggestedReadPaths: readPaths,
+    readSelection: readPaths ? { indexSource: listedFiles ? "directory page" : "saved verification manifest", totalKnownRemaining: remainingReadCount, complete: remainingReadCount === readPaths.length, otherPathsVia: { tool: "list_dir", purpose: "Narrow the directory or use its continuation page" } } : undefined,
+    activeCapabilities: [...(context.activeCapabilities ?? [])],
+    availableCapabilities: context.envelope?.permittedCapabilities.filter(capability => !context.activeCapabilities?.has(capability)).map(capability => ({ name: capability, description: CAPABILITY_GROUPS[capability].description, tools: CAPABILITY_GROUPS[capability].tools })),
+    recentActions: { items: progress?.actions.slice(-4).map(action => ({ operation: action.operation, status: action.status, resultId: action.resultId })) ?? [], total: progress?.actions.length ?? 0, complete: (progress?.actions.length ?? 0) <= 4 },
+    selectedSources,
+    latestResult: result,
+    feedback: { text: progress?.feedback.slice(0, 1000) ?? "", complete: (progress?.feedback.length ?? 0) <= 1000 },
+    checkEvidence: ledger?.verification?.evidence.map(check => {
+      const resultIds = check.evidence.filter(ref => ref.kind === "result").map(ref => ref.id);
+      let reason = check.reason;
+      const accepted = ledger.verification?.evidence.some(item => item.criterionId === "acceptance:validate-written-code" && item.status === "passed");
+      if (!accepted && check.status === "failed" && resultIds[0] && context.resultStore) {
         try {
-          const payload=JSON.parse(context.resultStore.readResultPayload(resultIds[0]));
-          if(typeof payload?.verification?.failureOutput === "string" && payload.verification.failureOutput) {
-            reason=`${check.reason.split("\n")[0]}\nActual test output (untrusted evidence):\n${payload.verification.failureOutput.slice(0,1800)}`;
+          const payload = JSON.parse(context.resultStore.readResultPayload(resultIds[0]));
+          if (typeof payload?.verification?.failureOutput === "string" && payload.verification.failureOutput) {
+            reason = `${check.reason.split("\n")[0]}\nActual test output (untrusted evidence):\n${payload.verification.failureOutput.slice(0, 1800)}`;
           }
         } catch { /* retain check.reason */ }
       }
-      return {criterionId:check.criterionId,status:check.status,reason,resultIds};
-    }), inputSources: context.inputSources,
-    originalRequest: source?.content };
+      return { criterionId: check.criterionId, status: check.status, reason, resultIds };
+    }),
+    inputSources: context.inputSources
+  };
   let messages=[{role:"system",content:AGENT_COMMON_INSTRUCTIONS},{role:"user",content:JSON.stringify(state)}];
   if(repair) {
     const metadata=(page:AgentSourcePage)=>{const {content:_content,...fields}=page;return fields;};
@@ -191,10 +216,14 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
       availableCapabilities:context.envelope?.permittedCapabilities.map(capability=>({name:capability,tools:CAPABILITY_GROUPS[capability].tools})),
       toolView:repair.expanded ? "Full registered tools for one action; normal approvals still apply." : repair.completeSource !== undefined ? "A separate decision after the saved draft can request the full registered tools for one action." : "Use propose_repair to request the full registered tool view for one action.",
     };
-    const moduleStep=repair.completeSource !== undefined && !repair.expanded;
-    const packetState=moduleStep ? {taskId:state.taskId,taskRevision:state.taskRevision,currentStep:state.currentStep,currentRequirement:state.currentRequirement,constraints:state.constraints,unresolvedRequirementIds:state.unresolvedRequirementIds,obligations:focused.obligations,selectedSources:focused.selectedSources,latestResult:focused.latestResult,checkEvidence:state.checkEvidence,feedback:state.feedback,contextRule:"The next decision can request registered tools for one action; no capability or requirement is removed."} : focused;
+    const editMode = process.env.WORKBENCH_AGENT_EDIT_MODE ?? "auto";
+    const symbolStep = (editMode === "symbol" || (editMode === "auto" && Boolean(repair.symbols?.length))) && !repair.expanded;
+    const moduleStep = !symbolStep && repair.completeSource !== undefined && !repair.expanded;
+    const packetState = symbolStep
+      ? { taskId: state.taskId, taskRevision: state.taskRevision, currentStep: state.currentStep, currentRequirement: state.currentRequirement, constraints: state.constraints, unresolvedRequirementIds: state.unresolvedRequirementIds, obligations: focused.obligations, selectedSources: focused.selectedSources, latestResult: focused.latestResult, checkEvidence: state.checkEvidence, feedback: state.feedback, targetSymbols: repair.symbols, contextRule: "Provide replacement code for only the failing or modified symbol(s) via replace_symbol." }
+      : moduleStep ? {taskId:state.taskId,taskRevision:state.taskRevision,currentStep:state.currentStep,currentRequirement:state.currentRequirement,constraints:state.constraints,unresolvedRequirementIds:state.unresolvedRequirementIds,obligations:focused.obligations,selectedSources:focused.selectedSources,latestResult:focused.latestResult,checkEvidence:state.checkEvidence,feedback:state.feedback,contextRule:"The next decision can request registered tools for one action; no capability or requirement is removed."} : focused;
     const literal=providedPages.map(page=>`\n\nOBSERVED SOURCE ${page.path}\nRole: ${page.path === repair.path && page.digest === repair.digest ? "CURRENT REPAIR TARGET" : "SUPPORTING CONTEXT; do not replace the target with this file"}\nDigest: ${page.digest}; bytes ${page.startByte}-${page.endByte} of ${page.sizeBytes}; complete file: ${page.complete}; result: ${page.resultId}\n<source>\n${page.content}\n</source>`).join("");
-    messages=[{role:"system",content:repair.expanded ? AGENT_COMMON_INSTRUCTIONS : moduleStep ? AGENT_MODULE_REPAIR_INSTRUCTIONS : AGENT_REPAIR_INSTRUCTIONS},{role:"user",content:JSON.stringify(packetState)+literal}];
+    messages=[{role:"system",content:repair.expanded ? AGENT_COMMON_INSTRUCTIONS : symbolStep ? AGENT_SYMBOL_REPAIR_INSTRUCTIONS : moduleStep ? AGENT_MODULE_REPAIR_INSTRUCTIONS : AGENT_REPAIR_INSTRUCTIONS},{role:"user",content:JSON.stringify(packetState)+literal}];
   }
   return {messages,observedSource,observedSources,requirement,readPaths,repair};
 }

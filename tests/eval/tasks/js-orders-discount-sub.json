@@ -1,0 +1,14 @@
+{
+  "id": "js-orders-discount-sub",
+  "base": "js-orders",
+  "mutation": "wrong_operator",
+  "prompt": "applyDiscount is increasing order total instead of discounting it. Fix src/orders.js so tests pass.",
+  "expectChangedFiles": [
+    "src/orders.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/orders.test.js",
+    "mustPass": true
+  }
+}

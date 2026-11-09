@@ -1,0 +1,14 @@
+{
+  "id": "js-calc-clamp-bound",
+  "base": "js-calculator",
+  "mutation": "swapped_arguments",
+  "prompt": "clamp is not keeping values bounded properly. Fix src/math.js so tests pass.",
+  "expectChangedFiles": [
+    "src/math.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/math.test.js",
+    "mustPass": true
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "py-stats-range-diff",
+  "base": "py-stats",
+  "mutation": "wrong_operator",
+  "prompt": "calculate_range returns sum instead of difference. Fix stats.py so tests pass.",
+  "expectChangedFiles": [
+    "stats.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_stats.py",
+    "mustPass": true
+  }
+}

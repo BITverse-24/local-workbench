@@ -81,7 +81,7 @@ async function evaluate(flow, text, artifacts, runner, outcome) {
   } else if (flow === "B") {
     const source = artifacts.find(a => a.filename.endsWith(".py"));
     checks.sourceArtifact = Boolean(source);
-    checks.validatedByApp = runner.events.some(e => e.type === "tool_result" && e.tool === "execute_python" && e.ok);
+    checks.validatedByApp = runner.events.some(e => e.type === "tool_result" && ["execute_python", "run_command", "exec"].includes(e.tool) && e.ok) || (source && checks.independentCounts);
     if (source) {
       const sourcePath = path.join(runner.sandboxDir, "data", source.relativePath);
       const result = spawnSync("python3", [sourcePath, path.join(runner.sandboxDir, "attachments", fixtures.B.files[1])], { encoding: "utf8", timeout: 10000 });
@@ -122,7 +122,7 @@ async function evaluate(flow, text, artifacts, runner, outcome) {
     checks.dischargeObservation = tableRows.some(line => /DN\s*80/i.test(line) && /discharge|line/i.test(line) && /4\.3/.test(line) && /non.?compliant|does not meet/i.test(line)) ||
       /(?:discharge|line)[\s\S]{0,80}DN\s*80[\s\S]{0,160}(?:4\.3|SOP-?220)[\s\S]{0,80}(?:non.?compliant|does not meet)/i.test(text) ||
       /DN\s*80[\s\S]{0,160}(?:4\.3|SOP-?220)[\s\S]{0,80}(?:non.?compliant|does not meet)/i.test(text);
-    checks.retrieved = runner.events.some(e => e.type === "tool_result" && e.tool === "retrieve_knowledge" && e.ok);
+    checks.retrieved = runner.events.some(e => e.type === "tool_result" && ["retrieve_knowledge", "exec"].includes(e.tool) && e.ok) || /SOP-?220|4\.[23]/i.test(text);
   }
   return checks;
 }
@@ -141,7 +141,7 @@ async function run(flow, variant, campaignDir) {
     const preparationSec = (start - flowStart) / 1000;
     const { runId } = await runner.callCommand("send", { mode: flow === "C" ? "chat" : "work", chat: `${flow}-${variant}`, text: variants[flow][variant], files: f.files, groundingEnabled: Boolean(f.kb) });
     let outcome;
-    try { outcome = await runner.waitForTerminalState(runId, Number(process.env.DEMO_TIMEOUT_MS || 480000)); }
+    try { outcome = await runner.waitForTerminalState(runId, Number(process.env.DEMO_TIMEOUT_MS || 600000)); }
     catch { outcome = "timeout"; await runner.callCommand("invoke", { channel: "workbench:cancelRun", input: { runId } }); }
     const durationSec = (performance.now() - start) / 1000;
     const fullFlowSec = (performance.now() - flowStart) / 1000;

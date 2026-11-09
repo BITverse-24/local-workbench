@@ -1,0 +1,357 @@
+{
+  "version": 1,
+  "timestamp": "2026-11-08T22:07:21.204Z",
+  "tier": "evaluation",
+  "k": 1,
+  "model": "qwen/qwen3.5-9b",
+  "stats": {
+    "totalTasks": 15,
+    "totalRuns": 15,
+    "passedRuns": 15,
+    "passRate": 100
+  },
+  "tasks": [
+    {
+      "id": "js-orders-filter-op",
+      "base": "js-orders",
+      "runs": [
+        {
+          "taskId": "js-orders-filter-op",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 136700,
+          "callsByRole": {
+            "actor": 5
+          },
+          "finishReasons": {},
+          "approvalsRequested": 1,
+          "changedFiles": [
+            "src/orders.js"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "js-calc-mean-sum",
+      "base": "js-calculator",
+      "runs": [
+        {
+          "taskId": "js-calc-mean-sum",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 121600,
+          "callsByRole": {
+            "actor": 4
+          },
+          "finishReasons": {},
+          "approvalsRequested": 1,
+          "changedFiles": [
+            "src/math.js"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "js-inv-lowstock-bound",
+      "base": "js-inventory",
+      "runs": [
+        {
+          "taskId": "js-inv-lowstock-bound",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 125600,
+          "callsByRole": {
+            "actor": 5
+          },
+          "finishReasons": {},
+          "approvalsRequested": 1,
+          "changedFiles": [
+            "src/inventory.js"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "js-str-slug-lower",
+      "base": "js-strings",
+      "runs": [
+        {
+          "taskId": "js-str-slug-lower",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 127100,
+          "callsByRole": {
+            "actor": 5
+          },
+          "finishReasons": {},
+          "approvalsRequested": 1,
+          "changedFiles": [
+            "src/formatter.js"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "py-pricing-subtotal-math",
+      "base": "py-pricing",
+      "runs": [
+        {
+          "taskId": "py-pricing-subtotal-math",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 301293,
+          "callsByRole": {
+            "actor": 6
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "pricing.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "py-val-email-regex",
+      "base": "py-validator",
+      "runs": [
+        {
+          "taskId": "py-val-email-regex",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 451100,
+          "callsByRole": {
+            "actor": 7
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "validator.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "py-stats-ma-window",
+      "base": "py-stats",
+      "runs": [
+        {
+          "taskId": "py-stats-ma-window",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 451200,
+          "callsByRole": {
+            "actor": 7
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "stats.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "py-queue-sort-order",
+      "base": "py-queue",
+      "runs": [
+        {
+          "taskId": "py-queue-sort-order",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "completed",
+          "wallMs": 451605,
+          "callsByRole": {
+            "actor": 7
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "task_queue.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "js-orders-total-math",
+      "base": "js-orders",
+      "runs": [
+        {
+          "taskId": "js-orders-total-math",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "requirements_satisfied",
+          "wallMs": 128627,
+          "callsByRole": {
+            "actor": 1,
+            "delivery": 1,
+            "coverage_judge": 1,
+            "scope_judge": 2
+          },
+          "finishReasons": {},
+          "approvalsRequested": 3,
+          "changedFiles": [
+            "src/orders.js"
+          ],
+          "oracleOutput": "✔ filterOrdersByStatus filters correctly (0.555375ms)\n✔ calculateOrderTotal sums item prices times quantities (0.058417ms)\n✔ applyDiscount calculates percentage discounts properly (0.045916ms)\n✔ isEligibleForFreeShipping checks threshold boundary (0.045042ms)\n✔ findOrderById returns order or null (0.539584ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 63.839958\n"
+        }
+      ]
+    },
+    {
+      "id": "js-calc-median-even",
+      "base": "js-calculator",
+      "runs": [
+        {
+          "taskId": "js-calc-median-even",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "requirements_satisfied",
+          "wallMs": 130623,
+          "callsByRole": {
+            "actor": 1,
+            "delivery": 1,
+            "coverage_judge": 1,
+            "scope_judge": 2
+          },
+          "finishReasons": {},
+          "approvalsRequested": 3,
+          "changedFiles": [
+            "src/math.js"
+          ],
+          "oracleOutput": "✔ calculateMean computes average correctly (0.55275ms)\n✔ calculateMedian handles odd and even arrays (0.069208ms)\n✔ clamp keeps values within bounds (0.046917ms)\n✔ standardDeviation computes population std dev (0.0705ms)\n✔ factorial computes products (0.044875ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 65.196666\n"
+        }
+      ]
+    },
+    {
+      "id": "js-inv-adjust-stock",
+      "base": "js-inventory",
+      "runs": [
+        {
+          "taskId": "js-inv-adjust-stock",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "cancelled",
+          "wallMs": 451245,
+          "callsByRole": {
+            "actor": 5,
+            "delivery": 1,
+            "coverage_judge": 2,
+            "scope_judge": 2
+          },
+          "finishReasons": {},
+          "approvalsRequested": 3,
+          "changedFiles": [
+            "src/inventory.js"
+          ],
+          "oracleOutput": "✔ getLowStockItems returns items below or at threshold (0.585834ms)\n✔ adjustStock updates quantity or throws on negative (0.18775ms)\n✔ totalInventoryValue calculates aggregate cost (0.055041ms)\n✔ categorizeInventory groups by category (0.061417ms)\n✔ restockNeeds computes quantity deficits (0.566375ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 66.215958\n"
+        }
+      ]
+    },
+    {
+      "id": "js-str-truncate-bound",
+      "base": "js-strings",
+      "runs": [
+        {
+          "taskId": "js-str-truncate-bound",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "requirements_satisfied",
+          "wallMs": 129629,
+          "callsByRole": {
+            "actor": 1,
+            "delivery": 1,
+            "coverage_judge": 1,
+            "scope_judge": 2
+          },
+          "finishReasons": {},
+          "approvalsRequested": 3,
+          "changedFiles": [
+            "src/formatter.js"
+          ],
+          "oracleOutput": "✔ toSlug creates URL-friendly slugs (0.61125ms)\n✔ truncate shortens long strings with suffix (0.057042ms)\n✔ camelToKebab converts casing (0.066542ms)\n✔ capitalizeWords capitalizes each word (0.057625ms)\n✔ renderTemplate substitutes variables (0.07075ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 65.093167\n"
+        }
+      ]
+    },
+    {
+      "id": "py-pricing-vol-tier",
+      "base": "py-pricing",
+      "runs": [
+        {
+          "taskId": "py-pricing-vol-tier",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "cancelled",
+          "wallMs": 451618,
+          "callsByRole": {
+            "actor": 8
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "pricing.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "py-val-port-bool",
+      "base": "py-validator",
+      "runs": [
+        {
+          "taskId": "py-val-port-bool",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "cancelled",
+          "wallMs": 451155,
+          "callsByRole": {
+            "actor": 9
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "validator.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    },
+    {
+      "id": "py-stats-outliers-factor",
+      "base": "py-stats",
+      "runs": [
+        {
+          "taskId": "py-stats-outliers-factor",
+          "runIndex": 1,
+          "pass": true,
+          "stopReason": "cancelled",
+          "wallMs": 451167,
+          "callsByRole": {
+            "actor": 8
+          },
+          "finishReasons": {},
+          "approvalsRequested": 2,
+          "changedFiles": [
+            "stats.py"
+          ],
+          "oracleOutput": ""
+        }
+      ]
+    }
+  ]
+}

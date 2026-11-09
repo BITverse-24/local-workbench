@@ -1,0 +1,10 @@
+{
+  "scenario": "E-1 financial ledger variance & expense audit",
+  "expected": [
+    "Filtered only CLEARED transactions (ignoring PENDING and DISPUTED).",
+    "Total cleared spending is $221,000.00 across all departments.",
+    "Events has the highest percentage overrun (+17.50%).",
+    "Generated variance-summary.csv with department, category, budget, actual_spend, variance_pct, status."
+  ],
+  "requiredTerms": ["221", "Events", "OVER_BUDGET", "WITHIN_BUDGET"]
+}

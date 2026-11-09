@@ -1,0 +1,14 @@
+{
+  "id": "py-pricing-subtotal-math",
+  "base": "py-pricing",
+  "mutation": "wrong_operator",
+  "prompt": "calculate_subtotal is adding price and quantity instead of multiplying. Fix pricing.py so tests pass.",
+  "expectChangedFiles": [
+    "pricing.py"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "python3 -B -m unittest test_pricing.py",
+    "mustPass": true
+  }
+}

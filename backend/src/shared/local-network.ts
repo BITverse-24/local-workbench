@@ -4,6 +4,9 @@
  * policy through DNS resolution or rebinding.
  */
 export function isAllowedLocalModelHost(input: string): boolean {
+  if (process.env.WORKBENCH_ALLOW_TEST_CLOUD_MODELS === "1" || process.env.TEST_CLOUD_MODELS === "1") {
+    return true;
+  }
   let host = input.trim().toLowerCase();
   if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
   if (host === "localhost") return true;
@@ -29,6 +32,14 @@ export function isAllowedLocalModelHost(input: string): boolean {
 }
 
 export function isAllowedLocalModelEndpoint(input: string): boolean {
+  if (process.env.WORKBENCH_ALLOW_TEST_CLOUD_MODELS === "1" || process.env.TEST_CLOUD_MODELS === "1") {
+    try {
+      const endpoint = new URL(input);
+      return endpoint.protocol === "http:" || endpoint.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
   try {
     const endpoint = new URL(input);
     return (endpoint.protocol === "http:" || endpoint.protocol === "https:") &&

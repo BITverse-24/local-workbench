@@ -35,8 +35,8 @@ export const CAPABILITY_GROUPS: Record<CapabilityGroup, CapabilityMetadata> = {
   structured_computation: {
     name: "structured_computation",
     label: "Structured Computation",
-    description: "Python execution with probed OS isolation or separate digest-bound approval without filesystem or network isolation",
-    tools: ["execute_python"],
+    description: "In-memory sandboxed JavaScript execution (QuickJS) or Python execution with probed OS isolation",
+    tools: ["execute_python", "work_exec"],
     requiresAgentMode: false,
   },
   artifact_generation: {

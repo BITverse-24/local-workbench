@@ -1,0 +1,24 @@
+{
+  "timestamp": "2026-11-03T02:09:11.791Z",
+  "model": "qwen/qwen3.5-9b",
+  "spike1_prefix_cache": {
+    "coldTtftMs": 8975,
+    "warmTtftMs": 1061,
+    "speedupPercent": 88.2
+  },
+  "spike2_constrained_json": {
+    "supported": false,
+    "status": 200,
+    "parsed": null
+  },
+  "spike3_presence_penalty": {
+    "penalty_0_1": {
+      "drifts": 150,
+      "totalLinesProduced": 1
+    },
+    "penalty_0_0": {
+      "drifts": 150,
+      "totalLinesProduced": 1
+    }
+  }
+}

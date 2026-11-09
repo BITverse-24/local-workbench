@@ -7,21 +7,23 @@ import type { AgentTask, AgentToolCall, AgentToolDefinition, CapabilityGroup, Ru
 import type { ToolExecutionContext } from "../tools/types.js";
 import { getDb } from "../persistence/db.js";
 import { bindAgentTaskRun, getAgentTask, getAgentTaskBinding, ingestAgentTaskMessage, setAgentTaskStatus } from "../run/agent-task-store.js";
-import { bindAgentExecutionLedger, configureExecutionLedger, getExecutionLedger, initializeAgentInterpretationBudget, initializeExecutionLedger, prepareAgentTaskInterpretation, takeAgentProtocolCorrection, updateAgentProgress } from "../run/execution-ledger.js";
+import { advanceAgentEscalation, bindAgentExecutionLedger, configureExecutionLedger, getExecutionLedger, initializeAgentInterpretationBudget, initializeExecutionLedger, prepareAgentTaskInterpretation, takeAgentProtocolCorrection, updateAgentProgress } from "../run/execution-ledger.js";
 import { getRunContract, persistRunContract } from "../run/contract.js";
 import { currentRuntimeScope, assertRuntimeActive } from "../run/runtime-scope.js";
 import { ToolDispatcher } from "./tool-dispatcher.js";
 import { getAllAvailableTools, filterToolsForTurn } from "../router/tool-compositor.js";
 import { agentWorkspaceActions, canonicalSourcePath, validateAgentFileProposal } from "./workspace-actions.js";
-import { fileDigest, readAgentSourceBytes } from "../harness/tools/edit-file.js";
+import { fileDigest, prepareFileEdit, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 import { resolveSafe } from "../harness/path-guard.js";
 import { buildAgentContextPacket, conciseAgentTool, FINISH_TOOL, selectAgentRequirement } from "./context-packet.js";
+import { estimateMessageTokens } from "./context-manager.js";
 import { AGENT_MODULE_DECISION_INSTRUCTIONS, bindAgentRepairProposal, MODULE_DRAFT_TOOL, moduleDecisionTools, REPAIR_PROPOSAL_TOOL } from "./repair-proposal.js";
+import { REPLACE_SYMBOL_TOOL, bindSymbolEdit, parseJsonWithEscapedCode } from "./symbol-edit.js";
 import { obtainAgentFailureSources, selectAgentFailureStep } from "./source-evidence.js";
 import { assessAgentFileScope, refineAgentInterpretation, reviewAgentInterpretation } from "./requirement-scope.js";
 import { agentInterpretationFormat, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
 import { runAgentVerificationStage } from "./verification-stage.js";
-import { captureAgentVerificationManifest, isCodeVerificationPath } from "./test-verification.js";
+import { captureAgentVerificationManifest, computeExpectedManifestRevision, isAgentTestPath, isCodeVerificationPath, type AgentTestOverlay } from "./test-verification.js";
 import { extractVerificationSkipBasis, recordVerificationTermination, recordVerificationUserSkip } from "../run/verification-controller.js";
 import { agentDeliveryGap, reviewAgentTaskCoverage } from "./requirement-review.js";
 import { agentTestEnvironmentKey, captureCommandWorkspaceDigest, commandApprovalDigest, COMMAND_FALLBACK_DISCLOSURE } from "../harness/tools/run-command.js";
@@ -32,6 +34,9 @@ import { bindTaskInputs } from "./task-inputs.js";
 import { agentArtifactOutcomes } from "./artifact-evidence.js";
 import { bindArtifactTests } from "./artifact-test-plan.js";
 import { preservesPublicInterface } from "./export-preservation.js";
+import { defaultExecObserveState, nextObserveState } from "./exec/exec-policy.js";
+import { runExecTurn } from "./exec/exec-step.js";
+import type { InferenceRole } from "../gateway/telemetry.js";
 
 type RunnerInput = { context: ToolExecutionContext; modelId: string; chatId: string; messageId: string; workspace: AgentTask["workspace"]; intent?: "continue" | "new"; predecessorRunId?: string;
   state: (state: "classifying" | "planning" | "acting") => void; approve: (preview: string) => Promise<boolean> };
@@ -76,7 +81,7 @@ export class AgentTaskRunner {
         for (;;) {
           const messages = interpretationMessages(source.content, current, input.messageId);
           if (feedback) messages[1].content = JSON.stringify({ ...JSON.parse(messages[1].content), correction: feedback });
-          const response = await context.gateway.chatWithTools(modelId, messages, [], { runId, maxTokens: 1024, purpose: "classification", temperature: 0, responseSchema: agentInterpretationFormat(source.content,current,input.messageId), signal: scope.signal });
+          const response = await context.gateway.chatWithTools(modelId, messages, [], { runId, role: "interpretation", maxTokens: 1024, purpose: "classification", temperature: 0, responseSchema: agentInterpretationFormat(source.content,current,input.messageId), signal: scope.signal });
           assertRuntimeActive();
           if (!response.ok) return generationFailure("interpretation_unavailable", response.error.message);
           try {
@@ -117,7 +122,7 @@ export class AgentTaskRunner {
       const task = getAgentTask(bound.taskId)!;
       if (task.snapshot.revision !== bound.taskRevision || task.workspace.root !== input.workspace.root || task.workspace.registeredAt !== input.workspace.registeredAt) return stop("stale_task_binding", "The task or workspace binding changed. Start a fresh bound attempt.");
       if (bound.disposition === "status" || isAgentStatusQuestion(source.content)) {
-        const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: "Answer the status question from saved task facts only. Do not propose or perform workspace actions. State remaining requirements and unavailable checks." }, { role: "user", content: JSON.stringify({ question: source.content, requirements: task.snapshot.requirements, pendingRequests: task.snapshot.messages.filter(message=>message.disposition === "pending"), taskStatus: task.status, savedFacts:savedAgentTaskFacts(task) }) }], [], { runId, maxTokens: 512, signal: scope.signal });
+        const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: "Answer the status question from saved task facts only. Do not propose or perform workspace actions. State remaining requirements and unavailable checks." }, { role: "user", content: JSON.stringify({ question: source.content, requirements: task.snapshot.requirements, pendingRequests: task.snapshot.messages.filter(message=>message.disposition === "pending"), taskStatus: task.status, savedFacts:savedAgentTaskFacts(task) }) }], [], { runId, role: "status", maxTokens: 512, signal: scope.signal });
         assertRuntimeActive();
         return answer.ok && answer.value.finishReason !== "length" ? { outcome: "completed", text: answer.value.content ?? "The saved task remains available.", stopReason: "status_reply" } : stop("status_reply_unavailable", answer.ok ? "The status answer was truncated." : answer.error.message);
       }
@@ -134,7 +139,7 @@ export class AgentTaskRunner {
       context.agentPreservePublicInterface = preservesPublicInterface(task);
       const granted: string[] = [];
       const clearApprovals = () => { context.policyGuard!.revokeScopes(granted.splice(0)); context.agentOperationDigest = undefined; context.agentCommandApproval = undefined; context.agentArtifactScope = undefined; };
-      const authorize = async (calls: AgentToolCall[]) => {
+      const authorize = async (calls: AgentToolCall[], silent = false) => {
         for (const call of calls) {
           assertRuntimeActive();
           const commandApproval = call.name === "run_command" ? { workspaceDigest: captureCommandWorkspaceDigest(context.workspaceRoot), ...(context.agentVerification?.artifact ? {artifact:context.agentVerification.artifact} : {}) } : undefined;
@@ -144,7 +149,7 @@ export class AgentTaskRunner {
             operation: call.name, arguments: call.arguments, ...(commandApproval ? { sourceRevision: commandApproval.workspaceDigest, ...(commandApproval.artifact ? {testArtifact:commandApproval.artifact} : {}) } : {}) };
           const preview = JSON.stringify(previewData, null, 2) + (call.name === "run_command" ? `\n\n${COMMAND_FALLBACK_DISCLOSURE}` : "");
           const before = fileMutations.has(call.name) ? this.sourceVersion(context, call.arguments) : undefined;
-          if (!await input.approve(preview)) return false;
+          if (!silent && !await input.approve(preview)) return false;
           assertRuntimeActive();
           if (before !== undefined && before !== this.sourceVersion(context, call.arguments)) throw new Error("The proposed source changed while approval was pending. Read it again and request a new approval.");
           if (commandApproval && commandApproval.workspaceDigest !== captureCommandWorkspaceDigest(context.workspaceRoot)) throw new Error("The command workspace changed while approval was pending. Propose it again for the current source.");
@@ -188,7 +193,15 @@ export class AgentTaskRunner {
         // does not need to select finish or rediscover an already known test call.
         const failureStep = selectAgentFailureStep(context);
         const beforeCheck = getExecutionLedger(runId)!;
-        if (failureStep?.phase === "check_changes" && beforeCheck.agentProgress?.failure?.targets.some(target => target.role === "implementation") && !beforeCheck.verification?.userSkip) {
+        const currentManifest = captureAgentVerificationManifest(context.workspaceRoot).sha256;
+        const failureChanged = beforeCheck.agentProgress?.failure && (
+          failureStep?.phase === "check_changes" ||
+          currentManifest !== beforeCheck.agentProgress.failure.revision ||
+          beforeCheck.agentProgress.failure.targets.some(t => {
+            try { return fileDigest(readAgentSourceBytes(context.workspaceRoot, t.path)) !== t.digest; } catch { return true; }
+          })
+        );
+        if (failureChanged && beforeCheck.agentProgress?.failure?.targets.some(target => target.role === "implementation") && !beforeCheck.verification?.userSkip) {
           const checked = await verifyChanges();
           if (checked.action === "repair") continue;
           if (checked.action !== "passed") return stop("checks_unavailable", checked.detail, checked.action === "cancelled" ? "cancelled" : "partial");
@@ -203,23 +216,65 @@ export class AgentTaskRunner {
         const currentTests = getExecutionLedger(runId)?.verification?.evidence.find(check => check.criterionId === "acceptance:validate-written-code" && check.status === "passed");
         const repairDelivery = !!progress?.failure && changedPaths().length > 0 && !agentDeliveryGap(task, context, changedPaths()) && currentTests?.revision === captureAgentVerificationManifest(context.workspaceRoot).sha256 && currentTests.evidence.length > 0 && currentTests.evidence.every(ref => ref.kind === "result" && context.resultStore!.verifyIntegrity(ref.id).valid);
         const evidenceDigest = repairDelivery ? hash([currentTests!.revision, currentTests!.evidence]) : progress?.latestResultId ? context.resultStore.getResult(progress.latestResultId).storage.sha256 : undefined;
+        const hasExecOutput = (() => {
+          try {
+            const rec = progress?.latestResultId ? context.resultStore?.getResult(progress.latestResultId) : undefined;
+            return Boolean(rec && rec.producer.tool === "agent_exec_output" && rec.status === "complete");
+          } catch {
+            return false;
+          }
+        })();
+        const lastAction = progress?.actions.at(-1);
+        const lastActionFailedExec = lastAction?.operation === "exec" && lastAction?.status === "failed";
+        const hasFreshObservation = Boolean((packet.observedSource && !lastActionFailedExec) || hasExecOutput);
         const verbatimPageComplete = !pending.some(item => item.acceptance.some(check => check.operation === "verbatim_source")) || packet.observedSource?.endByte === packet.observedSource?.sizeBytes;
-        const inspectionDelivery = verbatimPageComplete && packet.observedSource && evidenceDigest && progress?.deliveryEvidenceDigest !== evidenceDigest && pending.every(item => ["inspect", "deliver", "preserve"].includes(item.kind)) && !pending.some(item => item.acceptance.some(check => check.kind === "execution"));
+        const inspectionDelivery = !lastActionFailedExec && verbatimPageComplete && hasFreshObservation && evidenceDigest && progress?.deliveryEvidenceDigest !== evidenceDigest && pending.every(item => ["inspect", "deliver", "preserve"].includes(item.kind)) && !pending.some(item => item.acceptance.some(check => check.kind === "execution"));
         if (evidenceDigest && (inspectionDelivery || repairDelivery && progress?.deliveryEvidenceDigest !== evidenceDigest)) {
           updateAgentProgress(runId, state => { state.deliveryEvidenceDigest = evidenceDigest; });
-          const answer = await context.gateway.chatWithTools(modelId, [{ role: "system", content: repairDelivery ? "The host has verified the saved repair with the listed existing tests. All appliedOperations are saved and acceptance:validate-written-code passed (baseline:project-tests records the initial pre-repair failure reproduction). Propose the requested explanation from the supplied requirements, changes, and evidence: state what was inspected, how the failing baseline tests were reproduced, the cause and applied fix in each modified module, and that the existing test suite passed while preserving the current design/public behavior and adding no dependencies. Do not request tools in this delivery step or list completed repairs/tests as unresolved. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing explanation with no Analysis or Drafting sections." : "The host has obtained source evidence. Propose the requested answer from the supplied requirements and observed content. Do not request or perform more tools in this delivery step. For verbatim_source checks, output ONLY a fenced code block (```\\n<exact content>```) containing the exact observed source content with its exact whitespace and line endings and no extra blank lines inside the fence. Do not claim complete coverage beyond the supplied evidence. The host will review every requirement separately. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing answer with no Analysis or Drafting sections." }, packet.messages[1]], [], { runId, maxTokens: 1024, signal: scope.signal });
-          assertRuntimeActive();
-          if (!answer.ok || answer.value.finishReason === "length" || answer.value.tool_calls?.length || !answer.value.content?.trim()) return stop("delivery_unavailable", answer.ok ? "The delivery proposal was incomplete or requested another action." : answer.error.message);
+          let answer: Awaited<ReturnType<typeof context.gateway.chatWithTools>> | undefined;
+          let deliveryPacket = packet;
+          for (const packing of [
+            undefined,
+            { additionalSourceChars: 0 },
+            { additionalSourceChars: 0, latestSourceBytes: 2000 },
+            { additionalSourceChars: 0, latestSourceBytes: 1000 },
+            { additionalSourceChars: 0, latestSourceBytes: 500 },
+          ]) {
+            if (packing) {
+              deliveryPacket = buildAgentContextPacket(task, context, selected, packing);
+            }
+            const deliveryMessages: any[] = [
+              {
+                role: "system",
+                content: repairDelivery
+                  ? "The host has verified the saved repair with the listed existing tests. All appliedOperations are saved and acceptance:validate-written-code passed (baseline:project-tests records the initial pre-repair failure reproduction). Propose the requested explanation from the supplied requirements, changes, and evidence: explicitly name each inspected and tested file (both source and test files), state what was inspected, how the failing baseline tests were reproduced, the cause and applied fix in each modified module, and that the existing test suite passed while preserving the current design/public behavior and adding no dependencies. Do not request tools in this delivery step or list completed repairs/tests as unresolved. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing explanation with no Analysis or Drafting sections."
+                  : `The host has obtained source evidence${hasExecOutput ? " and completed code execution (see latestResult.executionOutput for the exact computed values, tables, and totals)" : ""}. Propose the complete requested answer covering ALL requirements from the original requests and observed content. Address every deliverable and reporting obligation (include all lists, tables, calculations, totals, and deficits asked by the user). Do not request or perform more tools in this delivery step. Be concise, direct, and complete (under 800 words; do not re-list all raw rows). For verbatim_source checks, output ONLY a fenced code block (\`\`\`\\n<exact content>\`\`\`) containing the exact observed source content with its exact whitespace and line endings and no extra blank lines inside the fence. Do not claim complete coverage beyond the supplied evidence. The host will review every requirement separately. Keep any <think> block empty and immediately close </think> on the first line, then write ONLY the final user-facing answer with no Analysis or Drafting sections.`,
+              },
+              deliveryPacket.messages[1],
+            ];
+            const estDeliveryTokens = estimateMessageTokens(deliveryMessages as any);
+            const deliveryMaxTokens = Math.min(2048, Math.max(256, 8192 - 640 - estDeliveryTokens));
+            answer = await context.gateway.chatWithTools(modelId, deliveryMessages, [], { runId, role: "delivery", maxTokens: deliveryMaxTokens, signal: scope.signal });
+            assertRuntimeActive();
+            if (answer.ok || answer.error.code !== "agent_context_limit") break;
+          }
+          if (!answer || !answer.ok || answer.value.tool_calls?.length || !answer.value.content?.trim()) return stop("delivery_unavailable", !answer ? "The delivery proposal could not be generated." : answer.ok ? "The delivery proposal was incomplete or requested another action." : answer.error.message);
           const answerDigest = hash(answer.value.content);
           if (progress?.deliveryAttempts.some(attempt => attempt.evidenceDigest === evidenceDigest && attempt.answerDigest === answerDigest)) return stop("repeated_delivery", "The same answer was proposed for unchanged source evidence. Remaining requirements stay saved.");
           updateAgentProgress(runId, state => { state.deliveryAttempts.push({ evidenceDigest, answerDigest }); });
           const admitted = getExecutionLedger(runId)?.agentAdmissions.at(-1);
-          if (admitted?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push(...packet.observedSources.map(source=>({...source,requestId:admitted.requestId}))); });
+          if (admitted?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push(...deliveryPacket.observedSources.map(source=>({...source,requestId:admitted.requestId}))); });
           context.resultStore.registerResult({ type: "text", status: "complete", origin: "model_derived", producer: { tool: "agent_delivery_proposal", callId: randomUUID() }, summary: "Proposed answer from observed evidence", payload: answer.value.content, sources: [] });
           const reviewed = await reviewAgentTaskCoverage(task, context, modelId, repairDelivery ? changedPaths() : [], answer.value.content);
           assertRuntimeActive();
           if (reviewed.ok) { const completed = stop("requirements_satisfied", "", "completed"); return { ...completed, text: `${answer.value.content}\n\n${completed.text}` }; }
-          updateAgentProgress(runId, state => { state.feedback = reviewed.detail; if (reviewed.next === "delivery") state.deliveryEvidenceDigest = undefined; });
+          if (answer.value.finishReason === "length") return stop("delivery_unavailable", "The delivery proposal was truncated by model output token limit.");
+          updateAgentProgress(runId, state => {
+            state.feedback = reviewed.detail;
+            if (reviewed.next === "delivery" || (hasExecOutput && (state.deliveryAttempts?.length ?? 0) < 3)) {
+              state.deliveryEvidenceDigest = undefined;
+            }
+          });
           continue;
         }
         const inactiveCapabilities = context.envelope.permittedCapabilities.filter(capability=>!context.activeCapabilities!.has(capability));
@@ -229,19 +284,59 @@ export class AgentTaskRunner {
           ...(tool.name === "read_file" && packet.readPaths ? {path:{type:"string",enum:packet.readPaths}} : {}),
           requirement_id: { type: "string" } } } } }));
         const deliveryGap = agentDeliveryGap(task,context,changedPaths());
+        const editMode = process.env.WORKBENCH_AGENT_EDIT_MODE ?? "auto";
+        const symbolStep = (editMode === "symbol" || (editMode === "auto" && Boolean(packet.repair?.symbols?.length))) && packet.repair !== undefined && !packet.repair.expanded;
         const draftForPacket = () => packet.repair?.completeSource !== undefined && !packet.repair.expanded && progress?.repairDraft?.focusKey === packet.repair.focusKey && progress.repairDraft.taskRevision === bound!.taskRevision && progress.repairDraft.requirementId === packet.requirement.id ? progress.repairDraft : undefined;
+        const moduleStep = !symbolStep && packet.repair?.completeSource !== undefined && !packet.repair.expanded;
+
+        const execEnv = (process.env.WORKBENCH_AGENT_EXEC ?? "observe").toLowerCase();
+        const execEnabled = !["off", "false", "0", "disabled"].includes(execEnv);
+        const observeState = progress?.observe ?? defaultExecObserveState(execEnabled ? "exec" : "native");
+        if (execEnabled && !symbolStep && !moduleStep && observeState.mode === "exec") {
+          const execTurn = await runExecTurn({
+            task,
+            context,
+            packet,
+            modelId,
+            dispatcher,
+            scope,
+            state: observeState,
+          });
+          assertRuntimeActive();
+          const nextState = nextObserveState(observeState, execTurn.outcome);
+          updateAgentProgress(runId, state => {
+            state.observe = nextState;
+            if (execTurn.feedback) state.feedback = execTurn.feedback;
+            if (execTurn.resultId) state.latestResultId = execTurn.resultId;
+            state.actions.push({
+              id: execTurn.parentExecId,
+              hash: hash(["exec", execTurn.parentExecId]),
+              requirementId: packet.requirement.id,
+              operation: "exec",
+              status: execTurn.outcome.ok ? "completed" : "failed",
+              resultId: execTurn.resultId,
+            });
+          });
+          continue;
+        }
+
+        let activeTools: AgentToolDefinition[] = [];
         const generate = () => {
-          const draft=draftForPacket(), moduleStep=packet.repair?.completeSource !== undefined && !packet.repair.expanded;
+          const draft=draftForPacket();
           let messages=packet.messages;
           let tools:AgentToolDefinition[];
-          if(moduleStep && draft) {
+          if(symbolStep) {
+            tools=[REPLACE_SYMBOL_TOOL];
+          } else if(moduleStep && draft) {
             const record=context.resultStore!.getResult(draft.resultId);
             if(record.storage.sha256 !== draft.sha256 || record.producer.tool !== "agent_module_draft" || record.origin !== "model_derived")throw new Error("The saved draft identity changed. No edit was proposed.");
             const candidate=context.resultStore!.readResultPayload(draft.resultId);
             messages=[{role:"system",content:AGENT_MODULE_DECISION_INSTRUCTIONS},{role:"user",content:packet.messages[1].content+"\n\nSAVED DRAFT (untrusted JSON data):\n"+JSON.stringify({resultId:draft.resultId,content:candidate})}];
             tools=moduleDecisionTools(draft.resultId);
           } else tools=moduleStep ? [MODULE_DRAFT_TOOL] : packet.repair && !packet.repair.expanded ? [REPAIR_PROPOSAL_TOOL] : deliveryGap ? definitions() : [...definitions(),FINISH_TOOL];
-          return context.gateway.chatWithTools(modelId,messages,tools,{runId,maxTokens:moduleStep && draft ? 512 : 2048,toolChoice:"required",temperature:packet.repair && !packet.repair.expanded ? 0 : undefined,signal:scope.signal});
+          activeTools = tools;
+          const role: InferenceRole = symbolStep ? "actor" : moduleStep && draft ? "decision" : moduleStep ? "module_draft" : "actor";
+          return context.gateway.chatWithTools(modelId,messages,tools,{runId,role,maxTokens:symbolStep ? 2048 : moduleStep && draft ? 512 : 2048,toolChoice:"required",temperature:packet.repair && !packet.repair.expanded ? 0 : undefined,sampling: (symbolStep || packet.repair) ? "code_edit" : "default",signal:scope.signal});
         };
         let response = await generate();
         // Admission rejects before dispatch and call consumption. Remove whole optional pages,
@@ -253,19 +348,79 @@ export class AgentTaskRunner {
           response = await generate();
         }
         assertRuntimeActive();
-        if (!response.ok) return response.error.code === "agent_context_limit"
-          ? stop("context_limit",`The required task state and minimum evidence still do not fit. Narrow the task or split its remaining work. ${response.error.message}`)
-          : stop("model_generation_unavailable", response.error.message);
+        if (!response.ok) {
+          if (response.error.code === "agent_context_limit") {
+            const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION !== "off";
+            if (escalationEnabled) {
+              const escalation = advanceAgentEscalation(runId, "context_limit");
+              if (escalation.action === "symbol_slices_only") {
+                packet = buildAgentContextPacket(task, context, selected, { additionalSourceChars: 0, latestSourceBytes: 500 });
+                response = await generate();
+                if (!response.ok) {
+                  return stop("context_limit", `The required task state and minimum evidence still do not fit. Narrow the task or split its remaining work. ${response.error.message}`);
+                }
+              } else {
+                return stop("context_limit", `The required task state and minimum evidence still do not fit. Narrow the task or split its remaining work. ${response.error.message}`);
+              }
+            } else {
+              return stop("context_limit", `The required task state and minimum evidence still do not fit. Narrow the task or split its remaining work. ${response.error.message}`);
+            }
+          } else {
+            return stop("model_generation_unavailable", response.error.message);
+          }
+        }
         const admission = getExecutionLedger(runId)?.agentAdmissions.at(-1);
         if (admission?.status === "usage_verified") updateAgentProgress(runId, state => { state.reads.push(...packet.observedSources.map(source=>({...source,requestId:admission.requestId}))); });
         let call: AgentToolCall, selectedDraftId:string|undefined;
         try {
           if (response.value.finishReason === "length") throw new Error("The action was truncated. Return a complete smaller action.");
           const calls = response.value.tool_calls ?? [];
+          if (!calls.length && response.value.content) {
+            try {
+              let text = response.value.content.trim();
+              if (text.includes("</think>")) {
+                text = text.slice(text.indexOf("</think>") + 8).trim();
+              }
+              text = text.replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
+              if (text.startsWith("{") && text.endsWith("}")) {
+                const parsed = JSON.parse(text);
+                if (parsed && typeof parsed === "object") {
+                  if (Array.isArray(parsed.edits)) {
+                    calls.push({ id: randomUUID(), name: "replace_symbol", arguments: parsed });
+                  } else if (typeof parsed.name === "string" && (parsed.name === "replace_symbol" || activeTools.some(t => t.function.name === parsed.name))) {
+                    calls.push({ id: randomUUID(), name: parsed.name, arguments: parsed.arguments ?? parsed });
+                  } else if (activeTools.length === 1) {
+                    calls.push({ id: randomUUID(), name: activeTools[0].function.name, arguments: parsed.arguments ?? parsed });
+                  } else if (typeof parsed.content === "string") {
+                    calls.push({ id: randomUUID(), name: "draft_module", arguments: parsed });
+                  }
+                }
+              }
+            } catch {}
+          }
           if (calls.length > 1) throw new Error("Return exactly one action per turn.");
           if (!calls.length && /^\s*```(?:json)?\s*\{[\s\S]*"tool_calls"\s*:/i.test(response.value.content ?? "")) throw new Error('A Markdown example is text and cannot execute. Return one bare JSON object: {"tool_calls":[{"name":"available tool","arguments":{}}],"content":""}. No fences or prose.');
           call = calls[0] ?? { id: randomUUID(), name: "finish", arguments: { text: response.value.content ?? "" } };
-          if(packet.repair?.completeSource !== undefined && !packet.repair.expanded) {
+          if (call.arguments && typeof (call.arguments as any).edits === "string") {
+            const parsed = parseJsonWithEscapedCode((call.arguments as any).edits);
+            if (Array.isArray(parsed)) {
+              (call.arguments as any).edits = parsed;
+            }
+          }
+          if((call.name === "replace_symbol" || Array.isArray((call.arguments as any)?.edits) || typeof (call.arguments as any)?.edits === "string") && packet.repair && !packet.repair.expanded) {
+            if (call.name !== "replace_symbol") call = { ...call, name: "replace_symbol" };
+            const currentBytes = readAgentSourceBytes(context.workspaceRoot, packet.repair.path);
+            const proposal = await bindSymbolEdit(call, packet.repair, currentBytes);
+            if("blocked" in proposal) {
+              context.resultStore.registerResult({type:"structured",status:"complete",origin:"model_derived",producer:{tool:"agent_repair_blocker",callId:randomUUID()},summary:"Repair proposal reported a blocker; no operation executed",payload:{taskId:task.taskId,taskRevision:bound!.taskRevision,source:packet.repair,reason:proposal.blocked},sources:[]});
+              return stop("repair_blocked", proposal.blocked);
+            }
+            if("contextNeeded" in proposal) {
+              updateAgentProgress(runId, state => { state.feedback = proposal.contextNeeded; });
+              continue;
+            }
+            call = proposal.call;
+          } else if(packet.repair?.completeSource !== undefined && !packet.repair.expanded) {
             const draft=draftForPacket();
             if(!draft) {
               if(call.name !== "draft_module" || !calls.length)throw new Error("Return one complete module draft as data.");
@@ -285,7 +440,7 @@ export class AgentTaskRunner {
           const requirementId = call.arguments.requirement_id;
           context.agentRequirementId = typeof requirementId === "string" ? requirementId : packet.requirement.id;
           if (!pending.some(item => item.id === context.agentRequirementId)) throw new Error("Select an active requirement ID.");
-          if(packet.repair && !packet.repair.expanded && calls.length) {
+          if(packet.repair && !packet.repair.expanded && calls.length && call.name !== "edit_file") {
             const proposal=bindAgentRepairProposal(call,packet.repair);
             if("blocked" in proposal) {
               context.resultStore.registerResult({type:"structured",status:"complete",origin:"model_derived",producer:{tool:"agent_repair_blocker",callId:randomUUID()},summary:"Repair proposal reported a blocker; no operation executed",payload:{taskId:task.taskId,taskRevision:bound.taskRevision,source:packet.repair,reason:proposal.blocked},sources:[]});
@@ -300,7 +455,20 @@ export class AgentTaskRunner {
               // of the project and cannot make a repeated request productive.
               const evidence=[...new Set(records.filter(record=>record.origin === "execution" && record.producer.tool !== "agent_operation_approval" || record.origin === "source_extracted" && record.producer.tool !== "read_file").map(record=>record.storage.sha256))].sort();
               const key=hash([packet.repair.focusKey,observed,evidence]);
-              if(progress?.actions.some(action=>action.operation === "request_context" && action.hash === key))return stop("repeated_context_request","The same module requested more context without new source or execution evidence.");
+              if (progress?.actions.some(action => action.operation === "request_context" && action.hash === key)) {
+                const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION !== "off";
+                if (escalationEnabled) {
+                  const escalation = advanceAgentEscalation(runId, "repeated_context_request");
+                  if (escalation.action === "supply_neighbor_symbols") {
+                    updateAgentProgress(runId, state => {
+                      state.expandedToolFocus = undefined;
+                      state.feedback = "Context request was repeated. Observed file source and neighbor symbols are provided in your packet.";
+                    });
+                    continue;
+                  }
+                }
+                return stop("repeated_context_request", "The same module requested more context without new source or execution evidence.");
+              }
               const id=randomUUID(),record=context.resultStore.registerResult({type:"structured",status:"complete",origin:"model_derived",producer:{tool:"agent_repair_context_request",callId:id},summary:"Module draft requests context; no operation executed",payload:{taskId:task.taskId,taskRevision:bound.taskRevision,requirementId:context.agentRequirementId,path:packet.repair.path,reason:proposal.contextNeeded},sources:[]});
               updateAgentProgress(runId,state=>{state.actions.push({id,hash:key,requirementId:context.agentRequirementId!,operation:"request_context",status:"completed",resultId:record.resultId});state.expandedToolFocus=packet.repair!.focusKey;state.feedback=proposal.contextNeeded;});
               continue;
@@ -320,8 +488,23 @@ export class AgentTaskRunner {
           }
         } catch (error) {
           context.resultStore.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_rejected_response", callId: randomUUID() }, summary: "Rejected action format; no operation executed", payload: { response: response.value.content ?? "", toolCalls: response.value.tool_calls ?? [], reason: String(error) }, sources: [] });
-          if (!takeAgentProtocolCorrection(runId)) return stop("malformed_action", String(error));
-          updateAgentProgress(runId, state => { state.feedback = `Return one valid action. ${String(error).slice(0, 1000)}`; }); continue;
+          const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION !== "off";
+          if (escalationEnabled) {
+            const escalation = advanceAgentEscalation(runId, "malformed_action");
+            if (escalation.action === "correction" && takeAgentProtocolCorrection(runId)) {
+              updateAgentProgress(runId, state => { state.feedback = `Return one valid action. ${String(error).slice(0, 1000)}`; });
+              continue;
+            }
+            if (escalation.action === "constrained_transport") {
+              updateAgentProgress(runId, state => { state.feedback = `Return one bare JSON action object matching the tool parameters schema. ${String(error).slice(0, 1000)}`; });
+              continue;
+            }
+          } else {
+            if (!takeAgentProtocolCorrection(runId)) return stop("malformed_action", String(error));
+            updateAgentProgress(runId, state => { state.feedback = `Return one valid action. ${String(error).slice(0, 1000)}`; });
+            continue;
+          }
+          return stop("malformed_action", String(error));
         }
         context.agentChangeReason = response.value.content?.slice(0, 1000) || selected.description;
         // A command result contains fresh timing and result IDs even when the
@@ -330,7 +513,33 @@ export class AgentTaskRunner {
         const repeated = call.name === "run_command"
           ? hash([call.name,call.arguments,captureCommandWorkspaceDigest(context.workspaceRoot),agentTestEnvironmentKey(context.workspaceRoot)])
           : hash([call.name, call.arguments, this.sourceVersion(context, call.arguments), progress?.latestResultId ? context.resultStore!.getResult(progress.latestResultId).storage.sha256 : null]);
-        if (progress?.actions.some(item => item.hash === repeated)) return stop("repeated_action", "The same action was proposed without new source or evidence. Pending requirements remain saved.");
+        if (progress?.actions.some(item => item.hash === repeated)) {
+          const escalationEnabled = process.env.WORKBENCH_AGENT_ESCALATION !== "off";
+          if (escalationEnabled && call.name !== "finish") {
+            const escalation = advanceAgentEscalation(runId, "repeated_action");
+            if (escalation.action === "expand_context") {
+              updateAgentProgress(runId, state => {
+                state.feedback = "The proposed action was already attempted without effect. Review surrounding context before proposing another change.";
+                state.expandedToolFocus = packet.repair?.focusKey;
+              });
+              continue;
+            }
+            if (escalation.action === "switch_edit_mode") {
+              updateAgentProgress(runId, state => {
+                state.feedback = "Repeated action detected. Switch to a broader edit strategy or different replacement range.";
+                state.expandedToolFocus = packet.repair?.focusKey;
+              });
+              continue;
+            }
+            if (escalation.action === "resample_t0.5") {
+              updateAgentProgress(runId, state => {
+                state.feedback = "Repeated action detected. Retrying with alternate variation.";
+              });
+              continue;
+            }
+          }
+          return stop("repeated_action", "The same action was proposed without new source or evidence. Pending requirements remain saved.");
+        }
         context.resultStore!.registerResult({ type: "structured", status: "complete", origin: "model_derived", producer: { tool: "agent_proposal", callId: call.id }, summary: context.agentChangeReason, payload: { taskId: task.taskId, taskRevision: bound.taskRevision, requirementId: context.agentRequirementId, reason: context.agentChangeReason, operation: call.name, arguments: call.arguments, ...(selectedDraftId ? {draftResultId:selectedDraftId} : {}) }, sources: selectedDraftId ? [{resultId:selectedDraftId,relation:"source"}] : [] });
         updateAgentProgress(runId, state => { state.actions.push({ id: call.id, hash: repeated, requirementId: context.agentRequirementId!, operation: call.name, status: "proposed" }); });
         if (call.name === "finish") {
@@ -385,6 +594,145 @@ export class AgentTaskRunner {
           // Scope assessment can await inference. Recheck before showing a concrete preview.
           try { if (fileMutations.has(call.name)) validateAgentFileProposal(call.name,call.arguments,context); }
           catch (error) { updateAgentProgress(runId,state=>{state.actions.find(item=>item.id === call.id)!.status="failed"; if (selectedDraftId && state.repairDraft?.resultId === selectedDraftId) delete state.repairDraft; state.feedback=String(error).slice(0,1000);});continue; }
+        }
+        // Shadow Verification & Best-of-N (Phase 2):
+        // Before requesting user approval for an edit, verify the candidate in an isolated temp copy
+        const shadowVerifyEnabled = (process.env.WORKBENCH_AGENT_SHADOW_VERIFY ?? "on") !== "off";
+        const editArgs = call.arguments as any;
+        if (shadowVerifyEnabled && call.name === "edit_file" && editArgs?.path && editArgs?.expected_digest && editArgs?.replacements) {
+          try {
+            const canonical = canonicalSourcePath(context, editArgs.path);
+            if (!isAgentTestPath(canonical) && isCodeVerificationPath(canonical)) {
+              const reads = getExecutionLedger(runId)?.agentProgress?.reads ?? [];
+              const prepared = prepareFileEdit(context.workspaceRoot, {
+                path: canonical,
+                expectedDigest: editArgs.expected_digest,
+                replacements: editArgs.replacements,
+                requirementId: context.agentRequirementId ?? "",
+                reason: context.agentChangeReason ?? ""
+              }, reads);
+
+              const overlay: AgentTestOverlay = {
+                path: canonical,
+                sourceDigest: editArgs.expected_digest,
+                bytes: prepared.after,
+                digest: prepared.afterDigest
+              };
+
+              const manifest = captureAgentVerificationManifest(context.workspaceRoot);
+              const expectedRevision = computeExpectedManifestRevision(manifest.files, [overlay]);
+
+              const shadow = await runAgentVerificationStage({
+                context,
+                dispatcher,
+                changedPaths: [canonical],
+                overlay: [overlay],
+                expectedRevision,
+                shadow: true,
+                authorize: (calls) => authorize(calls, true)
+              });
+
+              if (shadow.action === "repair") {
+                // Best-of-N retry on shadow failure:
+                let passedCandidate: typeof call | undefined;
+                const samples = [{ temperature: 0.4 }, { temperature: 0.7 }];
+                const seenDigests = new Set<string>([overlay.digest]);
+
+                if (packet.repair && !packet.repair.expanded) {
+                  for (const s of samples) {
+                    assertRuntimeActive();
+                    if (scope.signal.aborted) break;
+                    const altPacket = buildAgentContextPacket(task, context, selected);
+                    const altResponse = await context.gateway.chatWithTools(
+                      modelId,
+                      altPacket.messages,
+                      [REPLACE_SYMBOL_TOOL],
+                      {
+                        runId,
+                        role: "actor",
+                        maxTokens: 2048,
+                        toolChoice: "required",
+                        temperature: s.temperature,
+                        signal: scope.signal
+                      }
+                    );
+                    const altCalls = altResponse.ok ? [...(altResponse.value.tool_calls ?? [])] : [];
+                    if (!altCalls.length && altResponse.ok && altResponse.value.content) {
+                      try {
+                        let text = altResponse.value.content.trim();
+                        if (text.includes("</think>")) text = text.slice(text.indexOf("</think>") + 8).trim();
+                        text = text.replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
+                        if (text.startsWith("{") && text.endsWith("}")) {
+                          const parsed = JSON.parse(text);
+                          if (Array.isArray(parsed?.edits)) {
+                            altCalls.push({ id: randomUUID(), name: "replace_symbol", arguments: parsed });
+                          }
+                        }
+                      } catch {}
+                    }
+                    if (!altCalls.length) continue;
+                    const altCall = altCalls[0];
+                    if (altCall.name !== "replace_symbol") continue;
+                    try {
+                      const altBytes = readAgentSourceBytes(context.workspaceRoot, canonical);
+                      const altBound = await bindSymbolEdit(altCall, packet.repair, altBytes);
+                      if (!("call" in altBound)) continue;
+                      const altEditArgs = altBound.call.arguments as any;
+                      const altPrepared = prepareFileEdit(context.workspaceRoot, {
+                        path: canonical,
+                        expectedDigest: altEditArgs.expected_digest,
+                        replacements: altEditArgs.replacements,
+                        requirementId: context.agentRequirementId ?? "",
+                        reason: "Best-of-N repair sample"
+                      }, reads);
+                      if (seenDigests.has(altPrepared.afterDigest)) continue;
+                      seenDigests.add(altPrepared.afterDigest);
+                      const altOverlay: AgentTestOverlay = {
+                        path: canonical,
+                        sourceDigest: altEditArgs.expected_digest,
+                        bytes: altPrepared.after,
+                        digest: altPrepared.afterDigest
+                      };
+                      const altExpectedRevision = computeExpectedManifestRevision(manifest.files, [altOverlay]);
+                      const altShadow = await runAgentVerificationStage({
+                        context,
+                        dispatcher,
+                        changedPaths: [canonical],
+                        overlay: [altOverlay],
+                        expectedRevision: altExpectedRevision,
+                        shadow: true,
+                        authorize: (calls) => authorize(calls, true)
+                      });
+                      if (altShadow.action === "passed" || altShadow.action === "skipped") {
+                        passedCandidate = { ...altBound.call, id: randomUUID() };
+                        break;
+                      }
+                    } catch {
+                      // Continue to next sample
+                    }
+                  }
+                }
+
+                if (passedCandidate) {
+                  call = passedCandidate;
+                } else {
+                  // None passed shadow verification; feed back failure and continue turn
+                  updateAgentProgress(runId, state => {
+                    state.actions.find(item => item.id === call.id)!.status = "failed";
+                    if (selectedDraftId && state.repairDraft?.resultId === selectedDraftId) delete state.repairDraft;
+                    state.feedback = `Shadow test verification failed in isolated copy:\n${shadow.detail.slice(0, 5000)}`;
+                  });
+                  continue;
+                }
+              }
+
+              if (shadow.action !== "passed" && shadow.action !== "skipped") {
+                return stop("checks_unavailable", shadow.detail, shadow.action === "cancelled" ? "cancelled" : "partial");
+              }
+            }
+          } catch {
+            // Fall back to normal path if shadow preparation fails
+          }
         }
         if (mutations.has(call.name) && !await authorize([call])) return stop("approval_denied", "The proposed action was declined.", "cancelled");
         const [output] = await dispatcher.dispatchConcurrent([call], context);

@@ -1,0 +1,14 @@
+{
+  "id": "js-orders-total-math",
+  "base": "js-orders",
+  "mutation": "wrong_math_operator",
+  "prompt": "calculateOrderTotal is giving incorrect sums. Fix the arithmetic in src/orders.js so tests pass.",
+  "expectChangedFiles": [
+    "src/orders.js"
+  ],
+  "preserveExports": true,
+  "oracle": {
+    "command": "node --test test/orders.test.js",
+    "mustPass": true
+  }
+}
