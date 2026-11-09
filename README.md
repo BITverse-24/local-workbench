@@ -9,7 +9,7 @@ Local Workbench is a local-first desktop app for asking questions about files, c
 | **Unpaid_Interns** | **119100** |
 
 [![Documentation](https://img.shields.io/badge/Documentation-project%20docs-1f2937?style=flat-square)](docs/diagrams/00_ARCHITECTURE_AUDIT.md)
-[![Release](https://img.shields.io/badge/Release-v0.3.0-1f2937?style=flat-square)](VERSION)
+[![Release](https://img.shields.io/badge/Release-v0.4.0-1f2937?style=flat-square)](VERSION)
 [![License: MIT](https://img.shields.io/badge/License-MIT-1f2937?style=flat-square)](LICENSE)
 
 ## What it does
@@ -20,13 +20,13 @@ The app connects to a model server running on your computer or private network�
 
 | Mode | Purpose | Capabilities & Boundary |
 | --- | --- | --- |
-| **Chat** | Questions, document Q&A, and follow-ups | Authorized attachments, previous results, and enabled knowledge sources. No workspace mutation or execution tools. |
-| **Work** | Analysis, code repair, and file deliverables | Scoped run storage with input/output isolation. Artifacts undergo independent mechanical and semantic verification before delivery. |
-| **Agent** | Autonomous engineering in a bound workspace root | Workspace tools with path confinement, approval gates, mutation logging, automatic backups, and project test verification. |
+| **Chat** | Questions, document Q&A, and follow-ups | Single-turn generation with authorized attachments, previous results, and enabled knowledge sources. No workspace mutation or execution tools. |
+| **Work** | Analysis, code repair, and file deliverables | 24-call budget with scoped run storage. Features **`work_exec`** (QuickJS-WASM sandbox) for zero-token-leak tabular/numerical calculations. Artifacts undergo independent mechanical and semantic verification before delivery. |
+| **Agent** | Autonomous engineering in a bound workspace root | Multi-turn ReAct driver with **Code Mode** (QuickJS-WASM sandbox), AST symbol replacement (`replace_symbol`), PathGuard confinement, approval gates, mutation logging, automatic backups (`.harness_backups/`), and mandatory project test verification. |
 
 ### Network & Model Port Rules
-- **Local / Private Only:** Accepts `localhost`, loopback (`127.0.0.1`), private IPv4 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), and local IPv6. Public IP addresses and public domains are strictly rejected.
-- **Model Roles:** Supports separate endpoints for **Primary/Coding**, **Vision**, **Draft**, and **Embeddings**. Duplicate endpoints are consolidated in the UI.
+- **Local / Private Only:** Accepts `localhost`, loopback (`127.0.0.1`), private IPv4 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), and local IPv6. Public IP addresses and public domains are strictly rejected at the application gateway.
+- **Model Roles:** Supports separate endpoints for **Primary/Coding** (e.g. `qwen3.5-9b`, `qwen2.5-coder:7b`), **Vision**, **Draft**, and **Embeddings** (`nomic-embed-text`). Duplicate endpoints are consolidated in the UI.
 
 ---
 
@@ -45,17 +45,18 @@ flowchart TB
         RM["RunManager (Orchestrator)"]
 
         Chat["Chat Mode<br/>• Single-turn text<br/>• Read-only context"]:::mode
-        Work["Work Mode<br/>• Multi-step extraction<br/>• Independent verification<br/>• Automated repair"]:::mode
-        Agent["Agent Mode<br/>• Autonomous ReAct loop<br/>• Bound workspace root<br/>• Project test suite"]:::mode
+        Work["Work Mode<br/>• 24-call budget<br/>• work_exec QuickJS sandbox<br/>• Automated repair"]:::mode
+        Agent["Agent Mode<br/>• ReAct loop v3 & Code Mode<br/>• AST symbol editing<br/>• Mandatory project tests"]:::mode
 
         Gate{"Operator Confirmation Gate<br/>(Approvals for writes, commands, Python)"}:::gate
         Guard["PathGuard & MutationPolicy<br/>(Path containment & write locks)"]
-        Tools["Guarded Tools<br/>• Specialist (extract, python, docx/xlsx)<br/>• Workspace (read, write, shell)"]
+        Tools["Guarded Tools<br/>• Specialist (extract, python, docx/xlsx, work_exec)<br/>• Workspace (read, write, replace_symbol, shell)"]
+        QJS["QuickJS-WASM Sandbox<br/>(quickjs-emscripten • Route 3 analysis prelude)"]:::storage
     end
 
     subgraph LocalEnv["Local Environment & Storage"]
         Model["Local Model Server<br/>(LM Studio / Ollama / vLLM)<br/>localhost or private LAN"]
-        Store[("SQLite (workbench.db)<br/>& Run Artifacts (data/runs/)")]:::storage
+        Store[("SQLite (workbench.db Schema v3)<br/>& Run Artifacts (data/runs/)")]:::storage
         RAG["Local RAG Subsystem<br/>(Vectra + SQLite FTS5)"]:::storage
     end
 
@@ -73,6 +74,8 @@ flowchart TB
     Chat -.->|"Read context"| RAG
     Work -.->|"Retrieve"| RAG
 
+    Work --> QJS
+    Agent --> QJS
     Work --> Tools
     Agent --> Gate
     Gate --> Guard
@@ -93,17 +96,25 @@ flowchart TB
 
 ---
 
-## Benchmarks (M4 Mac Mini)
+## Benchmarks (Apple Silicon M4)
 
-End-to-end evaluation metrics measured on an **Apple M4 Mac Mini** (Apple Silicon, 16GB Unified Memory) using a local model server (LM Studio / MLX):
+End-to-end evaluation metrics measured on an **Apple Silicon workstation** (16GB Unified Memory) using a local model server (LM Studio / Ollama with `qwen3.5-9b` and `qwen2.5-coder-7b-instruct-mlx` at `127.0.0.1:1234`):
 
-- **7B Multi-Model:** `qwen2.5-coder-7b-instruct-mlx` (Text / Code) + `qwen/qwen3-vl-4b` (Vision) + `text-embedding-nomic-embed-text-v1.5` (Embeddings)
-- **9B Unified:** `qwen/qwen3.5-9b` (Unified Multimodal) + `text-embedding-nomic-embed-text-v1.5` (Embeddings)
+### Macro Scenario Execution (Flows A through E)
 
-| Task / Scenario | 7B (Non Thinking)  | 9B (Thinking) | Verification Pass Rate |
-| :--- | :---: | :---: | :---: |
-| Sensor log CSV parser bug repair & CLI execution validation |     **76.0s** | **122.9s** | **100%** (12/12 checks) |
-| Pump skid SVG visual inspection & Piping SOP RAG compliance |     **64.3s** | **89.0s** | **100%** (4/4 checks) |
+| Test Flow | Mode | Execution Engine | Mean Wall-Clock | Pass Rate | Generated Deliverable / Validation |
+| :--- | :---: | :--- | ---:| :---: | :--- |
+| **Flow A: Inspection Bundle** | Work | Document extraction + SOP-114 | **39.3s** | **100%** (18/18 checks) | OpenXML `approval-note.docx` |
+| **Flow B: Script Repair** | Work | Traceback capture + Python patch | **13.5s** | **100%** (12/12 checks) | Repaired parser + verified CSV |
+| **Flow B-3: Extended Log Parser** | Agent | Code Mode (QuickJS-WASM) | **156.0s** *(vs 277s baseline)* | **100%** (12/12 checks) | 240-row telemetry parser (-51.5% tokens) |
+| **Flow C: Drawing Compliance** | Work | SVG vector extraction + SOP-220 | **18.1s** | **100%** (4/4 checks) | Corrective action note |
+| **Flow C-2: Relief Valve Review** | Work | `work_exec` (QuickJS-WASM) | **65.0s** *(vs 300s baseline)* | **100%** (6/6 checks) | Word `.docx` deliverable (-80% calls, 0 repair) |
+| **Flow D: Full-Stack App Repair** | Agent | AST `replace_symbol` + Vitest | **84.2s** | **100%** (16/16 checks) | Passing project test suite (100% green) |
+| **Flow E-1: General Ledger Audit** | Work | `work_exec` multi-table join | **42.1s** | **100%** (24/24 checks) | `variance-summary.csv` (-76.4% tokens) |
+| **Flow E-2: Telemetry Profiling** | Work | `work_exec` anomaly detection | **38.4s** | **100%** (24/24 checks) | `anomaly-register.csv` (6 anomalies flagged) |
+| **Flow E-3: Inventory Risk Pivot** | Agent | Code Mode 3-way join | **56.8s** | **100%** (24/24 checks) | Stockout deficit register (-71.8% tokens) |
+
+> **Key Performance Advantage**: Executing heavy data transformations and codebase inspections inside the **QuickJS-WASM sandbox** (`work_exec` and Code Mode) eliminates repetitive tool-call thrashing, reducing wall-clock latency by **43% to 78%** and token consumption by **over 50%** while achieving a **100% first-pass pass rate**.
 
 ---
 
@@ -125,14 +136,19 @@ npm run dev
 
 ### Verification & Testing
 ```bash
-# Type checking
+# Type checking (strict tsc --noEmit across backend, electron, frontend)
 npm run typecheck
 
-# Unit & integration test suites
+# Unit & integration test suites (1040+ tests across 88+ suites)
 npm test
 
 # Build production bundles
 npm run build
+
+# Headless demonstration flow evaluation
+npm run demo          # Flows A, B, and C
+npm run demo:flow-d   # Flow D web app repair
+DEMO_SCENARIOS=E-1,E-2,E-3 npm run demo:scenarios  # Flow E numerical computation
 
 # Behavioral CLI test worker bundle rebuild
 npm run build:behavioral
@@ -188,6 +204,10 @@ The application probes host capabilities dynamically. Service status is visible 
 | **Windows** | Uses `cmd.exe` with operator approval (no native OS sandbox backend). | Python 3 required. Execution requires approval (no OS filesystem or network isolation). |
 
 ### Isolation & Execution Details
+- **QuickJS-WASM Sandbox (`quickjs-emscripten`):**
+  - Runs in-process across macOS, Linux, and Windows with strict memory (32 MB heap ceiling) and CPU deadline (5,000 ms) limits.
+  - Powers **Code Mode** (Agent Mode observation) and **`work_exec`** (Work Mode tabular computation) with zero network access and no host OS file access.
+  - Injects Route 3 analysis utilities (`parseCSV`, `groupBy`, `join`, `round`, `avg`, `toCSV`, `RowProxy`) for high-speed in-memory data processing.
 - **Linux Bubblewrap (`bwrap`):**
   - Probes `/usr/bin/bwrap`, `/bin/bwrap`, and system `PATH`.
   - Requires kernel unprivileged user namespace support (`kernel.unprivileged_userns_clone=1`).
@@ -220,9 +240,11 @@ The application probes host capabilities dynamically. Service status is visible 
 ## Example Workflows
 
 The [`demo/`](demo/) folder contains sample scenarios and evaluation fixtures:
-- `demo/flow_a/`: Multi-page equipment inspection reports and Word note drafting.
-- `demo/flow_b/`: Broken CSV vendor log parser repair and boundary condition testing.
-- `demo/flow_c/`: Pump skid SVG drawing review against piping engineering standards.
+- `demo/flow_a/`: Multi-page equipment inspection reports and Word note drafting (`.docx`).
+- `demo/flow_b/`: Broken CSV vendor log parser repair and boundary condition testing (Python).
+- `demo/flow_c/`: Pump skid SVG drawing review against piping engineering standards (SOP-220).
+- `demo/flow_d/`: FieldOps React/TS web app multi-defect repair with AST symbol editing and Vitest suite verification.
+- `demo/flow_e/`: Heavy numerical, statistical, and multi-relational computation via `work_exec` and Code Mode (`general-ledger.csv`, `sensor-telemetry.csv`, multi-table inventory join).
 
 ---
 
