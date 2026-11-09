@@ -379,10 +379,6 @@ describe("Work Mode Code Mode: WorkFacade & Sandbox", () => {
     envelope.activeCapabilities = [...envelope.permittedCapabilities];
     const tools = getAllAvailableTools("primary-model").filter((t) => !["write_file", "delete_file", "run_command"].includes(t.name));
     const active = filterToolsForTurn(tools, envelope, new Set(envelope.activeCapabilities));
-    console.log("DIAGNOSTIC envelope.permitted:", envelope.permittedCapabilities);
-    console.log("DIAGNOSTIC envelope.active:", envelope.activeCapabilities);
-    console.log("DIAGNOSTIC tools:", tools.map((t) => t.name));
-    console.log("DIAGNOSTIC active:", active.map((t) => t.name));
     expect(active.length).toBeGreaterThan(0);
   });
 
