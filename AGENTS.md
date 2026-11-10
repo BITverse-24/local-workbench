@@ -119,8 +119,7 @@ agent/
 │   │       ├── index.ts           # initBackend() entry point
 │   │       ├── logger.ts          # Structured event and audit logger
 │   │       ├── agent/             # Unified agent loop execution
-│   │       │   ├── agent-loop.ts         # AgentLoop (turn driver, native tool calling, completion evaluation; frozen v2)
-│   │       │   ├── agent-task-runner.ts  # AgentTaskRunner (v3 ReAct driver, shadow verification, best-of-n sampling)
+│   │       │   ├── agent-task-runner.ts  # AgentTaskRunner (unified ReAct driver, shadow verification, best-of-n sampling)
 │   │       │   ├── symbol-index.ts       # AST symbol indexer (JS/TS via Babel, Python via ast subprocess)
 │   │       │   ├── symbol-edit.ts        # replace_symbol tool, declaration validation, lowering to edit_file
 │   │       │   ├── judge.ts              # Judge framework: deterministic fast path, result cache, model fallback
@@ -364,7 +363,6 @@ The backend coordinates the execution lifecycle, security enforcement, model gat
    - **`symbol-edit.ts`**: Implements the `replace_symbol` tool. Validates single declaration syntax, name/kind match, export preservation, and indentation rebasing; lowers directly to `edit_file` with host-calculated byte anchors.
    - **`judge.ts`**: Structured judge framework (`Judge<I, V>`). Employs a deterministic fast path, checks `ResultStore` caches, and falls back to schema-constrained model classification.
    - **`escalation.ts`**: Progressive recovery ladder for stuck conditions (`repeated_action`, `malformed_action`, `context_limit`, `repeated_context_request`), advancing through context expansion, edit mode switching, and sampling variation before terminal stop.
-   - **`agent-loop.ts`**: Legacy v2 agent execution loop (frozen; bug fixes only).
    - **`tool-dispatcher.ts`**: Dispatches tool invocations concurrently for read-only tools (`Promise.all`), while strictly serializing workspace mutations via `MutationPolicyGuard.withMutationLock`. Integrates with `ResultStore` to register full intermediate outputs before tool results are published.
    - **`context-manager.ts`**: Sliding-window context compaction. Summarizes tool outputs older than 2 turns to protect local GPU context memory while strictly retaining stable result IDs and retrieval instructions. Enforces token budgets (`enforceContextBudget`).
    - **`source-review.ts`**: Verifies attached Python scripts and proposed code modifications against behavioral checklists prior to execution.

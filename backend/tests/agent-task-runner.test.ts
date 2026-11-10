@@ -971,7 +971,7 @@ describe("Agent v3 task host loop", () => {
     const next = await first.manager!.start({ chatId, userMessageId: messageId, userText: question, mode: "chat", selectedModel: "driver" });
     await vi.waitFor(() => expect(first.manager!.getRunSnapshot({ runId: next.runId })?.state).toBe("completed"), { timeout: 10000 });
     expect(first.manager!.getRunSnapshot({ runId: next.runId })).toMatchObject({ mode: "chat", agentV3Available: true, agentTask: { taskId } });
-    const closed = new RunManager(first.manager!.getGateway());
+    const closed = new RunManager(first.manager!.getGateway(), undefined, undefined, { agentV3Preview: false });
     expect(closed.getRunSnapshot({ runId: first.runId })).toMatchObject({ engineVersion: "agent-v3", agentV3Available: false });
   });
   it("counts interpretation, reads once, performs a separate review, and completes an evidenced inspection", async () => {
