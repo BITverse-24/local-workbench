@@ -67,6 +67,125 @@ function highlightPython(code: string): React.ReactNode[] {
   return nodes;
 }
 
+function parsePlanData(preview: string) {
+  try {
+    const parts = preview.split("\n\n");
+    const parsed = JSON.parse(parts[0]);
+    const disclosure = parts.slice(1).join("\n\n").trim();
+    return { parsed, disclosure };
+  } catch {
+    return null;
+  }
+}
+
+function StructuredPlanPreview({ data }: { data: { parsed: any; disclosure: string } }) {
+  const { parsed, disclosure } = data;
+  const op = parsed.operation || "operation";
+  const args = parsed.arguments || {};
+  const constraints = Array.isArray(parsed.constraints) ? parsed.constraints : [];
+
+  return (
+    <div className="flex flex-col gap-3.5 text-xs select-text">
+      {/* Operation badge & target */}
+      <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)]">
+        <span className="font-mono font-medium px-2 py-0.5 rounded bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30">
+          {op}
+        </span>
+        {args.path && (
+          <span className="font-mono text-[var(--text-primary)]">
+            path: <strong className="text-[var(--accent)]">{args.path}</strong>
+          </span>
+        )}
+        {args.command && (
+          <span className="font-mono text-[var(--text-primary)]">
+            command: <strong className="text-[var(--accent)]">{args.command}</strong>
+          </span>
+        )}
+        {args.filename && (
+          <span className="font-mono text-[var(--text-primary)]">
+            deliverable: <strong className="text-[var(--accent)]">{args.filename}</strong>
+          </span>
+        )}
+      </div>
+
+      {/* Operation preview / Diff / Content */}
+      {op === "run_command" && args.command && (
+        <div className="p-3 rounded-[var(--radius-sm)] bg-black/60 border border-[var(--border-subtle)] font-mono text-emerald-400">
+          <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1 font-sans">Command execution</div>
+          <div className="overflow-x-auto whitespace-pre">$ {args.command}</div>
+        </div>
+      )}
+
+      {op === "edit_file" && Array.isArray(args.replacements) && (
+        <div className="flex flex-col gap-2">
+          <div className="text-[10px] text-[var(--text-tertiary)] uppercase tracking-wider font-semibold">Modification Hunks</div>
+          {args.replacements.map((rep: any, idx: number) => (
+            <div key={idx} className="rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] overflow-hidden font-mono text-[11px]">
+              {rep.old && (
+                <div className="p-2 bg-rose-950/25 border-b border-rose-900/30 text-rose-300 overflow-x-auto whitespace-pre">
+                  {rep.old.split("\n").map((line: string, i: number) => (
+                    <div key={i}>- {line}</div>
+                  ))}
+                </div>
+              )}
+              {rep.new && (
+                <div className="p-2 bg-emerald-950/25 text-emerald-300 overflow-x-auto whitespace-pre">
+                  {rep.new.split("\n").map((line: string, i: number) => (
+                    <div key={i}>+ {line}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {op === "write_file" && typeof args.content === "string" && (
+        <div className="rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] p-2.5 font-mono text-[11px] max-h-48 overflow-auto whitespace-pre">
+          {args.content.slice(0, 1000)}
+          {args.content.length > 1000 ? "\n... (remaining content truncated for preview)" : ""}
+        </div>
+      )}
+
+      {op === "delete_file" && args.path && (
+        <div className="p-2.5 rounded-[var(--radius-sm)] bg-rose-950/20 border border-rose-800/40 text-rose-300">
+          File will be permanently deleted from workspace: <code className="font-mono">{args.path}</code>
+        </div>
+      )}
+
+      {/* Preserved constraints */}
+      {constraints.length > 0 && (
+        <div className="p-2.5 rounded-[var(--radius-sm)] bg-[var(--bg-surface-raised)] border border-[var(--border-subtle)]">
+          <div className="text-[10px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1 font-semibold">Preserved Constraints</div>
+          <ul className="list-disc list-inside space-y-0.5 text-[var(--text-secondary)]">
+            {constraints.map((c: any, i: number) => (
+              <li key={i}>{c.description || JSON.stringify(c)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Security disclosure */}
+      {disclosure && (
+        <div className="p-2.5 rounded-[var(--radius-sm)] bg-amber-950/20 border border-amber-800/40 text-amber-300 leading-relaxed text-[11px]">
+          <div className="font-semibold mb-1 flex items-center gap-1.5">
+            <span>⚠</span> Security Disclosure
+          </div>
+          <div>{disclosure}</div>
+        </div>
+      )}
+
+      {/* Collapsible raw verification metadata */}
+      <details className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+        <summary className="cursor-pointer hover:text-[var(--text-secondary)] font-medium">Verification payload</summary>
+        <pre className="mt-1.5 p-2 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] overflow-auto text-[10px] font-mono leading-tight max-h-36">
+          {JSON.stringify(parsed, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
 export default function ConfirmationModal({
   open,
   action,
@@ -142,6 +261,12 @@ export default function ConfirmationModal({
   if (!open || !action) return null;
 
   const isPlan = action.kind === "plan_approval";
+  const structuredPlan = useMemo(() => {
+    if (!action?.preview) return null;
+    const trimmed = action.preview.trim();
+    if (!trimmed.startsWith("{")) return null;
+    return parsePlanData(action.preview);
+  }, [action?.preview]);
   const isUncontainedPython = action.kind === "uncontained_python";
   const isPython = action.kind === "execute_python" || isUncontainedPython;
   const expired = Date.parse(action.expiresAt) <= now;
@@ -278,7 +403,11 @@ export default function ConfirmationModal({
             {/* Viewport Content */}
             {isPlan ? (
               <div className="flex-1 overflow-auto max-h-[440px] min-h-[180px] p-4 select-text text-sm leading-relaxed text-[var(--text-primary)]">
-                <BasicMarkdown text={action.preview || ""} />
+                {structuredPlan ? (
+                  <StructuredPlanPreview data={structuredPlan} />
+                ) : (
+                  <BasicMarkdown text={action.preview || ""} />
+                )}
               </div>
             ) : (
               /* Scrollable Code Content with Line Numbers */
