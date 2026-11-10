@@ -222,7 +222,7 @@ app.whenReady().then(async () => {
       // the main side is fully wired; any remaining local-only fallback
       // is a preload/renderer problem, not backend init.
       dataDir: backendPaths.dataDir,
-      agentV3Preview: runtimeMode !== "production" && process.env.WORKBENCH_AGENT_V3 === "true",
+      agentV3Preview: process.env.WORKBENCH_AGENT_V2 !== "true",
       modelsPath: backendPaths.modelsPath,
       schemaPath: backendPaths.schemaPath,
     }, (wsEvent) => {

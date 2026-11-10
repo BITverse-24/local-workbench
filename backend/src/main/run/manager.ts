@@ -241,6 +241,9 @@ export class RunManager {
     private readonly emitChat: (event: ChatTitleEvent) => void = () => undefined,
     private readonly engineOptions: { agentV3Preview?: boolean } = {},
   ) {
+    if (this.engineOptions.agentV3Preview === undefined) {
+      this.engineOptions.agentV3Preview = process.env.WORKBENCH_AGENT_V2 !== "true";
+    }
     const publish = this.emit;
     this.emit = event => {
       if (event.type === "task_progress") {
