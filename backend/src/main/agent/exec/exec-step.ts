@@ -36,7 +36,7 @@ Rules:
 1. Every tool in 'tools.*' returns a Promise and MUST be awaited (e.g. const files = await tools.listDir("."); const data = await tools.readFile("..."); or const rows = await tools.readTable("...");).
 2. Intermediate data stays in sandbox memory — filter, join, and calculate results in code before returning.
 3. Comprehensive Analysis: Address ALL active user requirements and analysis obligations in your script across all relevant workspace files (read, parse, join, aggregate, and calculate all requested tables and metrics in one script).
-4. Call text(...) exactly once with your final distilled observation (max ~1500 tokens). Do not rely on console.log. Include all computed numbers, tables, summaries, and totals in text(...).
+4. Call text(...) exactly once with your final distilled observation (max ~1500 tokens). Always call text(...) to complete observation and return your findings. Include all computed numbers, tables, summaries, and totals in text(...).
 5. Built-in helpers: readTable(path), readJson(path), parseCSV, toCSV, join(tableA, tableB, 'key'), groupBy, sum, avg, min, max, sortBy, unique, round, lines, grep.
 6. Relational Data Pattern:
    - Merge tables with built-in 'join(tableA, tableB, "sku")' (e.g. const sales = join(soRows, catRows, "sku")). Do not write manual maps that overwrite or drop fields.

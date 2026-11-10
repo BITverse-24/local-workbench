@@ -89,20 +89,12 @@ export function nextObserveState(current: ExecObserveState, outcome: ExecOutcome
   const maxTurns = Number(process.env.WORKBENCH_AGENT_EXEC_MAX_TURNS) || 2;
 
   if (outcome.hasTextOutput) {
-    if (turns >= maxTurns) {
-      return {
-        mode: "native",
-        execTurns: turns,
-        failures: 0,
-        noProgress: 0,
-        reason: "Observe script distilled final observation; transitioning to native mode for delivery.",
-      };
-    }
     return {
-      mode: "exec",
+      mode: "native",
       execTurns: turns,
       failures: 0,
       noProgress: 0,
+      reason: "Observe script distilled final observation; transitioning to native mode for delivery.",
     };
   }
 

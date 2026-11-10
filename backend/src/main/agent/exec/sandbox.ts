@@ -407,7 +407,7 @@ ${normalizedCode}
     return {
       ok: true,
       output: state.textOutput || fallbackLogOutput || "Script executed with no text(...) output.",
-      calledText: state.textOutput !== null,
+      calledText: state.textOutput !== null || capturedLogs.length > 0,
       toolCalls: facade.getExecutedTools(),
       durationMs,
       newSourceDigests: facade.getDiscoveredDigests(),
