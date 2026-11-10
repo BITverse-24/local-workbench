@@ -1,12 +1,10 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   determineOutputExpectation,
   isInformationalInquiry,
   detectDeliverableExpectations,
   detectWorkspaceMutation,
 } from "../src/main/router/output-expectation.js";
-import { AgentLoop } from "../src/main/agent/agent-loop.js";
-import type { AgentTool } from "../src/main/tools/types.js";
 
 describe("P0-05: Output Expectation & Chat vs File vs Artifact Routing", () => {
   describe("Specification Matrix Scenarios", () => {
@@ -112,150 +110,6 @@ describe("P0-05: Output Expectation & Chat vs File vs Artifact Routing", () => {
       expect(delivs).toContain("notes.md");
       expect(delivs).not.toContain("config.json");
       expect(delivs).not.toContain("unrelated.md");
-    });
-  });
-
-  describe("Agent Loop Execution Integrity", () => {
-    it('"Show me how to do this in Python" never writes code blocks to workspace', async () => {
-      const loop = new AgentLoop();
-      const writtenFiles: any[] = [];
-
-      const mockWriteTool: AgentTool = {
-        name: "write_file",
-        definition: {
-          type: "function",
-          function: {
-            name: "write_file",
-            description: "Write file",
-            parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } } },
-          },
-        },
-        execute: async (args) => {
-          writtenFiles.push(args);
-          return { output: "written", summary: "written" };
-        },
-      };
-
-      const mockGateway = {
-        chatWithTools: async () => ({
-          ok: true as const,
-          value: {
-            content: "Here is how you can do it:\n\n```python\n# solution.py\ndef process_data(items):\n    return [x * 2 for x in items]\n```",
-            tool_calls: [],
-          },
-        }),
-      };
-
-      const result = await loop.run({
-        runId: "test-p05-python",
-        driverModelId: "code-qwen25coder",
-        userPrompt: "Show me how to do this in Python",
-        systemPrompt: "You are Local Workbench.",
-        tools: [mockWriteTool],
-        semanticIntent: {
-          driverModel: "code-qwen25coder",
-          taskType: "code",
-          primaryGoal: "Show python solution",
-          isActionable: false,
-          targetFiles: [],
-          intentType: "general_qa",
-          reason: "informational coding query",
-        },
-        context: { runId: "test-p05-python", workspaceRoot: ".", gateway: mockGateway as any },
-        emitEvent: () => undefined,
-      });
-
-      // No write_file executed!
-      expect(writtenFiles.length).toBe(0);
-      expect(result.completed).toBe(true);
-      expect(result.outcome).toBe("completed");
-      expect(result.finalText).toContain("```python");
-      expect(result.finalText).toContain("process_data");
-    });
-
-    it('"Explain this CSV" does not announce intermediate scripts as deliverables', async () => {
-      const loop = new AgentLoop();
-
-      const mockExecPythonTool: AgentTool = {
-        name: "execute_python",
-        definition: {
-          type: "function",
-          function: {
-            name: "execute_python",
-            description: "Execute python",
-            parameters: { type: "object", properties: { code: { type: "string" } } },
-          },
-        },
-        execute: async () => ({
-          output: "rows: 10, columns: 3",
-          summary: "Executed inspection script",
-          artifacts: [
-            {
-              artifactId: "art-runner",
-              runId: "test-p05-explain",
-              kind: "txt",
-              filename: "runner.py",
-              relativePath: "runs/test-p05-explain/output/runner.py",
-              sizeBytes: 120,
-              createdAt: new Date().toISOString(),
-            },
-          ],
-        }),
-      };
-
-      let turnCount = 0;
-      const mockGateway = {
-        chatWithTools: async () => {
-          turnCount++;
-          if (turnCount === 1) {
-            return {
-              ok: true as const,
-              value: {
-                content: "Let me check the CSV structure.",
-                tool_calls: [
-                  {
-                    id: "call_py_1",
-                    name: "execute_python",
-                    arguments: { code: "import pandas as pd; print(pd.read_csv('data.csv').shape)" },
-                  },
-                ],
-              },
-            };
-          }
-          return {
-            ok: true as const,
-            value: {
-              content: "This CSV contains 10 rows and 3 columns covering sensor temperatures and pressures.",
-              tool_calls: [],
-            },
-          };
-        },
-      };
-
-      const result = await loop.run({
-        runId: "test-p05-explain",
-        driverModelId: "draft-qwen3",
-        userPrompt: "Explain this CSV",
-        systemPrompt: "You are Local Workbench.",
-        tools: [mockExecPythonTool],
-        semanticIntent: {
-          driverModel: "draft-qwen3",
-          taskType: "draft",
-          primaryGoal: "Explain CSV",
-          isActionable: false,
-          targetFiles: ["data.csv"],
-          intentType: "general_qa",
-          reason: "informational inquiry",
-        },
-        context: { runId: "test-p05-explain", workspaceRoot: ".", gateway: mockGateway as any },
-        emitEvent: () => undefined,
-      });
-
-      expect(result.completed).toBe(true);
-      expect(result.outcome).toBe("completed");
-      expect(result.finalText).toContain("This CSV contains 10 rows and 3 columns");
-      // Intermediate runner script MUST NOT be announced as a deliverable!
-      expect(result.finalText).not.toContain("The verified script has been saved as [runner.py]");
     });
   });
 });

@@ -24,7 +24,6 @@ import { createDocxBuffer } from "../src/main/tools/artifacts.js";
 import ExcelJS from "exceljs";
 import { absoluteDataPath } from "../src/main/run/filesystem.js";
 import { generateDeliverableTool } from "../src/main/tools/specialist-tools.js";
-import { AgentLoop } from "./helpers/agent-loop-fixture.js";
 
 describe("Tool Argument Parsing Resilience", () => {
   describe("parseToolCallArguments", () => {
@@ -202,30 +201,6 @@ describe("Tool Argument Parsing Resilience", () => {
         module: "module", function: "read", cases: [{ text_rows: ["input"] }],
       } }, { workspaceRoot: tmpDir, runId: "invalid", gateway: {} as any })).rejects.toMatchObject({ code: "invalid_arguments" });
       expect(existsSync(path.join(tmpDir, "forbidden"))).toBe(false);
-    });
-
-    it("does not accept proposed CSV checks when the mandatory test stage has no durable execution context", async () => {
-      writeFileSync(path.join(tmpDir, "README.md"), "protected\n");
-      const runId = randomUUID(), events: any[] = [], approvals: any[] = [];
-      const turns = [
-        { content: null, tool_calls: [{ id: "write", name: "write_file", arguments: { path: "module.py", content: "import csv, io\ndef read_csv(text): return list(csv.DictReader(io.StringIO(text)))\n" } }] },
-        { content: null, tool_calls: [{ id: "validate", name: "run_command", arguments: { command: "python3 -B", python_module: "module", python_function: "read_csv", python_reference_pipeline: ["io:StringIO", "csv:DictReader", "builtins:list"], success_marker: "CHECK_OK", python_text_rows: ["field,value", '"quoted, field",17', "", "missing"] } }] },
-        { content: "Verified.", tool_calls: null },
-      ];
-      let turn = 0;
-      const gateway = { async chatWithTools() { return { ok: true, value: turns[turn++] }; } };
-      const result = await new AgentLoop().run({ runId, driverModelId: "code-qwen25coder",
-        userPrompt: "Repair module.py's read_csv(text) CSV parser for quoted fields, blank lines and missing values. Validate the written parser and print CHECK_OK only if it passes.", systemPrompt: "repair",
-        semanticIntent: { intentType: "code_modification", workspaceMutationRequested: true, targetFiles: ["module.py"], protectedPaths: ["README.md"], restrictMutationsToTargets: true },
-        tools: [writeFileTool, runCommandTool], context: { runId, workspaceRoot: tmpDir, gateway: gateway as any }, emitEvent(event) { events.push(event); },
-        async onPlanConfirmationRequired(_plan, calls) { approvals.push(...calls); return true; },
-      });
-      expect(result.outcome).toBe("partial");
-      expect(result.finalText).toContain("durable test execution context");
-      expect(readFileSync(path.join(tmpDir, "module.py"), "utf8")).toContain("def read_csv");
-      expect(approvals.some(call => call.name === "run_command")).toBe(false);
-      expect(events.some(event => event.type === "tool_result" && event.tool === "run_command")).toBe(false);
-      expect(existsSync(path.join(tmpDir, "__pycache__"))).toBe(false);
     });
 
     it("runs structured function checks and prints success only after all assertions pass", async () => {

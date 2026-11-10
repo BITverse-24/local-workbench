@@ -122,7 +122,6 @@ class FlowRunner {
         env: {
           ...process.env,
           ELECTRON_RUN_AS_NODE: "1",
-          WORKBENCH_AGENT_V2: "true",
           WORKBENCH_AGENT_V3: "true",
           WORKBENCH_REASONING_MODE: process.env.WORKBENCH_REASONING_MODE || "effort_none",
           WORKBENCH_ALLOW_TEST_CLOUD_MODELS: process.env.WORKBENCH_ALLOW_TEST_CLOUD_MODELS || (useCloud ? "1" : "0"),
