@@ -274,22 +274,46 @@ export function validateCodeDraftResult(input: unknown, options: CodeValidationO
   for (const [path, files] of [["result.inputFiles", inputFiles], ["result.outputFiles", outputFiles]] as const) {
     files.forEach((file) => { if (!logicalFilename(file)) issues.push(issue(path, "invalid-value", "logical filename without path separators")); });
   }
-  const expectedInputs = options.inputFiles ?? LOCKED_FLOW_B_CODE_RULES.inputFiles;
-  const expectedOutputs = options.outputFiles ?? LOCKED_FLOW_B_CODE_RULES.outputFiles;
-  if (JSON.stringify(inputFiles) !== JSON.stringify(expectedInputs)) issues.push(issue("result.inputFiles", "invalid-value", `exactly ${expectedInputs.join(", ")}`));
-  if (JSON.stringify(outputFiles) !== JSON.stringify(expectedOutputs)) issues.push(issue("result.outputFiles", "invalid-value", `exactly ${expectedOutputs.join(", ")}`));
-  const allowed = new Set(options.allowedImports ?? LOCKED_FLOW_B_CODE_RULES.allowedImports);
-  allowedImports.forEach((name) => { if (!allowed.has(name)) issues.push(issue("result.allowedImports", "invalid-value", "approved import names only")); });
-  if (new Set(allowedImports).size !== allowedImports.length) issues.push(issue("result.allowedImports", "invalid-value", "unique import names"));
-  const expectedResult = options.expectedResultIncludes ?? LOCKED_FLOW_B_CODE_RULES.expectedResult;
-  if (typeof input.expectedResult === "string" && !input.expectedResult.includes(expectedResult)) issues.push(issue("result.expectedResult", "invalid-value", `contains ${expectedResult}`));
+  const expectedInputs = options.inputFiles;
+  const expectedOutputs = options.outputFiles;
+  if (expectedInputs && JSON.stringify(inputFiles) !== JSON.stringify(expectedInputs)) {
+    issues.push(issue("result.inputFiles", "invalid-value", `exactly ${expectedInputs.join(", ")}`));
+  }
+  if (expectedOutputs && JSON.stringify(outputFiles) !== JSON.stringify(expectedOutputs)) {
+    issues.push(issue("result.outputFiles", "invalid-value", `exactly ${expectedOutputs.join(", ")}`));
+  }
+  const allowed = new Set(options.allowedImports ?? ["csv", "datetime", "math", "json", "sys", "re", "collections", "itertools"]);
+  allowedImports.forEach((name) => {
+    if (!allowed.has(name)) issues.push(issue("result.allowedImports", "invalid-value", "approved import names only"));
+  });
+  if (new Set(allowedImports).size !== allowedImports.length) {
+    issues.push(issue("result.allowedImports", "invalid-value", "unique import names"));
+  }
+  const expectedResult = options.expectedResultIncludes;
+  if (expectedResult && typeof input.expectedResult === "string" && !input.expectedResult.includes(expectedResult)) {
+    issues.push(issue("result.expectedResult", "invalid-value", `contains ${expectedResult}`));
+  }
   if (typeof input.source === "string") {
-    for (const [pattern, description] of UNSAFE_CODE_PATTERNS) if (pattern.test(input.source)) issues.push(issue("result.source", "invalid-value", `no ${description}`));
+    for (const [pattern, description] of UNSAFE_CODE_PATTERNS) {
+      if (pattern.test(input.source)) issues.push(issue("result.source", "invalid-value", `no ${description}`));
+    }
     const importPattern = /^\s*(?:from|import)\s+([A-Za-z_][A-Za-z0-9_.]*)/gm;
-    for (const match of input.source.matchAll(importPattern)) if (!allowed.has(match[1].split(".")[0])) issues.push(issue("result.source", "invalid-value", "imports from approved modules only"));
-    for (const match of input.source.matchAll(/\bopen\s*\(\s*(["'])([^"']+)\1/g)) if (!expectedInputs.includes(match[2]) && !expectedOutputs.includes(match[2])) issues.push(issue("result.source", "invalid-value", "open only fixed input/output filenames"));
-    if (!input.source.includes(expectedInputs[0]) || !input.source.includes(expectedOutputs[0])) issues.push(issue("result.source", "invalid-value", "reads and writes the declared fixture files"));
-    if (/OUT_OF_RANGE\s+7\/240|high\s*=\s*5|low\s*=\s*2/.test(input.source)) issues.push(issue("result.source", "invalid-value", "calculate results instead of hard-coding expected counts"));
+    for (const match of input.source.matchAll(importPattern)) {
+      if (!allowed.has(match[1].split(".")[0])) issues.push(issue("result.source", "invalid-value", "imports from approved modules only"));
+    }
+    if (expectedInputs && expectedOutputs) {
+      for (const match of input.source.matchAll(/\bopen\s*\(\s*(["'])([^"']+)\1/g)) {
+        if (!expectedInputs.includes(match[2]) && !expectedOutputs.includes(match[2])) {
+          issues.push(issue("result.source", "invalid-value", "open only fixed input/output filenames"));
+        }
+      }
+      if (expectedInputs[0] && !input.source.includes(expectedInputs[0])) {
+        issues.push(issue("result.source", "invalid-value", "reads declared input file"));
+      }
+      if (expectedOutputs[0] && !input.source.includes(expectedOutputs[0])) {
+        issues.push(issue("result.source", "invalid-value", "writes declared output file"));
+      }
+    }
   }
   return finish(input as unknown as CodeResult, issues);
 }

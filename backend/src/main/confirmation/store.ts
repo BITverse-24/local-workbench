@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { getDb, prepareCached } from "../persistence/db.js";
 import type { PendingAction } from "../../shared/contracts.js";
 const prompts: Record<PendingAction["kind"], string> = {
-  generate_docx: "Generate the approval-note DOCX?",
+  generate_docx: "Generate the requested Word document (.docx)?",
   execute_python: "Execute the generated Python?",
-  generate_xlsx: "Generate the out-of-range summary XLSX?",
+  generate_xlsx: "Generate the requested spreadsheet (.xlsx)?",
   uncontained_python: "Approve Python without OS isolation? Filesystem and network isolation are not enforced.",
   plan_approval: "Approve proposed execution plan?",
 };

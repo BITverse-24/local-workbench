@@ -145,14 +145,19 @@ export function detectDeliverableExpectations(
   // 2. Detect requested deliverable categories when explicit filename is not given
   // A. DOCX / Word deliverable / Approval Note
   const requestsDocx =
+    !negatedFiles.has("document.docx") &&
     !negatedFiles.has("approval-note.docx") &&
     !negatedFiles.has("report.docx") &&
+    !negatedFiles.has("compliance-note.docx") &&
     !/\b(?:do\s*n['o]?t|never)\s+(?:draft|generate|create)\s+(?:a\s+)?(?:word|docx|report|approval\s+note)\b/i.test(userPrompt) &&
     (/\b(?:draft|generate|create|produce|compile|export)\b[^.?!]*\b(?:approval\s+note|compliance\s+note|word\s+doc(?:ument)?|docx|formal\s+note|report)\b/i.test(lower) ||
     /\b(?:as|in|into)\s+(?:a\s+)?(?:word\s+document|docx\s+file|docx)\b/i.test(lower));
   const hasDocx = deliverables.some((f) => f.toLowerCase().endsWith(".docx"));
   if (requestsDocx && !hasDocx) {
-    const name = /\breport\b/i.test(lower) ? "report.docx" : "approval-note.docx";
+    let name = "document.docx";
+    if (/\bapproval\s+note\b/i.test(lower)) name = "approval-note.docx";
+    else if (/\bcompliance\s+note\b/i.test(lower)) name = "compliance-note.docx";
+    else if (/\breport\b/i.test(lower)) name = "report.docx";
     if (!negatedFiles.has(name)) deliverables.push(name);
   }
 

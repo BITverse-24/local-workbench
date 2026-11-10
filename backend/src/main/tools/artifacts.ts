@@ -1297,11 +1297,11 @@ export async function generateDocx(
 ): Promise<ArtifactRef> {
   const buffer = await createDocxBuffer(input);
 
-  let candidate = requestedFilename?.trim() || "approval-note.docx";
+  let candidate = requestedFilename?.trim() || "document.docx";
   if (!/\.docx$/i.test(candidate)) {
     candidate = candidate.replace(/\.[^.]+$/, "") + ".docx";
   }
-  const name = /^[A-Za-z0-9][A-Za-z0-9._-]*\.docx$/i.test(candidate) ? candidate : "approval-note.docx";
+  const name = /^[A-Za-z0-9][A-Za-z0-9._-]*\.docx$/i.test(candidate) ? candidate : "document.docx";
 
   // Staging -> Verification -> Promotion lifecycle
   const tempName = `staging-${randomUUID()}-${name}`;
