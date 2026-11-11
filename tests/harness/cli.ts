@@ -17,6 +17,7 @@ async function main(): Promise<void> {
   const { sendUserMessage } = await import("./behavioral-adapter.js");
   const { getDb, closeDb } = await import("../../backend/src/main/persistence/db.js");
   const { RAGDatabase } = await import("../../ai/rag/db.js");
+  const { getExecutionLedger } = await import("../../backend/src/main/run/execution-ledger.js");
   const events = new EventStore(output);
   const backend = await boot(config, events);
   output({ version: 1, kind: "ready", registry: [...backend.gateway.registry.values()], channels: backend.ipc.channels() });
@@ -57,7 +58,7 @@ async function main(): Promise<void> {
         data = await events.wait(a.runId, a.type, a.state, a.after, a.timeoutMs);
       } else {
         const db = getDb();
-        data = { chats: [...backend.chats.entries()], messages: db.prepare("SELECT * FROM messages ORDER BY chat_id,seq").all(), runs: db.prepare("SELECT * FROM runs").all(), confirmations: db.prepare("SELECT * FROM confirmations").all(), artifacts: db.prepare("SELECT * FROM artifacts").all() };
+        data = { chats: [...backend.chats.entries()], messages: db.prepare("SELECT * FROM messages ORDER BY chat_id,seq").all(), runs: db.prepare("SELECT * FROM runs").all(), confirmations: db.prepare("SELECT * FROM confirmations").all(), artifacts: db.prepare("SELECT * FROM artifacts").all(), ledgers: Object.fromEntries((db.prepare("SELECT id FROM runs").all() as Array<{ id: string }>).map((r) => [r.id, getExecutionLedger(r.id) ?? null])) };
       }
       output({ version: 1, kind: "response", id: cmd.id, ok: true, d: data });
     })().catch((error) => output({ version: 1, kind: "response", id: cmd.id, ok: false, e: redact(error instanceof Error ? error.message : String(error)) })).finally(() => pending.delete(cmd.id));

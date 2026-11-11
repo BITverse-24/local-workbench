@@ -13,7 +13,7 @@ export async function boot(config: WorkerBootConfig, events: EventStore) {
     ipc,
     (event) => events.push(event),
     {
-      agentV3Preview: (config as any).agentV3Preview ?? (process.env.WORKBENCH_AGENT_V3 === "true"),
+      agentV3Preview: (config as any).agentV3Preview ?? (process.env.WORKBENCH_AGENT_V2 !== "true"),
       dataDir: path.join(config.root, "data"),
       modelsPath: path.join(config.root, "config", "models.json"),
       schemaPath: config.schemaPath,

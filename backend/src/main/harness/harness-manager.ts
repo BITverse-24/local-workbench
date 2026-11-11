@@ -13,6 +13,7 @@ import { runCommand } from "./tools/run-command.js";
 import { getDb } from "../persistence/db.js";
 import { writeRunFile } from "../run/filesystem.js";
 import { logArtifactReady, logHarnessToolCall, logHarnessToolResult } from "../logger.js";
+import { invalidateWorkspaceCodeIndex } from "../agent/codeintel/code-index.js";
 import type {
   HarnessToolCall,
   HarnessToolResult,
@@ -61,6 +62,7 @@ export class HarnessManager {
 
   registerWorkspace(dirPath: string): WorkspaceInfo {
     const info = this.workspace.register(dirPath);
+    invalidateWorkspaceCodeIndex(info.root);
     const tree = listDir(info.root);
     this.emitWorkspace({ type: "workspace_registered", workspace: info });
     this.emitWorkspace({ type: "workspace_tree", entries: tree });
@@ -68,6 +70,8 @@ export class HarnessManager {
   }
 
   deregisterWorkspace(): void {
+    const prev = this.workspace.current();
+    if (prev) invalidateWorkspaceCodeIndex(prev.root);
     this.workspace.deregister();
     this.emitWorkspace({ type: "workspace_deregistered" });
   }

@@ -28,7 +28,12 @@ Code, test, and runtime configuration changes require existing tests by default.
 - Existing `node:test` suites, with a backend reporter that records test events, file paths, and failure details.
 - Configured pytest suites through JUnit XML.
 - Existing unittest modules through a discovery wrapper. The wrapper creates no tests.
+- Existing Maven (`pom.xml`) and Gradle (`build.gradle`, `build.gradle.kts`, `./gradlew`, `./mvnw`) suites through Surefire/Gradle JUnit XML reports (`target/surefire-reports/*.xml`, `build/test-results/test/*.xml`). macOS `/usr/bin/java` stub failures (`Unable to locate a Java Runtime`) produce a clean `missing_dependency` diagnostic rather than a false suite crash.
+- Existing CMake + CTest (`CMakeLists.txt`) suites through `ctest --test-dir <dir> --output-junit <report.xml> --output-on-failure` (configuring `<scratch>/cmake-build` first when no prebuilt `CTestTestfile.cmake` exists).
+- Existing .NET (`*.csproj`, `*.sln`) suites through `dotnet test --logger trx;LogFileName=<report.trx>` and TRX XML parsing (`ResultSummary` / `Counters` / `UnitTestResult`).
 - Existing custom commands with supported JUnit or TAP output.
+
+Before operator approval of file proposals and immediately after `write_file`, `edit_file`, or `replace_symbol` mutations, the diagnostics engine (`backend/src/main/agent/codeintel/diagnostics.ts`, controllable via `WORKBENCH_DIAGNOSTICS=on|off`, default `on`) runs fast in-memory syntax validation (Babel for JS/TS, Python `ast`/`compile`, JSON, and polyglot brace/comment/directive checking for Java, C/C++, and C#) plus incremental project-level checks (`tsc --noEmit`, `clang -fsyntax-only`, `javac -proc:none`) and appends only newly-introduced `Δ diagnostics (+N new)` to the tool result.
 
 The runtime schedules tests after planned writes or an attempted final answer. Commands use the existing exact-command approval and isolation rules. Tests run in the disposable command snapshot. Reports use its scratch area and are saved before cleanup. Test output, coverage, and caches are not published to the workspace. A test command that changes its input source or tests cannot establish a pass.
 

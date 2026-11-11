@@ -185,7 +185,7 @@ export function agentTestEnvironmentKey(workspaceRoot:string): string {
   for(const launch of launches) {
     candidates.add(launch.binary);
     for(const directory of (launch.env.PATH ?? "").split(path.delimiter).filter(Boolean)) {
-      for(const tool of ["node","npm","pnpm","yarn","python3","python","pytest"]) {
+      for(const tool of ["node","npm","pnpm","yarn","python3","python","pytest","java","mvn","gradle","cmake","ctest","dotnet"]) {
         for(const extension of process.platform === "win32" ? (launch.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";") : [""])candidates.add(path.resolve(workspaceRoot,directory,tool+extension));
       }
     }
@@ -323,7 +323,7 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
         try {
           const result=await executeProcess(probe.binary,probe.args,{cwd:work,env:probe.env,windowsVerbatimArguments:probe.windowsVerbatimArguments,timeout:5000,maxBuffer:4096});
           const version=(result.stdout || result.stderr).trim();
-          if(!version || !/\d+\.\d+/.test(version))throw new Error("The runtime returned no valid version.");
+          if(!version || !/\d+\.\d+/.test(version) || /Unable to locate a Java Runtime/i.test(version))throw new Error("The runtime returned no valid version.");
           runtimeProbes.push({tool,available:true,version:version.slice(0,500)});
         } catch(error) {
           assertRuntimeActive();policy?.assertAuthority?.();
@@ -378,7 +378,7 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
       // Test outputs, caches, and coverage stay in the disposable copy. Existing
       // input files must keep their bytes; generated outputs cannot repair code.
       for (const [name, file] of before) {
-        if (/(?:^|[/\\])(?:coverage|\.pytest_cache|\.cache|__pycache__|dist|build)(?:[/\\]|$)/.test(name)) continue;
+        if (/(?:^|[/\\])(?:coverage|\.pytest_cache|\.cache|__pycache__|dist|build|target|\.gradle|bin|obj|TestResults)(?:[/\\]|$)/.test(name)) continue;
         try {
           const target = resolveSafe(work, name);
           const overlayItem = overlays?.find(o => o.path.split("/").join(path.sep) === name || o.path === name);
@@ -392,7 +392,7 @@ export async function runCommand(workspaceRoot: string, command: string, timeout
       }
       try {
         for (const name of snapshot(work, true).keys()) {
-          if (!before.has(name) && !/(?:^|[/\\])(?:coverage|\.pytest_cache|\.cache|__pycache__|dist|build)(?:[/\\]|$)/.test(name) && isCodeVerificationPath(name)) {
+          if (!before.has(name) && !/(?:^|[/\\])(?:coverage|\.pytest_cache|\.cache|__pycache__|dist|build|target|\.gradle|bin|obj|TestResults)(?:[/\\]|$)/.test(name) && isCodeVerificationPath(name)) {
             evidence.reason = "tested_inputs_changed"; evidence.detail = `The test command created a source, test, or configuration file: ${name}.`; break;
           }
         }

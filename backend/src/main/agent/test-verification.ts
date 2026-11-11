@@ -7,7 +7,7 @@ import type { AgentToolCall } from "../../shared/contracts.js";
 import { PermissionError, resolveSafe } from "../harness/path-guard.js";
 import { getPythonExecutable } from "../tools/python-runtime.js";
 
-export type AgentTestRunner = "vitest" | "jest" | "node" | "pytest" | "unittest" | "junit" | "tap";
+export type AgentTestRunner = "vitest" | "jest" | "node" | "pytest" | "unittest" | "maven" | "gradle" | "ctest" | "dotnet" | "junit" | "tap";
 export type AgentTestPhase = "related" | "full";
 /** A reporter, not a test: consume the existing node:test execution events. */
 export const NODE_EXISTING_TEST_REPORTER = `const fs=require('node:fs');
@@ -32,10 +32,10 @@ export interface AgentTestPlan {
   id: string; workspaceRoot: string; suiteRoot: string; runner: AgentTestRunner;
   changedPaths: string[]; changedTestPaths: string[]; sourceManifest: Record<string, string>;
   manifestSha256: string; initialPhase: AgentTestPhase; relatedCommand?: string; fullCommand: string;
-  reportFormat: "json" | "junit" | "tap" | "unittest"; testFiles: string[];
+  reportFormat: "json" | "junit" | "tap" | "unittest" | "trx"; testFiles: string[];
   runtimeTools?: AgentTestRuntimeTool[];
 }
-export type AgentTestRuntimeTool = "node" | "npm" | "pnpm" | "yarn" | "python3" | "pytest";
+export type AgentTestRuntimeTool = "node" | "npm" | "pnpm" | "yarn" | "python3" | "pytest" | "java" | "mvn" | "gradle" | "cmake" | "ctest" | "dotnet";
 /** Host-selected export to substitute only inside the disposable test copy. */
 export interface AgentTestArtifact {
   artifactPath: string; artifactDigest: string; sourceDigest: string; targetPath: string;
@@ -73,12 +73,13 @@ const hash = (bytes: string | Buffer) => createHash("sha256").update(bytes).dige
 const slash = (value: string) => value.split(path.sep).join("/");
 export function isCodeVerificationPath(filename: string): boolean {
   if (/\.(?:md|mdx|rst|txt|adoc|docx|xlsx|pdf|png|jpe?g|gif|svg|webp|ico|avif|bmp|tiff?|woff2?|ttf|otf)$/i.test(filename) && !/(?:^|\/)requirements[^/]*\.txt$/i.test(filename)) return false;
-  return /\.(?:[cm]?[jt]sx?|py|pyi|java|kt|kts|go|rs|c|cc|cpp|cxx|h|hpp|cs|fs|rb|php|swift|scala|sh|bash|ps1|sql|vue|svelte|json|ya?ml|toml|ini|cfg)$/i.test(filename) ||
-    /(?:^|\/)(?:package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|pyproject\.toml|pytest\.ini|setup\.cfg|tox\.ini|requirements[^/]*\.txt|Cargo\.(?:toml|lock)|go\.(?:mod|sum)|Makefile|CMakeLists\.txt|pom\.xml|build\.gradle|[^/]*(?:vitest|jest|tsconfig)[^/]*)$/i.test(filename);
+  return /\.(?:[cm]?[jt]sx?|py|pyi|java|kt|kts|go|rs|c|cc|cpp|cxx|h|hpp|cs|fs|rb|php|swift|scala|sh|bash|ps1|sql|vue|svelte|json|ya?ml|toml|ini|cfg|csproj|sln)$/i.test(filename) ||
+    /(?:^|\/)(?:package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|pyproject\.toml|pytest\.ini|setup\.cfg|tox\.ini|requirements[^/]*\.txt|Cargo\.(?:toml|lock)|go\.(?:mod|sum)|Makefile|CMakeLists\.txt|pom\.xml|build\.gradle(?:\.kts)?|[^/]*(?:vitest|jest|tsconfig)[^/]*)$/i.test(filename);
 }
-export const isAgentTestPath = (filename: string) => /\.(?:[cm]?[jt]sx?|py|java|kt|go|rs|c|cc|cpp|cs|rb|php|swift|scala)$/i.test(filename) &&
+export const isAgentTestPath = (filename: string) => /\.(?:[cm]?[jt]sx?|py|java|kt|go|rs|c|cc|cpp|cxx|cs|rb|php|swift|scala)$/i.test(filename) &&
   !/(?:^|\/)(?:helpers?|fixtures?|support)(?:\/|$)/i.test(filename) &&
-  /(?:^|\/)(?:__tests__|tests?|spec)(?:\/|$)|(?:^|\/)(?:test[_-][^/]+|[^/]+(?:[._-](?:test|spec)|_test))\.[^/]+$/i.test(filename);
+  (/(?:^|\/)(?:__tests__|tests?|spec)(?:\/|$)|(?:^|\/)(?:test[_-][^/]+|[^/]+(?:[._-](?:test|spec)|_test))\.[^/]+$/i.test(filename) ||
+    /(?:^|\/)[A-Z][A-Za-z0-9_]*Tests?\.(?:java|kt|cs|cpp|cc|cxx|c)$/.test(filename));
 export function agentManifestDigest(files: Record<string, string>): string {
   return hash(JSON.stringify(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))));
 }
@@ -130,13 +131,31 @@ export function appendVerificationSuccessMarker(command: string, marker: string)
 }
 const reportArgument = () => process.platform === "win32" ? '"%WORKBENCH_TEST_REPORT%"' : '"$WORKBENCH_TEST_REPORT"';
 const prefix = (cwd: string, command: string) => cwd === "." ? command : `cd ${quote(cwd)} && ${command}`;
+function hasDotnetProject(root: string, dir: string): boolean {
+  try {
+    return readdirSync(resolveSafe(root, dir)).some(name => /\.(?:csproj|sln)$/i.test(name));
+  } catch {
+    return false;
+  }
+}
 function closestRoot(root: string, file: string): string {
   let dir = path.posix.dirname(file);
   for (;;) {
-    if (["package.json", "pyproject.toml", "pytest.ini", "setup.cfg", "tox.ini"].some(name => existsSync(resolveSafe(root, path.posix.join(dir, name))))) return dir;
+    if (
+      ["package.json", "pyproject.toml", "pytest.ini", "setup.cfg", "tox.ini", "pom.xml", "build.gradle", "build.gradle.kts", "CMakeLists.txt"].some(name =>
+        existsSync(resolveSafe(root, path.posix.join(dir, name))),
+      ) ||
+      hasDotnetProject(root, dir)
+    ) {
+      return dir;
+    }
     if (dir === ".") return ".";
     dir = path.posix.dirname(dir);
   }
+}
+function junitMergeCommand(runCmd: string, reportGlobDir: string): string {
+  // Runs the build tool, captures its exit code, merges generated JUnit XML suites into $WORKBENCH_TEST_REPORT, and exits with the original status.
+  return `(${runCmd}); __wb_rc=$?; printf '<testsuites>\\n' > ${reportArgument()}; for __wb_f in ${reportGlobDir}/TEST-*.xml; do [ -f "$__wb_f" ] && sed '/^<?xml/d' "$__wb_f" >> ${reportArgument()}; done; printf '\\n</testsuites>\\n' >> ${reportArgument()}; exit $__wb_rc`;
 }
 function wrapperRunner(root: string, suiteRoot: string, script: string): AgentTestRunner | undefined {
   if (/(?:^|\s)vitest(?:\s|$)/.test(script)) return "vitest";
@@ -222,6 +241,29 @@ export function discoverAgentTestPlans(input: { workspaceRoot: string; changedPa
           if (directory && existing.every(file => path.posix.relative(dir, file).startsWith(directory === "." ? "" : `${directory}/`))) {
             runner = "unittest"; format = "unittest"; full = unittestCommand(directory);
             runtimeTools=["python3"];
+          } else if (existsSync(resolveSafe(root, path.posix.join(dir, "pom.xml"))) && testFiles.some(file => file.endsWith(".java"))) {
+            runner = "maven"; format = "junit";
+            full = junitMergeCommand("mvn test -B", "target/surefire-reports");
+            runtimeTools = ["java", "mvn"];
+          } else if (
+            (existsSync(resolveSafe(root, path.posix.join(dir, "build.gradle"))) || existsSync(resolveSafe(root, path.posix.join(dir, "build.gradle.kts")))) &&
+            testFiles.some(file => /\.(?:java|kt)$/i.test(file))
+          ) {
+            runner = "gradle"; format = "junit";
+            full = junitMergeCommand("gradle test --console=plain", "build/test-results/test");
+            runtimeTools = ["java", "gradle"];
+          } else if (
+            existsSync(resolveSafe(root, path.posix.join(dir, "CMakeLists.txt"))) &&
+            /\b(?:enable_testing|add_test)\s*\(/i.test(readSmall(root, path.posix.join(dir, "CMakeLists.txt")) ?? "") &&
+            testFiles.some(file => /\.(?:c|cc|cpp|cxx)$/i.test(file))
+          ) {
+            runner = "ctest"; format = "junit";
+            full = `cmake -S . -B build && cmake --build build && ctest --test-dir build --output-junit ${reportArgument()} --output-on-failure`;
+            runtimeTools = ["cmake", "ctest"];
+          } else if (hasDotnetProject(root, dir) && testFiles.some(file => file.endsWith(".cs"))) {
+            runner = "dotnet"; format = "trx";
+            full = `dotnet test --nologo --logger "trx;LogFileName=${process.platform === "win32" ? "%WORKBENCH_TEST_REPORT%" : "$WORKBENCH_TEST_REPORT"}"`;
+            runtimeTools = ["dotnet"];
           }
         }
       }
@@ -259,7 +301,8 @@ export function createAgentVerificationRequest(plan: AgentTestPlan, phase: Agent
 /** Fixed host probes. User source and model arguments cannot supply probe commands. */
 export function agentRuntimeProbeCommand(tool:AgentTestRuntimeTool): string {
   if(tool === "python3")return `${pythonCommand()} --version`;
-  if(!["node","npm","pnpm","yarn","pytest"].includes(tool))throw new Error("Unknown test runtime probe.");
+  if(tool === "java")return "java -version";
+  if(!["node","npm","pnpm","yarn","pytest","mvn","gradle","cmake","ctest","dotnet"].includes(tool))throw new Error("Unknown test runtime probe.");
   return `${tool} --version`;
 }
 export function createAgentVerificationCall(request: AgentTestExecutionRequest, id = randomUUID()): AgentToolCall {
@@ -354,6 +397,53 @@ function parseAgentTestReportData(request: AgentTestExecutionRequest, report: st
     const files = request.testFiles.filter(file => report.includes(file) || report.includes(path.posix.relative(request.suiteRoot, file)));
     return { executed: passed + failed, failed, skipped, testFiles: files };
   }
+  if (request.reportFormat === "trx") {
+    let executed = 0, failed = 0, skipped = 0, cases = 0;
+    const files: string[] = [], failures: string[] = [];
+    let currentTestName = "";
+    let inMessage = false, inStackTrace = false;
+    const parser = new SaxesParser({ xmlns: false });
+    parser.on("doctype", () => { throw new Error("TRX DTDs are not accepted."); });
+    parser.on("error", error => { throw error; });
+    parser.on("opentag", tag => {
+      if (tag.name === "UnitTestResult") {
+        cases++;
+        const attrs = tag.attributes as Record<string, string>;
+        const outcome = (attrs.outcome ?? "").toLowerCase();
+        currentTestName = attrs.testName ?? "Test";
+        if (outcome === "passed") executed++;
+        else if (outcome === "failed" || outcome === "error" || outcome === "timeout" || outcome === "aborted") {
+          executed++;
+          failed++;
+          failures.push(`${currentTestName}:`);
+        } else {
+          skipped++;
+        }
+        const classHint = currentTestName.split(".").slice(0, -1).join("/");
+        const matched = request.testFiles.find(item =>
+          (classHint && item.replace(/\.cs$/i, "").endsWith(classHint)) ||
+          item.replace(/\.cs$/i, "").endsWith(currentTestName.split(".")[0] ?? ""),
+        ) ?? (request.testFiles.length === 1 ? request.testFiles[0] : undefined);
+        if (matched) files.push(testFile(path.join(executionRoot, matched), executionRoot, request.suiteRoot));
+      } else if (tag.name === "Message") {
+        inMessage = true;
+      } else if (tag.name === "StackTrace") {
+        inStackTrace = true;
+      }
+    });
+    parser.on("text", value => {
+      if ((inMessage || inStackTrace) && failures.join("").length < 6000 && value.trim()) {
+        failures.push(value.trim());
+      }
+    });
+    parser.on("closetag", tag => {
+      if (tag.name === "Message") inMessage = false;
+      else if (tag.name === "StackTrace") inStackTrace = false;
+    });
+    parser.write(report).close();
+    if (!cases) throw new Error("TRX report has no UnitTestResult entries.");
+    return { executed, failed, skipped, testFiles: [...new Set(files)], ...(failures.length ? { failureOutput: failures.join("\n").slice(0, 6000) } : {}) };
+  }
   let executed = 0, failed = 0, skipped = 0, cases = 0; const files: string[] = [], failures: string[] = [];
   type Suite = { expected: Record<string, number>; tests: number; failures: number; errors: number; skipped: number };
   const suites: Suite[] = [];
@@ -376,8 +466,12 @@ function parseAgentTestReportData(request: AgentTestExecutionRequest, report: st
       if (!suites.length) throw new Error("JUnit testcase is outside a test suite.");
       if (current) throw new Error("Nested JUnit testcase is invalid.");
       cases++; const attrs = tag.attributes as Record<string, string>;
-      const inferred = attrs.classname?.replace(/\./g, "/") + ".py";
-      const matched = request.testFiles.find(item => item === inferred || item.endsWith(`/${inferred}`));
+      const rawClass = attrs.classname || attrs.name || "";
+      const slashClass = rawClass.replace(/\./g, "/");
+      const matched = request.testFiles.find(item =>
+        ["py", "java", "kt", "cs", "cpp", "cc", "cxx", "c"].some(ext => item === `${slashClass}.${ext}` || item.endsWith(`/${slashClass}.${ext}`)) ||
+        (slashClass && item.replace(/\.[^.]+$/, "").endsWith(slashClass))
+      ) ?? (["maven", "gradle", "ctest"].includes(request.runner) && request.testFiles.length === 1 ? request.testFiles[0] : undefined);
       const file = attrs.file ?? (matched ? path.join(executionRoot, matched) : undefined);
       current = { file, name: attrs.name ?? "Test", skipped: false, failed: false, error: false };
     } else if (current && tag.name === "skipped") current.skipped = true;

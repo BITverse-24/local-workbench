@@ -13,6 +13,8 @@ import { getExecutionLedger } from "../run/execution-ledger.js";
 import { captureAgentVerificationManifest } from "./test-verification.js";
 import { validateAgentDependencyChange } from "./dependency-constraint.js";
 import { validatePublicExports } from "./export-preservation.js";
+import { validateProposalSyntax } from "./codeintel/diagnostics.js";
+import { getWorkspaceCodeIndex } from "./codeintel/code-index.js";
 import { assertAgentFileScope } from "./file-scope.js";
 import { currentRuntimeScope } from "../run/runtime-scope.js";
 import { runRoot } from "../run/filesystem.js";
@@ -64,6 +66,7 @@ export function validateAgentFileProposal(operation: string, args: Record<string
     const prepared = prepareFileEdit(context.workspaceRoot, { path: canonical, expectedDigest: digest.parse(args.expected_digest), replacements, requirementId: context.agentRequirementId ?? "", reason: context.agentChangeReason ?? "" }, receipts);
     validateAgentDependencyChange(context.agentDependencyConstraints, canonical, readAgentSourceBytes(context.workspaceRoot, canonical), prepared.after);
     validatePublicExports(context.agentPreservePublicInterface,canonical,readAgentSourceBytes(context.workspaceRoot,canonical),prepared.after);
+    validateProposalSyntax(canonical, readAgentSourceBytes(context.workspaceRoot, canonical), prepared.after);
   } else if (existsSync(target)) {
     const bytes = readAgentSourceBytes(context.workspaceRoot, canonical), actual = fileDigest(bytes);
     if (actual !== args.expected_digest || (operation === "write_file" && args.replace_existing !== true) || !observedRange(receipts, canonical, actual, 0, bytes.length)) throw new PermissionError("This proposal needs the complete current source and matching digest. Use read_file or bounded edits first.");
@@ -71,6 +74,7 @@ export function validateAgentFileProposal(operation: string, args: Record<string
   } else if (operation === "delete_file" || args.expected_digest) throw new PermissionError("The target is missing or changed.");
   if (operation !== "edit_file") validateAgentDependencyChange(context.agentDependencyConstraints, canonical, existsSync(target) ? readAgentSourceBytes(context.workspaceRoot, canonical) : undefined, operation === "delete_file" ? undefined : Buffer.from(z.string().parse(args.content)));
   if (operation !== "edit_file") validatePublicExports(context.agentPreservePublicInterface,canonical,existsSync(target) ? readAgentSourceBytes(context.workspaceRoot,canonical) : undefined,operation === "delete_file" ? undefined : Buffer.from(z.string().parse(args.content)));
+  if (operation !== "edit_file") validateProposalSyntax(canonical, existsSync(target) ? readAgentSourceBytes(context.workspaceRoot, canonical) : undefined, operation === "delete_file" ? undefined : Buffer.from(z.string().parse(args.content)));
 }
 
 export const agentWorkspaceActions: AgentTool[] = [
@@ -117,6 +121,31 @@ export const agentWorkspaceActions: AgentTool[] = [
     void target;
     return sourceResult({ path: input.path, query: input.query, revision, matches: selected, complete: matches.length <= next, ...(matches.length > next ? { nextCursor: cursor({ offset: next, revision, query }) } : {}) });
   }),
+  tool("code_symbols", "List AST symbols (functions, classes, methods, types) and line ranges in a source file.", { path: pathProperty }, ["path"], async (args, context) => {
+    const input = z.object({ path: relative }).strict().parse(args);
+    const canonical = canonicalSourcePath(context, input.path);
+    const symbols = getWorkspaceCodeIndex(context.workspaceRoot).symbols(canonical);
+    return sourceResult({ path: canonical, symbols, complete: true });
+  }),
+  tool("code_definition", "Find symbol definitions across the workspace, ranked by import graph.", { name: { type: "string", description: "Symbol identifier to locate" }, path: pathProperty, from_path: pathProperty, kind: { type: "string" } }, ["name"], async (args, context) => {
+    const input = z.object({ name: z.string().min(1).max(256), path: relative.optional(), from_path: relative.optional(), kind: z.string().max(64).optional() }).strict().parse(args);
+    const scopePath = input.path ? canonicalSourcePath(context, input.path) : undefined;
+    const fromPath = input.from_path ? canonicalSourcePath(context, input.from_path) : undefined;
+    const res = getWorkspaceCodeIndex(context.workspaceRoot).definition(input.name, { path: scopePath, fromPath, kind: input.kind });
+    return sourceResult({ query: input.name, ...(scopePath ? { path: scopePath } : {}), matches: res.matches, indexComplete: res.indexComplete, complete: true });
+  }),
+  tool("code_references", "Find symbol references across the workspace, filtered by import graph when available.", { name: { type: "string", description: "Symbol identifier" }, path: pathProperty, max_results: { type: "integer", minimum: 1, maximum: 100 } }, ["name"], async (args, context) => {
+    const input = z.object({ name: z.string().min(1).max(256), path: relative.optional(), max_results: z.number().int().min(1).max(100).default(40) }).strict().parse(args);
+    const scopePath = input.path ? canonicalSourcePath(context, input.path) : undefined;
+    const res = getWorkspaceCodeIndex(context.workspaceRoot).references(input.name, { path: scopePath, maxResults: input.max_results });
+    return sourceResult({ query: input.name, ...(scopePath ? { path: scopePath } : {}), matches: res.matches, precision: res.precision, indexComplete: res.indexComplete, complete: true });
+  }),
+  tool("search_code", "Ranked FTS5 lexical code search over identifier-split symbol chunks.", { query: { type: "string" }, path: pathProperty, max_results: { type: "integer", minimum: 1, maximum: 50 } }, ["query"], async (args, context) => {
+    const input = z.object({ query: z.string().min(1).max(512), path: relative.optional(), max_results: z.number().int().min(1).max(50).default(15) }).strict().parse(args);
+    const scopePath = input.path ? canonicalSourcePath(context, input.path) : undefined;
+    const res = getWorkspaceCodeIndex(context.workspaceRoot).searchCode(input.query, { path: scopePath, maxResults: input.max_results });
+    return sourceResult({ query: input.query, ...(scopePath ? { path: scopePath } : {}), results: res.results, indexComplete: res.indexComplete, complete: true });
+  }),
   tool("edit_file", "Apply exact unique replacements to inspected source. Supply its current digest. Existing code is preserved outside the anchors.", { path: pathProperty, expected_digest: { type: "string" }, replacements: { type: "array", items: { type: "object", properties: { old: { type: "string", format: "multiline" }, new: { type: "string", format: "multiline" } }, required: ["old", "new"], additionalProperties: false } } }, ["path", "expected_digest", "replacements"], async (args, context) => {
     const input = z.object({ path: relative, expected_digest: digest, replacements: z.array(z.object({ old: z.string().min(1), new: z.string() }).strict()).min(1).max(20) }).strict().parse(args);
     const canonical = canonicalSourcePath(context, input.path); authorize(context, "edit_file", { ...args, path: canonical });
@@ -125,6 +154,7 @@ export const agentWorkspaceActions: AgentTool[] = [
       if (currentRuntimeScope()?.agentPhase === "actions") assertAgentFileScope(context.agentFileScope, "edit_file", canonical);
       validateAgentFileProposal("edit_file", args, context);
       const result = editFile(context.workspaceRoot, { path: canonical, expectedDigest: input.expected_digest, replacements: input.replacements, requirementId: context.agentRequirementId ?? "", reason: context.agentChangeReason ?? "" }, getExecutionLedger(context.runId)?.agentProgress?.reads ?? []);
+      getWorkspaceCodeIndex(context.workspaceRoot).invalidateFile(canonical);
       context.harness?.notifyWorkspaceTreeUpdated();
       return { output: JSON.stringify(result), summary: `Edited ${canonical}`, data: result, intermediate: { type: "structured", status: "complete", origin: "execution", payload: result, sources: [{ filename: canonical, relation: "source" }] }, sideEffects: [`modified:${canonical}`] };
     });
@@ -145,6 +175,7 @@ export const agentWorkspaceActions: AgentTool[] = [
         if (!observedRange(getExecutionLedger(context.runId)?.agentProgress?.reads ?? [], canonical, revision, 0, bytes.length)) throw new PermissionError("The complete current source was not supplied to the model.");
       } else if (operation === "delete_file" || input.expected_digest) throw new PermissionError("The target file is missing or changed.");
       const result = operation === "write_file" ? writeFile(context.workspaceRoot, canonical, input.content!) : deleteFile(context.workspaceRoot, canonical);
+      getWorkspaceCodeIndex(context.workspaceRoot).invalidateFile(canonical);
       context.harness?.notifyWorkspaceTreeUpdated();
       const { backupPath, ...rest } = result;
       const data = { ...rest, beforeDigest, afterDigest: operation === "delete_file" ? null : fileDigest(input.content!), ...(backupPath === undefined ? {} : { backupPath }) };

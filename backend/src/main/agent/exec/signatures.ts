@@ -20,7 +20,12 @@ export function renderReadSignatures(options: RenderSignaturesOptions = {}): str
     "  /** Search workspace for pattern. Returns [{path, line, text}] */",
     "  search(query: string, options?: { path?: string; maxResults?: number }): Promise<Array<{ path: string; line: number; text: string }>>;",
     "  /** List entries at workspace path. Returns string[] */",
-    "  listDir(path: string, options?: { maxEntries?: number }): Promise<string[]>;"
+    "  listDir(path: string, options?: { maxEntries?: number }): Promise<string[]>;",
+    "  symbols(path: string): Promise<Array<{ name: string; kind: string; startLine: number; endLine: number; exported?: boolean }>>;",
+    "  definition(name: string, scope?: string | { path?: string; fromPath?: string; kind?: string }): Promise<{ matches: any[]; indexComplete: boolean }>;",
+    "  references(name: string, opts?: { path?: string; maxResults?: number }): Promise<{ matches: any[]; precision: string; indexComplete: boolean }>;",
+    "  repoMap(opts?: { budgetTokens?: number; focusFiles?: string[] }): Promise<{ map: string; totalFiles: number; indexComplete: boolean }>;",
+    "  searchCode(query: string, opts?: number | { path?: string; maxResults?: number }): Promise<{ results: any[]; indexComplete: boolean }>;"
   ];
 
   if (options.hasInputSources) {
@@ -58,30 +63,19 @@ export function renderReadSignatures(options: RenderSignaturesOptions = {}): str
     "/** Escalate to native tool calling if programmatic execution is insufficient. */",
     "declare function escalate(reason: string): never;",
     "",
-    "// Built-in Tabular and Analytical Helpers (preloaded in sandbox global scope):",
-    "/** Parse CSV text into array of row objects. Headers are mapped to keys. DO NOT call .slice(1) — row [0] is the first data row! */",
+    "// Built-in Tabular & Analytical Helpers (global scope):",
+    "/** Parse CSV into row objects (row [0] is first data row; do not .slice(1)). */",
     "declare function parseCSV<T = Record<string, any>>(text: string, options?: { delimiter?: string; hasHeader?: boolean; autoTypes?: boolean }): T[];",
-    "/** Convert array of row objects to CSV string. */",
     "declare function toCSV(rows: Array<Record<string, any>>, options?: { delimiter?: string; columns?: string[] }): string;",
-    "/** Group items by key returned from keyFn. */",
     "declare function groupBy<T>(items: T[], keyFn: (item: T) => string): Record<string, T[]>;",
-    "/** Sum numeric values of array or object property. */",
     "declare function sum(items: number[] | Array<Record<string, any>>, key?: string): number;",
-    "/** Average of numeric values. */",
     "declare function avg(items: number[] | Array<Record<string, any>>, key?: string): number;",
-    "/** Minimum numeric value. */",
     "declare function min(items: number[] | Array<Record<string, any>>, key?: string): number;",
-    "/** Maximum numeric value. */",
     "declare function max(items: number[] | Array<Record<string, any>>, key?: string): number;",
-    "/** Sort array by key or selector function. */",
     "declare function sortBy<T>(items: T[], keyOrFn: string | ((item: T) => any), desc?: boolean): T[];",
-    "/** Return unique items by primitive identity or key function. */",
     "declare function unique<T>(items: T[], keyFn?: (item: T) => any): T[];",
-    "/** Round number to specified decimal places (default 2). */",
     "declare function round(val: number, decimals?: number): number;",
-    "/** Split text into lines. */",
     "declare function lines(text: string): string[];",
-    "/** Filter lines matching pattern. */",
     "declare function grep(text: string | string[], pattern: string | RegExp): string[];"
   );
 

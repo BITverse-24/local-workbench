@@ -272,6 +272,11 @@ export async function runSandboxedScript(
     registerAsyncTool("extractDocument", (fn, opts) => facade.extractDocument(fn, opts));
     registerAsyncTool("retrieveKnowledge", (q) => facade.retrieveKnowledge(q));
     registerAsyncTool("result", (id, opts) => facade.result(id, opts));
+    registerAsyncTool("symbols", (path) => facade.symbols ? facade.symbols(path) : Promise.resolve([]));
+    registerAsyncTool("definition", (name, opts) => facade.definition ? facade.definition(name, opts) : Promise.resolve({ matches: [], indexComplete: true }));
+    registerAsyncTool("references", (name, opts) => facade.references ? facade.references(name, opts) : Promise.resolve({ matches: [], precision: "workspace-wide" as const, indexComplete: true }));
+    registerAsyncTool("repoMap", (opts) => facade.repoMap ? facade.repoMap(opts) : Promise.resolve({ map: "", totalFiles: 0, indexComplete: true }));
+    registerAsyncTool("searchCode", (query, opts) => facade.searchCode ? facade.searchCode(query, opts) : Promise.resolve({ results: [], indexComplete: true }));
 
     vm.setProp(vm.global, "tools", toolsObj);
     toolsObj.dispose();

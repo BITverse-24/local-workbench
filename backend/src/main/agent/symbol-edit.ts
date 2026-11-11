@@ -4,7 +4,8 @@ import { parse } from "@babel/parser";
 import { spawnSync } from "node:child_process";
 import JSON5 from "json5";
 import { getPythonExecutable } from "../tools/python-runtime.js";
-import { indexSymbols, SymbolRange } from "./symbol-index.js";
+import { indexSymbols, parseFileSync, SymbolRange } from "./symbol-index.js";
+import { checkBufferSyntax, formatDiagnostics } from "./codeintel/diagnostics.js";
 import type { AgentRepairSource } from "./repair-proposal.js";
 
 export function parseJsonWithEscapedCode(str: string): unknown {
@@ -276,9 +277,10 @@ export async function bindSymbolEdit(
   const replacements: Array<{ old: string; new: string; startByte: number; endByte: number }> = [];
 
   for (const edit of args.edits) {
-    let matched = symbols.find(s => s.name === edit.symbol);
-    if (!matched && !edit.symbol.includes(".")) {
-      const suffixMatches = symbols.filter(s => s.name.endsWith(`.${edit.symbol}`));
+    const normalizedTarget = edit.symbol.replace(/::/g, ".");
+    let matched = symbols.find(s => s.name === edit.symbol || s.name === normalizedTarget);
+    if (!matched && !normalizedTarget.includes(".")) {
+      const suffixMatches = symbols.filter(s => s.name.endsWith(`.${normalizedTarget}`));
       if (suffixMatches.length === 1) {
         matched = suffixMatches[0];
       }
@@ -289,19 +291,39 @@ export async function bindSymbolEdit(
       throw new Error(`Symbol "${edit.symbol}" not found in ${source.path}. Available symbols: ${available || "none"}`);
     }
 
+    const old = bytes.subarray(matched.startByte, matched.endByte).toString("utf8");
     let finalNewSource: string;
     if (isPython) {
       finalNewSource = validateAndRebasePythonSource(matched, edit.new_source);
-    } else {
+    } else if (/\.[cm]?[jt]sx?$/i.test(source.path)) {
       validateJsTsSymbolSource(source.path, matched, edit.new_source);
       finalNewSource = cleanSourceString(edit.new_source);
-      const oldSlice = bytes.subarray(matched.startByte, matched.endByte).toString("utf8");
-      if (!/^\s*export\b/.test(oldSlice) && /^\s*export\b/.test(finalNewSource)) {
+      if (!/^\s*export\b/.test(old) && /^\s*export\b/.test(finalNewSource)) {
         finalNewSource = finalNewSource.replace(/^\s*export\s+(?:default\s+)?/, "");
+      }
+    } else {
+      finalNewSource = cleanSourceString(edit.new_source);
+      const snippetErrors = checkBufferSyntax(source.path, Buffer.from(finalNewSource, "utf8"));
+      if (snippetErrors.length > 0) {
+        throw new Error(`Syntax error in replacement for "${matched.name}": ${formatDiagnostics(snippetErrors, 3, 400)}`);
+      }
+      const parsedReplacement = parseFileSync(source.path, Buffer.from(finalNewSource, "utf8"));
+      const expectedShort = matched.name.split(".").pop()!;
+      if (
+        parsedReplacement.symbols.length > 0 &&
+        !parsedReplacement.symbols.some(s => s.name === matched!.name || s.name === expectedShort || s.name.endsWith(`.${expectedShort}`))
+      ) {
+        throw new Error(`Replacement symbol "${parsedReplacement.symbols[0].name}" does not match target "${matched.name}".`);
+      }
+      const leadingIndent = old.match(/^[ \t]+/)?.[0] ?? "";
+      if (leadingIndent && !/^[ \t]/.test(finalNewSource)) {
+        finalNewSource = finalNewSource
+          .split("\n")
+          .map(line => (line.trim().length > 0 ? leadingIndent + line : line))
+          .join("\n");
       }
     }
 
-    const old = bytes.subarray(matched.startByte, matched.endByte).toString("utf8");
     replacements.push({
       old,
       new: finalNewSource,

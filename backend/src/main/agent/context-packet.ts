@@ -9,6 +9,7 @@ import { CAPABILITY_GROUPS } from "../tools/capabilities.js";
 import { loadAgentSourcePage, selectAgentSourcePages, sliceAgentSourcePage, sourcePageIsCurrent, sourcePageReceipt, selectAgentFailureStep, type AgentSourcePage } from "./source-evidence.js";
 import { AGENT_MODULE_REPAIR_INSTRUCTIONS, AGENT_REPAIR_INSTRUCTIONS, AGENT_SYMBOL_REPAIR_INSTRUCTIONS, type AgentRepairSource } from "./repair-proposal.js";
 import { indexSymbolsSync } from "./symbol-index.js";
+import { getWorkspaceCodeIndex } from "./codeintel/code-index.js";
 import { canonicalSourcePath } from "./workspace-actions.js";
 import { fileDigest, observedRange, readAgentSourceBytes } from "../harness/tools/edit-file.js";
 
@@ -101,7 +102,7 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
   // model is drafting. Keep all admitted pages, but make their roles explicit.
   if(repair)providedPages.sort((a,b)=>Number(b.path===repair.path && b.digest===repair.digest)-Number(a.path===repair.path && a.digest===repair.digest));
   const activeFocus = (focus?.content ? focus : providedPages.find(p => p.path === repair?.path && p.digest === repair?.digest)) as AgentSourcePage | undefined;
-  if(repair && activeFocus?.complete && activeFocus.sizeBytes > 0 && activeFocus.sizeBytes <= 2000 && /\.[cm]?[jt]sx?$/i.test(repair.path) && sourcePageIsCurrent(context,activeFocus) && observedRange(providedPages,repair.path,repair.digest,0,activeFocus.sizeBytes))repair.completeSource=activeFocus.content;
+  if(repair && activeFocus?.complete && activeFocus.sizeBytes > 0 && activeFocus.sizeBytes <= 2000 && /\.(?:[cm]?[jt]sx?|java|c|cc|cpp|cxx|h|hpp|cs)$/i.test(repair.path) && sourcePageIsCurrent(context,activeFocus) && observedRange(providedPages,repair.path,repair.digest,0,activeFocus.sizeBytes))repair.completeSource=activeFocus.content;
   if(repair && activeFocus?.content) {
     const symbols = indexSymbolsSync(repair.path, Buffer.from(activeFocus.content, "utf8"));
     if(symbols.length > 0) repair.symbols = symbols.map(s => ({ name: s.name, kind: s.kind, startLine: s.startLine, endLine: s.endLine }));
@@ -156,6 +157,16 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
   }
   let savedArtifacts: ReturnType<typeof agentArtifactOutcomes> = [];
   try { savedArtifacts = agentArtifactOutcomes(context); } catch { /* retain empty */ }
+  let repoMap: string | undefined;
+  if (additionalSourceChars > 0 && context.workspaceRoot && process.env.WORKBENCH_CODEINTEL !== "off") {
+    try {
+      const idx = getWorkspaceCodeIndex(context.workspaceRoot);
+      const rm = idx.repoMap({ budgetTokens: 500, focusFiles: currentStep?.relatedPaths });
+      if (rm.totalFiles > 15 || process.env.WORKBENCH_REPO_MAP === "always") {
+        repoMap = rm.map || undefined;
+      }
+    } catch { /* ignore index errors */ }
+  }
   const currentRunInputs = new Map<string, { content: string; complete: boolean }>();
   if (additionalSourceChars > 0 && context.resultStore) {
     for (const record of context.resultStore.listResults({ limit: 50, origin: "source_extracted" })) {
@@ -183,6 +194,7 @@ export function buildAgentContextPacket(task: AgentTask, context: ToolExecutionC
     appliedOperations: [...agentAppliedChanges(context).slice(-5).map(item => ({ path: item.path, tool: item.tool, summary: item.summary, originRunId: item.originRunId, historical: item.originRunId !== context.runId })), ...savedArtifacts.slice(-5).map(item => ({ path: item.filename, tool: "generate_deliverable", summary: `Saved deliverable ${item.filename}`, originRunId: item.runId, historical: item.runId !== context.runId }))].slice(-5),
     sourceObservations: { items: observations.slice(-4), total: observations.length, complete: observations.length <= 4, ...(observations.length > 4 ? { earlierEvidenceVia: { tool: "retrieve_result", action: "list", scope: "task", origin: "source_extracted" } } : {}) },
     directoryEvidence,
+    ...(repoMap ? { repoMap } : {}),
     suggestedReadPaths: readPaths,
     readSelection: readPaths ? { indexSource: listedFiles ? "directory page" : "saved verification manifest", totalKnownRemaining: remainingReadCount, complete: remainingReadCount === readPaths.length, otherPathsVia: { tool: "list_dir", purpose: "Narrow the directory or use its continuation page" } } : undefined,
     activeCapabilities: [...(context.activeCapabilities ?? [])],

@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { ToolDispatcher, ExecutedToolOutput } from "../tool-dispatcher.js";
 import type { ToolExecutionContext } from "../../tools/types.js";
 import { updateAgentProgress } from "../../run/execution-ledger.js";
+import { getWorkspaceCodeIndex, type DefinitionMatch, type ReferenceMatch, type CodeSearchMatch } from "../codeintel/code-index.js";
+import type { SymbolRange } from "../symbol-index.js";
 
 export const READ_ALLOWLIST = new Set([
   "read_file",
@@ -11,6 +13,10 @@ export const READ_ALLOWLIST = new Set([
   "extract_document",
   "retrieve_knowledge",
   "retrieve_result",
+  "code_symbols",
+  "code_definition",
+  "code_references",
+  "search_code",
 ]);
 
 export interface ReadFacadeOptions {
@@ -52,6 +58,25 @@ export interface ReadFacade {
     content: string;
     nextOffset?: number;
     totalChars?: number;
+  }>;
+  symbols?(path: string): Promise<SymbolRange[]>;
+  definition?(name: string, options?: string | { path?: string; fromPath?: string; kind?: string }): Promise<{
+    matches: DefinitionMatch[];
+    indexComplete: boolean;
+  }>;
+  references?(name: string, options?: { path?: string; maxResults?: number }): Promise<{
+    matches: ReferenceMatch[];
+    precision: "import-filtered" | "workspace-wide";
+    indexComplete: boolean;
+  }>;
+  repoMap?(options?: { budgetTokens?: number; focusFiles?: string[] }): Promise<{
+    map: string;
+    totalFiles: number;
+    indexComplete: boolean;
+  }>;
+  searchCode?(query: string, options?: number | { path?: string; maxResults?: number }): Promise<{
+    results: CodeSearchMatch[];
+    indexComplete: boolean;
   }>;
   getDiscoveredDigests(): string[];
   getExecutedTools(): ExecutedToolOutput[];
@@ -419,6 +444,104 @@ export function createReadFacade(
         nextOffset: d?.nextOffset,
         totalChars: d?.totalChars ?? out.result.output.length,
       };
+    },
+
+    async symbols(relPath: string) {
+      if (!relPath || typeof relPath !== "string") {
+        throw new Error("symbols requires a non-empty string path argument.");
+      }
+      if (dispatcher.getTool("code_symbols")) {
+        const out = await dispatchAllowed("code_symbols", { path: relPath });
+        if (!out.result.ok) throw new Error(out.result.error?.message || `symbols failed for "${relPath}"`);
+        const payload = getToolPayload(out);
+        if (Array.isArray(payload?.symbols)) return payload.symbols;
+        if (Array.isArray(payload)) return payload;
+      } else {
+        if (callCount >= maxCalls) throw new Error(`Tool call budget exceeded (maximum ${maxCalls} calls per script).`);
+        callCount++;
+      }
+      return getWorkspaceCodeIndex(baseContext.workspaceRoot).symbols(relPath);
+    },
+
+    async definition(name: string, opts?: string | { path?: string; fromPath?: string; kind?: string }) {
+      if (!name || typeof name !== "string") {
+        throw new Error("definition requires a non-empty string symbol name.");
+      }
+      const pathOpt = typeof opts === "string" ? opts : opts?.path;
+      const fromPath = typeof opts === "object" ? opts?.fromPath : undefined;
+      const kind = typeof opts === "object" ? opts?.kind : undefined;
+      if (dispatcher.getTool("code_definition")) {
+        const args: Record<string, unknown> = { name };
+        if (pathOpt) args.path = pathOpt;
+        if (fromPath) args.from_path = fromPath;
+        if (kind) args.kind = kind;
+        const out = await dispatchAllowed("code_definition", args);
+        if (!out.result.ok) throw new Error(out.result.error?.message || `definition failed for "${name}"`);
+        const payload = getToolPayload(out);
+        if (Array.isArray(payload?.matches)) {
+          return { matches: payload.matches, indexComplete: Boolean(payload.indexComplete ?? true) };
+        }
+      } else {
+        if (callCount >= maxCalls) throw new Error(`Tool call budget exceeded (maximum ${maxCalls} calls per script).`);
+        callCount++;
+      }
+      return getWorkspaceCodeIndex(baseContext.workspaceRoot).definition(name, opts);
+    },
+
+    async references(name: string, opts?: { path?: string; maxResults?: number }) {
+      if (!name || typeof name !== "string") {
+        throw new Error("references requires a non-empty string symbol name.");
+      }
+      if (dispatcher.getTool("code_references")) {
+        const args: Record<string, unknown> = { name };
+        if (opts?.path) args.path = opts.path;
+        if (opts?.maxResults !== undefined) args.max_results = opts.maxResults;
+        const out = await dispatchAllowed("code_references", args);
+        if (!out.result.ok) throw new Error(out.result.error?.message || `references failed for "${name}"`);
+        const payload = getToolPayload(out);
+        if (Array.isArray(payload?.matches)) {
+          return {
+            matches: payload.matches,
+            precision: payload.precision ?? "workspace-wide",
+            indexComplete: Boolean(payload.indexComplete ?? true),
+          };
+        }
+      } else {
+        if (callCount >= maxCalls) throw new Error(`Tool call budget exceeded (maximum ${maxCalls} calls per script).`);
+        callCount++;
+      }
+      return getWorkspaceCodeIndex(baseContext.workspaceRoot).references(name, opts);
+    },
+
+    async repoMap(opts?: { budgetTokens?: number; focusFiles?: string[] }) {
+      if (callCount >= maxCalls) {
+        throw new Error(`Tool call budget exceeded (maximum ${maxCalls} calls per script).`);
+      }
+      callCount++;
+      return getWorkspaceCodeIndex(baseContext.workspaceRoot).repoMap(opts);
+    },
+
+    async searchCode(query: string, opts?: number | { path?: string; maxResults?: number }) {
+      if (!query || typeof query !== "string") {
+        throw new Error("searchCode requires a non-empty string query.");
+      }
+      const maxResults = typeof opts === "number" ? opts : opts?.maxResults;
+      const scopePath = typeof opts === "object" ? opts?.path : undefined;
+      if (dispatcher.getTool("search_code")) {
+        const args: Record<string, unknown> = { query };
+        if (scopePath) args.path = scopePath;
+        if (maxResults !== undefined) args.max_results = maxResults;
+        const out = await dispatchAllowed("search_code", args);
+        if (!out.result.ok) throw new Error(out.result.error?.message || `searchCode failed for "${query}"`);
+        const payload = getToolPayload(out);
+        if (Array.isArray(payload?.results)) {
+          return { results: payload.results, indexComplete: Boolean(payload.indexComplete ?? true) };
+        }
+      } else {
+        if (callCount >= maxCalls) throw new Error(`Tool call budget exceeded (maximum ${maxCalls} calls per script).`);
+        callCount++;
+      }
+      return getWorkspaceCodeIndex(baseContext.workspaceRoot).searchCode(query, opts);
     },
 
     getDiscoveredDigests() {

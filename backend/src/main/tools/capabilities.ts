@@ -14,8 +14,8 @@ export const CAPABILITY_GROUPS: Record<CapabilityGroup, CapabilityMetadata> = {
   source_access: {
     name: "source_access",
     label: "Source Access",
-    description: "Filesystem listing, reading, searching, and knowledge base document retrieval",
-    tools: ["read_file", "list_dir", "search", "retrieve_knowledge"],
+    description: "Filesystem listing, reading, searching, code symbol navigation, and knowledge base document retrieval",
+    tools: ["read_file", "list_dir", "search", "code_symbols", "code_definition", "code_references", "search_code", "retrieve_knowledge"],
     requiresAgentMode: false,
   },
   document_processing: {

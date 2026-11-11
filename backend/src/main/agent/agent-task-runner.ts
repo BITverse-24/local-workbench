@@ -1,6 +1,6 @@
 import { agentAppliedChanges, savedAgentTaskFacts } from "./task-evidence.js";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { Validator } from "jsonschema";
 import { z } from "zod";
 import type { AgentTask, AgentToolCall, AgentToolDefinition, CapabilityGroup, RunContract } from "../../shared/contracts.js";
@@ -23,6 +23,7 @@ import { obtainAgentFailureSources, selectAgentFailureStep } from "./source-evid
 import { assessAgentFileScope, refineAgentInterpretation, reviewAgentInterpretation } from "./requirement-scope.js";
 import { agentInterpretationFormat, interpretationMessages, parseTaskInterpretation, isAgentStatusQuestion } from "./task-interpretation.js";
 import { runAgentVerificationStage } from "./verification-stage.js";
+import { checkWorkspaceFiles, diffDiagnostics, formatDiagnostics } from "./codeintel/diagnostics.js";
 import { captureAgentVerificationManifest, computeExpectedManifestRevision, isAgentTestPath, isCodeVerificationPath, type AgentTestOverlay } from "./test-verification.js";
 import { extractVerificationSkipBasis, recordVerificationTermination, recordVerificationUserSkip } from "../run/verification-controller.js";
 import { agentDeliveryGap, reviewAgentTaskCoverage } from "./requirement-review.js";
@@ -130,7 +131,8 @@ export class AgentTaskRunner {
       if (!task.snapshot.requirements.some(item => item.state === "active")) return stop("requirements_missing", "The full message is saved, but no active requirement was extracted. Narrow or clarify this task.");
       bindTaskInputs(context);
       const replacements = new Map(agentWorkspaceActions.map(tool => [tool.name, tool]));
-      const registered = [...getAllAvailableTools(modelId).map(tool => replacements.get(tool.name) ?? tool), replacements.get("edit_file")!, replacements.get("read_input")!];
+      const baseTools = getAllAvailableTools(modelId).map(tool => replacements.get(tool.name) ?? tool);
+      const registered = [...baseTools, ...agentWorkspaceActions.filter(tool => !baseTools.some(existing => existing.name === tool.name))];
       const dispatcher = new ToolDispatcher(registered);
       context.activeCapabilities = new Set(context.envelope.activeCapabilities);
       for (const capability of ["source_access", "workspace_mutation", "system_execution", "result_retrieval"] as const) context.activeCapabilities.add(capability);
@@ -167,7 +169,17 @@ export class AgentTaskRunner {
         // An installed interpreter package can change outside PATH. A user-initiated
         // resume permits a fresh check; the same run will not retry automatically.
         reason === "test_dependency_unavailable" ? getExecutionLedger(runId)?.resumeCount ?? 0 : null]);
-      const hasCodeProject = ["package.json", "pyproject.toml", "pytest.ini", "Cargo.toml", "pom.xml"].some(file => existsSync(resolveSafe(context.workspaceRoot, file)));
+      const hasCodeProject =
+        ["package.json", "pyproject.toml", "pytest.ini", "Cargo.toml", "pom.xml", "build.gradle", "build.gradle.kts", "CMakeLists.txt"].some(file =>
+          existsSync(resolveSafe(context.workspaceRoot, file)),
+        ) ||
+        (() => {
+          try {
+            return readdirSync(resolveSafe(context.workspaceRoot, ".")).some(f => /\.(?:csproj|sln)$/i.test(f));
+          } catch {
+            return false;
+          }
+        })();
       const needsTests = task.snapshot.requirements.some(item => item.state === "active" && (item.kind === "execute" || item.acceptance.some(check => check.kind === "execution") || (item.kind === "change" && hasCodeProject)));
       const changedPaths = () => agentAppliedChanges(context).map(item=>item.path);
       const verifyChanges = async () => {
@@ -336,7 +348,7 @@ export class AgentTaskRunner {
           } else tools=moduleStep ? [MODULE_DRAFT_TOOL] : packet.repair && !packet.repair.expanded ? [REPAIR_PROPOSAL_TOOL] : deliveryGap ? definitions() : [...definitions(),FINISH_TOOL];
           activeTools = tools;
           const role: InferenceRole = symbolStep ? "actor" : moduleStep && draft ? "decision" : moduleStep ? "module_draft" : "actor";
-          return context.gateway.chatWithTools(modelId,messages,tools,{runId,role,maxTokens:symbolStep ? 2048 : moduleStep && draft ? 512 : 2048,toolChoice:"required",temperature:packet.repair && !packet.repair.expanded ? 0 : undefined,sampling: (symbolStep || packet.repair) ? "code_edit" : "default",signal:scope.signal});
+          return context.gateway.chatWithTools(modelId,messages,tools,{runId,role,maxTokens:2048,toolChoice:"required",temperature:packet.repair && !packet.repair.expanded ? 0 : undefined,sampling: (symbolStep || packet.repair) ? "code_edit" : "default",signal:scope.signal});
         };
         let response = await generate();
         // Admission rejects before dispatch and call consumption. Remove whole optional pages,
@@ -393,6 +405,8 @@ export class AgentTaskRunner {
                     calls.push({ id: randomUUID(), name: activeTools[0].function.name, arguments: parsed.arguments ?? parsed });
                   } else if (typeof parsed.content === "string") {
                     calls.push({ id: randomUUID(), name: "draft_module", arguments: parsed });
+                  } else if (typeof parsed.result_id === "string" || typeof parsed.resultId === "string") {
+                    calls.push({ id: randomUUID(), name: "select_module_draft", arguments: { result_id: parsed.result_id ?? parsed.resultId } });
                   }
                 }
               }
@@ -430,6 +444,9 @@ export class AgentTaskRunner {
               updateAgentProgress(runId,state=>{state.repairDraft={focusKey:packet.repair!.focusKey,resultId:record.resultId,sha256:record.storage.sha256,requirementId:packet.requirement.id,taskRevision:bound!.taskRevision};
                 state.actions.push({id:randomUUID(),hash:hash(["draft_module",packet.repair!.focusKey,record.storage.sha256]),requirementId:packet.requirement.id,operation:"draft_module",status:"completed",resultId:record.resultId});});
               continue;
+            }
+            if (call.name === "select_module_draft" && call.arguments && typeof (call.arguments as any).resultId === "string" && !(call.arguments as any).result_id) {
+              call = { ...call, arguments: { result_id: (call.arguments as any).resultId } };
             }
             const tools=moduleDecisionTools(draft.resultId),definition=tools.find(tool=>tool.function.name === call.name);
             if(!definition || !calls.length || !new Validator().validate(call.arguments,JSON.parse(JSON.stringify(definition.function.parameters))).valid)throw new Error("Select the saved draft, request context, or report a blocker.");
@@ -735,7 +752,11 @@ export class AgentTaskRunner {
           }
         }
         if (mutations.has(call.name) && !await authorize([call])) return stop("approval_denied", "The proposed action was declined.", "cancelled");
+        const diagPath = (call.name === "edit_file" || call.name === "write_file") && typeof (call.arguments as any)?.path === "string" ? canonicalSourcePath(context, (call.arguments as any).path) : undefined;
+        const diagBefore = diagPath ? checkWorkspaceFiles(context.workspaceRoot, [diagPath]) : [];
         const [output] = await dispatcher.dispatchConcurrent([call], context);
+        const diagDelta = output.result.ok && diagPath ? diffDiagnostics(diagBefore, checkWorkspaceFiles(context.workspaceRoot, [diagPath])) : [];
+        const diagNote = diagDelta.length ? `\nDiagnostics after edit:\n${formatDiagnostics(diagDelta)}` : "";
         const uncertain = !output.result.ok && output.result.error.code === "persistence_failure" && mutations.has(call.name);
         updateAgentProgress(runId, state => {
           const action = state.actions.find(item => item.id === call.id)!; action.status = uncertain ? "uncertain" : output.result.ok ? "completed" : "failed"; action.resultId = output.result.resultRef?.resultId;
@@ -743,7 +764,7 @@ export class AgentTaskRunner {
           if(output.result.ok && call.name === "request_capability" && packet.repair && !packet.repair.expanded)state.expandedToolFocus=packet.repair.focusKey;
           else if(packet.repair?.expanded)delete state.expandedToolFocus;
           if(output.result.ok && packet.repair?.expanded && call.name !== "request_capability")delete state.repairDraft;
-          state.feedback = `${output.result.summary}${output.result.ok && call.name === "generate_deliverable" ? ". Deliverable is saved; if all requested operations are complete, call finish with your final response." : ""}\n${output.result.ok ? "" : output.result.output}`.slice(0, 10000);
+          state.feedback = `${output.result.summary}${output.result.ok && call.name === "generate_deliverable" ? ". Deliverable is saved; if all requested operations are complete, call finish with your final response." : ""}${diagNote}\n${output.result.ok ? "" : output.result.output}`.slice(0, 10000);
         });
         clearApprovals();
         if (uncertain) return stop("uncertain_mutation", "The operation ran but its evidence could not be saved. Reconcile current files before an explicit retry. Backups remain available.");

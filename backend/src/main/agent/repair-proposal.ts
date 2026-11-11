@@ -3,6 +3,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { CAPABILITY_GROUPS } from "../tools/capabilities.js";
 import { parse } from "@babel/parser";
+import { checkBufferSyntax, formatDiagnostics } from "./codeintel/diagnostics.js";
 
 export interface AgentRepairSource {
   path: string;
@@ -63,9 +64,14 @@ export function bindAgentRepairProposal(call: AgentToolCall, source: AgentRepair
     if(proposal.context_needed)return {contextNeeded:proposal.context_needed};
     if(proposal.content === null)throw new Error("An empty proposal needs a context request or a blocker.");
     const requirementId=proposal.requirement_id ? {requirement_id:proposal.requirement_id} : {};
-    if (!source.completeSource || !/\.[cm]?[jt]sx?$/i.test(source.path)) throw new Error("Module replacement needs complete current JavaScript or TypeScript source.");
+    if (!source.completeSource || !/\.(?:[cm]?[jt]sx?|py|java|c|cc|cpp|cxx|h|hpp|cs)$/i.test(source.path)) throw new Error("Module replacement needs complete current source.");
     if (/^\s*```/.test(proposal.content)) throw new Error("Return module source without a Markdown fence. No example was converted into an edit.");
-    parse(proposal.content, {sourceType:"unambiguous",plugins:["jsx",...(/\.[cm]?tsx?$/i.test(source.path) ? ["typescript" as const] : [])]});
+    if (/\.[cm]?[jt]sx?$/i.test(source.path)) {
+      parse(proposal.content, {sourceType:"unambiguous",plugins:["jsx",...(/\.[cm]?tsx?$/i.test(source.path) ? ["typescript" as const] : [])]});
+    } else {
+      const diags = checkBufferSyntax(source.path, Buffer.from(proposal.content, "utf8"));
+      if (diags.length > 0) throw new Error(`Syntax error in module replacement: ${formatDiagnostics(diags, 3, 400)}`);
+    }
     return {call:{id:call.id,name:"edit_file",arguments:{path:source.path,expected_digest:source.digest,replacements:[{old:source.completeSource,new:proposal.content}],...requirementId}}};
   }
   const proposal=schema.parse(call.arguments);

@@ -120,8 +120,12 @@ agent/
 │   │       ├── logger.ts          # Structured event and audit logger
 │   │       ├── agent/             # Unified agent loop execution
 │   │       │   ├── agent-task-runner.ts  # AgentTaskRunner (unified ReAct driver, shadow verification, best-of-n sampling)
-│   │       │   ├── symbol-index.ts       # AST symbol indexer (JS/TS via Babel, Python via ast subprocess)
+│   │       │   ├── symbol-index.ts       # AST symbol indexer (JS/TS via Babel, Python via ast, Java/C/C++/C# via polyglot)
 │   │       │   ├── symbol-edit.ts        # replace_symbol tool, declaration validation, lowering to edit_file
+│   │       │   ├── codeintel/            # Polyglot code intelligence, FTS5 index, and live diagnostics
+│   │       │   │   ├── diagnostics.ts    # Pre-approval & post-edit syntax/compile checks and Δ diagnostic diffs
+│   │       │   │   ├── code-index.ts     # WorkspaceCodeIndex (SQLite cache + FTS5 code_fts, symbols, definition, references, repoMap, searchCode)
+│   │       │   │   └── adapters/polyglot.ts # Offline Java, C/C++, and C# symbol/import/reference/syntax adapter
 │   │       │   ├── judge.ts              # Judge framework: deterministic fast path, result cache, model fallback
 │   │       │   ├── escalation.ts         # Escalation ladder for stuck actions (context, edit mode, sampling, stop)
 │   │       │   ├── tool-dispatcher.ts    # ToolDispatcher (concurrent read / serial mutation dispatch, P1 store)
@@ -299,7 +303,7 @@ agent/
 ├── docs/                          # Architecture diagrams and specifications
 │   └── diagrams/                  # Architecture and flow diagrams
 │
-├── tests/                         # Comprehensive acceptance and behavioral test suite
+├── tests/                         # Comprehensive acceptance, behavioral, and parametric v2 evaluation suite
 │   ├── acceptance.ts              # High-level acceptance test runner
 │   ├── core.test.ts               # Core system invariants and contracts test
 │   ├── metamorphic.ts             # Metamorphic testing suite
@@ -307,6 +311,11 @@ agent/
 │   ├── supervisor.ts              # Execution supervisor
 │   ├── runner.ts                  # Test runner
 │   ├── recorder.ts                # Test execution recorder
+│   ├── eval/                      # v2 parametric multi-mode evaluation harness (T7)
+│   │   ├── cli.ts                 # Unified CLI (run, validate, compare, gate, list)
+│   │   ├── suite.ts               # Suite runner (worker subprocesses, pass@k / pass^k, progress)
+│   │   ├── core/                  # PRNG, task specs, sandbox, document builders, oracles, metrics, selfcheck, worker
+│   │   └── families/              # 15 parametric task families across Agent, Work, and Adversarial (132 dev seeds + heldout)
 │   ├── benchmark/                 # Latency and throughput benchmarks
 │   ├── evaluator/                 # Task completion quality evaluator
 │   ├── gremlin/                   # Chaos, fuzzing, and fault-injection probes
@@ -657,11 +666,14 @@ npm run demo
 npm run package
 
 # Evaluation and cassette replay commands
-npm run eval:generate      # Generate & validate synthetic mutation task corpus
-npm run eval:smoke         # Smoke evaluation (8 tasks, k=1)
-npm run eval:full          # Full evaluation (40 tasks, k=3)
+npm run eval               # Unified v2 eval CLI (run | validate | compare | gate | list)
+npm run eval:validate      # Self-validate all 132 task seeds across 15 families (broken fails, gold passes)
+npm run eval:smoke         # Smoke evaluation (12 tasks across Agent, Work, Adversarial, k=1)
+npm run eval:core          # Core evaluation (45 tasks, k=1)
+npm run eval:full          # Full evaluation (all 132 tasks, k=3)
+npm run eval:compare -- <baseline.json> <candidate.json>  # Paired bootstrap Δpass@1 + McNemar p-value
+npm run eval:gate -- <baseline.json> <candidate.json>     # Regression gate check
 npm run test:replay        # Deterministic engine logic verification via recorded cassettes
-node scripts/eval/compare.cjs <baseline.json> <results.json>  # Compare eval runs
 ```
 
 ### Runtime Configuration Flags
@@ -670,6 +682,8 @@ node scripts/eval/compare.cjs <baseline.json> <results.json>  # Compare eval run
 - `WORKBENCH_AGENT_CALL_BUDGETS`: `on` (default) | `off` (enforce per-role model call caps: interpretation=4, judges=12, delivery=3, reserveForActor=16)
 - `WORKBENCH_AGENT_ESCALATION`: `on` | `off` (default in tests; enables progressive recovery ladder for repeated, malformed, or context-stuck actions)
 - `WORKBENCH_AGENT_ACTION_TRANSPORT`: `native` (default) | `constrained` (strict JSON schema tool action transport)
+- `WORKBENCH_DIAGNOSTICS`: `on` (default) | `off` (live syntax & incremental compile diagnostics before approval and after edits)
+- `WORKBENCH_REPO_MAP`: `auto` (default, injects top-ranked symbols when workspace > 15 source files) | `always` | `off`
 
 ### Key Rules for AI Coding Assistants
 1. **Full Workspace Write Access**: AI assistants have standard read and write permissions across the codebase (`backend/`, `frontend/`, `electron/`, `ai/`, `config/`, `scripts/`, `docs/`, `tests/`, etc.) to implement requested features and bug fixes.
